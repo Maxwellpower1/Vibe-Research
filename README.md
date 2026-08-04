@@ -263,14 +263,6 @@ Vibe-Research 用到的数据 / 工具，来自同一套自研开源体系（都
 
 本项目仅供学习与研究，**不构成任何投资建议**。看板只做客观数据整理与公开榜单呈现——不推荐个股、不预测涨跌、不给买卖时机、不承诺收益；所有分析方向由你自己配置的 AI 给出，与本产品无关。股市有风险，请独立决策、自行核实，风险自担。
 
-## 赞赏
-
-如果这个工具帮到了你，欢迎请作者喝杯咖啡。
-
-<p align="center">
-  <a href="https://buymeacoffee.com/simonlin1212"><img src="./assets/bmc-qr.png" width="180" alt="Buy Me a Coffee"></a>
-</p>
-
 ## License
 
 MIT

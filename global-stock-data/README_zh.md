@@ -232,16 +232,6 @@ pip install requests
 
 本项目仅提供数据获取工具，不构成任何投资建议。股市有风险，投资需谨慎。
 
-## 赞赏
-
-如果这个工具帮到了你 ☕
-
-<p align="center">
-  <a href="https://buymeacoffee.com/simonlin1212"><img src="./assets/bmc-qr.png" width="180" alt="Buy Me a Coffee"></a>
-</p>
-
-想要什么数据端点？欢迎开 [Issue](https://github.com/simonlin1212/global-stock-data/issues)，赞助者的 Issue 优先处理。
-
 ## License
 
 [Apache License 2.0](./LICENSE) — 自由使用，注明出处即可。**Author:** Simon Lin · X [@linsizhen](https://x.com/linsizhen) · Email: [simonlin0423@gmail.com](mailto:simonlin0423@gmail.com)

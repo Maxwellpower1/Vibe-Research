@@ -329,18 +329,6 @@ V2.1 改为本地自缓存。每次调用自动积累，越跑越丰富。首次
 
 ---
 
-## 赞赏
-
-如果这个工具帮到了你的投研工作流，欢迎请作者喝杯咖啡 ☕
-
-<p align="center">
-  <a href="https://buymeacoffee.com/simonlin1212"><img src="./assets/bmc-qr.png" width="180" alt="Buy Me a Coffee"></a>
-</p>
-
-> 想要什么数据端点？欢迎开 [Issue](https://github.com/simonlin1212/a-stock-data/issues) 提需求，赞助者的 Issue 优先处理。
-
----
-
 ## License
 
 [Apache License 2.0](./LICENSE) — 自由使用，注明出处即可。

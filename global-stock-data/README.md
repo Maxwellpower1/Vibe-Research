@@ -238,16 +238,6 @@ See [CHANGELOG.md](./CHANGELOG.md).
 
 This project provides data-access tools only. It is not investment advice. Investing involves risk.
 
-## Support
-
-If this saved you time, a coffee is appreciated ☕
-
-<p align="center">
-  <a href="https://buymeacoffee.com/simonlin1212"><img src="./assets/bmc-qr.png" width="180" alt="Buy Me a Coffee"></a>
-</p>
-
-Want a data endpoint that isn't here? Open an [Issue](https://github.com/simonlin1212/global-stock-data/issues); sponsors' issues go first.
-
 ## License
 
 [Apache License 2.0](./LICENSE) — **Author:** Simon Lin · X [@linsizhen](https://x.com/linsizhen) · Email: [simonlin0423@gmail.com](mailto:simonlin0423@gmail.com)
