@@ -71,6 +71,7 @@ Vibe-Research 是一个开源的「个人 AI 投研看板」，**主推 A 股、
 | 💼&nbsp;**我&#8288;的&#8288;持&#8288;仓** | 录入即实时盈亏 · 已清仓记录（只存本地、不上传）|
 | 📄&nbsp;**我&#8288;的&#8288;研&#8288;报** | **拖拽 / 多选上传**自己的研报（PDF / Word / txt / 表格 / 图片）· 按文件名**自动分行业**归档 · 下载 / 删除。**只存本地部署目录、不上传、不进仓库** |
 | 📝&nbsp;**研&#8288;究&#8288;记&#8288;录** | 复盘 / 今日要点 / 问 AI / 辩论结果本地沉淀，随时回看 · **反思审计**：让 AI 回头审这段推理——哪些结论有数据撑着、哪些是脑补、最脆弱的一环在哪、要验证得看什么 |
+| 🌊&nbsp;**期&#8288;权&#8288;/&#8288;波&#8288;动&#8288;率** | **OpenVlab** 公开数据：市场概览（全部品种现价 / 涨跌 / 平值隐波 / 隐波百分位 / 22 日实波 / VolAlphaT / Carry / 偏度及百分位 / 主力合约 / 到期日 / 夜盘 / 境外）· 单品种详情（dto）· 波动率期限结构汇总。只客观呈现，不推荐不预测 |
 | 🔌&nbsp;**接&#8288;入&nbsp;AI** | 订阅接入（本机 CLI，免 key）· API 多模型（自动填 baseURL）· MCP（挂进 Claude Code 等 agent）|
 
 > **投研分析框架**：让 AI 分析个股时，自动按 估值 / 资金面 / 财报质量 / 行业景气 / 事件催化与风险 五维组织结论——框架只规定「怎么读数据」、不规定买卖，方向仍由你自己的 AI 决定。
@@ -101,6 +102,24 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - 12 赛道 108 个公开 RSS 源，已并入 `backend/newsradar.py` + `backend/news_sources.json`：纯标准库、零 key、已按合规词表过滤（剔除赌 / 预测市场 / 加密等）。
 - **上游**：<https://github.com/simonlin1212/investment-news>
 
+### 期权 / 期货波动率 · OpenVlab
+
+- 接入 [openvlab.cn](https://www.openvlab.cn/market) 的全部公开 REST 接口（无鉴权），并入 `backend/ovlab.py`：
+  - **市场概览** `GET /api/ovlab/market` — 全部品种现价 / 涨跌 / 平值隐波 / 隐波百分位 / 22 日实波 / VolAlphaT / Carry / 偏度及百分位 / 主力合约 / 到期日 / 夜盘 / 境外
+  - **单品种详情** `GET /api/ovlab/detail?prod_und=510300` — dto（含主力合约月份、希腊字母、隐波曲线、各合约报价）
+  - **期权波动率期限结构** `GET /api/ovlab/volatility-ts`
+  - **期货期限结构** `GET /api/ovlab/future-ts-all` · `GET /api/ovlab/future-ts?prod_und=MA`
+  - **异动榜** `GET /api/ovlab/flow-alert` — 合约 / 触发规则 / 价格 / 涨跌 / 持仓量 / 窗口成交量 / 权利金
+  - **资金流** `POST /api/ovlab/flow-data` — 分页资金流
+  - **持仓历史** `POST /api/ovlab/warehouse-history` — 单品种多年持仓（year2013~2026 + ratioData），仓差 / 季节性分析
+  - **季节性持仓** `POST /api/ovlab/warehouse-seasonal` — 全品种按年份分组的持仓，季节性规律研究
+  - **K 线 / 价格波动率** `POST /api/ovlab/last-bars` · `POST /api/ovlab/price-volatility-series`（需具体合约代码）
+  - **轻量行情图表**（移植自 `/chart/light`）`GET /api/ovlab/kline-history?symbol=SC2609&resolution=1D`（K 线 OHLC + 持仓 + 成交量）· `GET /api/ovlab/atmvol-history`（ATM 隐含波动率历史）· `GET /api/ovlab/last-bar?code=SC2609`（实时最新 bar）· `GET /api/ovlab/search-symbols?keyword=SC`（标的搜索）· `GET /api/ovlab/symbol-info?code=SC2609`（合约元信息：交易时段 / 价格精度 / 到期日）· `GET /api/ovlab/volatility-surface?product=SC`（波动率曲面）· `POST /api/ovlab/skewmap`（偏度图）· `GET /api/ovlab/surfacemap`（曲面图）
+  - **持仓排名**（移植自 `/flow/option-flow`、`/future/position-ranking`）`GET /api/ovlab/option-position-products`（期权持仓品种列表）· `GET /api/ovlab/option-position-details?product=IO&code=IO2608&direction=C&day=2026-07-03`（期权持仓明细，方向 C/P）· `GET /api/ovlab/future-position-products`（期货持仓品种列表）· `GET /api/ovlab/future-position-details?product=RB&code=rb2608&direction=0&day=2026-08-03`（期货持仓明细：买方/卖方/净多/净空 4 张期货公司持仓排名表 + 增减 + 净多/净空第一）
+  - **异动资金流** `POST /api/ovlab/flow-data`（期权异动明细分页：合约/最新价/涨跌幅/持仓量/持仓变化/成交量/成交额/买卖盘占比/OTM/DTE，可按品种筛选，不缓存）
+  - **元数据** `GET /api/ovlab/product-exps`（合约月份）· `/exchange-info` · `/sector-info` · `/next-trading-day` · `/holidays?exchange=CZCE` · `/expired?prod_und=510300`
+- 前端「期权 / 波动率」页 8 个 tab：市场概览 / 单品种详情 / **轻量图表**（K 线主图 + ATM 隐波副图 + 实时刷新 + 周期切换）/ **T型报价**（期权链买卖价/最新价/涨跌幅）/ 异动榜 / **异动资金流**（期权异动明细分页表，持仓变化/买卖盘占比）/ 持仓历史 / **持仓排名**（期货/期权持仓排名榜，期货公司持仓 + 增减 + 净多/净空第一）。AI 工具层（`tools.py`）注册 14 个 `query_ovlab_*` 工具（含波动率/期货期限结构、K线/ATM隐波、合约搜索、资金流、波动率曲面，前端虽部分未展示但 AI 可查），问 AI / MCP / 辩论均可调用。缓存分层：行情/概览 5 分钟、波动率曲面 2 分钟、合约搜索 60 秒、合约元信息/到期月份 30 分钟、交易所/板块/节假日 1 小时、实时 K 线 / 最新 bar / flow-data 不缓存。**只客观呈现公开数据，不推荐、不预测、不评分。**
+
 > 数据均来自公开源。Vibe-Research 只做客观信息整理与公开榜单呈现（连板股 / 成交额榜等，与东财 / 同花顺同款客观数据），**只呈现事实、不推荐个股、不预测涨跌、不给买卖时机、不做主观评分**；用这些数据做什么分析、看什么方向，由你和你自己的 AI 决定。
 
 ## 架构
@@ -116,6 +135,7 @@ Vibe-Research/
 │   ├── gstock.py        美股 / 港股数据（移植自 global-stock-data）
 │   ├── newsradar.py     资讯雷达（移植自 investment-news）
 │   ├── market.py        市场情绪 + 板块资金流 + 全球指数
+│   ├── ovlab.py         期权 / 期货波动率（移植自 openvlab.cn 爬虫）
 │   ├── portfolio.py     持仓 + 已清仓（存本地用户目录）
 │   ├── tools.py         AI 工具层（23 个数据工具，chat / MCP / debate 共用）
 │   ├── chat.py          系统 AI（OpenAI 兼容 function-calling）
@@ -128,6 +148,17 @@ Vibe-Research/
 **分级依赖**：行情（腾讯）+ 研报 / 公告（东财）**秒装可用**；akshare / mootdx 惰性导入，缺失时对应端点返回 501 + 安装提示，不拖垮服务。
 
 ## 快速开始
+
+### Windows（双击 bat，无需 venv）
+
+分别双击项目根目录下的两个脚本（各开一个窗口）：
+
+- `start-backend.bat` — 后端 `:8900`（系统 Python 直接装依赖并启动）
+- `start-frontend.bat` — 前端 `:5899`（缺 `node_modules` 时自动 `npm install`）
+
+浏览器打开 http://localhost:5899
+
+### macOS / Linux
 
 ```bash
 # 后端（:8900）

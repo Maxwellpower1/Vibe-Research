@@ -56,7 +56,7 @@ function pctColored(v: unknown): string {
   return n > 0 ? `+${n.toFixed(2)}` : n.toFixed(2);
 }
 
-// —— 通用排序：数值优先, 否则字符串. null/缺失排末尾 ——
+// —— 通用排序: 数值优先, 否则字符串. null/缺失排末尾 ——
 type SortState<T> = { key: keyof T | null; dir: "asc" | "desc" };
 
 function sortRows<T extends Record<string, unknown>>(rows: T[], sort: SortState<T>): T[] {
@@ -78,7 +78,7 @@ function nextSort<T>(cur: SortState<T>, key: keyof T): SortState<T> {
   return { key: null, dir: "desc" };
 }
 
-// —— 自动刷新 hook：开关 + 间隔, 页面隐藏时暂停, 切回时立即刷新 ——
+// —— 自动刷新 hook: 开关 + 间隔, 页面隐藏时暂停, 切回时立即刷新 ——
 function useAutoRefresh(load: () => Promise<void>, opts: { defaultOn?: boolean; defaultMs?: number } = {}) {
   const { defaultOn = true, defaultMs = 60000 } = opts;
   const [auto, setAuto] = useState(defaultOn);
@@ -156,7 +156,7 @@ function AutoRefreshBar({ auto, setAuto, ms, setMs, lastUpdate, onRefresh, refre
   );
 }
 
-// —— 结构化渲染辅助：dto 视图 ——
+// —— 结构化渲染辅助: dto 视图 ——
 
 function fmt(v: unknown, digits = 2): string {
   const n = num(v);
@@ -992,7 +992,7 @@ function WarehousePanel() {
   );
 }
 
-// —— 轻量行情图表：K 线主图 + ATM 隐波副图 + 实时刷新 ——
+// —— 轻量行情图表: K 线主图 + ATM 隐波副图 + 实时刷新 ——
 const RESOLUTIONS = [
   { v: "1", label: "分时" }, { v: "5", label: "5日" }, { v: "1D", label: "日线" },
 ];

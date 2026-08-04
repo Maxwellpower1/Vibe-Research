@@ -1,4 +1,4 @@
-"""OpenVlab 数据层 —— 期权 / 期货波动率市场数据（移植自 openvlab.cn 爬虫）.
+"""OpenVlab 数据层 —— 期权 / 期货波动率市场数据(移植自 openvlab.cn 爬虫).
 
 数据源: https://www.openvlab.cn/api/* (公开 REST, 无鉴权)
 - /api/ctamap-all          市场页主表格, 全部品种概览
@@ -307,6 +307,7 @@ def get_product_exps(prod_und: str | None = None) -> list[dict[str, Any]]:
         cache_key,
         lambda: _get("product-exps", params=params),
         valid=lambda v: isinstance(v, list) and len(v) > 0,
+        ttl=1800,
     )
 
 
@@ -316,6 +317,7 @@ def get_exchange_info() -> list[dict[str, Any]]:
         "ovlab_exchange_info",
         lambda: _get("exchange-info"),
         valid=lambda v: isinstance(v, list) and len(v) > 0,
+        ttl=3600,
     )
 
 
@@ -325,6 +327,7 @@ def get_sector_info() -> list[dict[str, Any]]:
         "ovlab_sector_info",
         lambda: _get("sector-info"),
         valid=lambda v: isinstance(v, list) and len(v) > 0,
+        ttl=3600,
     )
 
 
@@ -334,6 +337,7 @@ def get_next_trading_day() -> str:
         "ovlab_next_trading_day",
         lambda: _get("next-trading-day"),
         valid=lambda v: isinstance(v, str) and bool(v),
+        ttl=3600,
     )
 
 
@@ -346,6 +350,7 @@ def get_holidays(exchange: str) -> Any:
         f"ovlab_holidays::{exchange}",
         lambda: _get(f"holidays/{exchange}"),
         valid=lambda v: bool(v),
+        ttl=3600,
     )
 
 
@@ -358,6 +363,7 @@ def get_expired(prod_und: str) -> dict[str, Any]:
         f"ovlab_expired::{prod_und}",
         lambda: _get(f"expired/{prod_und}"),
         valid=lambda v: isinstance(v, dict),
+        ttl=1800,
     )
 
 
@@ -391,13 +397,12 @@ def get_instrument_series_batch(instruments: list[dict[str, Any]]) -> Any:
 # 轻量行情图表 (chart/light) —— K 线 / 隐波 / 最新bar / 合约信息 / 曲面
 # ---------------------------------------------------------------------------
 
-def get_kline_history(symbol: str, resolution: str = "1D",
-                      from_ts: int | None = None, to_ts: int | None = None) -> dict[str, Any]:
-    """K 线历史 (history, GET).
+def _history_get(path: str, symbol: str, resolution: str = "1D",
+                  from_ts: int | None = None, to_ts: int | None = None) -> dict[str, Any]:
+    """K 线 / 隐波历史公共拉取 (history / history-atmvol, GET).
 
     symbol: 合约代码如 SC2609 / 510300; resolution: 1D / 1H / 5m / 1m 等;
-    from_ts / to_ts: Unix 秒, 默认近 1 年. 返回 {data:[{trade_date,open,high,low,close,...}]}.
-    不缓存 (时间范围多变, 实时段会更新).
+    from_ts / to_ts: Unix 秒, 默认近 1 年. 不缓存 (时间范围多变, 实时段会更新).
     """
     sym = (symbol or "").strip()
     if not sym:
@@ -409,27 +414,25 @@ def get_kline_history(symbol: str, resolution: str = "1D",
         "from": from_ts if from_ts is not None else now - 365 * 86400,
         "to": to_ts if to_ts is not None else now,
     }
-    return _get("history", params=params)
+    return _get(path, params=params)
+
+
+def get_kline_history(symbol: str, resolution: str = "1D",
+                      from_ts: int | None = None, to_ts: int | None = None) -> dict[str, Any]:
+    """K 线历史 (history, GET).
+
+    返回 {data:[{trade_date,open,high,low,close,...}]}. 不缓存.
+    """
+    return _history_get("history", symbol, resolution, from_ts, to_ts)
 
 
 def get_atmvol_history(symbol: str, resolution: str = "1D",
                        from_ts: int | None = None, to_ts: int | None = None) -> dict[str, Any]:
     """ATM 隐含波动率历史 (history-atmvol, GET).
 
-    参数同 get_kline_history. 返回 {data:[[date, atmvol], ...]}.
-    不缓存.
+    参数同 get_kline_history. 返回 {data:[[date, atmvol], ...]}. 不缓存.
     """
-    sym = (symbol or "").strip()
-    if not sym:
-        return {"data": []}
-    now = int(time.time())
-    params = {
-        "symbol": sym,
-        "resolution": resolution or "1D",
-        "from": from_ts if from_ts is not None else now - 365 * 86400,
-        "to": to_ts if to_ts is not None else now,
-    }
-    return _get("history-atmvol", params=params)
+    return _history_get("history-atmvol", symbol, resolution, from_ts, to_ts)
 
 
 def get_last_bar(code: str) -> dict[str, Any]:
@@ -443,11 +446,14 @@ def get_last_bar(code: str) -> dict[str, Any]:
 def search_symbols(keyword: str = "", limit: int = 30) -> list[dict[str, Any]]:
     """标的搜索 (search-symbols, GET). keyword 模糊匹配, 返回合约元信息列表. 短缓存 60s."""
     kw = (keyword or "").strip()
-    params = {"keyword": kw} if kw else {}
+    params: dict[str, Any] = {"keyword": kw} if kw else {}
+    if limit and limit > 0:
+        params["limit"] = limit
     return _cached(
         f"ovlab_search::{kw}::{limit}",
         lambda: _get("search-symbols", params=params) or [],
         valid=lambda v: isinstance(v, list),
+        ttl=60,
     )
 
 
@@ -460,6 +466,7 @@ def get_symbol_info(code: str) -> dict[str, Any]:
         f"ovlab_symbol::{code}",
         lambda: _get(f"symbol/{code}"),
         valid=lambda v: isinstance(v, dict) and bool(v),
+        ttl=1800,
     )
 
 
@@ -472,6 +479,7 @@ def get_volatility_surface(product: str) -> dict[str, Any]:
         f"ovlab_volsurface::{p}",
         lambda: _get(f"volatility-surface/{p}"),
         valid=lambda v: isinstance(v, dict) and bool(v),
+        ttl=120,
     )
 
 
@@ -488,6 +496,7 @@ def get_surfacemap(params: dict[str, Any] | None = None) -> dict[str, Any]:
         key,
         lambda: _get("surfacemap", params=p),
         valid=lambda v: isinstance(v, dict) and bool(v),
+        ttl=120,
     )
 
 

@@ -13,6 +13,8 @@ chat.py / mcp_server.py / debate.py 共用本模块，新增工具只需改这�
 
 from __future__ import annotations
 
+from typing import Any
+
 import astock
 import gstock
 import market
@@ -154,6 +156,29 @@ TOOLS: list[dict] = [
         "direction": {"type": "string", "enum": ["C", "P"], "description": "kind=option 时必填, C=Call P=Put"},
         "day": {"type": "string", "description": "scope=details 时必填, YYYY-MM-DD; products 返回 last_trading_day"}},
        []),
+    _t("query_ovlab_chart",
+       "查K线/ATM隐波历史(OpenVlab history/history-atmvol): 前端轻量图表同源数据。kind=kline K线OHLC+持仓+成交量 / atmvol ATM隐含波动率。symbol 合约代码如 SC2609, resolution 1D/1/5(日线/分时/5日), from/to Unix秒可选默认近1年。",
+       {"kind": {"type": "string", "enum": ["kline", "atmvol"], "description": "kline=K线, atmvol=ATM隐波"},
+        "symbol": {"type": "string", "description": "合约代码, 如 SC2609 / 510300"},
+        "resolution": {"type": "string", "description": "1D 日线 / 1 分时 / 5 5日, 默认 1D"},
+        "from_ts": {"type": "integer", "description": "可选, Unix 秒起点"},
+        "to_ts": {"type": "integer", "description": "可选, Unix 秒终点"}},
+       ["kind", "symbol"]),
+    _t("query_ovlab_search",
+       "搜OpenVlab合约/标的(search-symbols): keyword 模糊匹配, 返回合约元信息列表(ticker/name/exchange/type/到期日等)。找具体合约代码用。",
+       {"keyword": {"type": "string", "description": "关键词, 如 SC / 沪铜 / 510300"},
+        "limit": {"type": "integer", "description": "可选, 返回条数上限, 默认 30"}},
+       ["keyword"]),
+    _t("query_ovlab_flow_data",
+       "查期权异动资金流明细分页(OpenVlab flow-data, POST): 合约/最新价/涨跌幅/持仓量/持仓变化/成交量/成交额/买卖盘占比/OTM/DTE, 可按品种筛选。不缓存。",
+       {"product": {"type": "string", "description": "可选, 品种筛选如 IO"},
+        "page": {"type": "integer", "description": "页码, 默认 1"},
+        "page_size": {"type": "integer", "description": "每页条数, 默认 50"}},
+       []),
+    _t("query_ovlab_vol_surface",
+       "查波动率曲面(OpenVlab volatility-surface): 按到期月分组的 T 型报价/持仓数据。product 品种如 SC。缓存 2 分钟。",
+       {"product": {"type": "string", "description": "品种代码, 如 SC / IO"}},
+       ["product"]),
 ]
 
 TOOL_NAMES = [t["function"]["name"] for t in TOOLS]
@@ -558,6 +583,53 @@ def _ovlab_position(args: dict) -> dict:
     return {"error": f"未知 scope: {scope}"}
 
 
+def _ovlab_chart(args: dict) -> dict:
+    """K线 / ATM隐波历史统一入口."""
+    kind = str(args.get("kind") or "kline").lower()
+    symbol = str(args.get("symbol", "")).strip()
+    if not symbol:
+        return {"error": "symbol 必填"}
+    resolution = str(args.get("resolution") or "1D")
+    from_ts = args.get("from_ts")
+    to_ts = args.get("to_ts")
+    if from_ts is not None:
+        from_ts = int(from_ts)
+    if to_ts is not None:
+        to_ts = int(to_ts)
+    if kind == "atmvol":
+        return ovlab.get_atmvol_history(symbol, resolution, from_ts, to_ts) or {"error": "ATM隐波历史暂无数据"}
+    return ovlab.get_kline_history(symbol, resolution, from_ts, to_ts) or {"error": "K线历史暂无数据"}
+
+
+def _ovlab_search(args: dict) -> dict:
+    """合约搜索."""
+    kw = str(args.get("keyword", "")).strip()
+    if not kw:
+        return {"error": "keyword 必填"}
+    limit = args.get("limit")
+    limit = int(limit) if limit else 30
+    return {"data": ovlab.search_symbols(kw, limit) or []}
+
+
+def _ovlab_flow_data(args: dict) -> dict:
+    """异动资金流分页."""
+    product = str(args.get("product", "")).strip() or None
+    page = int(args.get("page") or 1)
+    page_size = int(args.get("page_size") or 50)
+    body: dict[str, Any] = {"page": page, "page_size": page_size}
+    if product:
+        body["product"] = product
+    return ovlab.get_flow_data(body=body) or {"error": "异动资金流暂无数据"}
+
+
+def _ovlab_vol_surface(args: dict) -> dict:
+    """波动率曲面."""
+    product = str(args.get("product", "")).strip()
+    if not product:
+        return {"error": "product 必填"}
+    return ovlab.get_volatility_surface(product) or {"error": "波动率曲面暂无数据"}
+
+
 # name -> 执行函数。绝大多数是「调后端函数 + 裁剪」，复杂的抽成上面的私有函数。
 _HANDLERS = {
     "query_quote": lambda a: astock.tencent_quote([str(c) for c in a.get("codes", [])]),
@@ -601,6 +673,10 @@ _HANDLERS = {
     "query_ovlab_product_exps": lambda a: ovlab.get_product_exps(a.get("prod_und")) or {"error": "合约月份暂无数据"},
     "query_ovlab_meta": lambda a: _ovlab_meta(a),
     "query_ovlab_position": lambda a: _ovlab_position(a),
+    "query_ovlab_chart": lambda a: _ovlab_chart(a),
+    "query_ovlab_search": lambda a: _ovlab_search(a),
+    "query_ovlab_flow_data": lambda a: _ovlab_flow_data(a),
+    "query_ovlab_vol_surface": lambda a: _ovlab_vol_surface(a),
 }
 
 
