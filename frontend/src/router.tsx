@@ -10,6 +10,7 @@ import { StockData } from "@/pages/StockData";
 import { Watchlist } from "@/pages/Watchlist";
 import { MyReports } from "@/pages/MyReports";
 import { Notes } from "@/pages/Notes";
+import { Ovlab } from "@/pages/Ovlab";
 import { Settings } from "@/pages/Settings";
 
 export const router = createBrowserRouter([
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
       { path: "/debate", element: <Debate /> },
       { path: "/watchlist", element: <Watchlist /> },
       { path: "/my-reports", element: <MyReports /> },
+      { path: "/ovlab", element: <Ovlab /> },
       { path: "/notes", element: <Notes /> },
       { path: "/settings", element: <Settings /> },
     ],

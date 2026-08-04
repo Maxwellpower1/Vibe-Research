@@ -130,4 +130,48 @@
 
   /* 暖橙光文字 */
   .text-glow { text-shadow: 0 0 18px hsl(var(--primary) / 0.45); }
+
+  /* —— 数据表格：斑马纹 + sticky 表头 + 暖橙 hover 指示条 —— */
+  .data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: hsl(var(--muted) / 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: hsl(var(--muted-foreground));
+    font-weight: 500;
+    white-space: nowrap;
+    padding: 0.5rem 0.625rem;
+    text-align: left;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .data-table tbody tr {
+    transition: background 0.15s ease;
+    border-top: 1px solid hsl(var(--border) / 0.35);
+  }
+  .data-table tbody tr:nth-child(even) {
+    background: hsl(var(--muted) / 0.16);
+  }
+  .data-table tbody tr:hover {
+    background: hsl(var(--primary) / 0.07);
+    box-shadow: inset 2px 0 0 hsl(var(--primary));
+  }
+  .data-table td {
+    padding: 0.375rem 0.625rem;
+    white-space: nowrap;
+  }
+  /* 数值列右对齐 + 等宽数字 */
+  .data-table .num { text-align: right; }
+  /* 空值弱化 */
+  .data-table .nil { color: hsl(var(--muted-foreground) / 0.5); }
+  /* 首尾行圆角贴合容器 */
+  .data-table tbody tr:first-child td { border-top: none; }
 }

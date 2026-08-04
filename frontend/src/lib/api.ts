@@ -243,6 +243,145 @@ export interface HkCashflow {
   currency: string | null; item_order: string[]; periods: HkCashflowPeriod[];
 }
 
+// OpenVlab 期权 / 期货波动率市场数据（移植自 openvlab.cn 爬虫, 公开 REST 接口）
+export interface OvlabMarketRow {
+  product_alias?: string; prodUnd?: string; product?: string;
+  exchange?: string; sector_alias?: string; sector?: string;
+  price?: number | string; ctn?: number | string;
+  atmv_current?: number | string; atmv_1dchg?: number | string; atmv_percentile?: number | string;
+  rv22?: number | string; valphaT?: number | string; carry?: number | string;
+  skew_current?: number | string; skew_1dchg?: number | string; skew_percentile?: number | string;
+  frontfwd_mom?: number | string; exp?: string; expiry_date?: string;
+  last_time?: string; has_night_trading?: boolean | number; is_overseas?: boolean | number;
+  [k: string]: unknown;
+}
+export type OvlabDetail = Record<string, unknown>;
+export type OvlabVolatilityTs = Record<string, unknown>;
+export type OvlabFutureTs = Record<string, unknown>;
+export type OvlabFutureTsAll = Record<string, unknown>;
+export interface OvlabFlowAlert {
+  time?: string; instrument?: string; contract_code?: string;
+  rule_id?: string; side?: string; price?: number | string;
+  ctn?: string; open_interest?: number; window_volume?: number;
+  window_premium?: number; pct_change?: string;
+  [k: string]: unknown;
+}
+export interface OvlabWarehouseHistory {
+  last_update_time?: string; value?: unknown; category?: string;
+  ratioData?: unknown;
+  [k: string]: unknown;
+}
+// 异动资金流 (flow-data)
+export interface OvlabFlowDataRow {
+  product_alias?: string; full_name?: string; product_und?: string;
+  sector?: string; exchange?: string; instrument?: string;
+  last_trade_price?: number; ctnPct?: number; underlying_price?: number;
+  otmPct?: number; volume?: number; volume_value?: number;
+  oi?: number; prevOi?: number; oiChange?: number; oiChangePct?: number; oiChangeVal?: number;
+  strikePrice?: number; optType?: string; dte?: number;
+  trade_at_ask?: number; trade_at_bid?: number; trade_at_mid?: number;
+  ask_percentage?: number; bid_percentage?: number; mid_percentage?: number;
+  contract_code?: string;
+  [k: string]: unknown;
+}
+export interface OvlabFlowData {
+  data: OvlabFlowDataRow[];
+  totalCount?: number; page?: number; pageSize?: number; totalPages?: number;
+}
+export interface OvlabProductExpExpiry { exp?: number; expDate?: string; limit_up?: number; limit_down?: number; [k: string]: unknown }
+export interface OvlabProductExp {
+  sector?: string; sector_alias?: string; gui_order?: number;
+  product?: string; product_und?: string; product_alias?: string;
+  symbol?: string; symbol_und?: string; has_night_trading?: number;
+  is_overseas?: string; exchange?: string;
+  exps?: OvlabProductExpExpiry[];
+  [k: string]: unknown;
+}
+export interface OvlabExchangeInfo { code?: string; name?: string; [k: string]: unknown }
+export interface OvlabSectorInfo { code?: string; name?: string; [k: string]: unknown }
+
+// 轻量行情图表
+export interface OvlabKlineBar {
+  trade_date: string; ts_code?: string;
+  open: number; high: number; low: number; close: number;
+  pre_close?: number; settle?: number; change1?: number; change2?: number;
+  vol?: number; amount?: number; oi?: number; oi_chg?: number;
+  [k: string]: unknown;
+}
+export interface OvlabKlineHistory { data: OvlabKlineBar[] }
+export interface OvlabAtmvolHistory { data: Array<[string, number]> }
+export interface OvlabLastBar {
+  close: number; open: number; high: number; low: number;
+  oi?: number; vol?: number; pre_close?: number; pre_close_1w?: number;
+  trade_date?: string; [k: string]: unknown;
+}
+export interface OvlabSymbolInfo {
+  ticker?: string; name?: string; exchange?: string; description?: string;
+  sector?: string; type?: string; pricescale?: number; minmov?: number;
+  session?: string; expiration_date?: string; [k: string]: unknown;
+}
+export interface OvlabSearchItem {
+  ticker?: string; name?: string; exchange?: string; description?: string;
+  sector?: string; type?: string; pricescale?: number; minmov?: number;
+  session?: string; expiration_date?: string; [k: string]: unknown;
+}
+export type OvlabVolSurface = Record<string, Record<string, unknown>>;
+export type OvlabSkewmap = Record<string, Record<string, unknown>>;
+export type OvlabSurfacemap = Record<string, Record<string, unknown>>;
+
+// 持仓排名 (flow/option-flow)
+export interface OvlabPositionProduct {
+  product: string;
+  product_alias: string;
+  exchange_name: string;
+  codes: string[];
+}
+export interface OvlabPositionProducts {
+  last_trading_day: string;
+  products: OvlabPositionProduct[];
+}
+export interface OvlabRankRow {
+  id?: number | null;
+  code?: string;
+  day?: string;
+  underlyingCode?: string;
+  rankTypeId?: number;
+  rank?: number;
+  memberName?: string;
+  indicator?: number;
+  indicatorIncrease?: number;
+  [k: string]: unknown;
+}
+export interface OvlabRankChart {
+  style?: Record<string, unknown>;
+  brokers?: unknown[];
+  current?: unknown[];
+  change?: unknown[];
+  increase?: unknown[];
+  decrease?: unknown[];
+  [k: string]: unknown;
+}
+export interface OvlabFuturePositionDetails {
+  codes?: string[];
+  futureName?: string;
+  instrument?: string;
+  tradingDay?: string;
+  days?: string[];
+  short_rank_table?: OvlabRankRow[];
+  long_rank_table?: OvlabRankRow[];
+  net_short_rank_table?: OvlabRankRow[];
+  net_long_rank_table?: OvlabRankRow[];
+  short_rank_chart?: OvlabRankChart;
+  long_rank_chart?: OvlabRankChart;
+  net_short_rank_chart?: OvlabRankChart;
+  net_long_rank_chart?: OvlabRankChart;
+  maxNetShort?: { memberName?: string; netIndicator?: number };
+  maxNetLong?: { memberName?: string; netIndicator?: number };
+  status?: number;
+  [k: string]: unknown;
+}
+export type OvlabOptionPositionDetails = Record<string, unknown>;
+
 export const api = {
   health: () => get<{ ok: boolean }>("/health"),
   indices: () => get<IndexQuote[]>("/indices"),
@@ -283,4 +422,58 @@ export const api = {
   uploadReport: (name: string, contentB64: string) =>
     request<MyReport>("/myreports", "POST", { name, content_b64: contentB64 }),
   deleteReport: (id: string) => request<{ ok: boolean }>(`/myreports/${id}`, "DELETE"),
+  // OpenVlab 期权 / 期货波动率
+  ovlabMarket: () => get<OvlabMarketRow[]>("/ovlab/market"),
+  ovlabDetail: (prodUnd: string, exps?: string) =>
+    get<OvlabDetail>(`/ovlab/detail?prod_und=${encodeURIComponent(prodUnd)}${exps ? `&exps=${encodeURIComponent(exps)}` : ""}`),
+  ovlabVolatilityTs: () => get<OvlabVolatilityTs>("/ovlab/volatility-ts"),
+  ovlabFutureTsAll: () => get<OvlabFutureTsAll>("/ovlab/future-ts-all"),
+  ovlabFutureTs: (prodUnd: string) => get<OvlabFutureTs>(`/ovlab/future-ts?prod_und=${encodeURIComponent(prodUnd)}`),
+  ovlabFlowAlert: () => get<OvlabFlowAlert[]>("/ovlab/flow-alert"),
+  ovlabFlowData: (product?: string, page = 1, pageSize = 50) =>
+    request<OvlabFlowData>("/ovlab/flow-data", "POST", { product: product?.trim() || null, page, page_size: pageSize }),
+  ovlabWarehouseHistory: (product: string) =>
+    request<OvlabWarehouseHistory>("/ovlab/warehouse-history", "POST", { product }),
+  ovlabSeasonalHistory: (years?: string[], product?: string) =>
+    request<Record<string, unknown>>("/ovlab/warehouse-seasonal", "POST", { years, product }),
+  ovlabProductExps: (prodUnd?: string) =>
+    get<OvlabProductExp[]>(`/ovlab/product-exps${prodUnd ? `?prod_und=${encodeURIComponent(prodUnd)}` : ""}`),
+  ovlabExchangeInfo: () => get<OvlabExchangeInfo[]>("/ovlab/exchange-info"),
+  ovlabSectorInfo: () => get<OvlabSectorInfo[]>("/ovlab/sector-info"),
+  ovlabNextTradingDay: () => get<string>("/ovlab/next-trading-day"),
+  ovlabHolidays: (exchange: string) => get<unknown>(`/ovlab/holidays?exchange=${encodeURIComponent(exchange)}`),
+  // 轻量行情图表
+  ovlabKlineHistory: (symbol: string, resolution = "1D", fromTs?: number, toTs?: number) => {
+    const p = new URLSearchParams({ symbol, resolution });
+    if (fromTs != null) p.set("from_ts", String(fromTs));
+    if (toTs != null) p.set("to_ts", String(toTs));
+    return get<OvlabKlineHistory>(`/ovlab/kline-history?${p}`);
+  },
+  ovlabAtmvolHistory: (symbol: string, resolution = "1D", fromTs?: number, toTs?: number) => {
+    const p = new URLSearchParams({ symbol, resolution });
+    if (fromTs != null) p.set("from_ts", String(fromTs));
+    if (toTs != null) p.set("to_ts", String(toTs));
+    return get<OvlabAtmvolHistory>(`/ovlab/atmvol-history?${p}`);
+  },
+  ovlabLastBar: (code: string) => get<OvlabLastBar>(`/ovlab/last-bar?code=${encodeURIComponent(code)}`),
+  ovlabSearchSymbols: (keyword: string) =>
+    get<OvlabSearchItem[]>(`/ovlab/search-symbols?keyword=${encodeURIComponent(keyword)}`),
+  ovlabSymbolInfo: (code: string) => get<OvlabSymbolInfo>(`/ovlab/symbol-info?code=${encodeURIComponent(code)}`),
+  ovlabVolatilitySurface: (product: string) =>
+    get<OvlabVolSurface>(`/ovlab/volatility-surface?product=${encodeURIComponent(product)}`),
+  ovlabSkewmap: (selectedExpiries?: Record<string, unknown>) =>
+    request<OvlabSkewmap>("/ovlab/skewmap", "POST", { selectedExpiries: selectedExpiries ?? {} }),
+  ovlabSurfacemap: (product?: string) =>
+    get<OvlabSurfacemap>(`/ovlab/surfacemap${product ? `?product=${encodeURIComponent(product)}` : ""}`),
+  // 持仓排名
+  ovlabOptionPositionProducts: () => get<OvlabPositionProducts>(`/ovlab/option-position-products`),
+  ovlabOptionPositionDetails: (product: string, code: string, direction: "C" | "P", day: string) => {
+    const p = new URLSearchParams({ product, code, direction, day });
+    return get<OvlabOptionPositionDetails>(`/ovlab/option-position-details?${p}`);
+  },
+  ovlabFuturePositionProducts: () => get<OvlabPositionProducts>(`/ovlab/future-position-products`),
+  ovlabFuturePositionDetails: (product: string, code: string, day: string) => {
+    const p = new URLSearchParams({ product, code, direction: "0", day });
+    return get<OvlabFuturePositionDetails>(`/ovlab/future-position-details?${p}`);
+  },
 };

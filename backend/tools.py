@@ -17,6 +17,7 @@ import astock
 import gstock
 import market
 import newsradar
+import ovlab
 
 # ——— schema 简写：让 20+ 个工具定义保持一屏可读 ———
 
@@ -110,6 +111,49 @@ TOOLS: list[dict] = [
        "查港股现金流量表：经营/投资/筹资活动现金流净额、现金及等价物净增加、期初/期末现金，多期、附同比。仅港股，代码用数字如 00700。",
        {"symbol": {"type": "string", "description": "港股代码，如 00700"}},
        ["symbol"]),
+
+    # —— 期权 / 期货波动率（OpenVlab, 公开数据）——
+    _t("query_ovlab_market",
+       "查期权/期货波动率市场概览(OpenVlab): 全部品种的现价/涨跌幅/平值隐波/隐波变化/隐波百分位/22日实波/VolAlphaT/Carry/偏度及百分位/近远月动量/主力合约/到期日/夜盘/是否境外。看波动率全景、找高/低波品种用。",
+       {"limit": {"type": "integer", "description": "返回前 N 个品种，默认全部，按原始顺序"}}),
+    _t("query_ovlab_detail",
+       "查单个期权/期货标的的详细数据(OpenVlab dto): 含主力合约月份、希腊字母、隐波曲线、各合约报价等。prod_und 用标的代码如 510300。",
+       {"prod_und": {"type": "string", "description": "标的代码 (prodUnd)，如 510300 / 510050"},
+        "exps": {"type": "array", "items": {"type": "string"}, "description": "可选, 指定主力合约月份列表"}},
+       ["prod_und"]),
+    _t("query_ovlab_volatility_ts",
+       "查波动率期限结构汇总(OpenVlab volatility-ts-all): 各标的的隐波期限结构，看波动率随到期日的形态。部分字段可能受限。"),
+    _t("query_ovlab_future_ts",
+       "查期货期限结构(OpenVlab future-ts): scope=all 全品种汇总 / single 单品种(prod_und 如 MA)。期货版波动率期限结构。",
+       {"scope": {"type": "string", "enum": ["all", "single"], "description": "all=全品种汇总, single=单品种"},
+        "prod_und": {"type": "string", "description": "scope=single 时必填, 标的代码如 MA"}}),
+    _t("query_ovlab_flow_alert",
+       "查期权异动榜(OpenVlab flow-alert): 近期异动合约清单, 含合约/触发规则/价格/涨跌/持仓量/窗口成交量/权利金。看市场情绪突变用。"),
+    _t("query_ovlab_warehouse_history",
+       "查单品种多年持仓历史(OpenVlab warehouse/history): product 如 MA。返回当前持仓 + year2013~2026 各年持仓 + ratioData + category。仓差/资金面/季节性分析用。",
+       {"product": {"type": "string", "description": "品种代码, 如 MA / CU / RB"}},
+       ["product"]),
+    _t("query_ovlab_seasonal_history",
+       "查全品种季节性持仓(OpenVlab warehouse/seasonal-history-all): 按年份分组的多品种持仓, 研究季节性规律用。years 留空取近 6 年。",
+       {"years": {"type": "array", "items": {"type": "string"}, "description": "年份字符串列表, 如 ['2023','2024','2025']"},
+        "product": {"type": "string", "description": "可选, 指定单品种"}}),
+    _t("query_ovlab_product_exps",
+       "查全品种合约月份列表(OpenVlab product-exps): 75 个品种各有哪些合约月份。查具体合约代码(K线/详情前置)用。prod_und 可选指定单品种。",
+       {"prod_und": {"type": "string", "description": "可选, 指定单品种"}}),
+    _t("query_ovlab_meta",
+       "查OpenVlab元数据: scope=exchange 交易所信息 / sector 板块信息 / next_trading_day 下一交易日 / holidays 节假日(需 exchange)。",
+       {"scope": {"type": "string", "enum": ["exchange", "sector", "next_trading_day", "holidays"],
+                  "description": "要查的元数据类型"},
+        "exchange": {"type": "string", "description": "scope=holidays 时必填, 交易所代码如 CZCE"}}),
+    _t("query_ovlab_position",
+       "查期权/期货持仓排名(OpenVlab option-position/future-position): 交易所每日公布的期货公司持仓排名榜。scope=products 品种列表 / details 持仓明细(买方/卖方/净多/净空排名+增减+净多净空第一)。kind=future 期货 / option 期权(需 direction C/P)。",
+       {"scope": {"type": "string", "enum": ["products", "details"], "description": "products=品种列表, details=持仓明细"},
+        "kind": {"type": "string", "enum": ["future", "option"], "description": "future=期货持仓, option=期权持仓"},
+        "product": {"type": "string", "description": "scope=details 时必填, 品种如 RB/IO"},
+        "code": {"type": "string", "description": "scope=details 时必填, 合约如 rb2608/IO2608"},
+        "direction": {"type": "string", "enum": ["C", "P"], "description": "kind=option 时必填, C=Call P=Put"},
+        "day": {"type": "string", "description": "scope=details 时必填, YYYY-MM-DD; products 返回 last_trading_day"}},
+       []),
 ]
 
 TOOL_NAMES = [t["function"]["name"] for t in TOOLS]
@@ -335,6 +379,185 @@ def _radar(args: dict):
             "tracks": [i.get("name") for i in (d.get("industries") or [])], "items": out}
 
 
+# —— OpenVlab 期权 / 期货波动率（裁剪逻辑）——
+_OVLAB_MARKET_KEYS = (
+    "product_alias", "prodUnd", "exchange", "sector_alias",
+    "price", "ctn", "atmv_current", "atmv_1dchg", "atmv_percentile",
+    "rv22", "valphaT", "carry", "skew_current", "skew_percentile",
+    "exp", "expiry_date", "last_time", "has_night_trading", "is_overseas",
+)
+
+
+def _ovlab_market(args: dict) -> dict:
+    """市场概览: 全表可能几十上百行, 这里取关键字段 + 限制条数, 避免撑爆上下文。
+
+    同时附「隐波最高 / 最低 TOP5」「偏度最高 / 最低 TOP5」两个机械汇总,
+    让模型直接拿到密度而不是原始转储。
+    """
+    rows = ovlab.get_market_overview() or []
+    if not rows:
+        return {"error": "OpenVlab 市场概览暂无数据"}
+    limit = int(args.get("limit") or 0)
+    if limit > 0:
+        rows = rows[:limit]
+    items = [{k: r.get(k) for k in _OVLAB_MARKET_KEYS} for r in rows if isinstance(r, dict)]
+
+    def _num(v) -> float | None:
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            try:
+                return float(v)
+            except ValueError:
+                return None
+        return None
+
+    def _top(key: str, reverse: bool) -> list[dict]:
+        valid = [{"name": r.get("product_alias"), "code": r.get("prodUnd"),
+                 "val": n} for r in items if (n := _num(r.get(key))) is not None]
+        valid.sort(key=lambda x: x["val"], reverse=reverse)
+        return [{key: it["val"], "name": it["name"], "code": it["code"]} for it in valid[:5]]
+
+    return {
+        "total": len(items),
+        "items": items,
+        "atmv_top5": _top("atmv_current", True),
+        "atmv_bottom5": _top("atmv_current", False),
+        "skew_top5": _top("skew_current", True),
+        "skew_bottom5": _top("skew_current", False),
+    }
+
+
+def _ovlab_detail(args: dict) -> dict:
+    """单品种详情: 原始 dto 可能很大, 这里只回关键字段, 大数组截前若干条。
+
+    顶层字段保留; 对已知的大数组 (如 contracts / greeks / vol_curve) 截前 20 条,
+    其余字段原样透传, 让模型能看到结构又不被淹没。
+    """
+    prod_und = str(args.get("prod_und", "")).strip()
+    if not prod_und:
+        return {"error": "prod_und 不能为空"}
+    exps = a.get("exps") if isinstance(a := args.get("exps"), list) else None
+    data = ovlab.get_product_detail(prod_und, exps) or {}
+    if not data:
+        return {"error": f"未找到 OpenVlab 标的「{prod_und}」的详情"}
+    _ARRAY_TRUNCATE_KEYS = ("contracts", "greeks", "vol_curve", "vol_smile", "ts", "term_structure")
+    out: dict = {}
+    for k, v in data.items():
+        if isinstance(v, list) and k in _ARRAY_TRUNCATE_KEYS and len(v) > 20:
+            out[k] = v[:20]
+            out[f"_{k}_truncated"] = len(v)
+        else:
+            out[k] = v
+    return out
+
+
+def _ovlab_future_ts(args: dict) -> dict:
+    """期货期限结构: all=全品种(按品种分组的字典, 只回非空品种) / single=单品种."""
+    scope = str(args.get("scope") or "all")
+    if scope == "single":
+        prod = str(args.get("prod_und", "")).strip()
+        if not prod:
+            return {"error": "scope=single 时 prod_und 必填"}
+        data = ovlab.get_future_term_structure(prod)
+        return data if data else {"error": f"未找到 {prod} 的期货期限结构"}
+    data = ovlab.get_future_term_structures_all() or {}
+    # 只保留非空品种, 避免空字典撑爆上下文
+    non_empty = {k: v for k, v in data.items() if v}
+    return {"total": len(data), "non_empty": len(non_empty), "products": non_empty}
+
+
+def _ovlab_flow_alert(args: dict) -> dict:
+    """异动榜: 数百条, 这里取关键字段 + 限制条数, 并附机械汇总(按规则计数)."""
+    from collections import Counter
+    rows = ovlab.get_flow_alerts() or []
+    if not rows:
+        return {"error": "异动榜暂无数据"}
+    keys = ("time", "instrument", "contract_code", "rule_id", "side", "price",
+            "ctn", "open_interest", "window_volume", "window_premium", "pct_change")
+    items = [{k: r.get(k) for k in keys} for r in rows if isinstance(r, dict)]
+    # 按规则计数, 看哪种异动最多
+    rule_count = Counter(r.get("rule_id") for r in items if r.get("rule_id"))
+    return {
+        "total": len(items),
+        "recent": items[:30],
+        "rule_count": dict(rule_count.most_common(10)),
+    }
+
+
+def _ovlab_warehouse_history(args: dict) -> dict:
+    """单品种持仓历史: 返回含 year20xx 多年, 这里只回当前值 + 汇总, 明细截断."""
+    product = str(args.get("product", "")).strip()
+    if not product:
+        return {"error": "product 必填"}
+    data = ovlab.get_warehouse_history(product) or {}
+    if not data:
+        return {"error": f"未找到 {product} 的持仓历史"}
+    # 提取各年汇总(每年取最后一条或value), 避免整块转储
+    years = {k: v for k, v in data.items() if k.startswith("year") and v}
+    return {
+        "product": product,
+        "last_update_time": data.get("last_update_time"),
+        "current_value": data.get("value"),
+        "category": data.get("category"),
+        "years_summary": years,
+        "ratio_data": data.get("ratioData"),
+    }
+
+
+def _ovlab_seasonal(args: dict) -> dict:
+    """季节性持仓: 全品种时只回品种清单 + 每品种年数, 不转储整块."""
+    years = a if isinstance(a := args.get("years"), list) else None
+    product = args.get("product")
+    data = ovlab.get_warehouse_seasonal_history_all(years, product) or {}
+    if not data:
+        return {"error": "季节性持仓暂无数据"}
+    # 每品种只回它有哪些年份的 key, 不回完整序列
+    summary = {k: list(v.keys()) if isinstance(v, dict) else type(v).__name__
+               for k, v in data.items()}
+    return {"products": list(data.keys()), "years_in_data": summary}
+
+
+def _ovlab_meta(args: dict) -> dict:
+    """元数据统一入口."""
+    scope = str(args.get("scope") or "")
+    if scope == "exchange":
+        return {"exchanges": ovlab.get_exchange_info()}
+    if scope == "sector":
+        return {"sectors": ovlab.get_sector_info()}
+    if scope == "next_trading_day":
+        return {"next_trading_day": ovlab.get_next_trading_day()}
+    if scope == "holidays":
+        ex = str(args.get("exchange", "")).strip()
+        if not ex:
+            return {"error": "scope=holidays 时 exchange 必填"}
+        return {"exchange": ex, "holidays": ovlab.get_holidays(ex)}
+    return {"error": f"未知 scope: {scope}"}
+
+
+def _ovlab_position(args: dict) -> dict:
+    """持仓排名统一入口 (option-position / future-position)."""
+    scope = str(args.get("scope") or "products")
+    kind = str(args.get("kind") or "future")
+    if scope == "products":
+        if kind == "option":
+            return ovlab.get_option_position_products() or {"error": "期权持仓品种暂无数据"}
+        return ovlab.get_future_position_products() or {"error": "期货持仓品种暂无数据"}
+    if scope == "details":
+        product = str(args.get("product", "")).strip()
+        code = str(args.get("code", "")).strip()
+        day = str(args.get("day", "")).strip()
+        if not (product and code and day):
+            return {"error": "scope=details 时 product/code/day 必填"}
+        if kind == "option":
+            direction = str(args.get("direction", "")).strip().upper()
+            if direction not in ("C", "P"):
+                return {"error": "kind=option 时 direction 必填 (C 或 P)"}
+            return ovlab.get_option_position_details(product, code, direction, day) or {"error": "该合约期权持仓明细暂无数据"}
+        return ovlab.get_future_position_details(product, code, "0", day) or {"error": "该合约期货持仓明细暂无数据"}
+    return {"error": f"未知 scope: {scope}"}
+
+
 # name -> 执行函数。绝大多数是「调后端函数 + 裁剪」，复杂的抽成上面的私有函数。
 _HANDLERS = {
     "query_quote": lambda a: astock.tencent_quote([str(c) for c in a.get("codes", [])]),
@@ -366,6 +589,18 @@ _HANDLERS = {
     "query_news_radar": _radar,
     "query_global_stock": lambda a: gstock.us_hk_stock(str(a.get("symbol", ""))) or {"error": "未找到该美股/港股/韩股代码"},
     "query_hk_cashflow": lambda a: gstock.hk_cashflow(str(a.get("symbol", ""))) or {"error": "未找到该港股现金流（仅港股支持）"},
+
+    # —— OpenVlab 期权 / 期货波动率 ——
+    "query_ovlab_market": lambda a: _ovlab_market(a),
+    "query_ovlab_detail": lambda a: _ovlab_detail(a),
+    "query_ovlab_volatility_ts": lambda a: ovlab.get_volatility_term_structures() or {"error": "波动率期限结构暂无数据"},
+    "query_ovlab_future_ts": lambda a: _ovlab_future_ts(a),
+    "query_ovlab_flow_alert": lambda a: _ovlab_flow_alert(a),
+    "query_ovlab_warehouse_history": lambda a: _ovlab_warehouse_history(a),
+    "query_ovlab_seasonal_history": lambda a: _ovlab_seasonal(a),
+    "query_ovlab_product_exps": lambda a: ovlab.get_product_exps(a.get("prod_und")) or {"error": "合约月份暂无数据"},
+    "query_ovlab_meta": lambda a: _ovlab_meta(a),
+    "query_ovlab_position": lambda a: _ovlab_position(a),
 }
 
 
