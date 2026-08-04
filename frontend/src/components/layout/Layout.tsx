@@ -167,9 +167,16 @@ export function Layout() {
         </div>
       </aside>
 
-      {/* Main */}
+      {/* Main: ovlab tables need a wider canvas; other pages keep the original reading width */}
       <main className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-6xl px-6 py-6">
+        <div
+          className={cn(
+            "mx-auto py-6",
+            pathname.startsWith("/ovlab")
+              ? "max-w-[1680px] px-3 sm:px-4"
+              : "max-w-6xl px-6",
+          )}
+        >
           <Outlet />
         </div>
       </main>

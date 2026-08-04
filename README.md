@@ -113,12 +113,12 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
   - **资金流** `POST /api/ovlab/flow-data` — 分页资金流
   - **持仓历史** `POST /api/ovlab/warehouse-history` — 单品种多年持仓（year2013~2026 + ratioData），仓差 / 季节性分析
   - **季节性持仓** `POST /api/ovlab/warehouse-seasonal` — 全品种按年份分组的持仓，季节性规律研究
-  - **K 线 / 价格波动率** `POST /api/ovlab/last-bars` · `POST /api/ovlab/price-volatility-series`（需具体合约代码）
+  - **K 线 / 价格波动率** `POST /api/ovlab/last-bars` · `POST /api/ovlab/price-volatility-series`（body: `{codes: ["MA:202609", ...]}`，返回当日分时价格+隐波序列；市场概览「走势」列同源，缓存 5 分钟）
   - **轻量行情图表**（移植自 `/chart/light`）`GET /api/ovlab/kline-history?symbol=SC2609&resolution=1D`（K 线 OHLC + 持仓 + 成交量）· `GET /api/ovlab/atmvol-history`（ATM 隐含波动率历史）· `GET /api/ovlab/last-bar?code=SC2609`（实时最新 bar）· `GET /api/ovlab/search-symbols?keyword=SC`（标的搜索）· `GET /api/ovlab/symbol-info?code=SC2609`（合约元信息：交易时段 / 价格精度 / 到期日）· `GET /api/ovlab/volatility-surface?product=SC`（波动率曲面）· `POST /api/ovlab/skewmap`（偏度图）· `GET /api/ovlab/surfacemap`（曲面图）
   - **持仓排名**（移植自 `/flow/option-flow`、`/future/position-ranking`）`GET /api/ovlab/option-position-products`（期权持仓品种列表）· `GET /api/ovlab/option-position-details?product=IO&code=IO2608&direction=C&day=2026-07-03`（期权持仓明细，方向 C/P）· `GET /api/ovlab/future-position-products`（期货持仓品种列表）· `GET /api/ovlab/future-position-details?product=RB&code=rb2608&direction=0&day=2026-08-03`（期货持仓明细：买方/卖方/净多/净空 4 张期货公司持仓排名表 + 增减 + 净多/净空第一）
   - **异动资金流** `POST /api/ovlab/flow-data`（期权异动明细分页：合约/最新价/涨跌幅/持仓量/持仓变化/成交量/成交额/买卖盘占比/OTM/DTE，可按品种筛选，不缓存）
   - **元数据** `GET /api/ovlab/product-exps`（合约月份）· `/exchange-info` · `/sector-info` · `/next-trading-day` · `/holidays?exchange=CZCE` · `/expired?prod_und=510300`
-- 前端「期权 / 波动率」页 8 个 tab：市场概览 / 单品种详情 / **轻量图表**（K 线主图 + ATM 隐波副图 + 实时刷新 + 周期切换）/ **T型报价**（期权链买卖价/最新价/涨跌幅）/ 异动榜 / **异动资金流**（期权异动明细分页表，持仓变化/买卖盘占比）/ 持仓历史 / **持仓排名**（期货/期权持仓排名榜，期货公司持仓 + 增减 + 净多/净空第一）。AI 工具层（`tools.py`）注册 14 个 `query_ovlab_*` 工具（含波动率/期货期限结构、K线/ATM隐波、合约搜索、资金流、波动率曲面，前端虽部分未展示但 AI 可查），问 AI / MCP / 辩论均可调用。缓存分层：行情/概览 5 分钟、波动率曲面 2 分钟、合约搜索 60 秒、合约元信息/到期月份 30 分钟、交易所/板块/节假日 1 小时、实时 K 线 / 最新 bar / flow-data 不缓存。**只客观呈现公开数据，不推荐、不预测、不评分。**
+- 前端「期权 / 波动率」页 8 个 tab：市场概览（含**走势预览**列：价格+隐波分时叠加迷你图，悬停放大，对齐 [openvlab.cn/market](https://www.openvlab.cn/market)）/ 单品种详情 / **轻量图表**（K 线主图 + ATM 隐波副图 + 实时刷新 + 周期切换）/ **T型报价**（期权链买卖价/最新价/涨跌幅）/ 异动榜 / **异动资金流**（期权异动明细分页表，持仓变化/买卖盘占比）/ 持仓历史 / **持仓排名**（期货/期权持仓排名榜，期货公司持仓 + 增减 + 净多/净空第一）。AI 工具层（`tools.py`）注册 14 个 `query_ovlab_*` 工具（含波动率/期货期限结构、K线/ATM隐波、合约搜索、资金流、波动率曲面，前端虽部分未展示但 AI 可查），问 AI / MCP / 辩论均可调用。缓存分层：行情/概览 5 分钟、走势预览序列 5 分钟、波动率曲面 2 分钟、合约搜索 60 秒、合约元信息/到期月份 30 分钟、交易所/板块/节假日 1 小时、实时 K 线 / 最新 bar / flow-data 不缓存。**只客观呈现公开数据，不推荐、不预测、不评分。**
 
 > 数据均来自公开源。Vibe-Research 只做客观信息整理与公开榜单呈现（连板股 / 成交额榜等，与东财 / 同花顺同款客观数据），**只呈现事实、不推荐个股、不预测涨跌、不给买卖时机、不做主观评分**；用这些数据做什么分析、看什么方向，由你和你自己的 AI 决定。
 

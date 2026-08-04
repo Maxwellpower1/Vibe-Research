@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import os
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -791,12 +791,16 @@ def ovlab_last_bars(req: CodesReq):
 
 
 class PriceVolSeriesReq(BaseModel):
-    codes: str
+    # Accept list (preferred) or JSON/comma string for older clients
+    codes: list[str] | str
 
 
 @app.post("/api/ovlab/price-volatility-series")
 def ovlab_price_volatility_series(req: PriceVolSeriesReq):
-    """OpenVlab 价格波动率序列 (price-volatility-series, POST)。codes 为逗号分隔合约代码。不缓存。"""
+    """OpenVlab 价格+隐波分时预览 (price-volatility-series)。
+
+    codes: 品种:到期月 列表, 如 [\"MA:202609\"], 或 JSON 字符串. 缓存 5 分钟.
+    """
     return _ovlab_call(lambda: ovlab.get_price_volatility_series(req.codes), "价格波动率序列")
 
 
@@ -841,31 +845,37 @@ def ovlab_expired(prod_und: str = Query(..., min_length=1, max_length=32, descri
 # —— 轻量行情图表 (chart/light) ——
 @app.get("/api/ovlab/kline-history")
 def ovlab_kline_history(
+    response: Response,
     symbol: str = Query(..., min_length=1, max_length=64, description="合约代码, 如 SC2609"),
     resolution: str = Query("1D", description="周期: 1D / 1H / 5m / 1m"),
     from_ts: int | None = Query(None, description="Unix 秒, 默认近 1 年"),
     to_ts: int | None = Query(None, description="Unix 秒, 默认当前"),
 ):
     """OpenVlab K 线历史 (history)。不缓存。"""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return _ovlab_call(lambda: ovlab.get_kline_history(symbol.strip(), resolution, from_ts, to_ts), "K 线历史")
 
 
 @app.get("/api/ovlab/atmvol-history")
 def ovlab_atmvol_history(
+    response: Response,
     symbol: str = Query(..., min_length=1, max_length=64, description="合约代码, 如 SC2609"),
     resolution: str = Query("1D"),
     from_ts: int | None = Query(None),
     to_ts: int | None = Query(None),
 ):
     """OpenVlab ATM 隐含波动率历史 (history-atmvol)。不缓存。"""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return _ovlab_call(lambda: ovlab.get_atmvol_history(symbol.strip(), resolution, from_ts, to_ts), "ATMV 历史")
 
 
 @app.get("/api/ovlab/last-bar")
 def ovlab_last_bar(
+    response: Response,
     code: str = Query(..., min_length=1, max_length=64, description="合约代码, 如 SC2609"),
 ):
     """OpenVlab 单合约最新 bar (last-bar/{code})。不缓存。"""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return _ovlab_call(lambda: ovlab.get_last_bar(code.strip()), "最新 bar")
 
 

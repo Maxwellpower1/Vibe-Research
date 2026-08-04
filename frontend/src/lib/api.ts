@@ -54,7 +54,7 @@ export async function downloadReport(id: string, name: string): Promise<void> {
 async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown): Promise<T> {
   let resp: Response;
   const headers: Record<string, string> = { ...authHeaders() };
-  const opts: RequestInit = { method };
+  const opts: RequestInit = { method, cache: "no-store" };
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
@@ -300,6 +300,15 @@ export interface OvlabProductExp {
 export interface OvlabExchangeInfo { code?: string; name?: string; [k: string]: unknown }
 export interface OvlabSectorInfo { code?: string; name?: string; [k: string]: unknown }
 
+/** Market hover preview: price + IV intraday series (price-volatility-series) */
+export interface OvlabPriceVolSeriesItem {
+  symbol?: string;
+  prices?: Array<[string, number]>;
+  volatilities?: Array<[string, number]>;
+  intervals?: Array<[string, string]>;
+  [k: string]: unknown;
+}
+
 // 轻量行情图表
 export interface OvlabKlineBar {
   trade_date: string; ts_code?: string;
@@ -474,20 +483,29 @@ export const api = {
   ovlabSectorInfo: () => get<OvlabSectorInfo[]>("/ovlab/sector-info"),
   ovlabNextTradingDay: () => get<string>("/ovlab/next-trading-day"),
   ovlabHolidays: (exchange: string) => get<unknown>(`/ovlab/holidays?exchange=${encodeURIComponent(exchange)}`),
-  // 轻量行情图表
+  // 轻量行情图表 (分时/5日实时变化, 加 _t 避免中间层缓存串周期)
   ovlabKlineHistory: (symbol: string, resolution = "1D", fromTs?: number, toTs?: number) => {
     const p = new URLSearchParams({ symbol, resolution });
     if (fromTs != null) p.set("from_ts", String(fromTs));
     if (toTs != null) p.set("to_ts", String(toTs));
+    if (resolution === "1" || resolution === "5") p.set("_t", String(Date.now()));
     return get<OvlabKlineHistory>(`/ovlab/kline-history?${p}`);
   },
   ovlabAtmvolHistory: (symbol: string, resolution = "1D", fromTs?: number, toTs?: number) => {
     const p = new URLSearchParams({ symbol, resolution });
     if (fromTs != null) p.set("from_ts", String(fromTs));
     if (toTs != null) p.set("to_ts", String(toTs));
+    if (resolution === "1" || resolution === "5") p.set("_t", String(Date.now()));
     return get<OvlabAtmvolHistory>(`/ovlab/atmvol-history?${p}`);
   },
   ovlabLastBar: (code: string) => get<OvlabLastBar>(`/ovlab/last-bar?code=${encodeURIComponent(code)}`),
+  /** Batch price + IV preview series. codes like ["MA:202609"].
+   *  Send as JSON string so both old (codes:str) and new (codes:list|str) backends accept it.
+   *  Upstream also expects codes as JSON.stringify(array). Cached 5min server-side. */
+  ovlabPriceVolatilitySeries: (codes: string[]) =>
+    request<OvlabPriceVolSeriesItem[]>("/ovlab/price-volatility-series", "POST", {
+      codes: JSON.stringify(codes),
+    }),
   ovlabSearchSymbols: (keyword: string) =>
     get<OvlabSearchItem[]>(`/ovlab/search-symbols?keyword=${encodeURIComponent(keyword)}`),
   ovlabSymbolInfo: (code: string) => get<OvlabSymbolInfo>(`/ovlab/symbol-info?code=${encodeURIComponent(code)}`),

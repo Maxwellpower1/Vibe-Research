@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
@@ -42,11 +43,11 @@ MARKET_OVERVIEW_COLUMNS: list[tuple[str, str]] = [
     ("sector_alias", "板块"),
     ("sector", "板块代码"),
     ("price", "最新价"),
-    ("ctn", "涨跌幅"),
+    ("ctn", "标的涨跌幅"),
     ("atmv_current", "平值隐波"),
     ("atmv_1dchg", "隐波变化"),
     ("atmv_percentile", "隐波百分位"),
-    ("rv22", "22日实波"),
+    ("rv22", "实波"),
     ("valphaT", "VolAlphaT"),
     ("carry", "Carry"),
     ("skew_current", "偏度"),
@@ -281,15 +282,38 @@ def get_current_batch(codes: list[str]) -> dict[str, Any]:
     return _post("current-batch", body={"codes": codes}) or {}
 
 
-def get_price_volatility_series(codes: str) -> list[dict[str, Any]]:
-    """价格波动率序列 (price-volatility-series, POST).
+def get_price_volatility_series(codes: list[str] | str) -> list[dict[str, Any]]:
+    """价格+隐波分时预览序列 (price-volatility-series, POST).
 
-    codes: 逗号分隔的合约代码字符串如 '510300,510050'. 不缓存.
+    codes: 品种:到期月 列表, 如 ['MA:202609', 'RB:202610'].
+    上游 body 要求 codes 为 JSON 字符串 (JSON.stringify(array)).
+    返回 list[{symbol, prices:[[datetime, price], ...], volatilities:[[datetime, iv], ...], intervals}].
+    缓存 5 分钟 (与上游 staleTime 对齐).
     """
-    codes = (codes or "").strip()
-    if not codes:
+    if isinstance(codes, str):
+        raw = (codes or "").strip()
+        if not raw:
+            return []
+        # Accept JSON array string or comma-separated fallback
+        try:
+            parsed = json.loads(raw)
+            code_list = [str(x).strip() for x in parsed if str(x).strip()] if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            code_list = [c.strip() for c in raw.split(",") if c.strip()]
+    else:
+        code_list = [str(c).strip() for c in (codes or []) if str(c).strip()]
+    if not code_list:
         return []
-    return _post("price-volatility-series", body={"codes": codes}) or []
+    # Stable cache key: sorted unique codes
+    uniq = sorted(set(code_list))
+    cache_key = f"ovlab_price_vol::{'|'.join(uniq)}"
+    body = {"codes": json.dumps(uniq, ensure_ascii=False)}
+    return _cached(
+        cache_key,
+        lambda: _post("price-volatility-series", body=body) or [],
+        valid=lambda v: isinstance(v, list) and len(v) > 0,
+        ttl=300,
+    )
 
 
 # ---------------------------------------------------------------------------
