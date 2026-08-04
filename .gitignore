@@ -35,3 +35,6 @@ frontend/tsconfig.tsbuildinfo
 *.log
 .vscode/
 .idea/
+backend/detail.json
+backend/market.json
+backend/vol.json

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as echarts from "echarts";
-import { RefreshCw, Loader2, AlertCircle, Search, Activity, Zap, History, ArrowUp, ArrowDown, ArrowUpDown, CandlestickChart, Table2, Calendar, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { RefreshCw, Loader2, AlertCircle, Search, Activity, Zap, History, ArrowUp, ArrowDown, ArrowUpDown, CandlestickChart, Table2, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Disclaimer } from "@/components/ui/Disclaimer";
@@ -304,14 +304,13 @@ function SortableTh<T extends Record<string, unknown>>({ col, sort, onSort }: {
   );
 }
 
-// —— 期权到期日历弹窗 ——
-function ExpiryCalendar({ data, selectedDate, onPick, onClose }: {
+// —— 期权到期日历(内联, 显示在表格上方) ——
+function ExpiryCalendar({ data, selectedDate, onPick }: {
   data: OvlabProductExp[];
   selectedDate: string | null;
   onPick: (date: string) => void;
-  onClose: () => void;
 }) {
-  // 按 expDate 聚合: { "20260818": [{product_alias, exchange, product_und}], ... }
+  // 按 expDate 聚合: { "20260818": [{alias, und, ex}], ... }
   const byDate = new Map<string, { alias: string; und: string; ex: string }[]>();
   for (const p of data) {
     for (const e of p.exps ?? []) {
@@ -321,6 +320,15 @@ function ExpiryCalendar({ data, selectedDate, onPick, onClose }: {
       byDate.get(d)!.push({ alias: String(p.product_alias ?? ""), und: String(p.product_und ?? ""), ex: String(p.exchange ?? "") });
     }
   }
+
+  // 交易所代码 -> 中文简称(2字, 适配日历单元格)
+  const EX_NAME: Record<string, string> = {
+    SSE: "沪市", SHSE: "沪市", SZSE: "深市", SHSZ: "深市", SHFE: "上期", CZCE: "郑商", DCE: "大商",
+    CFFEX: "中金", GFEX: "广期", INE: "能源", GLOBEX: "芝商",
+    上交所: "沪市", 深交所: "深市", 上期所: "上期", 郑商所: "郑商", 大商所: "大商",
+    中金所: "中金", 广期所: "广期", 能源所: "能源",
+  };
+  const exName = (ex: string) => EX_NAME[ex] || EX_NAME[ex.toUpperCase()] || ex;
 
   const [view, setView] = useState(() => {
     const d = selectedDate ? new Date(selectedDate.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")) : new Date();
@@ -341,22 +349,36 @@ function ExpiryCalendar({ data, selectedDate, onPick, onClose }: {
 
   const prevMonth = () => setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }));
   const nextMonth = () => setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }));
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl border border-border/60 bg-background p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <GlassCard>
+      <div>
+        {/* 顶部: 标题 + 月份导航 + 今日 */}
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-bold">期权到期日历</h3>
-          <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted/40 hover:text-foreground"><X className="h-4 w-4" /></button>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold">期权到期日历</h3>
+            {selectedDate && (
+              <button onClick={() => onPick(selectedDate)} className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary hover:bg-primary/20">
+                {selectedDate.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")} 到期过滤中 · 点此取消
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={prevMonth} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"><ChevronLeft className="h-4 w-4" /></button>
+            <span className="min-w-[84px] text-center text-sm font-semibold tabular-nums">{monthLabel}</span>
+            <button onClick={nextMonth} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"><ChevronRight className="h-4 w-4" /></button>
+            <button onClick={() => setView({ y: new Date().getFullYear(), m: new Date().getMonth() })}
+              className="ml-1 rounded-lg border border-border/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground">今日</button>
+          </div>
         </div>
-        <div className="mb-3 flex items-center justify-between">
-          <button onClick={prevMonth} className="rounded-lg p-1.5 hover:bg-muted/40"><ChevronLeft className="h-4 w-4" /></button>
-          <span className="text-sm font-medium">{monthLabel}</span>
-          <button onClick={nextMonth} className="rounded-lg p-1.5 hover:bg-muted/40"><ChevronRight className="h-4 w-4" /></button>
+
+        {/* 星期表头: 周末色调区分 */}
+        <div className="grid grid-cols-7 gap-1 text-center text-[11px]">
+          {["日", "一", "二", "三", "四", "五", "六"].map((w, idx) => (
+            <div key={w} className={cn("py-1 font-medium", idx === 0 || idx === 6 ? "text-red-400/70" : "text-muted-foreground")}>{w}</div>
+          ))}
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted-foreground">
-          {["日", "一", "二", "三", "四", "五", "六"].map((w) => <div key={w} className="py-1">{w}</div>)}
-        </div>
+
+        {/* 日期单元格 */}
         <div className="mt-1 grid grid-cols-7 gap-1">
           {cells.map((d, i) => {
             if (d === null) return <div key={i} />;
@@ -364,33 +386,45 @@ function ExpiryCalendar({ data, selectedDate, onPick, onClose }: {
             const list = byDate.get(ds) ?? [];
             const isToday = ds === today;
             const isSelected = ds === selectedDate;
+            const hasExpiry = list.length > 0;
+            const exCodes = [...new Set(list.map((x) => x.ex))].filter(Boolean);
+            const exItems = exCodes.map((ex) => ({ ex, name: exName(ex), items: list.filter((x) => x.ex === ex) }));
+            const showEx = exItems.slice(0, 2);
+            const more = exItems.length - showEx.length;
             return (
-              <button key={i} onClick={() => onPick(ds)} disabled={list.length === 0}
+              <button key={i} onClick={() => onPick(ds)} disabled={!hasExpiry}
                 className={cn(
-                  "relative flex h-12 flex-col items-center justify-center rounded-lg border text-xs transition-colors",
-                  list.length === 0 ? "border-transparent text-muted-foreground/40" : "border-border/60 hover:bg-primary/10",
-                  isSelected && "border-primary bg-primary/15 font-bold text-primary",
-                  isToday && !isSelected && "border-primary/40",
+                  "relative flex h-14 flex-col items-center justify-start gap-1 rounded-xl border pt-1.5 px-0.5 text-xs transition-all",
+                  !hasExpiry && "border-transparent text-muted-foreground/30 hover:border-transparent",
+                  hasExpiry && !isSelected && "border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40",
+                  isSelected && "border-primary bg-primary text-primary-foreground shadow-sm",
+                  isToday && !isSelected && "ring-1 ring-primary/50",
                 )}>
-                <span>{d}</span>
-                {list.length > 0 && <span className="absolute bottom-0.5 text-[9px] text-primary">{list.length}</span>}
+                {/* 今日标记点 */}
+                {isToday && <span className={cn("absolute right-1 top-1 h-1.5 w-1.5 rounded-full", isSelected ? "bg-primary-foreground" : "bg-primary")} />}
+                <span className={cn("leading-none", isToday && !isSelected && "font-bold text-primary", isSelected && "font-bold")}>{d}</span>
+                {showEx.length > 0 && (
+                  <span className="flex flex-wrap items-center justify-center gap-0.5 px-0.5 leading-none">
+                    {showEx.map((it) => (
+                      <span key={it.ex} className="group/ex relative cursor-default">
+                        <span className={cn("rounded-full px-2 py-0.5 text-[11px] leading-tight", isSelected ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/15 text-primary/90")}>{it.name}</span>
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-border/60 bg-background px-2.5 py-2 text-[10px] shadow-xl group-hover/ex:block">
+                          <span className="font-semibold text-primary">{it.name}</span>
+                          <span className="ml-1 text-muted-foreground">{ds.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")}</span>
+                          <span className="ml-1 rounded-full bg-muted/40 px-1.5 text-muted-foreground">{it.items.length}</span>
+                          <span className="mt-1.5 block max-w-[220px] leading-relaxed text-muted-foreground">{it.items.map((p) => p.alias || p.und).join(" · ")}</span>
+                        </span>
+                      </span>
+                    ))}
+                    {more > 0 && <span className={cn("text-[11px]", isSelected ? "text-primary-foreground/70" : "text-muted-foreground/70")}>+{more}</span>}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
-        {selectedDate && (
-          <div className="mt-3 rounded-lg border border-border/60 bg-muted/20 p-2">
-            <div className="mb-1 text-[11px] text-muted-foreground">已选 {selectedDate.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")} 到期的品种（{(byDate.get(selectedDate) ?? []).length}）</div>
-            <div className="flex flex-wrap gap-1">
-              {(byDate.get(selectedDate) ?? []).map((p) => (
-                <span key={p.und + p.alias} className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">{p.alias}</span>
-              ))}
-            </div>
-          </div>
-        )}
-        <p className="mt-2 text-[10px] text-muted-foreground/60">数据来自 product-exps · 点击有数字的日期选择到期日 · 灰色为无到期</p>
       </div>
-    </div>
+    </GlassCard>
   );
 }
 
@@ -400,7 +434,6 @@ function MarketPanel({ onPickSymbol }: { onPickSymbol?: (symbol: string) => void
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [calOpen, setCalOpen] = useState(false);
   const [expData, setExpData] = useState<OvlabProductExp[]>([]);
   const [expDate, setExpDate] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState<OvlabMarketRow>>({ key: null, dir: "desc" });
@@ -416,16 +449,14 @@ function MarketPanel({ onPickSymbol }: { onPickSymbol?: (symbol: string) => void
 
   useEffect(() => { void doLoad(); }, [doLoad]);
 
-  const refresh = async () => { setRefreshing(true); await doLoad(); setRefreshing(false); };
-
-  // 打开日历时懒加载 product-exps
-  const openCal = async () => {
-    setCalOpen(true);
+  // 懒加载到期日历数据(只加载一次)
+  useEffect(() => {
     if (expData.length === 0) {
-      try { setExpData(await api.ovlabProductExps()); }
-      catch { /* ignore */ }
+      api.ovlabProductExps().then(setExpData).catch(() => { /* ignore */ });
     }
-  };
+  }, [expData.length]);
+
+  const refresh = async () => { setRefreshing(true); await doLoad(); setRefreshing(false); };
 
   // 选中到期日后, 过滤出有该到期日的品种
   const expUnds = new Set<string>();
@@ -459,10 +490,6 @@ function MarketPanel({ onPickSymbol }: { onPickSymbol?: (symbol: string) => void
               className="w-full rounded-lg border border-border/60 bg-muted/30 py-2 pl-8 pr-3 text-sm outline-none focus:border-primary/50"
             />
           </div>
-          <button onClick={() => void openCal()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm hover:bg-muted/50">
-            <Calendar className="h-3.5 w-3.5" /> 到期日历
-          </button>
           {expDate && (
             <span className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs text-primary">
               到期 {expDate.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")}
@@ -473,14 +500,13 @@ function MarketPanel({ onPickSymbol }: { onPickSymbol?: (symbol: string) => void
         <AutoRefreshBar auto={auto} setAuto={setAuto} ms={ms} setMs={setMs} lastUpdate={lastUpdate} onRefresh={refresh} refreshing={refreshing || loading} />
       </div>
 
-      {calOpen && (
+      <div className="mb-3">
         <ExpiryCalendar
           data={expData}
           selectedDate={expDate}
-          onPick={(d) => { setExpDate(d); setCalOpen(false); }}
-          onClose={() => setCalOpen(false)}
+          onPick={setExpDate}
         />
-      )}
+      </div>
 
       {loading && rows.length === 0 ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -1211,7 +1237,7 @@ function LightChartPanel({ initialSymbol }: { initialSymbol?: string } = {}) {
           axisLabel: { show: false }, axisLine: { lineStyle: { color: "hsl(var(--chart-axis))" } }, splitLine: { show: false } },
       ],
       yAxis: [
-        { scale: true, splitLine: { lineStyle: { color: "hsl(var(--chart-grid))" } }, axisLabel: { color: "hsl(var(--chart-text))", fontSize: 10 } },
+        { scale: true, splitLine: { lineStyle: { color: "hsl(var(--chart-grid))", opacity: 0.25, width: 1 } }, axisLabel: { color: "hsl(var(--chart-text))", fontSize: 10 } },
         { scale: true, splitLine: { show: false }, axisLabel: { color: "hsl(var(--primary))", fontSize: 10, formatter: (v: number) => v.toFixed(1) + "%" } },
         { scale: true, gridIndex: 1, min: (v: { min?: number }) => { const mn = v.min ?? 0; return mn > 0 ? Math.floor(mn * 0.9) : 0; }, splitLine: { show: false }, axisLabel: { color: "hsl(var(--chart-text))", fontSize: 9 } },
       ],
