@@ -38,3 +38,6 @@ frontend/tsconfig.tsbuildinfo
 backend/detail.json
 backend/market.json
 backend/vol.json
+
+# ── 临时探测目录 (playwright 等) ──────────────────────────────────
+_probe/

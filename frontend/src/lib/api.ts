@@ -382,6 +382,38 @@ export interface OvlabFuturePositionDetails {
 }
 export type OvlabOptionPositionDetails = Record<string, unknown>;
 
+// —— Fino 机构观点 ——
+export interface FinoOverviewRow {
+  product_name?: string;
+  product_code?: string;
+  date?: string;
+  report_type?: string;
+  bull_count?: number;
+  neutral_count?: number;
+  bear_count?: number;
+  bull_percentage?: number;
+  neutral_percentage?: number;
+  bear_percentage?: number;
+  bull_views?: string;
+  neutral_views?: string;
+  bear_views?: string;
+  consensus_views?: string;
+  disagreement_views?: string;
+  [k: string]: unknown;
+}
+/** rating: "+1" bull / "0" neutral / "-1" bear */
+export interface FinoDetailRow {
+  date?: string;
+  viewpoint?: string;
+  rating?: string | number;
+  detail?: string;
+  product_code?: string;
+  product_name?: string;
+  uni_id?: string;
+  source?: string;
+  [k: string]: unknown;
+}
+
 export const api = {
   health: () => get<{ ok: boolean }>("/health"),
   indices: () => get<IndexQuote[]>("/indices"),
@@ -475,5 +507,13 @@ export const api = {
   ovlabFuturePositionDetails: (product: string, code: string, day: string) => {
     const p = new URLSearchParams({ product, code, direction: "0", day });
     return get<OvlabFuturePositionDetails>(`/ovlab/future-position-details?${p}`);
+  },
+  finoOverview: (report_type = "daily", start_date = "", end_date = "", codes = "") => {
+    const p = new URLSearchParams({ report_type, start_date, end_date, codes });
+    return get<FinoOverviewRow[]>(`/fino/overview?${p}`);
+  },
+  finoDetail: (report_type = "daily", start_date = "", end_date = "", codes = "") => {
+    const p = new URLSearchParams({ report_type, start_date, end_date, codes });
+    return get<FinoDetailRow[]>(`/fino/detail?${p}`);
   },
 };
