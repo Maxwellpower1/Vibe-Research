@@ -11,7 +11,6 @@
 
 <p align="center">
   <a href="https://viberesearch.wiki">Website</a> ·
-  <a href="#screenshots">Screenshots</a> ·
   <a href="#features">Features</a> ·
   <a href="#data-sources">Data Sources</a> ·
   <a href="#quick-start">Quick Start</a> ·
@@ -26,33 +25,6 @@
 Vibe-Research is an open-source research dashboard built primarily for **China A-share**, with US and HK markets included (A-share traders usually check overnight Wall Street and Hong Kong first, so the data is wired up too).
 
 It does not make decisions for you. It pulls together quotes, analyst reports, valuation, financials, filings, fund flows and news into one clean dashboard, then leaves an interface where **you plug in your own AI**. The direction and the conclusions come from the model or agent *you* configure.
-
-## Screenshots
-
-**Daily Review** — indices, market breadth, sector fund flows and turnover leaders on one screen, then hand it to your AI
-
-![Vibe-Research Daily Review](docs/screenshots/daily-review.png)
-
-<table>
-<tr>
-<td width="50%">
-
-**Stock Data** — earnings snapshot, valuation percentile and fund flows in one view
-
-![Stock Data](docs/screenshots/stock-detail.png)
-
-</td>
-<td width="50%">
-
-**News Radar** — 108 public feeds across 12 industry tracks, distilled on demand
-
-![News Radar](docs/screenshots/intel.png)
-
-</td>
-</tr>
-</table>
-
----
 
 ## Features
 

@@ -12,7 +12,6 @@
 
 <p align="center">
   <a href="https://viberesearch.wiki">官网</a> ·
-  <a href="#产品预览">产品预览</a> ·
   <a href="#功能">功能</a> ·
   <a href="#数据源data-sources">数据源</a> ·
   <a href="#快速开始">快速开始</a> ·
@@ -28,33 +27,6 @@
 Vibe-Research 是一个开源的「个人 AI 投研看板」，**主推 A 股、兼看美股 / 港股**（A 股常要看隔夜外围脸色，数据配上更全）。它不替你做决定——把行情、研报、估值、财务、公告、资金面、资讯都配齐，放进一个干净的看板，再留一个能接入**你自己的 AI** 的接口。方向和结论，交给你自己配置的模型 / agent。
 
 > *Vibe-Research: Your Personal Trading Research Agent. An open dashboard for China A-share (plus US / HK): it wires up all the data and plugs into **your own AI / agent** — it never recommends a stock. You bring the model, it brings the data.*
-
-## 产品预览
-
-**每日复盘** — 大盘 / 短线情绪(连板股 · 成交额 TOP20) / 板块资金一屏看全，一键交给你的 AI 复盘
-
-![Vibe-Research 每日复盘](docs/screenshots/daily-review.png)
-
-<table>
-<tr>
-<td width="50%">
-
-**个股数据** — 财报速览 + 估值分位 + 资金面一屏看穿
-
-![个股数据](docs/screenshots/stock-detail.png)
-
-</td>
-<td width="50%">
-
-**资讯雷达** — 12 赛道 108 个公开源，一键提炼今日要点
-
-![资讯雷达](docs/screenshots/intel.png)
-
-</td>
-</tr>
-</table>
-
----
 
 ## 功能
 
