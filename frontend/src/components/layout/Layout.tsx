@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import {
-  Activity, Radar, LayoutGrid, Wallet, Settings, Search, NotebookPen,
+  Radar, LayoutGrid, Wallet, Settings, Search, NotebookPen,
   Moon, Sun, ChevronsLeft, ChevronsRight, LineChart, Github, UserRound,
   Cog, Cpu, Database, Cable, Rocket, FlaskConical, Star, FileText, Swords,
-  Waves,
+  Waves, Landmark, CandlestickChart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
@@ -17,7 +17,9 @@ const X_URL = "https://x.com/linsizhen";
 const MAIL_URL = "mailto:simonlin0423@gmail.com";
 
 const NAV = [
-  { to: "/daily-review", icon: Activity, label: "每日复盘" },
+  { to: "/a-share", icon: CandlestickChart, label: "A股" },
+  { to: "/us-market", icon: Landmark, label: "美股" },
+  { to: "/ovlab", icon: Waves, label: "期权/期货" },
   { to: "/intel", icon: Radar, label: "资讯雷达" },
   { to: "/sectors", icon: LayoutGrid, label: "板块中心" },
   { to: "/stock-data", icon: Search, label: "个股数据" },
@@ -25,7 +27,6 @@ const NAV = [
   { to: "/watchlist", icon: Star, label: "自选股" },
   { to: "/portfolio", icon: Wallet, label: "我的持仓" },
   { to: "/my-reports", icon: FileText, label: "我的研报" },
-  { to: "/ovlab", icon: Waves, label: "期权 / 波动率" },
   { to: "/notes", icon: NotebookPen, label: "研究记录" },
   { to: "/settings", icon: Settings, label: "接入 AI" },
 ];
@@ -58,7 +59,7 @@ export function Layout() {
       )}>
         {/* Brand */}
         <div className={cn("border-b border-border/50", collapsed ? "flex justify-center p-3" : "p-4")}>
-          <Link to="/daily-review" className={cn("flex items-center", collapsed ? "justify-center" : "gap-2")}>
+          <Link to="/a-share" className={cn("flex items-center", collapsed ? "justify-center" : "gap-2")}>
             <LineChart className="h-6 w-6 shrink-0 text-primary text-glow" />
             {!collapsed && (
               <span className="text-lg font-extrabold tracking-tight">
@@ -72,7 +73,7 @@ export function Layout() {
         {/* Nav */}
         <nav className={cn("flex-1 space-y-1 overflow-auto", collapsed ? "p-1.5" : "p-2.5")}>
           {NAV.map(({ to, icon: Icon, label }) => {
-            const active = pathname === to;
+            const active = pathname === to || (to === "/a-share" && pathname.startsWith("/a-share"));
             return (
               <div key={to}>
                 <Link
@@ -172,7 +173,7 @@ export function Layout() {
         <div
           className={cn(
             "mx-auto py-6",
-            pathname.startsWith("/ovlab")
+            pathname.startsWith("/ovlab") || pathname.startsWith("/us-market") || pathname.startsWith("/a-share")
               ? "max-w-[1680px] px-3 sm:px-4"
               : "max-w-6xl px-6",
           )}

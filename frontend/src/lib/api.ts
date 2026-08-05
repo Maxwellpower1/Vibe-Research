@@ -242,6 +242,30 @@ export interface HkCashflow {
   code: string; name: string; market: string;
   currency: string | null; item_order: string[]; periods: HkCashflowPeriod[];
 }
+export interface UsKlineBar {
+  date: string;
+  open: number; high: number; low: number; close: number; volume: number;
+}
+export interface UsKline {
+  code: string; name?: string; market: string; source?: string;
+  /** qfq = forward adjusted; none = raw (sina fallback) */
+  adjust?: "qfq" | "none" | string;
+  bars: UsKlineBar[];
+}
+/** A-share light chart bar (分时/5日/日K) */
+export interface AShareLightBar {
+  datetime: string;
+  open: number; high: number; low: number; close: number;
+  volume: number; amount?: number;
+}
+export interface AShareLightKline {
+  code: string; name?: string;
+  resolution: "1" | "5" | "1D" | string;
+  adjust?: "qfq" | "none" | string;
+  source?: string;
+  prev_close?: number | null;
+  bars: AShareLightBar[];
+}
 
 // OpenVlab 期权 / 期货波动率市场数据（移植自 openvlab.cn 爬虫, 公开 REST 接口）
 export interface OvlabMarketRow {
@@ -430,7 +454,13 @@ export const api = {
   emotion: () => get<ShortTermEmotion>("/market/emotion"),
   turnoverTop: () => get<TurnoverTop>("/market/turnover-top"),
   globalIndices: () => get<GlobalIndex[]>("/global/indices"),
-  globalStock: (symbol: string) => get<GlobalStock>(`/global/stock?symbol=${encodeURIComponent(symbol)}`),
+  globalStock: (symbol: string, opts?: { withMetrics?: boolean }) => {
+    const p = new URLSearchParams({ symbol });
+    if (opts?.withMetrics === false) p.set("with_metrics", "false");
+    return get<GlobalStock>(`/global/stock?${p}`);
+  },
+  usKline: (symbol: string, num = 180) =>
+    get<UsKline>(`/global/us/kline?symbol=${encodeURIComponent(symbol)}&num=${num}`),
   hkCashflow: (symbol: string) => get<HkCashflow>(`/global/hk/cashflow?symbol=${encodeURIComponent(symbol)}`),
   radar: () => get<RadarData>("/radar"),
   radarRefresh: () => request<RadarData>("/radar/refresh", "POST"),
@@ -446,6 +476,11 @@ export const api = {
   financials: (code: string) => get<Financials>(`/financials?code=${code}`),
   announcements: (code: string) => get<Announcement[]>(`/announcements?code=${code}`),
   quote: (codes: string) => get<Record<string, Quote>>(`/quote?codes=${codes}`),
+  /** A 股轻量图：resolution 1=分时 / 5=五日 / 1D=日K前复权（腾讯） */
+  ashareLightKline: (code: string, resolution = "1D", num = 365) =>
+    get<AShareLightKline>(
+      `/astock/light-kline?code=${encodeURIComponent(code)}&resolution=${encodeURIComponent(resolution)}&num=${num}`,
+    ),
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
   news: (code: string) => get<NewsItem[]>(`/news?code=${code}`),
   margin: (code: string) => get<MarginRow[]>(`/margin?code=${code}`),

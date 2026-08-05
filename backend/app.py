@@ -354,10 +354,13 @@ def global_indices():
 
 
 @app.get("/api/global/stock")
-def global_stock(symbol: str = Query(..., min_length=1, max_length=16)):
+def global_stock(
+    symbol: str = Query(..., min_length=1, max_length=16),
+    with_metrics: bool = Query(True, description="是否拉关键财务；观察列表可传 false 加速"),
+):
     """美股 / 港股个股聚合：行情 + 关键财务指标（东财域内源）。symbol 如 AAPL / BABA / 00700。"""
     try:
-        data = gstock.us_hk_stock(symbol.strip())
+        data = gstock.us_hk_stock(symbol.strip(), with_metrics=with_metrics)
         if not data:
             raise HTTPException(404, f"未找到美股/港股代码「{symbol}」")
         return {"data": data}
@@ -365,6 +368,24 @@ def global_stock(symbol: str = Query(..., min_length=1, max_length=16)):
         raise
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"美港股查询异常：{e}") from e
+
+
+@app.get("/api/global/us/kline")
+def global_us_kline(
+    symbol: str = Query(..., min_length=1, max_length=16),
+    num: int = Query(180, ge=20, le=1000),
+):
+    """美股日 K（默认前复权 Yahoo；不可达回退新浪不复权）。symbol 如 AAPL / TSLA。缓存 5 分钟。"""
+    sym = symbol.strip().upper()
+    try:
+        data = _cached(f"us_kline:{num}", sym, 300, lambda: gstock.us_stock_kline(sym, num=num))
+        if not data:
+            raise HTTPException(404, f"未找到美股「{symbol}」的 K 线（仅美股 ticker）")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"美股 K 线异常：{e}") from e
 
 
 @app.get("/api/global/hk/cashflow")
@@ -532,6 +553,33 @@ def kline(code: str = Query(...), category: int = Query(4), offset: int = Query(
         raise HTTPException(501, str(e)) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"K线源异常：{e}") from e
+
+
+@app.get("/api/astock/light-kline")
+def astock_light_kline(
+    code: str = Query(..., min_length=6, max_length=6),
+    resolution: str = Query("1D", description="1=分时 / 5=五日 / 1D=日K前复权"),
+    num: int = Query(365, ge=20, le=1000),
+):
+    """A 股轻量图（腾讯）：分时 / 5日 / 日K前复权。仅需标准库，不依赖 mootdx。缓存 60 秒。"""
+    code = _validate(code)
+    res = resolution.strip()
+    if res not in ("1", "5", "1D"):
+        raise HTTPException(400, "resolution 仅支持 1 / 5 / 1D")
+    try:
+        data = _cached(
+            f"ashare_light:{res}:{num}",
+            code,
+            60,
+            lambda: astock.light_kline(code, res, num=num),
+        )
+        if not data:
+            raise HTTPException(404, f"未取到「{code}」的 K 线")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"A股轻量K线异常：{e}") from e
 
 
 @app.get("/api/finance")

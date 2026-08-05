@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
       alias: { "@": path.resolve(__dirname, "./src") },
     },
     server: {
+      host: true,
       port: 5899,
       proxy: {
         "/api": { target: apiTarget, changeOrigin: true },

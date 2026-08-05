@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import random
@@ -246,6 +247,173 @@ def announcements(code: str, limit: int = 15) -> list[dict]:
             "url": f"https://data.eastmoney.com/notices/detail/{code}/{art}.html" if art else "",
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# Layer 1b · 轻量 K 线（腾讯 ifzq，标准库 urllib，前复权日 K）
+# ---------------------------------------------------------------------------
+
+def _tencent_json(url: str) -> dict:
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://gu.qq.com/"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode("utf-8", errors="replace"))
+
+
+def _parse_minute_line(line: str, day: str = "") -> dict | None:
+    """Parse '0930 1328.36 521 69207556.00' -> bar. day=YYYYMMDD optional for 5-day."""
+    parts = str(line).split()
+    if len(parts) < 2:
+        return None
+    try:
+        hm = parts[0].zfill(4)
+        price = float(parts[1])
+        vol = int(float(parts[2])) if len(parts) > 2 else 0
+        amount = float(parts[3]) if len(parts) > 3 else 0.0
+    except (TypeError, ValueError):
+        return None
+    if day:
+        dt = f"{day[:4]}-{day[4:6]}-{day[6:8]} {hm[:2]}:{hm[2:4]}"
+    else:
+        dt = f"{hm[:2]}:{hm[2:4]}"
+    return {
+        "datetime": dt,
+        "open": price, "high": price, "low": price, "close": price,
+        "volume": vol, "amount": amount,
+    }
+
+
+def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
+    """A 股轻量图数据（腾讯）：分时 / 5日 / 日K(前复权)。
+
+    resolution: '1' 当日分时 · '5' 近5日分时 · '1D' 日K前复权
+    返回: {code, name?, resolution, adjust, source, prev_close?, bars: [...]}
+    bars 统一字段: datetime, open, high, low, close, volume (, amount)
+    """
+    code = (code or "").strip()
+    if not re.fullmatch(r"\d{6}", code):
+        return {}
+    res = (resolution or "1D").strip()
+    symbol = f"{get_prefix(code)}{code}"
+    n = max(20, min(int(num or 365), 1000))
+
+    name = None
+    prev_close = None
+    bars: list[dict] = []
+    adjust = "none"
+
+    try:
+        if res == "1":
+            # Today minute timeline
+            d = _tencent_json(f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={symbol}")
+            block = ((d.get("data") or {}).get(symbol) or {})
+            # shape: data.data.data = ["0930 price vol amount", ...]
+            inner = (block.get("data") or {})
+            lines = inner.get("data") if isinstance(inner, dict) else None
+            if not isinstance(lines, list):
+                lines = block.get("data") if isinstance(block.get("data"), list) else []
+            today = datetime.now().strftime("%Y%m%d")
+            for line in lines or []:
+                b = _parse_minute_line(line, today)
+                if b:
+                    bars.append(b)
+            # qt prec / name
+            qt = (block.get("qt") or {}).get(symbol) or []
+            if isinstance(qt, list) and len(qt) > 4:
+                name = qt[1] if isinstance(qt[1], str) else name
+                try:
+                    prev_close = float(qt[4]) if qt[4] not in ("", None) else None
+                except (TypeError, ValueError):
+                    prev_close = None
+
+        elif res == "5":
+            # Last 5 sessions minute series
+            d = _tencent_json(f"https://web.ifzq.gtimg.cn/appstock/app/day/query?code={symbol}")
+            block = ((d.get("data") or {}).get(symbol) or {})
+            days = block.get("data") or []
+            # API returns newest-first; reverse to chronological
+            if isinstance(days, list):
+                for day in reversed(days):
+                    if not isinstance(day, dict):
+                        continue
+                    dd = str(day.get("date") or "")
+                    for line in day.get("data") or []:
+                        b = _parse_minute_line(line, dd)
+                        if b:
+                            bars.append(b)
+            qt = (block.get("qt") or {}).get(symbol) or []
+            if isinstance(qt, list) and len(qt) > 4:
+                name = qt[1] if isinstance(qt[1], str) else name
+                try:
+                    prev_close = float(qt[4]) if qt[4] not in ("", None) else None
+                except (TypeError, ValueError):
+                    prev_close = None
+
+        else:
+            # Daily forward-adjusted OHLC
+            adjust = "qfq"
+            param = f"{symbol},day,,,{n},qfq"
+            d = _tencent_json(
+                f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={param}"
+            )
+            block = ((d.get("data") or {}).get(symbol) or {})
+            rows = block.get("qfqday") or block.get("day") or []
+            for row in rows:
+                if not isinstance(row, (list, tuple)) or len(row) < 6:
+                    continue
+                try:
+                    # [date, open, close, high, low, volume]
+                    bars.append({
+                        "datetime": str(row[0]),
+                        "open": float(row[1]),
+                        "close": float(row[2]),
+                        "high": float(row[3]),
+                        "low": float(row[4]),
+                        "volume": int(float(row[5])),
+                    })
+                except (TypeError, ValueError):
+                    continue
+            bars = bars[-n:]
+            qt = (block.get("qt") or {}).get(symbol) or []
+            if isinstance(qt, list) and len(qt) > 1:
+                name = qt[1] if isinstance(qt[1], str) else name
+    except Exception:
+        return {}
+
+    if not bars:
+        return {}
+
+    # Minute APIs return cumulative volume within each session — convert to per-bar delta
+    if res in ("1", "5"):
+        prev_v = 0
+        prev_day = ""
+        for b in bars:
+            day = str(b.get("datetime") or "")[:10]
+            if day != prev_day:
+                prev_v = 0
+                prev_day = day
+            cum = int(b.get("volume") or 0)
+            b["volume"] = max(0, cum - prev_v)
+            prev_v = cum
+
+    # Fallback name from quote batch
+    if not name:
+        try:
+            q = tencent_quote([code]).get(code) or {}
+            name = q.get("name") or code
+            if prev_close is None and isinstance(q.get("last_close"), (int, float)):
+                prev_close = float(q["last_close"])
+        except Exception:
+            name = code
+
+    return {
+        "code": code,
+        "name": name,
+        "resolution": res if res in ("1", "5") else "1D",
+        "adjust": adjust,
+        "source": "tencent",
+        "prev_close": prev_close,
+        "bars": bars,
+    }
 
 
 # ---------------------------------------------------------------------------

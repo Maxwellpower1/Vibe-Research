@@ -2644,7 +2644,7 @@ export function Ovlab() {
   return (
     <div>
       <PageHeader
-        title="期权 / 期货波动率"
+        title="期权/期货"
         subtitle="OpenVlab 公开数据 · 市场概览 / 详情 / 期权&期货期限结构 / 异动榜 / 持仓历史 · 只客观呈现, 不推荐不预测"
       />
 

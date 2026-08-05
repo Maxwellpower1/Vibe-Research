@@ -18,8 +18,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [backend] Starting FastAPI at http://127.0.0.1:8900
-python -m uvicorn app:app --host 127.0.0.1 --port 8900
+echo [backend] Starting FastAPI at http://0.0.0.0:8900 (LAN open)
+python -m uvicorn app:app --host 0.0.0.0 --port 8900
 if errorlevel 1 (
   echo [ERROR] Backend exited with an error.
   pause

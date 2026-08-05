@@ -1,19 +1,25 @@
 """美股 / 港股数据层 —— 移植自 global-stock-data（美港股全栈工具包）。
 
-只并入「域内(东财)」的合规子集：全球指数 + 美港股行情 + 关键财务指标。
-用途＝A 股「看隔夜外围脸色」+ 个股页支持美港股代码。
+并入：
+- 东财域内合规子集：全球指数 + 美港股行情 + 关键财务指标
+- 美股日 K：Yahoo 前复权（主）+ 新浪不复权（备）
+
+用途＝A 股「看隔夜外围脸色」+ 个股页支持美港股代码 + 「美股」页观察列表/K线。
 
 工程要点：
 - 东财调用全部复用 `astock.em_get`（直连优先、避开用户 Clash 代理挂国内站）+
   `astock.eastmoney_datacenter`（datacenter 三表/指标已封装）。
 - push2 stock/get 直连偶发掉连 → **push2 优先、失败降级 push2delay**（延时行情，研究场景足够），
   latch 到可用主机整进程复用（同成交额榜的做法）。
-- Yahoo / SEC 等国外源不并入（需科学上网、且非必要）。
+- 美股前复权依赖 Yahoo chart；不可达时回退新浪（不复权）。
 
 合规：只做客观数据整理，不预置标的、不推荐、不预测。
 """
 
 from __future__ import annotations
+
+import json
+import re
 
 import astock
 
@@ -35,6 +41,8 @@ _MKT = {105: (".O", "NASDAQ"), 106: (".N", "NYSE"), 107: (".O", "US"), 116: (".H
         177: (".KS", "KR")}  # 177=韩股（Kospi/Kosdaq，含三星/SK海力士等半导体龙头）；东财仅行情、无 F10 财务
 
 _QUOTE_FIELDS = "f43,f44,f45,f46,f48,f57,f58,f59,f60,f116,f170"
+# Resolve results rarely change; cache to avoid re-probing 105/106/107 on every watchlist refresh
+_RESOLVE_CACHE: dict[str, dict | None] = {}
 
 
 def _push2_stock_get(secid: str, fields: str) -> dict | None:
@@ -93,6 +101,22 @@ def global_indices() -> list[dict]:
     return out
 
 
+def _parse_em_json(resp) -> dict:
+    """Eastmoney sometimes wraps JSON in JSONP (jQuery...(...))."""
+    text = (resp.text or "").strip()
+    if not text:
+        return {}
+    if text[0] not in "{[":
+        m = re.search(r"^[^(]*\((.*)\)\s*;?\s*$", text, re.S)
+        if m:
+            text = m.group(1)
+    try:
+        data = json.loads(text)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def _search(q: str) -> dict | None:
     """东财搜索一次：市场过滤 + **精确代码匹配优先**，退而取第一条。
 
@@ -105,7 +129,8 @@ def _search(q: str) -> dict | None:
               "token": "D43BF722C8E33BDC906FB84D85E326E8", "count": 10}
     try:
         r = astock.em_get(url, params=params, headers=_UA_H, timeout=10)
-        rows = (r.json().get("QuotationCodeTable") or {}).get("Data") or []
+        data = _parse_em_json(r)
+        rows = (data.get("QuotationCodeTable") or {}).get("Data") or []
     except Exception:
         return None
     matches = []
@@ -125,11 +150,44 @@ def _search(q: str) -> dict | None:
             "secucode": f"{code}{suffix}", "market": market}
 
 
+def _resolve_us_via_push2(code: str) -> dict | None:
+    """Suggest API is often broken for US tickers; probe push2 secids instead.
+
+    Market prefixes: 105=NASDAQ, 106=NYSE, 107=US other (ETFs etc).
+    Also try BRK.B <-> BRK-B style aliases.
+    """
+    variants = [code]
+    if "." in code:
+        variants.append(code.replace(".", "-"))
+    elif "-" in code:
+        variants.append(code.replace("-", "."))
+    seen: set[str] = set()
+    for c in variants:
+        if c in seen:
+            continue
+        seen.add(c)
+        for mkt in (105, 106, 107):
+            d = _push2_stock_get(f"{mkt}.{c}", "f57,f58")
+            if not d or not d.get("f57"):
+                continue
+            raw = str(d.get("f57") or c)
+            suffix, market = _MKT[mkt]
+            return {
+                "code": raw,
+                "name": d.get("f58") or raw,
+                "secid_prefix": mkt,
+                "secucode": f"{raw}{suffix}",
+                "market": market,
+            }
+    return None
+
+
 def resolve_symbol(query: str) -> dict | None:
     """代码/名称 → {code, name, secid_prefix, secucode, market}。认美股/港股/韩股。
     数字型港股短代码（如 `700`）补零到 5 位再试一次（东财按 `00700` 收）。
     韩股用国际后缀 `.KS`/`.KQ`/`.KR`（如三星 `005930.KS`）——韩股代码与 A 股同为 6 位数字，
-    需显式后缀区分，否则前端会按 A 股处理、后端也搜不到韩股。"""
+    需显式后缀区分，否则前端会按 A 股处理、后端也搜不到韩股。
+    美股 ticker 在 suggest 失效时走 push2 探测回退。"""
     q = query.strip().upper()
     if not q:
         return None
@@ -137,9 +195,19 @@ def resolve_symbol(query: str) -> dict | None:
         if q.endswith(suf):
             q = q[: -len(suf)]
             break
+    if q in _RESOLVE_CACHE:
+        return _RESOLVE_CACHE[q]
+
+    # Pure US tickers: skip broken suggest API, resolve via push2 (fast path for watchlist)
+    if re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,7}", q) and not q.isdigit():
+        hit = _resolve_us_via_push2(q) or _search(q)
+        _RESOLVE_CACHE[q] = hit
+        return hit
+
     hit = _search(q)
     if hit is None and q.isdigit() and len(q) < 5:
         hit = _search(q.zfill(5))
+    _RESOLVE_CACHE[q] = hit
     return hit
 
 
@@ -166,19 +234,147 @@ def _key_metrics(secucode: str) -> dict | None:
     }
 
 
-def us_hk_stock(query: str) -> dict:
-    """个股聚合（美/港）：解析代码 → 行情 + 关键财务指标。查不到返回 {}。"""
+def us_hk_stock(query: str, *, with_metrics: bool = True) -> dict:
+    """个股聚合（美/港）：解析代码 → 行情 + 可选关键财务指标。查不到返回 {}。
+
+    with_metrics=False：只行情（观察列表批量刷新用，避开东财 F10 慢请求）。
+    """
     info = resolve_symbol(query)
     if not info:
         return {}
     d = _push2_stock_get(f"{info['secid_prefix']}.{info['code']}", _QUOTE_FIELDS)
     quote = _quote_from(d or {})  # 行情临时取不到也返回完整 null 形状，契合 GlobalQuote 类型
+    metrics = None
+    if with_metrics and info["market"] != "KR":  # 韩股东财无 F10 财务
+        metrics = _key_metrics(info["secucode"])
     return {
         "code": info["code"],
         "name": info["name"] or quote.get("name") or info["code"],
         "market": info["market"],
         "quote": quote,
-        "metrics": _key_metrics(info["secucode"]) if info["market"] != "KR" else None,  # 韩股东财无 F10 财务
+        "metrics": metrics,
+    }
+
+
+def _us_kline_yahoo_qfq(code: str, n: int) -> list[dict]:
+    """Yahoo chart v8: forward-adjust OHLC by adjclose/close (前复权).
+
+    Latest close stays aligned with market price; history scaled for splits/dividends.
+    Yahoo class shares use '-' (BRK-B); normalize '.' -> '-'.
+    """
+    import requests
+    from datetime import datetime
+
+    ysym = code.replace(".", "-")
+    # 365 trading days ~ 1.5y calendar; pull 2y then truncate
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}"
+    r = requests.get(
+        url,
+        params={"interval": "1d", "range": "2y", "includeAdjustedClose": "true"},
+        headers={"User-Agent": astock.UA},
+        timeout=20,
+    )
+    r.raise_for_status()
+    res = ((r.json().get("chart") or {}).get("result") or [None])[0]
+    if not res:
+        return []
+    timestamps = res.get("timestamp") or []
+    quote = ((res.get("indicators") or {}).get("quote") or [{}])[0]
+    adj_list = ((res.get("indicators") or {}).get("adjclose") or [{}])
+    adjclose = (adj_list[0].get("adjclose") if adj_list else None) or []
+
+    bars: list[dict] = []
+    for i, ts in enumerate(timestamps):
+        try:
+            o, h, l, c = quote["open"][i], quote["high"][i], quote["low"][i], quote["close"][i]
+            if o is None or h is None or l is None or c is None or c == 0:
+                continue
+            adj = adjclose[i] if i < len(adjclose) else None
+            factor = (float(adj) / float(c)) if adj not in (None, 0) else 1.0
+            bars.append({
+                "date": datetime.fromtimestamp(ts).strftime("%Y-%m-%d"),
+                "open": round(float(o) * factor, 4),
+                "high": round(float(h) * factor, 4),
+                "low": round(float(l) * factor, 4),
+                "close": round(float(c) * factor, 4),
+                "volume": int(quote["volume"][i] or 0),
+            })
+        except (TypeError, ValueError, KeyError, IndexError):
+            continue
+    return bars[-n:]
+
+
+def _us_kline_sina(code: str, n: int) -> list[dict]:
+    """Sina US daily K — unadjusted fallback when Yahoo unreachable."""
+    import requests
+
+    url = "https://stock.finance.sina.com.cn/usstock/api/jsonp.php/var/US_MinKService.getDailyK"
+    r = requests.get(
+        url,
+        params={"symbol": code, "num": n},
+        headers={"Referer": "https://finance.sina.com.cn/", "User-Agent": astock.UA},
+        timeout=15,
+    )
+    r.raise_for_status()
+    m = re.search(r"\((\[.+\])\)", r.text, re.S)
+    if not m:
+        return []
+    items = json.loads(m.group(1))
+    bars: list[dict] = []
+    for item in items:
+        try:
+            bars.append({
+                "date": str(item.get("d") or ""),
+                "open": float(item.get("o") or 0),
+                "high": float(item.get("h") or 0),
+                "low": float(item.get("l") or 0),
+                "close": float(item.get("c") or 0),
+                "volume": int(float(item.get("v") or 0)),
+            })
+        except (TypeError, ValueError):
+            continue
+    return bars[-n:]
+
+
+def us_stock_kline(symbol: str, num: int = 180) -> dict:
+    """美股日 K，默认前复权（Yahoo adjclose 缩放 OHLC）。
+
+    symbol: 如 AAPL / TSLA；仅美股 ticker。
+    num: 返回最近 N 根。
+    返回: {code, name, market, source, adjust: qfq|none, bars: [...]}
+    Yahoo 不可达时回退新浪（不复权, adjust=none）。
+    """
+    sym = (symbol or "").strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,7}", sym):
+        return {}
+    info = resolve_symbol(sym)
+    if info and info.get("market") not in ("NASDAQ", "NYSE", "US"):
+        return {}
+    code = (info or {}).get("code") or sym
+    name = (info or {}).get("name") or code
+    n = max(20, min(int(num or 180), 1000))
+
+    bars: list[dict] = []
+    source, adjust = "yahoo", "qfq"
+    try:
+        bars = _us_kline_yahoo_qfq(code, n)
+    except Exception:
+        bars = []
+    if not bars:
+        try:
+            bars = _us_kline_sina(code, n)
+            source, adjust = "sina", "none"
+        except Exception:
+            bars = []
+    if not bars:
+        return {}
+    return {
+        "code": code,
+        "name": name,
+        "market": "US",
+        "source": source,
+        "adjust": adjust,
+        "bars": bars,
     }
 
 

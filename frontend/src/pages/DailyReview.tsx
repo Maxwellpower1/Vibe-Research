@@ -19,7 +19,7 @@ const pctColor = (p: number) => (p > 0 ? "text-danger" : p < 0 ? "text-success" 
 const fmt = (v: number) => v.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 const yi = (v: number | null) => (v == null ? "—" : `${fmt(v / 1e8)} 亿`); // 元 → 亿
 
-export function DailyReview() {
+export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [indices, setIndices] = useState<IndexQuote[]>([]);
   const [idxErr, setIdxErr] = useState(false);
   const [review, setReview] = useState("");
@@ -122,17 +122,28 @@ export function DailyReview() {
 
   return (
     <div>
-      <PageHeader
-        title="每日复盘"
-        subtitle={`${today} · 大盘 / 情绪 / 板块资金一屏看全，交给你的 AI 做复盘`}
-        actions={
+      {embedded ? (
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+          <p className="text-sm text-muted-foreground">{today} · 大盘 / 情绪 / 板块资金一屏看全</p>
           <AskAiButton
             context={`今日大盘数据：${dataSummary}`}
             label="问 AI"
             suggestions={["今天大盘怎么走", "哪些指数领涨领跌", "盘面有什么值得注意"]}
           />
-        }
-      />
+        </div>
+      ) : (
+        <PageHeader
+          title="每日复盘"
+          subtitle={`${today} · 大盘 / 情绪 / 板块资金一屏看全，交给你的 AI 做复盘`}
+          actions={
+            <AskAiButton
+              context={`今日大盘数据：${dataSummary}`}
+              label="问 AI"
+              suggestions={["今天大盘怎么走", "哪些指数领涨领跌", "盘面有什么值得注意"]}
+            />
+          }
+        />
+      )}
 
       {/* 1. 大盘指数（实时） */}
       <div className="mb-3 flex items-center justify-between">
@@ -470,7 +481,7 @@ export function DailyReview() {
         ))}
       </div>
 
-      <Disclaimer />
+      {!embedded && <Disclaimer />}
     </div>
   );
 }
