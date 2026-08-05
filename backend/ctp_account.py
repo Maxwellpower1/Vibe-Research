@@ -23,7 +23,9 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 
 BEIJING = timezone(timedelta(hours=8))
-CACHE_DIR = os.environ.get("VR_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".vibe-research")
+CACHE_DIR = os.environ.get("VR_DATA_DIR") or os.path.join(
+    os.path.expanduser("~"), ".vibe-research"
+)
 CTP_CFG_FILE = os.path.join(CACHE_DIR, "ctp.json")
 # CTP writes DialogRsp.con / Private.con / ... under this directory (not project root)
 CTP_FLOW_DIR = os.path.join(CACHE_DIR, "ctp_flow")
@@ -47,8 +49,13 @@ _OPTION_PRODUCT_CLASSES = {"2", "6"}
 # Common CN option InstrumentID shapes: IO2509-C-4000 / m2509-C-3000 / SR509C5500
 _OPTION_ID_RE = re.compile(r"(?:-[CP]-|[CP]\d{3,}|购|沽)", re.IGNORECASE)
 _OFFSET_MAP = {
-    "0": "开仓", "1": "平仓", "2": "强平", "3": "平今",
-    "4": "平昨", "5": "强减", "6": "本地强平",
+    "0": "开仓",
+    "1": "平仓",
+    "2": "强平",
+    "3": "平今",
+    "4": "平昨",
+    "5": "强减",
+    "6": "本地强平",
 }
 _ORDER_STATUS_MAP = {
     "0": "全部成交",
@@ -62,30 +69,58 @@ _ORDER_STATUS_MAP = {
     "c": "已触发",
 }
 _PRICE_TYPE_MAP = {
-    "1": "任意价", "2": "限价", "3": "最优价", "4": "最新价",
-    "5": "最新价浮动上浮1", "6": "最新价浮动上浮2", "7": "最新价浮动上浮3",
-    "8": "卖一价", "9": "卖一价浮动上浮1", "A": "卖一价浮动上浮2",
-    "B": "卖一价浮动上浮3", "C": "买一价", "D": "买一价浮动上浮1",
-    "E": "买一价浮动上浮2", "F": "买一价浮动上浮3", "G": "五档价",
+    "1": "任意价",
+    "2": "限价",
+    "3": "最优价",
+    "4": "最新价",
+    "5": "最新价浮动上浮1",
+    "6": "最新价浮动上浮2",
+    "7": "最新价浮动上浮3",
+    "8": "卖一价",
+    "9": "卖一价浮动上浮1",
+    "A": "卖一价浮动上浮2",
+    "B": "卖一价浮动上浮3",
+    "C": "买一价",
+    "D": "买一价浮动上浮1",
+    "E": "买一价浮动上浮2",
+    "F": "买一价浮动上浮3",
+    "G": "五档价",
 }
 _TIME_COND_MAP = {
-    "1": "IOC", "2": "GFS", "3": "GFD", "4": "GTD", "5": "GTC", "6": "GFA",
+    "1": "IOC",
+    "2": "GFS",
+    "3": "GFD",
+    "4": "GTD",
+    "5": "GTC",
+    "6": "GFA",
 }
 _VOL_COND_MAP = {"1": "任何数量", "2": "最小数量", "3": "全部数量"}
 _SUBMIT_STATUS_MAP = {
-    "0": "已经提交", "1": "撤单已经提交", "2": "修改已经提交",
-    "3": "已经接受", "4": "报单已经被拒绝", "5": "撤单已经被拒绝",
+    "0": "已经提交",
+    "1": "撤单已经提交",
+    "2": "修改已经提交",
+    "3": "已经接受",
+    "4": "报单已经被拒绝",
+    "5": "撤单已经被拒绝",
     "6": "改单已经被拒绝",
 }
 _TRADE_TYPE_MAP = {
-    "0": "普通成交", "1": "期权执行", "2": "OTC成交",
-    "3": "期转现衍生成交", "4": "组合衍生成交",
+    "0": "普通成交",
+    "1": "期权执行",
+    "2": "OTC成交",
+    "3": "期转现衍生成交",
+    "4": "组合衍生成交",
 }
-_PRICE_SOURCE_MAP = {"0": "前成交价", "1": "买成交价", "2": "卖成交价", "3": "场外成交价"}
+_PRICE_SOURCE_MAP = {
+    "0": "前成交价",
+    "1": "买成交价",
+    "2": "卖成交价",
+    "3": "场外成交价",
+}
 _TRADE_SOURCE_MAP = {"0": "来自交易所普通回报", "1": "来自查询"}
 
-_lock = threading.RLock()          # protects session pointer / flags / log buffer
-_op_lock = threading.Lock()        # serializes login / query / logout (never held in SPI)
+_lock = threading.RLock()  # protects session pointer / flags / log buffer
+_op_lock = threading.Lock()  # serializes login / query / logout (never held in SPI)
 # Async market-equity job (option instrument + tick qry is slow due to CTP rate limit)
 _me_lock = threading.Lock()
 _me_seq = 0
@@ -133,7 +168,11 @@ def get_logs(since: int = 0) -> dict[str, Any]:
     """Return logs with id > since (or all if since=0 and buffer small)."""
     with _lock:
         items = [e for e in _logs if e["id"] > since]
-        return {"logs": items, "next_since": _log_seq, "logged_in": _is_logged_in_unlocked()}
+        return {
+            "logs": items,
+            "next_since": _log_seq,
+            "logged_in": _is_logged_in_unlocked(),
+        }
 
 
 def clear_logs() -> None:
@@ -184,6 +223,7 @@ def config_status() -> dict[str, Any]:
     cfg = load_config()
     try:
         import openctp_ctp  # noqa: F401
+
         dep_ok = True
         dep_msg = ""
     except ImportError:
@@ -410,7 +450,10 @@ def _order_row(o: Any) -> dict[str, Any]:
         "direction": _BS_MAP.get(direction, direction),
         "direction_code": direction,
         "offset": _offset_label(_field(o, "CombOffsetFlag", "")),
-        "hedge": _HEDGE_MAP.get(str(_field(o, "CombHedgeFlag", "") or "")[:1], str(_field(o, "CombHedgeFlag", "") or "")),
+        "hedge": _HEDGE_MAP.get(
+            str(_field(o, "CombHedgeFlag", "") or "")[:1],
+            str(_field(o, "CombHedgeFlag", "") or ""),
+        ),
         "price_type": _PRICE_TYPE_MAP.get(price_type, price_type),
         "limit_price": float(_field(o, "LimitPrice", 0) or 0),
         "stop_price": float(_field(o, "StopPrice", 0) or 0),
@@ -458,7 +501,9 @@ def _trade_row(t: Any) -> dict[str, Any]:
         "direction": _BS_MAP.get(direction, direction),
         "direction_code": direction,
         "offset": _OFFSET_MAP.get(offset, offset),
-        "hedge": _HEDGE_MAP.get(str(_field(t, "HedgeFlag", "") or ""), str(_field(t, "HedgeFlag", "") or "")),
+        "hedge": _HEDGE_MAP.get(
+            str(_field(t, "HedgeFlag", "") or ""), str(_field(t, "HedgeFlag", "") or "")
+        ),
         "price": price,
         "volume": volume,
         "amount": round(price * volume, 2),
@@ -573,7 +618,9 @@ def _iter_range_days(start: str, end: str) -> list[str]:
     return out
 
 
-def _series_point(day: str, rec: dict[str, Any] | None, *, from_cache: bool, error: str | None = None) -> dict[str, Any]:
+def _series_point(
+    day: str, rec: dict[str, Any] | None, *, from_cache: bool, error: str | None = None
+) -> dict[str, Any]:
     parsed = (rec or {}).get("parsed") or {}
     status = (rec or {}).get("status") or ("missing" if rec is None else "ok")
     if error:
@@ -607,10 +654,7 @@ def build_settlement_analytics(series: list[dict[str, Any]]) -> dict[str, Any]:
       ret_t = pnl_t / equity_{t-1}
       nav_t = nav_{t-1} * (1 + ret_t)   (nav_0 = 1)
     """
-    pts = [
-        p for p in series
-        if p.get("status") == "ok" and p.get("equity") is not None
-    ]
+    pts = [p for p in series if p.get("status") == "ok" and p.get("equity") is not None]
     pts = sorted(pts, key=lambda x: x["trading_day"])
 
     perf: list[dict[str, Any]] = []
@@ -696,28 +740,33 @@ def build_settlement_analytics(series: list[dict[str, Any]]) -> dict[str, Any]:
     months: dict[str, dict[str, Any]] = {}
     for row in perf:
         ym = row["trading_day"][:6]
-        m = months.setdefault(ym, {
-            "month": f"{ym[:4]}-{ym[4:6]}",
-            "trading_day_start": row["trading_day"],
-            "trading_day_end": row["trading_day"],
-            "pnl": 0.0,
-            "income": 0.0,
-            "deposit_withdraw": 0.0,
-            "commission": 0.0,
-            "days": 0,
-            "win_days": 0,
-            "loss_days": 0,
-            "ret_factor": 1.0,
-            "equity_start": row["equity"],
-            "equity_end": row["equity"],
-        })
+        m = months.setdefault(
+            ym,
+            {
+                "month": f"{ym[:4]}-{ym[4:6]}",
+                "trading_day_start": row["trading_day"],
+                "trading_day_end": row["trading_day"],
+                "pnl": 0.0,
+                "income": 0.0,
+                "deposit_withdraw": 0.0,
+                "commission": 0.0,
+                "days": 0,
+                "win_days": 0,
+                "loss_days": 0,
+                "ret_factor": 1.0,
+                "equity_start": row["equity"],
+                "equity_end": row["equity"],
+            },
+        )
         m["trading_day_end"] = row["trading_day"]
         m["pnl"] = round(m["pnl"] + row["daily_pnl"], 2)
         m["income"] = round(m["income"] + float(row.get("daily_income") or 0), 2)
-        m["deposit_withdraw"] = round(m["deposit_withdraw"] + row["deposit_withdraw"], 2)
+        m["deposit_withdraw"] = round(
+            m["deposit_withdraw"] + row["deposit_withdraw"], 2
+        )
         m["commission"] = round(m["commission"] + float(row.get("commission") or 0), 2)
         m["days"] += 1
-        m["ret_factor"] *= (1.0 + float(row["daily_return"]))
+        m["ret_factor"] *= 1.0 + float(row["daily_return"])
         m["equity_end"] = row["equity"]
         if row["daily_pnl"] > 1e-9:
             m["win_days"] += 1
@@ -742,9 +791,11 @@ def build_settlement_analytics(series: list[dict[str, Any]]) -> dict[str, Any]:
     # Simple vol / sharpe from daily returns (rf=0)
     if ret_count >= 2:
         mean = avg_ret
-        var = sum((perf[i]["daily_return"] - mean) ** 2 for i in range(1, n)) / (ret_count - 1)
-        std = var ** 0.5
-        sharpe = (mean / std) * (242 ** 0.5) if std > 1e-12 else None
+        var = sum((perf[i]["daily_return"] - mean) ** 2 for i in range(1, n)) / (
+            ret_count - 1
+        )
+        std = var**0.5
+        sharpe = (mean / std) * (242**0.5) if std > 1e-12 else None
     else:
         std = None
         sharpe = None
@@ -765,7 +816,9 @@ def build_settlement_analytics(series: list[dict[str, Any]]) -> dict[str, Any]:
         "win_days": win_days,
         "loss_days": loss_days,
         "flat_days": flat_days,
-        "win_rate": round(win_days / (win_days + loss_days), 4) if (win_days + loss_days) else None,
+        "win_rate": round(win_days / (win_days + loss_days), 4)
+        if (win_days + loss_days)
+        else None,
         "avg_daily_return": round(avg_ret, 8),
         "daily_volatility": round(std, 8) if std is not None else None,
         "ann_return": round(ann_ret, 8) if ann_ret is not None else None,
@@ -799,9 +852,14 @@ def build_settlement_analytics(series: list[dict[str, Any]]) -> dict[str, Any]:
         "charts": {
             "equity": [{"date": r["date"], "value": r["equity"]} for r in perf],
             "nav": [{"date": r["date"], "value": r["nav"]} for r in perf],
-            "cum_return": [{"date": r["date"], "value": round(r["cum_return"] * 100, 4)} for r in perf],
+            "cum_return": [
+                {"date": r["date"], "value": round(r["cum_return"] * 100, 4)}
+                for r in perf
+            ],
             # 累计收益 chart uses income (pnl - commission), in 万元
-            "cum_pnl_wan": [{"date": r["date"], "value": r["cum_income_wan"]} for r in perf],
+            "cum_pnl_wan": [
+                {"date": r["date"], "value": r["cum_income_wan"]} for r in perf
+            ],
         },
     }
 
@@ -829,7 +887,9 @@ def _decode_settlement_chunk(raw: Any) -> str:
 
 # Amount: "779151.49" or "779,151.49". Do NOT prefer \d{1,3} first -- that truncates
 # 779151.49 to 779 when the bill has no thousand separators (common in CTP text).
-_AMOUNT_RE = r"([-+]?\d{1,3}(?:,\d{3})+\.\d+|[-+]?\d{1,3}(?:,\d{3})+|[-+]?\d+\.\d+|[-+]?\d+)"
+_AMOUNT_RE = (
+    r"([-+]?\d{1,3}(?:,\d{3})+\.\d+|[-+]?\d{1,3}(?:,\d{3})+|[-+]?\d+\.\d+|[-+]?\d+)"
+)
 
 
 def _settlement_summary_block(text: str) -> str:
@@ -838,9 +898,12 @@ def _settlement_summary_block(text: str) -> str:
         return ""
     cut = len(text)
     for marker in (
-        "成交记录", "Transaction Record",
-        "持仓明细", "Positions Detail",
-        "持仓汇总", "Positions\n",
+        "成交记录",
+        "Transaction Record",
+        "持仓明细",
+        "Positions Detail",
+        "持仓汇总",
+        "Positions\n",
         "Position Summary",
         "期权对冲",
     ):
@@ -872,22 +935,37 @@ def parse_settlement_text(content: str) -> dict[str, Any]:
         "pre_balance": _pick_amount(text, [r"期初结存", r"Balance\s*B/F"]),
         "balance": _pick_amount(text, [r"期末结存", r"Balance\s*C/F"]),
         "client_equity": _pick_amount(text, [r"客户权益", r"Client\s*Equity"]),
-        "market_equity": _pick_amount(text, [r"市值权益", r"Market\s*Value\s*\(\s*equity\s*\)"]),
+        "market_equity": _pick_amount(
+            text, [r"市值权益", r"Market\s*Value\s*\(\s*equity\s*\)"]
+        ),
         "available": _pick_amount(text, [r"可用资金", r"Fund\s*Avail", r"Available"]),
-        "deposit_withdraw": _pick_amount(text, [r"出\s*入\s*金", r"Deposit/Withdrawal", r"Deposit\s*/\s*Withdrawal"]),
-        "close_profit": _pick_amount(text, [r"平仓盈亏", r"Realized\s*P/L", r"Closed\s*P/L"]),
+        "deposit_withdraw": _pick_amount(
+            text, [r"出\s*入\s*金", r"Deposit/Withdrawal", r"Deposit\s*/\s*Withdrawal"]
+        ),
+        "close_profit": _pick_amount(
+            text, [r"平仓盈亏", r"Realized\s*P/L", r"Closed\s*P/L"]
+        ),
         "position_profit": _pick_amount(text, [r"持仓盯市盈亏", r"MTM\s*P/L"]),
         # Prefer "手 续 费 Commission"; avoid matching 行权手续费 / 交割手续费 (often 0.00)
-        "commission": _pick_amount(text, [
-            r"手\s*续\s*费\s*Commission",
-            r"(?<![权割])手\s*续\s*费",
-            r"Commission",
-        ]),
+        "commission": _pick_amount(
+            text,
+            [
+                r"手\s*续\s*费\s*Commission",
+                r"(?<![权割])手\s*续\s*费",
+                r"Commission",
+            ],
+        ),
         # Avoid matching 货币质押保证金占用 (often 0.00) before 保证金占用
-        "curr_margin": _pick_amount(text, [r"(?<!货币质押)保证金占用", r"Margin\s*Occupied"]),
+        "curr_margin": _pick_amount(
+            text, [r"(?<!货币质押)保证金占用", r"Margin\s*Occupied"]
+        ),
         "risk_ratio": _pick_amount(text, [r"风险度", r"Risk\s*Degree"]),
-        "option_long_value": _pick_amount(text, [r"多头期权市值", r"Market\s*Value\s*\(\s*long\s*\)"]),
-        "option_short_value": _pick_amount(text, [r"空头期权市值", r"Market\s*Value\s*\(\s*short\s*\)"]),
+        "option_long_value": _pick_amount(
+            text, [r"多头期权市值", r"Market\s*Value\s*\(\s*long\s*\)"]
+        ),
+        "option_short_value": _pick_amount(
+            text, [r"空头期权市值", r"Market\s*Value\s*\(\s*short\s*\)"]
+        ),
     }
     # Prefer 市值权益 as the historical equity headline; fall back to 客户权益 / 期末结存
     equity = fields["market_equity"]
@@ -1018,9 +1096,11 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                 req.UserID = self.cfg["user"]
                 req.AppID = self.cfg["appid"]
                 req.AuthCode = self.cfg["authcode"]
-                add_log(f"ReqAuthenticate user={_mask_user(self.cfg['user'])} appid={self.cfg['appid']}")
+                add_log(
+                    f"ReqAuthenticate user={_mask_user(self.cfg['user'])} appid={self.cfg['appid']}"
+                )
                 self.api.ReqAuthenticate(req, 0)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self._fail_login(f"认证请求异常: {e}")
 
         def OnFrontDisconnected(self, nReason: int):
@@ -1029,7 +1109,9 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
             if not self.logged_in_ev.is_set():
                 self._fail_login(f"前置断开 nReason={nReason}")
 
-        def OnRspAuthenticate(self, pRspAuthenticateField, pRspInfo, nRequestID, bIsLast):
+        def OnRspAuthenticate(
+            self, pRspAuthenticateField, pRspInfo, nRequestID, bIsLast
+        ):
             try:
                 if pRspInfo and pRspInfo.ErrorID != 0:
                     self._fail_login(f"认证失败: {pRspInfo.ErrorMsg}")
@@ -1042,7 +1124,7 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                 req.UserProductInfo = "vr"
                 add_log("ReqUserLogin ...")
                 self.api.ReqUserLogin(req, 0)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self._fail_login(f"登录请求异常: {e}")
 
         def OnRspUserLogin(self, pRspUserLogin, pRspInfo, nRequestID, bIsLast):
@@ -1059,10 +1141,12 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                 if bIsLast:
                     self.ready = True
                     self.logged_in_ev.set()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self._fail_login(f"登录回调异常: {e}")
 
-        def OnRspSettlementInfoConfirm(self, pSettlementInfoConfirm, pRspInfo, nRequestID, bIsLast):
+        def OnRspSettlementInfoConfirm(
+            self, pSettlementInfoConfirm, pRspInfo, nRequestID, bIsLast
+        ):
             try:
                 if pRspInfo is not None and pRspInfo.ErrorID != 0:
                     add_log(f"Settlement confirm warn: {pRspInfo.ErrorMsg}", "warn")
@@ -1072,7 +1156,9 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                 if bIsLast:
                     self.settlement_done.set()
 
-        def OnRspQryTradingAccount(self, pTradingAccount, pRspInfo, nRequestID, bIsLast):
+        def OnRspQryTradingAccount(
+            self, pTradingAccount, pRspInfo, nRequestID, bIsLast
+        ):
             try:
                 if pRspInfo is not None and pRspInfo.ErrorID != 0:
                     self._qry_error = f"查资金失败: {pRspInfo.ErrorMsg}"
@@ -1088,7 +1174,9 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                 if bIsLast:
                     self.account_done.set()
 
-        def OnRspQryInvestorPosition(self, pInvestorPosition, pRspInfo, nRequestID, bIsLast):
+        def OnRspQryInvestorPosition(
+            self, pInvestorPosition, pRspInfo, nRequestID, bIsLast
+        ):
             try:
                 if pRspInfo is not None and pRspInfo.ErrorID != 0:
                     self._qry_error = f"查持仓失败: {pRspInfo.ErrorMsg}"
@@ -1138,7 +1226,9 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                 if bIsLast:
                     self.trade_done.set()
 
-        def OnRspQryInvestorPositionDetail(self, pInvestorPositionDetail, pRspInfo, nRequestID, bIsLast):
+        def OnRspQryInvestorPositionDetail(
+            self, pInvestorPositionDetail, pRspInfo, nRequestID, bIsLast
+        ):
             try:
                 if pRspInfo is not None and pRspInfo.ErrorID != 0:
                     self._qry_error = f"查持仓明细失败: {pRspInfo.ErrorMsg}"
@@ -1157,14 +1247,18 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                 if bIsLast:
                     self.detail_done.set()
 
-        def OnRspQrySettlementInfo(self, pSettlementInfo, pRspInfo, nRequestID, bIsLast):
+        def OnRspQrySettlementInfo(
+            self, pSettlementInfo, pRspInfo, nRequestID, bIsLast
+        ):
             try:
                 if pRspInfo is not None and pRspInfo.ErrorID != 0:
                     self._qry_error = f"查结算单失败: {pRspInfo.ErrorMsg}"
                     add_log(self._qry_error, "error")
                 elif pSettlementInfo is not None:
                     seq = int(_field(pSettlementInfo, "SequenceNo", 0) or 0)
-                    chunk = _decode_settlement_chunk(_field(pSettlementInfo, "Content", ""))
+                    chunk = _decode_settlement_chunk(
+                        _field(pSettlementInfo, "Content", "")
+                    )
                     # Must copy now: Content buffer may be reused on next callback
                     self._settlement_chunks.append((seq, chunk))
             finally:
@@ -1194,7 +1288,9 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
             if self._qry_error:
                 raise CtpError(self._qry_error)
 
-        def _wait_qry_soft(self, done: threading.Event, label: str, timeout: float) -> bool:
+        def _wait_qry_soft(
+            self, done: threading.Event, label: str, timeout: float
+        ) -> bool:
             """Optional qry: log failures, never abort portfolio."""
             if not done.wait(timeout):
                 add_log(f"查询{label}超时", "warn")
@@ -1214,17 +1310,29 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                     if iid:
                         self._instrument_buf[iid] = {
                             "instrument": iid,
-                            "exchange": str(_field(pInstrument, "ExchangeID", "") or ""),
-                            "product_class": str(_field(pInstrument, "ProductClass", "") or ""),
-                            "volume_multiple": int(_field(pInstrument, "VolumeMultiple", 0) or 0),
-                            "options_type": str(_field(pInstrument, "OptionsType", "") or ""),
-                            "underlying": str(_field(pInstrument, "UnderlyingInstrID", "") or ""),
+                            "exchange": str(
+                                _field(pInstrument, "ExchangeID", "") or ""
+                            ),
+                            "product_class": str(
+                                _field(pInstrument, "ProductClass", "") or ""
+                            ),
+                            "volume_multiple": int(
+                                _field(pInstrument, "VolumeMultiple", 0) or 0
+                            ),
+                            "options_type": str(
+                                _field(pInstrument, "OptionsType", "") or ""
+                            ),
+                            "underlying": str(
+                                _field(pInstrument, "UnderlyingInstrID", "") or ""
+                            ),
                         }
             finally:
                 if bIsLast:
                     self.instrument_done.set()
 
-        def OnRspQryDepthMarketData(self, pDepthMarketData, pRspInfo, nRequestID, bIsLast):
+        def OnRspQryDepthMarketData(
+            self, pDepthMarketData, pRspInfo, nRequestID, bIsLast
+        ):
             try:
                 if pRspInfo is not None and pRspInfo.ErrorID != 0:
                     self._qry_error = f"查行情失败: {pRspInfo.ErrorMsg}"
@@ -1233,17 +1341,23 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                     if iid:
                         self._tick_buf[iid] = {
                             "instrument": iid,
-                            "last_price": _sanitize_price(_field(pDepthMarketData, "LastPrice", 0)),
+                            "last_price": _sanitize_price(
+                                _field(pDepthMarketData, "LastPrice", 0)
+                            ),
                             "settlement_price": _sanitize_price(
                                 _field(pDepthMarketData, "SettlementPrice", 0)
                             ),
-                            "exchange": str(_field(pDepthMarketData, "ExchangeID", "") or ""),
+                            "exchange": str(
+                                _field(pDepthMarketData, "ExchangeID", "") or ""
+                            ),
                         }
             finally:
                 if bIsLast:
                     self.tick_done.set()
 
-        def _qry_instrument(self, instrument: str, exchange: str = "", timeout: float = 12.0) -> None:
+        def _qry_instrument(
+            self, instrument: str, exchange: str = "", timeout: float = 12.0
+        ) -> None:
             self._qry_error = None
             self.instrument_done.clear()
             time.sleep(_QRY_GAP)
@@ -1255,7 +1369,9 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
             self.api.ReqQryInstrument(req, 0)
             self._wait_qry_soft(self.instrument_done, f"合约{instrument}", timeout)
 
-        def _qry_tick(self, instrument: str, exchange: str = "", timeout: float = 12.0) -> None:
+        def _qry_tick(
+            self, instrument: str, exchange: str = "", timeout: float = 12.0
+        ) -> None:
             self._qry_error = None
             self.tick_done.clear()
             time.sleep(_QRY_GAP)
@@ -1481,7 +1597,9 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
                     "order_count": len(orders),
                     "trade_count": len(trades),
                     "use_margin": round(sum(p["use_margin"] for p in positions), 2),
-                    "position_profit": round(sum(p["position_profit"] for p in positions), 2),
+                    "position_profit": round(
+                        sum(p["position_profit"] for p in positions), 2
+                    ),
                     "close_profit": round(sum(p["close_profit"] for p in positions), 2),
                     "detail_close_profit": round(
                         sum(d["close_profit_by_trade"] for d in details), 2
@@ -1505,7 +1623,7 @@ def _build_session(tdapi: Any, cfg: dict[str, str]):
             try:
                 self.api.RegisterSpi(None)
                 self.api.Release()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 add_log(f"Release warn: {e}", "warn")
 
     return CtpSession()
@@ -1564,7 +1682,7 @@ def login(timeout: float = _DEFAULT_TIMEOUT) -> dict[str, Any]:
         if stale is not None:
             try:
                 stale.close()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
         os.makedirs(CACHE_DIR, exist_ok=True)
@@ -1598,7 +1716,7 @@ def login(timeout: float = _DEFAULT_TIMEOUT) -> dict[str, Any]:
             if _session is None and td is not None:
                 try:
                     td.close()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
         raise
     finally:
@@ -1618,7 +1736,7 @@ def logout() -> dict[str, Any]:
         if td is not None:
             try:
                 td.close()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 add_log(f"Logout warn: {e}", "warn")
         add_log("Logged out")
         _reset_market_equity_state()
@@ -1720,7 +1838,7 @@ def schedule_market_equity(portfolio: dict[str, Any] | None) -> None:
                 f"eq={me.get('market_equity')} long={me.get('option_long_value')} "
                 f"short={me.get('option_short_value')} legs={me.get('option_legs')}"
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             add_log(f"MarketEquity bg fail seq={seq}: {e}", "error")
             with _me_lock:
                 if _me_state.get("seq") == seq:
@@ -1786,14 +1904,17 @@ def fetch_settlement(
                 raise CtpError("正在登录中, 请稍候")
         result = td.query_settlement(day, timeout=timeout, allow_empty=False)
         if len(day) == 8 and result.get("status") == "ok":
-            _put_cached_settlement(day, {
-                "status": "ok",
-                "trading_day": day,
-                "parsed": result.get("parsed") or {},
-                "content": result.get("content") or "",
-                "chunk_count": result.get("chunk_count") or 0,
-                "updated": result.get("updated") or _now(),
-            })
+            _put_cached_settlement(
+                day,
+                {
+                    "status": "ok",
+                    "trading_day": day,
+                    "parsed": result.get("parsed") or {},
+                    "content": result.get("content") or "",
+                    "chunk_count": result.get("chunk_count") or 0,
+                    "updated": result.get("updated") or _now(),
+                },
+            )
         result["from_cache"] = False
         return result
     finally:
@@ -1818,7 +1939,7 @@ def fetch_settlement_range(
         rep = reparse_settlement_cache()
         if rep.get("fixed"):
             add_log(f"Settlement cache reparsed: fixed={rep['fixed']}/{rep['scanned']}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         add_log(f"Settlement cache reparse warn: {e}", "warn")
 
     start_d = _normalize_ymd(start)
@@ -1867,7 +1988,9 @@ def fetch_settlement_range(
                     raise CtpError("尚未登录, 请先点「登录」后再拉取缺失结算单")
                 if _logging_in:
                     raise CtpError("正在登录中, 请稍候")
-            add_log(f"Settlement range fetch {len(need_fetch)} days ({start_d}..{end_d})")
+            add_log(
+                f"Settlement range fetch {len(need_fetch)} days ({start_d}..{end_d})"
+            )
             for day in need_fetch:
                 try:
                     result = td.query_settlement(day, timeout=timeout, allow_empty=True)
@@ -1889,7 +2012,9 @@ def fetch_settlement_range(
                         stats["empty"] += 1
                 except CtpError as e:
                     add_log(f"Settlement {day} fail: {e}", "error")
-                    series.append(_series_point(day, None, from_cache=False, error=str(e)))
+                    series.append(
+                        _series_point(day, None, from_cache=False, error=str(e))
+                    )
                     stats["errors"] += 1
         finally:
             _op_lock.release()
