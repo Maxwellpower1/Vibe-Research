@@ -1,0 +1,8 @@
+{
+  "host": "tcp://180.169.85.204:61205",
+  "broker": "3040",
+  "user": "YOUR_INVESTOR_ID",
+  "password": "YOUR_PASSWORD",
+  "appid": "client_xxx_1.0.0",
+  "authcode": "YOUR_AUTH_CODE"
+}

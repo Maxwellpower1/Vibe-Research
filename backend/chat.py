@@ -22,7 +22,7 @@ import cli_runtime
 import gstock
 import tools
 
-# 工具定义与执行统一由 tools.py 提供（chat / mcp_server / debate 共用一套）。
+# 工具定义与执行统一由 tools.py 提供（chat / mcp_server 共用一套）。
 # 这两个别名是历史入口，mcp_server 与既有测试仍按 chat.TOOLS / chat._exec_tool 取用。
 TOOLS = tools.TOOLS
 _exec_tool = tools.exec_tool

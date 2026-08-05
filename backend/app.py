@@ -20,10 +20,10 @@ from pydantic import BaseModel
 import astock
 import chat as chat_layer
 import cli_runtime
-import debate as debate_layer
 import gstock
 import newsradar
 import portfolio as pf
+import ctp_account as ctp
 import market
 import myreports as mr
 import ovlab
@@ -37,7 +37,9 @@ pf.start_scheduler(1800)
 
 # CORS：默认放开（本地自托管友好）；公网部署时用 VR_ALLOW_ORIGINS 收紧成白名单。
 #   例：VR_ALLOW_ORIGINS="https://myhost"  （逗号分隔多个）
-_ORIGINS = [o.strip() for o in os.environ.get("VR_ALLOW_ORIGINS", "*").split(",") if o.strip()] or ["*"]
+_ORIGINS = [
+    o.strip() for o in os.environ.get("VR_ALLOW_ORIGINS", "*").split(",") if o.strip()
+] or ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ORIGINS,
@@ -59,8 +61,12 @@ async def _require_api_key(request: Request, call_next):
         and request.url.path != "/api/health"
     ):
         if request.headers.get("authorization", "") != f"Bearer {_API_KEY}":
-            return JSONResponse({"detail": "未授权：缺少或错误的 API Key（VR_API_KEY）"}, status_code=401)
+            return JSONResponse(
+                {"detail": "未授权：缺少或错误的 API Key（VR_API_KEY）"},
+                status_code=401,
+            )
     return await call_next(request)
+
 
 _CODE_RE = r"^\d{6}$"
 
@@ -78,9 +84,9 @@ def health():
 
 
 class LLMConfig(BaseModel):
-    provider: str = ""       # cli-* = 订阅接入（调本机 CLI）；其余 = API 接入
-    baseURL: str = ""        # 订阅接入时留空
-    apiKey: str = ""         # 订阅接入时留空
+    provider: str = ""  # cli-* = 订阅接入（调本机 CLI）；其余 = API 接入
+    baseURL: str = ""  # 订阅接入时留空
+    apiKey: str = ""  # 订阅接入时留空
     model: str
 
 
@@ -107,7 +113,10 @@ def chat(req: ChatReq):
     if is_cli:
         kind = req.llm.provider[4:]
         if not cli_runtime.detect_cli(kind):
-            raise HTTPException(400, f"未检测到「{kind}」对应的本机命令。请先安装并登录该 CLI，或改用「API 接入」。")
+            raise HTTPException(
+                400,
+                f"未检测到「{kind}」对应的本机命令。请先安装并登录该 CLI，或改用「API 接入」。",
+            )
     elif not req.llm.apiKey or not req.llm.baseURL:
         raise HTTPException(400, "缺少 Base URL 或 API Key，请先在「接入 AI」里填写")
 
@@ -115,17 +124,24 @@ def chat(req: ChatReq):
 
     def gen():
         try:
-            events = (chat_layer.run_chat_cli_stream if is_cli else chat_layer.run_chat_stream)(cfg, req.messages, req.context)
+            events = (
+                chat_layer.run_chat_cli_stream if is_cli else chat_layer.run_chat_stream
+            )(cfg, req.messages, req.context)
             for ev in events:
                 yield json.dumps(ev, ensure_ascii=False) + "\n"
-        except Exception as e:  # noqa: BLE001 — 运行时错误以流内事件上报，不中断连接
-            yield json.dumps({"type": "error", "message": f"对话失败：{e}"}, ensure_ascii=False) + "\n"
+        except Exception as e:
+            yield (
+                json.dumps(
+                    {"type": "error", "message": f"对话失败：{e}"}, ensure_ascii=False
+                )
+                + "\n"
+            )
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
 
 
 def _check_llm(llm: LLMConfig) -> dict:
-    """校验模型配置并返回 cfg（chat / debate / reflect 三个流式端点共用）。
+    """校验模型配置并返回 cfg（chat / reflect 流式端点共用）。
 
     配置问题走 HTTP 400（前端能弹提示引导去「接入 AI」页），运行时错误留给流内 error 事件。
     """
@@ -134,7 +150,10 @@ def _check_llm(llm: LLMConfig) -> dict:
     if llm.provider.startswith("cli-"):
         kind = llm.provider[4:]
         if not cli_runtime.detect_cli(kind):
-            raise HTTPException(400, f"未检测到「{kind}」对应的本机命令。请先安装并登录该 CLI，或改用「API 接入」。")
+            raise HTTPException(
+                400,
+                f"未检测到「{kind}」对应的本机命令。请先安装并登录该 CLI，或改用「API 接入」。",
+            )
     elif not llm.apiKey or not llm.baseURL:
         raise HTTPException(400, "缺少 Base URL 或 API Key，请先在「接入 AI」里填写")
     return llm.model_dump()
@@ -142,32 +161,18 @@ def _check_llm(llm: LLMConfig) -> dict:
 
 def _ndjson(events):
     """把事件生成器包成 NDJSON 流；运行时异常转成流内 error 事件，不中断连接。"""
+
     def gen():
         try:
             for ev in events():
                 yield json.dumps(ev, ensure_ascii=False) + "\n"
-        except Exception as e:  # noqa: BLE001
-            yield json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False) + "\n"
+        except Exception as e:
+            yield (
+                json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False)
+                + "\n"
+            )
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
-
-
-class DebateReq(BaseModel):
-    code: str
-    rounds: int = 1
-    llm: LLMConfig
-
-
-@app.post("/api/debate")
-def debate(req: DebateReq):
-    """多空辩论：后端先拉客观事实底稿，再让多方 / 空方 / 中立主持依次发言，**流式** NDJSON。
-
-    刻意不产出买卖结论——终点是「分歧点 + 验证清单」，判断留给用户自己。
-    """
-    code = _validate(req.code)
-    cfg = _check_llm(req.llm)
-    rounds = 2 if req.rounds >= 2 else 1
-    return _ndjson(lambda: debate_layer.run_debate_stream(cfg, code, rounds))
 
 
 class ReflectReq(BaseModel):
@@ -182,7 +187,9 @@ def reflect(req: ReflectReq):
     if not (req.source or "").strip():
         raise HTTPException(400, "source 不能为空")
     cfg = _check_llm(req.llm)
-    return _ndjson(lambda: reflect_layer.run_reflection_stream(cfg, req.source, req.title))
+    return _ndjson(
+        lambda: reflect_layer.run_reflection_stream(cfg, req.source, req.title)
+    )
 
 
 class HoldingIn(BaseModel):
@@ -196,7 +203,7 @@ def portfolio_get():
     """持仓 + 实时盈亏（浮动盈亏红涨绿跌）。"""
     try:
         return {"data": pf.get_portfolio()}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"持仓读取异常：{e}") from e
 
 
@@ -218,6 +225,7 @@ def portfolio_remove(code: str = Query(...)):
 
 
 # ---- 我的研报（用户上传自己的研报，存本地、不上传、不进开源仓库）----
+
 
 class ReportIn(BaseModel):
     name: str
@@ -274,6 +282,7 @@ def portfolio_close(c: CloseIn):
     if not date:
         raise HTTPException(400, "请填清仓日期")
     from datetime import datetime
+
     try:
         datetime.strptime(date, "%Y-%m-%d")
     except ValueError:
@@ -291,8 +300,93 @@ def portfolio_refresh():
     """手动刷新：立即重拉行情算盈亏。"""
     try:
         return {"data": pf.get_portfolio()}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"刷新失败：{e}") from e
+
+
+@app.get("/api/portfolio/ctp/status")
+def portfolio_ctp_status():
+    """CTP 配置 / 依赖 / 登录状态（不主动连前置）。"""
+    return {"data": ctp.config_status()}
+
+
+@app.get("/api/portfolio/ctp/logs")
+def portfolio_ctp_logs(since: int = Query(0, ge=0)):
+    """CTP 操作日志（供前端轮询）。"""
+    return {"data": ctp.get_logs(since)}
+
+
+@app.post("/api/portfolio/ctp/login")
+def portfolio_ctp_login():
+    """点击登录：连前置 + 认证 + 登录，保持会话（不下单）。"""
+    try:
+        return {"data": ctp.login()}
+    except ctp.CtpError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"CTP 登录异常：{e}") from e
+
+
+@app.post("/api/portfolio/ctp/logout")
+def portfolio_ctp_logout():
+    """退出登录，断开 CTP 会话。"""
+    try:
+        return {"data": ctp.logout()}
+    except ctp.CtpError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"CTP 退出异常：{e}") from e
+
+
+@app.get("/api/portfolio/ctp")
+def portfolio_ctp():
+    """CTP 只读查询资金 + 持仓（需已登录，不下单）。"""
+    try:
+        return {"data": ctp.fetch_portfolio()}
+    except ctp.CtpError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"CTP 持仓查询异常：{e}") from e
+
+
+@app.get("/api/portfolio/ctp/market-equity")
+def portfolio_ctp_market_equity():
+    """轮询后台市值权益任务(期权合约/行情流控, 不阻塞主查询)。"""
+    return {"data": ctp.get_market_equity_job()}
+
+
+@app.get("/api/portfolio/ctp/settlement")
+def portfolio_ctp_settlement(
+    day: str = Query(..., description="YYYYMMDD 或 YYYYMM"),
+    force: bool = Query(False, description="忽略本地缓存强制重查"),
+):
+    """查单日结算单并解析市值权益（有缓存则直接读本地）。"""
+    try:
+        return {"data": ctp.fetch_settlement(day, force=force)}
+    except ctp.CtpError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"CTP 结算单查询异常：{e}") from e
+
+
+@app.get("/api/portfolio/ctp/settlement/range")
+def portfolio_ctp_settlement_range(
+    start: str = Query(..., description="开始日 YYYYMMDD / YYYY-MM-DD"),
+    end: str | None = Query(None, description="结束日, 默认今天"),
+    refresh: bool = Query(True, description="是否向 CTP 补拉缺失日"),
+    force: bool = Query(False, description="忽略缓存全部重查"),
+):
+    """日期区间结算单: 本地缓存优先, 缺失日登录后补拉, 返回市值权益序列。"""
+    try:
+        return {
+            "data": ctp.fetch_settlement_range(
+                start, end, refresh=refresh, force=force,
+            )
+        }
+    except ctp.CtpError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"CTP 结算区间查询异常：{e}") from e
 
 
 @app.get("/api/radar")
@@ -300,7 +394,7 @@ def radar():
     """资讯雷达：12 赛道公开 RSS 资讯（读缓存，无缓存返回赛道骨架）。"""
     try:
         return {"data": newsradar.get_radar(force=False)}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"资讯雷达异常：{e}") from e
 
 
@@ -309,7 +403,7 @@ def radar_refresh():
     """强制重抓全部 RSS 源（耗时约 20-40s），更新缓存。"""
     try:
         return {"data": newsradar.fetch_radar()}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"资讯雷达刷新失败：{e}") from e
 
 
@@ -318,7 +412,7 @@ def market_overview():
     """市场情绪 + 板块资金流（板块/大盘级，全站共享缓存 5 分钟）。"""
     try:
         return {"data": market.get_overview()}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"市场总览异常：{e}") from e
 
 
@@ -331,7 +425,7 @@ def market_emotion():
     """
     try:
         return {"data": market.get_short_term_emotion()}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"短线情绪异常：{e}") from e
 
 
@@ -340,7 +434,7 @@ def market_turnover_top():
     """全市场成交额榜 Top20（客观公开榜单数据，非推荐/非预测/不评分）。全站共享缓存 5 分钟。"""
     try:
         return {"data": market.get_turnover_top()}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"成交额榜异常：{e}") from e
 
 
@@ -349,14 +443,16 @@ def global_indices():
     """全球指数快照（道指 / 标普500 / 纳斯达克 / 恒生 / 恒生科技）—— A 股看隔夜外围脸色。缓存 5 分钟。"""
     try:
         return {"data": market.get_global_indices()}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"全球指数异常：{e}") from e
 
 
 @app.get("/api/global/stock")
 def global_stock(
     symbol: str = Query(..., min_length=1, max_length=16),
-    with_metrics: bool = Query(True, description="是否拉关键财务；观察列表可传 false 加速"),
+    with_metrics: bool = Query(
+        True, description="是否拉关键财务；观察列表可传 false 加速"
+    ),
 ):
     """美股 / 港股个股聚合：行情 + 关键财务指标（东财域内源）。symbol 如 AAPL / BABA / 00700。"""
     try:
@@ -366,7 +462,7 @@ def global_stock(
         return {"data": data}
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"美港股查询异常：{e}") from e
 
 
@@ -378,13 +474,15 @@ def global_us_kline(
     """美股日 K（默认前复权 Yahoo；不可达回退新浪不复权）。symbol 如 AAPL / TSLA。缓存 5 分钟。"""
     sym = symbol.strip().upper()
     try:
-        data = _cached(f"us_kline:{num}", sym, 300, lambda: gstock.us_stock_kline(sym, num=num))
+        data = _cached(
+            f"us_kline:{num}", sym, 300, lambda: gstock.us_stock_kline(sym, num=num)
+        )
         if not data:
             raise HTTPException(404, f"未找到美股「{symbol}」的 K 线（仅美股 ticker）")
         return {"data": data}
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"美股 K 线异常：{e}") from e
 
 
@@ -394,11 +492,13 @@ def global_hk_cashflow(symbol: str = Query(..., min_length=1, max_length=16)):
     try:
         data = gstock.hk_cashflow(symbol.strip())
         if not data:
-            raise HTTPException(404, f"未找到港股「{symbol}」的现金流数据（仅港股支持）")
+            raise HTTPException(
+                404, f"未找到港股「{symbol}」的现金流数据（仅港股支持）"
+            )
         return {"data": data}
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"港股现金流查询异常：{e}") from e
 
 
@@ -407,7 +507,7 @@ def indices():
     """A股大盘指数实时行情（上证/深证成指/创业板指/沪深300）。仅标准库。"""
     try:
         return {"data": astock.index_quote()}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"指数行情异常：{e}") from e
 
 
@@ -419,11 +519,12 @@ def quote(codes: str = Query(..., description="逗号分隔的 6 位代码")):
         raise HTTPException(400, "codes 必须是逗号分隔的 6 位数字")
     try:
         return {"data": astock.tencent_quote(lst)}
-    except Exception as e:  # noqa: BLE001 — 边界统一兜底
+    except Exception as e:
         raise HTTPException(502, f"行情源异常：{e}") from e
 
 
 import time as _time
+
 _PCT_CACHE: dict = {}
 
 
@@ -440,7 +541,7 @@ def valuation_percentile(code: str = Query(...)):
         return {"data": data}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"估值分位异常：{e}") from e
 
 
@@ -458,7 +559,7 @@ def announcements(code: str = Query(...)):
         data = astock.announcements(code)
         _ANN_CACHE[code] = (_time.time(), data)
         return {"data": data}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"公告源异常：{e}") from e
 
 
@@ -478,7 +579,7 @@ def financials(code: str = Query(...)):
         return {"data": data}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"财务摘要异常：{e}") from e
 
 
@@ -490,7 +591,7 @@ def valuation(code: str = Query(...)):
         return {"data": astock.full_valuation(code)}
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"估值计算异常：{e}") from e
 
 
@@ -501,9 +602,11 @@ def reports(code: str = Query(...), pages: int = Query(2, ge=1, le=5)):
     try:
         rows = astock.eastmoney_reports(code, max_pages=pages)
         for r in rows:
-            r["pdfUrl"] = astock.pdf_url(r.get("infoCode", "")) if r.get("infoCode") else None
+            r["pdfUrl"] = (
+                astock.pdf_url(r.get("infoCode", "")) if r.get("infoCode") else None
+            )
         return {"data": rows}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"研报源异常：{e}") from e
 
 
@@ -515,7 +618,7 @@ def news(code: str = Query(...), limit: int = Query(20, ge=1, le=50)):
         return {"data": astock.stock_news(code, limit=limit)}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"新闻源异常：{e}") from e
 
 
@@ -527,7 +630,7 @@ def info(code: str = Query(...)):
         return {"data": astock.individual_info(code)}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"基本面源异常：{e}") from e
 
 
@@ -539,19 +642,23 @@ def disclosure(code: str = Query(...)):
         return {"data": astock.disclosure(code)}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"公告源异常：{e}") from e
 
 
 @app.get("/api/kline")
-def kline(code: str = Query(...), category: int = Query(4), offset: int = Query(60, ge=1, le=800)):
+def kline(
+    code: str = Query(...),
+    category: int = Query(4),
+    offset: int = Query(60, ge=1, le=800),
+):
     """K线（需 mootdx）。category 4=日 5=周 6=月 11=60分钟。"""
     code = _validate(code)
     try:
         return {"data": astock.kline(code, category=category, offset=offset)}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"K线源异常：{e}") from e
 
 
@@ -578,7 +685,7 @@ def astock_light_kline(
         return {"data": data}
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"A股轻量K线异常：{e}") from e
 
 
@@ -590,7 +697,7 @@ def finance(code: str = Query(...)):
         return {"data": astock.finance(code)}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"财务源异常：{e}") from e
 
 
@@ -617,8 +724,10 @@ def margin(code: str = Query(...)):
     """融资融券明细（东财，日级）。缓存 30 分钟。"""
     code = _validate(code)
     try:
-        return {"data": _cached("margin", code, 1800, lambda: astock.margin_trading(code))}
-    except Exception as e:  # noqa: BLE001
+        return {
+            "data": _cached("margin", code, 1800, lambda: astock.margin_trading(code))
+        }
+    except Exception as e:
         raise HTTPException(502, f"融资融券异常：{e}") from e
 
 
@@ -628,7 +737,7 @@ def block_trade(code: str = Query(...)):
     code = _validate(code)
     try:
         return {"data": _cached("block", code, 1800, lambda: astock.block_trade(code))}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"大宗交易异常：{e}") from e
 
 
@@ -637,8 +746,12 @@ def holders(code: str = Query(...)):
     """股东户数变化（东财，季度级）。缓存 30 分钟。"""
     code = _validate(code)
     try:
-        return {"data": _cached("holders", code, 1800, lambda: astock.holder_num_change(code))}
-    except Exception as e:  # noqa: BLE001
+        return {
+            "data": _cached(
+                "holders", code, 1800, lambda: astock.holder_num_change(code)
+            )
+        }
+    except Exception as e:
         raise HTTPException(502, f"股东户数异常：{e}") from e
 
 
@@ -647,8 +760,12 @@ def dividend(code: str = Query(...)):
     """分红送转历史（东财）。缓存 30 分钟。"""
     code = _validate(code)
     try:
-        return {"data": _cached("dividend", code, 1800, lambda: astock.dividend_history(code))}
-    except Exception as e:  # noqa: BLE001
+        return {
+            "data": _cached(
+                "dividend", code, 1800, lambda: astock.dividend_history(code)
+            )
+        }
+    except Exception as e:
         raise HTTPException(502, f"分红送转异常：{e}") from e
 
 
@@ -658,8 +775,12 @@ def fund_flow(code: str = Query(...)):
     注：push2his 对部分大陆住宅 IP 有间歇风控，可能返回空（非代码问题）。"""
     code = _validate(code)
     try:
-        return {"data": _cached("fundflow", code, 900, lambda: astock.stock_fund_flow_120d(code))}
-    except Exception as e:  # noqa: BLE001
+        return {
+            "data": _cached(
+                "fundflow", code, 900, lambda: astock.stock_fund_flow_120d(code)
+            )
+        }
+    except Exception as e:
         raise HTTPException(502, f"资金流异常：{e}") from e
 
 
@@ -668,8 +789,10 @@ def dragon_tiger(code: str = Query(...)):
     """龙虎榜：该股近期上榜记录 + 买卖席位 + 机构净买（东财）。缓存 30 分钟。"""
     code = _validate(code)
     try:
-        return {"data": _cached("dt", code, 1800, lambda: astock.dragon_tiger_board(code))}
-    except Exception as e:  # noqa: BLE001
+        return {
+            "data": _cached("dt", code, 1800, lambda: astock.dragon_tiger_board(code))
+        }
+    except Exception as e:
         raise HTTPException(502, f"龙虎榜异常：{e}") from e
 
 
@@ -678,8 +801,10 @@ def lockup(code: str = Query(...)):
     """限售解禁日历：历史解禁 + 未来 90 天待解禁（东财）。缓存 30 分钟。"""
     code = _validate(code)
     try:
-        return {"data": _cached("lockup", code, 1800, lambda: astock.lockup_expiry(code))}
-    except Exception as e:  # noqa: BLE001
+        return {
+            "data": _cached("lockup", code, 1800, lambda: astock.lockup_expiry(code))
+        }
+    except Exception as e:
         raise HTTPException(502, f"解禁日历异常：{e}") from e
 
 
@@ -688,8 +813,10 @@ def blocks(code: str = Query(...)):
     """个股所属板块/概念归属（东财 slist）。缓存 30 分钟。"""
     code = _validate(code)
     try:
-        return {"data": _cached("blocks", code, 1800, lambda: astock.concept_blocks(code))}
-    except Exception as e:  # noqa: BLE001
+        return {
+            "data": _cached("blocks", code, 1800, lambda: astock.concept_blocks(code))
+        }
+    except Exception as e:
         raise HTTPException(502, f"板块归属异常：{e}") from e
 
 
@@ -699,7 +826,7 @@ def hot_concepts(code: str = Query(...)):
     code = _validate(code)
     try:
         return {"data": _cached("hotcon", code, 900, lambda: astock.hot_concepts(code))}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"热门概念异常：{e}") from e
 
 
@@ -709,7 +836,7 @@ def investor_qa(code: str = Query(...)):
     code = _validate(code)
     try:
         return {"data": _cached("irm", code, 900, lambda: astock.investor_qa(code))}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"互动易异常：{e}") from e
 
 
@@ -724,7 +851,7 @@ def industry(top: int = Query(20, ge=5, le=50)):
         data = astock.industry_comparison(top_n=top)
         _DC_CACHE[key] = (_time.time(), data)
         return {"data": data}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"行业排名异常：{e}") from e
 
 
@@ -740,7 +867,7 @@ def _ovlab_call(fn, label: str):
         return {"data": fn()}
     except ovlab.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"OpenVlab {label}异常：{e}") from e
 
 
@@ -752,12 +879,16 @@ def ovlab_market():
 
 @app.get("/api/ovlab/detail")
 def ovlab_detail(
-    prod_und: str = Query(..., min_length=1, max_length=32, description="标的代码, 如 510300"),
+    prod_und: str = Query(
+        ..., min_length=1, max_length=32, description="标的代码, 如 510300"
+    ),
     exps: str | None = Query(None, description="可选, 逗号分隔的合约月份列表"),
 ):
     """OpenVlab 单个标的详细数据 (dto/{prodUnd})。缓存 5 分钟。"""
     exp_list = [e.strip() for e in exps.split(",") if e.strip()] if exps else None
-    return _ovlab_call(lambda: ovlab.get_product_detail(prod_und.strip(), exp_list), "个股详情")
+    return _ovlab_call(
+        lambda: ovlab.get_product_detail(prod_und.strip(), exp_list), "个股详情"
+    )
 
 
 @app.get("/api/ovlab/volatility-ts")
@@ -768,6 +899,7 @@ def ovlab_volatility_ts():
 
 # —— 期货期限结构 ——
 
+
 @app.get("/api/ovlab/future-ts-all")
 def ovlab_future_ts_all():
     """OpenVlab 期货期限结构汇总 (future-ts-all)，全品种。缓存 5 分钟。"""
@@ -775,12 +907,19 @@ def ovlab_future_ts_all():
 
 
 @app.get("/api/ovlab/future-ts")
-def ovlab_future_ts(prod_und: str = Query(..., min_length=1, max_length=32, description="标的代码, 如 MA")):
+def ovlab_future_ts(
+    prod_und: str = Query(
+        ..., min_length=1, max_length=32, description="标的代码, 如 MA"
+    ),
+):
     """OpenVlab 单品种期货期限结构 (future-ts/{prodUnd})。缓存 5 分钟。"""
-    return _ovlab_call(lambda: ovlab.get_future_term_structure(prod_und.strip()), "期货期限结构")
+    return _ovlab_call(
+        lambda: ovlab.get_future_term_structure(prod_und.strip()), "期货期限结构"
+    )
 
 
 # —— 异动 / 资金流 ——
+
 
 @app.get("/api/ovlab/flow-alert")
 def ovlab_flow_alert():
@@ -805,6 +944,7 @@ def ovlab_flow_data(req: FlowDataReq):
 
 # —— 持仓 / 仓差 / 季节性 ——
 
+
 class WarehouseHistoryReq(BaseModel):
     product: str
 
@@ -812,7 +952,9 @@ class WarehouseHistoryReq(BaseModel):
 @app.post("/api/ovlab/warehouse-history")
 def ovlab_warehouse_history(req: WarehouseHistoryReq):
     """OpenVlab 单品种多年持仓历史 (warehouse/history, POST)。缓存 5 分钟。"""
-    return _ovlab_call(lambda: ovlab.get_warehouse_history(req.product.strip()), "持仓历史")
+    return _ovlab_call(
+        lambda: ovlab.get_warehouse_history(req.product.strip()), "持仓历史"
+    )
 
 
 class SeasonalHistoryReq(BaseModel):
@@ -823,10 +965,14 @@ class SeasonalHistoryReq(BaseModel):
 @app.post("/api/ovlab/warehouse-seasonal")
 def ovlab_warehouse_seasonal(req: SeasonalHistoryReq):
     """OpenVlab 全品种季节性持仓 (warehouse/seasonal-history-all, POST)。缓存 5 分钟。"""
-    return _ovlab_call(lambda: ovlab.get_warehouse_seasonal_history_all(req.years, req.product), "季节性持仓")
+    return _ovlab_call(
+        lambda: ovlab.get_warehouse_seasonal_history_all(req.years, req.product),
+        "季节性持仓",
+    )
 
 
 # —— K 线 / 价格波动率 (POST, 需具体合约代码) ——
+
 
 class CodesReq(BaseModel):
     codes: list[str]
@@ -849,13 +995,18 @@ def ovlab_price_volatility_series(req: PriceVolSeriesReq):
 
     codes: 品种:到期月 列表, 如 [\"MA:202609\"], 或 JSON 字符串. 缓存 5 分钟.
     """
-    return _ovlab_call(lambda: ovlab.get_price_volatility_series(req.codes), "价格波动率序列")
+    return _ovlab_call(
+        lambda: ovlab.get_price_volatility_series(req.codes), "价格波动率序列"
+    )
 
 
 # —— 元数据 ——
 
+
 @app.get("/api/ovlab/product-exps")
-def ovlab_product_exps(prod_und: str | None = Query(None, description="可选, 指定单品种")):
+def ovlab_product_exps(
+    prod_und: str | None = Query(None, description="可选, 指定单品种"),
+):
     """OpenVlab 全品种合约月份列表 (product-exps)。缓存 30 分钟。"""
     return _ovlab_call(lambda: ovlab.get_product_exps(prod_und), "合约月份")
 
@@ -879,13 +1030,19 @@ def ovlab_next_trading_day():
 
 
 @app.get("/api/ovlab/holidays")
-def ovlab_holidays(exchange: str = Query(..., min_length=1, max_length=16, description="交易所代码, 如 CZCE")):
+def ovlab_holidays(
+    exchange: str = Query(
+        ..., min_length=1, max_length=16, description="交易所代码, 如 CZCE"
+    ),
+):
     """OpenVlab 某交易所节假日日历 (holidays/{exchange})。缓存 1 小时。"""
     return _ovlab_call(lambda: ovlab.get_holidays(exchange.strip()), "节假日")
 
 
 @app.get("/api/ovlab/expired")
-def ovlab_expired(prod_und: str = Query(..., min_length=1, max_length=32, description="标的代码")):
+def ovlab_expired(
+    prod_und: str = Query(..., min_length=1, max_length=32, description="标的代码"),
+):
     """OpenVlab 某标的已过期合约 (expired/{prodUnd})。缓存 30 分钟。"""
     return _ovlab_call(lambda: ovlab.get_expired(prod_und.strip()), "已过期合约")
 
@@ -894,33 +1051,45 @@ def ovlab_expired(prod_und: str = Query(..., min_length=1, max_length=32, descri
 @app.get("/api/ovlab/kline-history")
 def ovlab_kline_history(
     response: Response,
-    symbol: str = Query(..., min_length=1, max_length=64, description="合约代码, 如 SC2609"),
+    symbol: str = Query(
+        ..., min_length=1, max_length=64, description="合约代码, 如 SC2609"
+    ),
     resolution: str = Query("1D", description="周期: 1D / 1H / 5m / 1m"),
     from_ts: int | None = Query(None, description="Unix 秒, 默认近 1 年"),
     to_ts: int | None = Query(None, description="Unix 秒, 默认当前"),
 ):
     """OpenVlab K 线历史 (history)。不缓存。"""
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    return _ovlab_call(lambda: ovlab.get_kline_history(symbol.strip(), resolution, from_ts, to_ts), "K 线历史")
+    return _ovlab_call(
+        lambda: ovlab.get_kline_history(symbol.strip(), resolution, from_ts, to_ts),
+        "K 线历史",
+    )
 
 
 @app.get("/api/ovlab/atmvol-history")
 def ovlab_atmvol_history(
     response: Response,
-    symbol: str = Query(..., min_length=1, max_length=64, description="合约代码, 如 SC2609"),
+    symbol: str = Query(
+        ..., min_length=1, max_length=64, description="合约代码, 如 SC2609"
+    ),
     resolution: str = Query("1D"),
     from_ts: int | None = Query(None),
     to_ts: int | None = Query(None),
 ):
     """OpenVlab ATM 隐含波动率历史 (history-atmvol)。不缓存。"""
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    return _ovlab_call(lambda: ovlab.get_atmvol_history(symbol.strip(), resolution, from_ts, to_ts), "ATMV 历史")
+    return _ovlab_call(
+        lambda: ovlab.get_atmvol_history(symbol.strip(), resolution, from_ts, to_ts),
+        "ATMV 历史",
+    )
 
 
 @app.get("/api/ovlab/last-bar")
 def ovlab_last_bar(
     response: Response,
-    code: str = Query(..., min_length=1, max_length=64, description="合约代码, 如 SC2609"),
+    code: str = Query(
+        ..., min_length=1, max_length=64, description="合约代码, 如 SC2609"
+    ),
 ):
     """OpenVlab 单合约最新 bar (last-bar/{code})。不缓存。"""
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
@@ -938,7 +1107,9 @@ def ovlab_search_symbols(
 
 @app.get("/api/ovlab/symbol-info")
 def ovlab_symbol_info(
-    code: str = Query(..., min_length=1, max_length=64, description="合约代码, 如 SC2609"),
+    code: str = Query(
+        ..., min_length=1, max_length=64, description="合约代码, 如 SC2609"
+    ),
 ):
     """OpenVlab 合约元信息 (symbol/{code}): 交易时段/价格精度/到期日。缓存 30 分钟。"""
     return _ovlab_call(lambda: ovlab.get_symbol_info(code.strip()), "合约信息")
@@ -946,10 +1117,14 @@ def ovlab_symbol_info(
 
 @app.get("/api/ovlab/volatility-surface")
 def ovlab_volatility_surface(
-    product: str = Query(..., min_length=1, max_length=32, description="标的代码, 如 SC"),
+    product: str = Query(
+        ..., min_length=1, max_length=32, description="标的代码, 如 SC"
+    ),
 ):
     """OpenVlab 波动率曲面 (volatility-surface/{product})。缓存 2 分钟。"""
-    return _ovlab_call(lambda: ovlab.get_volatility_surface(product.strip()), "波动率曲面")
+    return _ovlab_call(
+        lambda: ovlab.get_volatility_surface(product.strip()), "波动率曲面"
+    )
 
 
 class SkewmapReq(BaseModel):
@@ -959,7 +1134,9 @@ class SkewmapReq(BaseModel):
 @app.post("/api/ovlab/skewmap")
 def ovlab_skewmap(req: SkewmapReq):
     """OpenVlab 偏度图 (skewmap, POST)。不缓存。"""
-    return _ovlab_call(lambda: ovlab.get_skewmap(req.model_dump(exclude_none=True)), "偏度图")
+    return _ovlab_call(
+        lambda: ovlab.get_skewmap(req.model_dump(exclude_none=True)), "偏度图"
+    )
 
 
 @app.get("/api/ovlab/surfacemap")
@@ -978,14 +1155,18 @@ def ovlab_option_position_products():
 
 @app.get("/api/ovlab/option-position-details")
 def ovlab_option_position_details(
-    product: str = Query(..., min_length=1, max_length=32, description="品种, 如 SC/IO"),
+    product: str = Query(
+        ..., min_length=1, max_length=32, description="品种, 如 SC/IO"
+    ),
     code: str = Query(..., min_length=1, max_length=64, description="合约, 如 SC2609"),
     direction: str = Query(..., description="方向: C 或 P"),
     day: str = Query(..., description="日期 YYYY-MM-DD"),
 ):
     """OpenVlab 期权持仓明细 (option-position/details)。缓存 5 分钟。"""
     return _ovlab_call(
-        lambda: ovlab.get_option_position_details(product.strip(), code.strip(), direction.strip(), day.strip()),
+        lambda: ovlab.get_option_position_details(
+            product.strip(), code.strip(), direction.strip(), day.strip()
+        ),
         "期权持仓明细",
     )
 
@@ -1005,7 +1186,9 @@ def ovlab_future_position_details(
 ):
     """OpenVlab 期货持仓明细 (future-position/details)。缓存 5 分钟。"""
     return _ovlab_call(
-        lambda: ovlab.get_future_position_details(product.strip(), code.strip(), direction.strip(), day.strip()),
+        lambda: ovlab.get_future_position_details(
+            product.strip(), code.strip(), direction.strip(), day.strip()
+        ),
         "期货持仓明细",
     )
 
@@ -1014,13 +1197,14 @@ def ovlab_future_position_details(
 # Fino 机构观点 (/api/fino/*)
 # ---------------------------------------------------------------------------
 
+
 def _fino_call(fn, label: str):
     """Fino 端点统一异常包装: 缺依赖 501, 其他 502."""
     try:
         return {"data": fn()}
     except fino.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(502, f"Fino {label}异常: {e}") from e
 
 
@@ -1034,7 +1218,9 @@ def fino_overview(
     """Fino 机构观点汇总。缓存 10 分钟。"""
     code_list = [c for c in codes.split(",") if c.strip()]
     return _fino_call(
-        lambda: fino.get_overview(report_type.strip(), start_date.strip(), end_date.strip(), code_list),
+        lambda: fino.get_overview(
+            report_type.strip(), start_date.strip(), end_date.strip(), code_list
+        ),
         "机构观点汇总",
     )
 
@@ -1049,6 +1235,8 @@ def fino_detail(
     """Fino 机构观点明细 (逐条)。缓存 10 分钟。"""
     code_list = [c for c in codes.split(",") if c.strip()]
     return _fino_call(
-        lambda: fino.get_detail(report_type.strip(), start_date.strip(), end_date.strip(), code_list),
+        lambda: fino.get_detail(
+            report_type.strip(), start_date.strip(), end_date.strip(), code_list
+        ),
         "机构观点明细",
     )

@@ -61,12 +61,10 @@ It does not make decisions for you. It pulls together quotes, analyst reports, v
 | 📊&nbsp;**Daily&nbsp;Review** | Index quotes · **Global markets** (Dow / S&P / Nasdaq overnight + Hang Seng / HS Tech) · Watchlist quotes · **Short-term sentiment** (consecutive limit-up ladder, seal rate, break rate, promotion rate) · **Market-wide turnover top 20** · Market breadth · Sector fund-flow trends · Sector rotation · One-click AI review |
 | 📡&nbsp;**News&nbsp;Radar** | 108 public RSS feeds across 12 tracks · AI-distilled "today's takeaways" · A-share filings and public news linked to your watchlist |
 | 🔍&nbsp;**Stock&nbsp;Data** | **A-share**: quotes · valuation matrix (forward PE / PEG) · **earnings snapshot** · valuation percentile vs. own 5-year history · key financials · analyst reports · filings · news · **fund flows** (margin trading, shareholder count, main-force flow, dividends, block trades) · top-list (Dragon-Tiger) · lockup expiry · sector membership · trending concepts · investor Q&A.<br>**US / HK / KR** (enter `AAPL` / `00700` / `005930.KS`): quotes · market cap · key financials (KR is quotes only) |
-| ⚔️&nbsp;**Bull&nbsp;vs&nbsp;Bear** | **Multi-agent**: the backend first pulls a 13-item factual dossier, then a **bull researcher** and a **bear researcher** argue from that same data (optional rebuttal round), and a **neutral moderator** summarizes "what both sides agree on / where they actually disagree / what to verify / what data is missing". **Deliberately produces no buy or sell conclusion.**<br>⏱ Heavier than a chat: ~100s and 3 model calls per round — see [cost](#-what-one-debate-costs-read-before-you-run-it) first |
 | ⭐&nbsp;**Watchlist** | **Paste a whole batch of tickers at once** (commas, spaces or newlines) · one-screen table (price, change, PE, PB, turnover) · **live quotes toggle** (top right, off by default; refreshes every 3s during trading hours, auto-pauses outside them and when the tab is hidden) · hand the whole list to your AI. Stored locally |
-| 🧩&nbsp;**Sectors** | Sector and value-chain skeletons |
 | 💼&nbsp;**Portfolio** | Enter cost and size, see live P&L · closed-position log (local only, never uploaded) |
 | 📄&nbsp;**My Reports** | Drag-and-drop your own research PDFs / Word / spreadsheets · auto-filed by industry from the filename · download or delete. **Stored in your local deploy directory only** |
-| 📝&nbsp;**Research Notes** | Save AI reviews, takeaways, Q&A and debates locally · **reflection audit**: have the AI audit its own reasoning — which claims are backed by data, which are speculation, where the weakest link is, and what to check next |
+| 📝&nbsp;**Research Notes** | Save AI reviews, takeaways and Q&A locally · **reflection audit**: have the AI audit its own reasoning — which claims are backed by data, which are speculation, where the weakest link is, and what to check next |
 | 🔌&nbsp;**Bring Your AI** | Subscription mode (local CLI, no API key) · API mode (any OpenAI-compatible endpoint) · MCP (mount into Claude Code and other agents) |
 
 > **Built-in analysis framework**: when your AI analyzes a stock it organizes findings across five dimensions — valuation, fund flows, earnings quality, industry cycle, catalysts and risks. The framework only prescribes *how to read the data*, never what to buy. The direction still comes from your own model.
@@ -113,9 +111,8 @@ Vibe-Research/
 │   ├── newsradar.py     News radar
 │   ├── market.py        Market breadth + sector fund flows + global indices
 │   ├── portfolio.py     Portfolio (stored in your local user directory)
-│   ├── tools.py         AI tool layer (23 data tools, shared by chat / MCP / debate)
+│   ├── tools.py         AI tool layer (23 data tools, shared by chat / MCP)
 │   ├── chat.py          In-app AI (OpenAI-compatible function calling)
-│   ├── debate.py        Bull-vs-bear orchestration (dossier → bull / bear / moderator)
 │   ├── reflection.py    Reflection audit (audits reasoning in existing analysis)
 │   └── mcp_server.py    MCP server (for Claude Code and other agents)
 └── frontend/          Vite + React 19 + TS + Tailwind :5899
@@ -155,54 +152,11 @@ Pick a model and the base URL is filled in for you — just paste the key. Built
 
 Mount the backend as an MCP server so your agent can call Vibe-Research's data tools with its own subscription. See [`backend/README.md`](backend/README.md).
 
-## How the Multi-Agent Part Is Designed
+## Reflection audit
 
-Open-source multi-agent finance frameworks (TradingAgents, ai-hedge-fund and friends) end their pipeline with a trader or portfolio_manager role that outputs "buy / sell / how much". **This project deliberately omits that layer.**
+Audit the reasoning in writing you already have and surface the parts that *sound* reasonable but aren't backed by anything. In testing it reliably catches things like "widely recognized by institutions" (generalizing from three data points) or "frequently raised estimates" (never quantified).
 
-Here the endpoint of the multi-agent flow is **disagreement**, not a verdict:
-
-```
-① Factual dossier   backend pulls 13 objective datasets (no LLM involved)
-                     ↓  both sides argue over the same data — nobody can win by making numbers up
-② Bull researcher   builds the case: thesis + supporting evidence + what must hold for it to work
-③ Bear researcher   builds the counter-case: doubts + risk evidence + what must hold for it to work
-   (optional)       rebuttal round: address each point, concede what's conceded, refute with data
-④ Neutral moderator shared ground / real disagreements (missing data or differing reads?) /
-                     what to verify / what data is absent
-```
-
-Deliberate constraints:
-
-- **Dossier first** — the model isn't left to remember which tool to call. Data is deterministic and reproducible; missing items are stated in the dossier with an explicit "do not speculate" instruction.
-- **Every claim must cite the specific data it rests on**; anything unsupported must be labeled as such.
-- **The moderator does not pick a winner** and gives no rating or lean — its output is "here's what to look at next".
-- Rate-limited endpoints are fetched **serially**: the throttle is timestamp-based rather than lock-based, so concurrency would blow straight through it.
-
-### What one debate costs (read before you run it)
-
-A debate is much heavier than a chat — it runs a full pipeline and **every role carries the complete dossier**. Measured:
-
-| | 1 round | 2 rounds (with rebuttal) |
-|---|---|---|
-| Model calls | **3** | **5** |
-| Input sent | ~35k CJK chars | ~60k |
-| Output | ~4k | ~7k |
-| Wall clock | **~100–120s** | ~3 min |
-
-Roughly 35s of that is fetching the dossier — a dozen public endpoints, **zero tokens**. The rest is generation.
-
-**To keep costs down:**
-
-1. **One round is usually enough.** Two rounds doubles everything.
-2. **Prefer subscription mode** (local CLI) over an API key.
-3. **A debate doesn't need an expensive model.** The data is already in the dossier; the model only organizes and expresses it. Save your budget for your own deep questions.
-4. **Don't spam it.** The dossier hits a dozen throttled endpoints.
-
-### Reflection audit
-
-The same idea applied to writing you already have: audit the reasoning and surface the parts that *sound* reasonable but aren't backed by anything. In testing it reliably catches things like "widely recognized by institutions" (generalizing from three data points) or "frequently raised estimates" (never quantified).
-
-Much cheaper — **a single model call** over the text you selected.
+Cheap — **a single model call** over the text you selected (auto-truncated with a notice past ~12k chars). Output is "what to verify next", never a buy/sell call.
 
 ## Tests
 

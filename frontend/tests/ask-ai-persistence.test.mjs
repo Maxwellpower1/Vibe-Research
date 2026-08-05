@@ -66,6 +66,12 @@ test("callers can scope a conversation below the route level", () => {
   assert.match(source, /CHAT_KEY_PREFIX \+ pathname \+ \(scopeKey \? `#\$\{scopeKey\}` : ""\)/);
 });
 
+test("panel is portaled to document.body so glass backdrop-filter cannot trap fixed", () => {
+  // .glass 的 backdrop-filter 会让 position:fixed 相对卡片定位，弹层缩成一条。
+  assert.match(source, /createPortal/);
+  assert.match(source, /document\.body/);
+});
+
 test("the stock page actually passes a per-symbol scope", async () => {
   const page = await readFile(
     new URL("../src/pages/StockData.tsx", import.meta.url), "utf8",

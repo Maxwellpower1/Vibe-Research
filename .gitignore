@@ -18,6 +18,12 @@ public/user-data/
 *.pem
 *.key
 *.secret
+# CTP 期货账号（含密码）；示例见 backend/ctp.json.example
+**/ctp.json
+a.py
+# CTP 流文件（DialogRsp.con 等）；正常落在 ~/.vibe-research/ctp_flow/
+*.con
+**/ctp_flow/
 
 # ── 依赖 / 构建产物 ───────────────────────────────────────────────
 **/.venv/

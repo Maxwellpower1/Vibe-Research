@@ -191,6 +191,376 @@ export interface PortfolioData {
   updated: string; last_refresh: string | null;
 }
 
+/** CTP 期货账户（只读查资金 / 持仓 / 委托 / 成交） */
+export interface CtpPosition {
+  exchange: string;
+  instrument: string;
+  direction: string;
+  direction_code: string;
+  hedge: string;
+  position_date: string;
+  position: number;
+  yd_position: number;
+  today_position: number;
+  open_volume: number;
+  close_volume: number;
+  open_amount: number;
+  close_amount: number;
+  open_cost: number;
+  position_cost: number;
+  cost_per_lot: number;
+  use_margin: number;
+  exchange_margin: number;
+  frozen_margin: number;
+  frozen_cash: number;
+  frozen_commission: number;
+  long_frozen: number;
+  short_frozen: number;
+  close_profit: number;
+  close_profit_by_date: number;
+  close_profit_by_trade: number;
+  position_profit: number;
+  settlement_price: number;
+  pre_settlement_price: number;
+  margin_rate_by_money: number;
+  margin_rate_by_volume: number;
+  commission: number;
+  cash_in: number;
+  trading_day: string;
+}
+export interface CtpAccount {
+  balance: number;
+  /** 客户权益 / 动态权益 (Balance) */
+  client_equity?: number;
+  /** 市值权益 = 客户权益 + 多头期权市值 - 空头期权市值 */
+  market_equity?: number;
+  option_long_value?: number;
+  option_short_value?: number;
+  market_equity_method?: string;
+  option_legs?: number;
+  /** true while option ticks load in background */
+  market_equity_pending?: boolean;
+  available: number;
+  curr_margin: number;
+  exchange_margin: number;
+  frozen_margin: number;
+  frozen_cash: number;
+  frozen_commission: number;
+  pre_balance: number;
+  pre_margin: number;
+  deposit: number;
+  withdraw: number;
+  withdraw_quota: number;
+  close_profit: number;
+  position_profit: number;
+  commission: number;
+  credit: number;
+  mortgage: number;
+  cash_in: number;
+  interest: number;
+  delivery_margin: number;
+  risk_ratio: number;
+  currency: string;
+  trading_day: string;
+  account_id: string;
+}
+export interface CtpOrder {
+  exchange: string;
+  instrument: string;
+  direction: string;
+  direction_code: string;
+  offset: string;
+  hedge: string;
+  price_type: string;
+  limit_price: number;
+  stop_price: number;
+  volume_total: number;
+  volume_traded: number;
+  volume_left: number;
+  min_volume: number;
+  time_condition: string;
+  volume_condition: string;
+  status: string;
+  status_code: string;
+  submit_status: string;
+  status_msg: string;
+  order_sys_id: string;
+  order_ref: string;
+  order_local_id: string;
+  broker_order_seq: number;
+  insert_time: string;
+  update_time: string;
+  cancel_time: string;
+  active_time: string;
+  trading_day: string;
+  front_id: number;
+  session_id: number;
+  force_close_reason: string;
+  user_force_close: boolean;
+  is_swap_order: boolean;
+}
+export interface CtpTrade {
+  exchange: string;
+  instrument: string;
+  exchange_inst_id: string;
+  direction: string;
+  direction_code: string;
+  offset: string;
+  hedge: string;
+  price: number;
+  volume: number;
+  amount: number;
+  trade_id: string;
+  order_sys_id: string;
+  order_ref: string;
+  order_local_id: string;
+  broker_order_seq: number;
+  trade_type: string;
+  price_source: string;
+  trade_source: string;
+  trade_time: string;
+  trading_day: string;
+  sequence_no: number;
+}
+/** 持仓明细 (按开仓笔, 含逐笔平仓盈亏) */
+export interface CtpPositionDetail {
+  exchange: string;
+  instrument: string;
+  comb_instrument: string;
+  direction: string;
+  direction_code: string;
+  hedge: string;
+  open_date: string;
+  trade_id: string;
+  trade_type: string;
+  open_price: number;
+  volume: number;
+  close_volume: number;
+  close_amount: number;
+  close_profit_by_date: number;
+  close_profit_by_trade: number;
+  position_profit_by_date: number;
+  position_profit_by_trade: number;
+  margin: number;
+  exch_margin: number;
+  margin_rate_by_money: number;
+  margin_rate_by_volume: number;
+  last_settlement_price: number;
+  settlement_price: number;
+  time_first_volume: number;
+  trading_day: string;
+}
+export interface CtpPortfolioData {
+  trading_day: string;
+  account: CtpAccount;
+  positions: CtpPosition[];
+  details: CtpPositionDetail[];
+  orders: CtpOrder[];
+  trades: CtpTrade[];
+  totals: {
+    position_count: number;
+    detail_count: number;
+    order_count: number;
+    trade_count: number;
+    use_margin: number;
+    position_profit: number;
+    close_profit: number;
+    detail_close_profit: number;
+    detail_position_profit: number;
+    market_equity?: number;
+    option_long_value?: number;
+    option_short_value?: number;
+  };
+  updated: string;
+  user_masked: string;
+  logged_in?: boolean;
+  market_equity_pending?: boolean;
+}
+export interface CtpMarketEquityJob {
+  status: "idle" | "pending" | "running" | "ready" | "error";
+  seq: number;
+  trading_day: string;
+  updated: string | null;
+  error: string | null;
+  pending: boolean;
+  account_patch: {
+    client_equity?: number;
+    market_equity?: number;
+    option_long_value?: number;
+    option_short_value?: number;
+    market_equity_method?: string;
+    option_legs?: number;
+    market_equity_pending?: boolean;
+  } | null;
+}
+export interface CtpStatus {
+  configured: boolean;
+  dependency_ok: boolean;
+  dependency_msg: string;
+  config_path: string;
+  user_masked: string;
+  ready: boolean;
+  logged_in: boolean;
+  logging_in: boolean;
+  trading_day: string;
+  host: string;
+}
+export interface CtpLogEntry {
+  id: number;
+  ts: string;
+  level: string;
+  message: string;
+}
+export interface CtpLogsData {
+  logs: CtpLogEntry[];
+  next_since: number;
+  logged_in: boolean;
+}
+/** 结算单解析字段 */
+export interface CtpSettlementParsed {
+  equity: number | null;
+  market_equity: number | null;
+  client_equity: number | null;
+  pre_balance: number | null;
+  balance: number | null;
+  available: number | null;
+  deposit_withdraw: number | null;
+  close_profit: number | null;
+  position_profit: number | null;
+  commission: number | null;
+  curr_margin: number | null;
+  risk_ratio: number | null;
+  option_long_value: number | null;
+  option_short_value: number | null;
+}
+export interface CtpSettlementData {
+  trading_day: string;
+  parsed: CtpSettlementParsed;
+  content: string;
+  chunk_count: number;
+  updated: string;
+  status?: string;
+  from_cache?: boolean;
+}
+export interface CtpSettlementSeriesPoint {
+  trading_day: string;
+  date: string;
+  equity: number | null;
+  market_equity: number | null;
+  client_equity: number | null;
+  balance: number | null;
+  available: number | null;
+  deposit_withdraw?: number | null;
+  close_profit: number | null;
+  position_profit: number | null;
+  commission: number | null;
+  curr_margin: number | null;
+  risk_ratio: number | null;
+  status: string;
+  from_cache: boolean;
+  error: string | null;
+  updated?: string;
+}
+export interface CtpSettlementPerfPoint {
+  date: string;
+  trading_day: string;
+  equity: number;
+  deposit_withdraw: number;
+  commission: number;
+  daily_pnl: number;
+  /** income = daily_pnl - commission */
+  daily_income?: number;
+  daily_return: number;
+  cum_pnl: number;
+  cum_pnl_wan: number;
+  cum_income?: number;
+  cum_income_wan?: number;
+  cum_return: number;
+  nav: number;
+  drawdown: number;
+}
+export interface CtpSettlementMonth {
+  month: string;
+  trading_day_start: string;
+  trading_day_end: string;
+  pnl: number;
+  /** income = pnl - commission */
+  income?: number;
+  pnl_wan: number;
+  deposit_withdraw: number;
+  commission: number;
+  days: number;
+  win_days: number;
+  loss_days: number;
+  return: number;
+  equity_start: number;
+  equity_end: number;
+}
+export interface CtpSettlementAnalytics {
+  perf: CtpSettlementPerfPoint[];
+  monthly: CtpSettlementMonth[];
+  calendar_daily: {
+    date: string;
+    trading_day: string;
+    pnl: number;
+    /** income = pnl - commission */
+    income?: number;
+    return: number;
+    commission: number;
+    equity: number;
+  }[];
+  summary: {
+    days: number;
+    start_date: string | null;
+    end_date: string | null;
+    start_equity: number | null;
+    end_equity: number | null;
+    total_pnl: number;
+    total_pnl_wan: number;
+    total_income?: number;
+    total_commission?: number;
+    total_return: number;
+    nav: number;
+    max_drawdown: number;
+    win_days: number;
+    loss_days: number;
+    flat_days: number;
+    win_rate: number | null;
+    avg_daily_return: number;
+    daily_volatility: number | null;
+    ann_return: number | null;
+    sharpe: number | null;
+    best_day: { date: string; trading_day: string; daily_pnl: number; daily_return: number } | null;
+    worst_day: { date: string; trading_day: string; daily_pnl: number; daily_return: number } | null;
+    total_deposit_withdraw: number;
+    method: string;
+  };
+  charts: {
+    equity: { date: string; value: number }[];
+    nav: { date: string; value: number }[];
+    cum_return: { date: string; value: number }[];
+    cum_pnl_wan: { date: string; value: number }[];
+  };
+}
+export interface CtpSettlementRangeData {
+  start: string;
+  end: string;
+  account: string;
+  series: CtpSettlementSeriesPoint[];
+  chart: { date: string; trading_day: string; equity: number; market_equity: number | null; client_equity: number | null }[];
+  analytics?: CtpSettlementAnalytics;
+  stats: {
+    total_days: number;
+    cached: number;
+    fetched: number;
+    empty: number;
+    errors: number;
+    missing: number;
+  };
+  cache_file: string;
+  updated: string;
+}
+
 // 资金面 / 筹码 / 信号（v3.3 并入，均为「用户查的那只股」的公开数据）
 export interface MarginRow { date: string; rzye: number; rzmre: number; rzche: number; rqye: number; rqmcl: number; rzrqye: number }
 export interface BlockTradeRow { date: string; price: number; close: number; premium_pct: number; vol: number; amount: number; buyer: string; seller: string }
@@ -471,6 +841,29 @@ export const api = {
   closePosition: (code: string, date: string, price: number, shares: number, cost: number) =>
     request<PortfolioData>("/portfolio/close", "POST", { code, date, price, shares, cost }),
   removeClosed: (index: number) => request<PortfolioData>(`/portfolio/close?index=${index}`, "DELETE"),
+  ctpStatus: () => get<CtpStatus>("/portfolio/ctp/status"),
+  ctpLogs: (since = 0) => get<CtpLogsData>(`/portfolio/ctp/logs?since=${since}`),
+  ctpLogin: () => request<{
+    logged_in: boolean;
+    trading_day: string;
+    user_masked: string;
+    message: string;
+    portfolio?: CtpPortfolioData | null;
+  }>("/portfolio/ctp/login", "POST"),
+  ctpLogout: () => request<{ logged_in: boolean; message: string }>("/portfolio/ctp/logout", "POST"),
+  ctpPortfolio: () => get<CtpPortfolioData>("/portfolio/ctp"),
+  ctpMarketEquity: () => get<CtpMarketEquityJob>("/portfolio/ctp/market-equity"),
+  ctpSettlement: (day: string, force = false) =>
+    get<CtpSettlementData>(
+      `/portfolio/ctp/settlement?day=${encodeURIComponent(day)}&force=${force ? "true" : "false"}`,
+    ),
+  ctpSettlementRange: (opts: { start: string; end?: string; refresh?: boolean; force?: boolean }) => {
+    const p = new URLSearchParams({ start: opts.start });
+    if (opts.end) p.set("end", opts.end);
+    p.set("refresh", opts.refresh === false ? "false" : "true");
+    p.set("force", opts.force ? "true" : "false");
+    return get<CtpSettlementRangeData>(`/portfolio/ctp/settlement/range?${p}`);
+  },
   valuation: (code: string) => get<Valuation>(`/valuation?code=${code}`),
   percentile: (code: string) => get<ValPercentile>(`/valuation/percentile?code=${code}`),
   financials: (code: string) => get<Financials>(`/financials?code=${code}`),

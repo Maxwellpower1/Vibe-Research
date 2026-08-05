@@ -8,7 +8,7 @@
   让模型拿到的是能直接推理的密度，而不是原始转储。
 - **失败不抛**：任何异常都转成 {"error": ...} 回喂给模型，让它换个工具继续，不中断对话循环。
 
-chat.py / mcp_server.py / debate.py 共用本模块，新增工具只需改这里一处。
+chat.py / mcp_server.py 共用本模块，新增工具只需改这里一处。
 """
 
 from __future__ import annotations

@@ -19,7 +19,8 @@ export default defineConfig(({ mode }) => {
       host: true,
       port: 5899,
       proxy: {
-        "/api": { target: apiTarget, changeOrigin: true },
+        // Settlement range can take ~1s/day against CTP
+        "/api": { target: apiTarget, changeOrigin: true, timeout: 180_000, proxyTimeout: 180_000 },
       },
     },
     build: {

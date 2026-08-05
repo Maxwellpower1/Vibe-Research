@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { Sparkles, X, Settings, Send, Loader2, Wrench, AlertCircle, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -78,11 +79,10 @@ interface Props {
   context: string;
   suggestions?: string[];
   label?: string;
-  // 用来在**同一路由内**再切分对话。不传则只按路由区分——目前每个页面都只挂
-  // 一个 AskAiButton、且一个路由对应一个对象，够用。
+  // 用来在**同一路由内**再切分对话。不传则只按路由区分。
   // ⚠️ 两种情况必须传，否则对话会串台（A 的历史被当成 history 发给问 B 的模型）：
   //   ① 不换路由就能换标的的页面（如个股页，已按股票代码传入）
-  //   ② 同一路由里渲染**多个** AskAiButton 实例（目前没有；将来加了务必带上）
+  //   ② 同一路由里多个入口（如持仓页的 A股 / 期货）
   scopeKey?: string;
 }
 
@@ -247,20 +247,13 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI", scope
     }
   };
 
-  return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-3 py-1.5 text-sm font-medium text-primary shadow-glow transition-colors hover:bg-primary/25"
-      >
-        <Sparkles className="h-4 w-4" />
-        {label}
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+  // Portal to body: ancestors with backdrop-filter (e.g. .glass) create a containing
+  // block for position:fixed, so an in-tree overlay would shrink to the card instead
+  // of covering the viewport.
+  const panel = open ? createPortal(
+        <div className="fixed inset-0 z-[100] flex justify-end">
           <div className="absolute inset-0 bg-black/50" onClick={close} />
-          <aside className="glass relative m-3 flex w-full max-w-md flex-col rounded-2xl">
+          <aside className="glass relative m-3 flex h-[calc(100%-1.5rem)] w-full max-w-md flex-col rounded-2xl">
             <div className="flex items-center justify-between border-b border-border/60 p-4">
               <span className="flex items-center gap-2 font-semibold text-glow">
                 <Sparkles className="h-4 w-4 text-primary" /> 问 AI · 本页上下文
@@ -379,8 +372,20 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI", scope
               </>
             )}
           </aside>
-        </div>
-      )}
+        </div>,
+        document.body,
+      ) : null;
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-3 py-1.5 text-sm font-medium text-primary shadow-glow transition-colors hover:bg-primary/25"
+      >
+        <Sparkles className="h-4 w-4" />
+        {label}
+      </button>
+      {panel}
     </>
   );
 }
