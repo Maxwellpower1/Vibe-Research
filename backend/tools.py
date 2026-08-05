@@ -72,14 +72,50 @@ TOOLS: list[dict] = [
     _t("query_cls_telegraph",
        "查财联社电报：全市场实时财经快讯（标题/正文/时间）。客观公开资讯，不构成投资建议。",
        {"limit": {"type": "integer", "description": "条数，默认 30"}}, []),
+    _t("query_global_news",
+       "查东财全球财经资讯 7x24（标题/摘要/时间）。客观公开资讯，不构成投资建议。",
+       {"limit": {"type": "integer", "description": "条数，默认 30"}}, []),
+    _t("query_iwencai",
+       "用问财(iwencai)自然语言搜研报/公告/新闻（需后端配置 IWENCAI_API_KEY）。适合主题检索如「人形机器人 丝杠」。",
+       {
+           "query": {"type": "string", "description": "自然语言检索词"},
+           "channel": {"type": "string", "enum": ["report", "announcement", "news"], "description": "通道，默认 report"},
+           "size": {"type": "integer", "description": "条数，默认 15"},
+       },
+       ["query"]),
 
     # —— 资金面与筹码 ——
     _t("query_fund_flow",
        "查个股资金流向：最近若干日主力/超大单/大单/中单/小单净流入，并附近 5 日、20 日累计主力净额。",
        {**_CODE, "days": {"type": "integer", "description": "明细返回最近多少日，默认 10，最大 60"}},
        ["code"]),
+    _t("query_fund_flow_minute",
+       "查个股当日分钟级主力/大小单净流入（东财）。返回最新点与全天主力累计。",
+       _CODE, ["code"]),
+    _t("query_ths_limit_up",
+       "查同花顺涨停揭秘：涨停原因题材、板型、封板成功率、几天几板。客观公开榜单，不构成推荐。",
+       {"date": {"type": "string", "description": "可选 YYYYMMDD，默认今天"}}, []),
     _t("query_margin", "查个股融资融券：融资余额、融资买入/偿还、融券余额趋势（最近若干期）。", _CODE, ["code"]),
     _t("query_holders", "查个股股东户数变化（户数增减 = 筹码集中或分散的直接证据）。", _CODE, ["code"]),
+    _t("query_etf_flow",
+       "查全市场 ETF 资金流向排行：主力/超大/大/中/小单净流入（亿元）。客观公开榜单，不构成推荐。",
+       {
+           "sort_by": {"type": "string", "enum": ["net_inflow", "change_pct"], "description": "排序，默认 net_inflow"},
+           "limit": {"type": "integer", "description": "条数，默认 30"},
+       }, []),
+    _t("query_shareholder_changes",
+       "查股东/高管增减持披露：变动人、增减方向、股数、均价、职务。可查全市场或指定个股。客观披露，不构成推荐。",
+       {
+           "code": {"type": "string", "description": "可选 6 位代码；空=全市场最近变动"},
+           "change_type": {"type": "string", "enum": ["all", "增持", "减持"], "description": "默认 all"},
+           "limit": {"type": "integer", "description": "条数，默认 30"},
+       }, []),
+    _t("query_lpr",
+       "查 LPR 贷款市场报价利率历史（1Y/5Y）。全国银行间同业拆借中心公开报价。",
+       {"days": {"type": "integer", "description": "回溯天数，默认 365"}}, []),
+    _t("query_cn_bond_yield",
+       "查中债国债或政策性金融债收益率曲线（1Y~30Y + 10Y-2Y/30Y-10Y 利差）。客观利率，非预测。",
+       {"curve_type": {"type": "string", "enum": ["treasury", "policy"], "description": "默认 treasury"}}, []),
     _t("query_block_trade", "查个股大宗交易记录：成交价、折溢价率、成交量、买卖营业部。", _CODE, ["code"]),
     _t("query_dragon_tiger", "查个股龙虎榜：近 30 日上榜记录、最近一次买卖席位 TOP5、机构专用席位净买额。", _CODE, ["code"]),
     _t("query_daily_dragon_tiger",
@@ -320,6 +356,25 @@ def _fund_flow(args: dict):
         "unit": "元（汇总项单位：亿元）",
         "main_net_5d_yi": _sum(5), "main_net_20d_yi": _sum(20), "main_net_60d_yi": _sum(60),
         "recent": _pick(tail, ("date", "main_net", "super_net", "large_net", "mid_net", "small_net"), days),
+    }
+
+
+def _fund_flow_minute(args: dict):
+    code = str(args["code"])
+    rows = astock.eastmoney_fund_flow_minute(code)
+    if not rows:
+        return {"error": "无分钟资金流数据（非交易时段或源不可用）"}
+    day_main = round(sum(float(r.get("main_net") or 0) for r in rows), 2)
+    return {
+        "code": code,
+        "unit": "元",
+        "day_main_net": day_main,
+        "latest": rows[-1],
+        "recent": _pick(
+            rows[-20:],
+            ("time", "main_net", "super_net", "large_net", "mid_net", "small_net"),
+            20,
+        ),
     }
 
 
@@ -659,10 +714,50 @@ _HANDLERS = {
             int(a.get("limit") or 30),
         ),
     },
+    "query_global_news": lambda a: {
+        "source": "东财7x24",
+        "items": _pick(
+            astock.eastmoney_global_news(int(a.get("limit") or 30)),
+            ("time", "title", "summary"),
+            int(a.get("limit") or 30),
+        ),
+    },
+    "query_iwencai": lambda a: astock.iwencai_search(
+        str(a.get("query") or ""),
+        channel=str(a.get("channel") or "report"),
+        size=int(a.get("size") or 15),
+    ),
     "query_fund_flow": _fund_flow,
+    "query_fund_flow_minute": lambda a: _fund_flow_minute(a),
+    "query_ths_limit_up": lambda a: astock.ths_limit_up_pool(a.get("date") or None),
     "query_margin": lambda a: _pick(astock.margin_trading(str(a["code"])),
                                     ("date", "rzye", "rzmre", "rzche", "rqye", "rzrqye"), 15),
     "query_holders": lambda a: _pick(astock.holder_num_change(str(a["code"])), None, 10),
+    "query_etf_flow": lambda a: {
+        "sort_by": a.get("sort_by") or "net_inflow",
+        "rows": _pick(
+            astock.etf_fund_flow(
+                str(a.get("sort_by") or "net_inflow"),
+                int(a.get("limit") or 30),
+            ),
+            ("code", "name", "change_pct", "main_net_inflow", "super_large_net", "large_net"),
+            int(a.get("limit") or 30),
+        ),
+    },
+    "query_shareholder_changes": lambda a: _pick(
+        astock.shareholder_changes(
+            str(a.get("code") or ""),
+            str(a.get("change_type") or "all"),
+            int(a.get("limit") or 30),
+        ),
+        ("date", "code", "name", "person", "change_type", "change_shares", "avg_price", "position"),
+        int(a.get("limit") or 30),
+    ),
+    "query_lpr": lambda a: {
+        "source": "chinamoney.com.cn",
+        "rows": astock.lpr_rates(int(a.get("days") or 365)),
+    },
+    "query_cn_bond_yield": lambda a: astock.bond_yield_curve(str(a.get("curve_type") or "treasury")),
     "query_block_trade": lambda a: _pick(astock.block_trade(str(a["code"])), None, 15),
     "query_dragon_tiger": lambda a: astock.dragon_tiger_board(str(a["code"])),
     "query_daily_dragon_tiger": lambda a: astock.daily_dragon_tiger(

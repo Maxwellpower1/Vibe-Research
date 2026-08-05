@@ -885,6 +885,266 @@ def stock_fund_flow_120d(code: str) -> list[dict]:
     return rows
 
 
+def eastmoney_fund_flow_minute(code: str) -> list[dict]:
+    """个股当日分钟级资金流（东财 push2）。单位: 元。
+
+    返回 [{time, main_net, small_net, mid_net, large_net, super_net}, ...]。
+    """
+    c = (code or "").strip()
+    if not re.fullmatch(r"\d{6}", c):
+        return []
+    secid = f"1.{c}" if c.startswith("6") else f"0.{c}"
+    params = {
+        "secid": secid,
+        "klt": 1,
+        "fields1": "f1,f2,f3,f7",
+        "fields2": "f51,f52,f53,f54,f55,f56,f57",
+    }
+    headers = {
+        "User-Agent": UA,
+        "Referer": "https://quote.eastmoney.com/",
+        "Origin": "https://quote.eastmoney.com",
+    }
+    try:
+        d = em_get(
+            "https://push2.eastmoney.com/api/qt/stock/fflow/kline/get",
+            params=params,
+            headers=headers,
+            timeout=10,
+        ).json()
+    except Exception:
+        return []
+    rows: list[dict] = []
+    for line in (d.get("data") or {}).get("klines") or []:
+        parts = str(line).split(",")
+        if len(parts) < 6:
+            continue
+
+        def _f(x: str) -> float:
+            try:
+                return float(x) if x not in ("-", "") else 0.0
+            except ValueError:
+                return 0.0
+
+        rows.append({
+            "time": parts[0],
+            "main_net": _f(parts[1]),
+            "small_net": _f(parts[2]),
+            "mid_net": _f(parts[3]),
+            "large_net": _f(parts[4]),
+            "super_net": _f(parts[5]),
+        })
+    return rows
+
+
+def eastmoney_global_news(page_size: int = 50) -> list[dict]:
+    """东财全球财经资讯 7x24。返回 [{id, title, summary, time}, ...]。"""
+    import uuid
+
+    n = max(10, min(int(page_size or 50), 100))
+    params = {
+        "client": "web",
+        "biz": "web_724",
+        "fastColumn": "102",
+        "sortEnd": "",
+        "pageSize": str(n),
+        "req_trace": str(uuid.uuid4()),
+    }
+    headers = {"User-Agent": UA, "Referer": "https://kuaixun.eastmoney.com/"}
+    try:
+        d = em_get(
+            "https://np-weblist.eastmoney.com/comm/web/getFastNewsList",
+            params=params,
+            headers=headers,
+            timeout=10,
+        ).json()
+    except Exception:
+        return []
+    rows: list[dict] = []
+    for i, item in enumerate((d.get("data") or {}).get("fastNewsList") or []):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        summary = str(item.get("summary") or "")[:200]
+        show = str(item.get("showTime") or "")
+        nid = item.get("code") or item.get("art_code") or f"{show}-{i}"
+        rows.append({
+            "id": nid,
+            "title": title,
+            "summary": summary,
+            "content": summary,
+            "time": show,
+            "share_url": None,
+        })
+    return rows
+
+
+def ths_limit_up_pool(date: str | None = None) -> dict:
+    """同花顺涨停揭秘：涨停原因题材 / 板型 / 封板成功率。
+
+    date: YYYYMMDD 或 YYYY-MM-DD；默认今天(北京时间)。
+    返回 {date, total, source, rows:[...]}。
+    """
+    import requests
+    from datetime import timezone as _tz
+
+    cn = datetime.now(_tz(timedelta(hours=8)))
+    raw = (date or "").strip().replace("-", "")
+    if not re.fullmatch(r"\d{8}", raw):
+        raw = cn.strftime("%Y%m%d")
+    url = "https://data.10jqka.com.cn/dataapi/limit_up/limit_up_pool"
+    params = {
+        "page": 1,
+        "limit": 200,
+        "field": "199112,10,9001,330323,330324,330325,9002,330329,133971,133970,1968584,3475914,9003,9004",
+        "filter": "HS,GEM2STAR",
+        "order_field": "330324",
+        "order_type": "0",
+        "date": raw,
+    }
+    try:
+        r = requests.get(url, params=params, headers={"User-Agent": UA}, timeout=12)
+        r.raise_for_status()
+        info = ((r.json() or {}).get("data") or {}).get("info") or []
+    except Exception:
+        return {"date": raw, "total": 0, "source": "ths", "rows": [], "note": "同花顺涨停揭秘暂无数据"}
+
+    out: list[dict] = []
+    for it in info:
+        if not isinstance(it, dict):
+            continue
+        ft = it.get("first_limit_up_time")
+        first_time = ""
+        try:
+            if ft not in (None, "", 0, "0"):
+                first_time = datetime.fromtimestamp(int(ft)).strftime("%H:%M:%S")
+        except (TypeError, ValueError, OSError):
+            first_time = ""
+        seal = it.get("limit_up_suc_rate")
+        try:
+            seal_rate = round(float(seal) * 100, 1) if seal is not None else None
+        except (TypeError, ValueError):
+            seal_rate = None
+        out.append({
+            "code": str(it.get("code") or ""),
+            "name": str(it.get("name") or ""),
+            "price": it.get("latest"),
+            "pct": it.get("change_rate"),
+            "reason": str(it.get("reason_type") or ""),
+            "board_type": str(it.get("limit_up_type") or ""),
+            "seal_rate": seal_rate,
+            "break_times": it.get("open_num") or 0,
+            "seal_amount": it.get("order_amount"),
+            "high_days": str(it.get("high_days") or ""),
+            "first_time": first_time,
+            "is_again": it.get("is_again_limit"),
+        })
+    return {
+        "date": raw,
+        "total": len(out),
+        "source": "ths",
+        "note": "客观公开榜单 · 含涨停原因题材 · 非推荐",
+        "rows": out,
+    }
+
+
+def iwencai_configured() -> bool:
+    return bool(os.environ.get("IWENCAI_API_KEY", "").strip())
+
+
+def _iwencai_claw_headers(call_type: str = "normal") -> dict:
+    import secrets
+
+    return {
+        "X-Claw-Call-Type": call_type,
+        "X-Claw-Skill-Id": "report-search",
+        "X-Claw-Skill-Version": "2.0.0",
+        "X-Claw-Plugin-Id": "none",
+        "X-Claw-Plugin-Version": "none",
+        "X-Claw-Trace-Id": secrets.token_hex(32),
+    }
+
+
+def iwencai_search(query: str, channel: str = "report", size: int = 20) -> dict:
+    """iwencai NL 语义搜索。需 IWENCAI_API_KEY + X-Claw headers。
+
+    channel: report / announcement / news
+    """
+    import requests
+
+    key = os.environ.get("IWENCAI_API_KEY", "").strip()
+    if not key:
+        raise DependencyMissing(
+            "未配置 IWENCAI_API_KEY。在 backend/.env 设置后重启后端；仅语义搜研报需要。"
+        )
+    base = os.environ.get("IWENCAI_BASE_URL", "https://openapi.iwencai.com").rstrip("/")
+    q = (query or "").strip()
+    if not q:
+        return {"query": "", "channel": channel, "items": []}
+    ch = channel if channel in ("report", "announcement", "news") else "report"
+    n = max(5, min(int(size or 20), 50))
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        **_iwencai_claw_headers(),
+    }
+    payload = {
+        "channels": [ch],
+        "app_id": "AIME_SKILL",
+        "query": q,
+        "size": n,
+    }
+    r = requests.post(
+        f"{base}/v1/comprehensive/search",
+        json=payload,
+        headers=headers,
+        timeout=30,
+    )
+    if r.status_code != 200:
+        raise RuntimeError(f"iwencai HTTP {r.status_code}: {r.text[:200]}")
+    data = r.json() if r.content else {}
+    if data.get("status_code", 0) != 0:
+        raise RuntimeError(f"iwencai error: {data.get('status_msg', '')}")
+
+    raw = data.get("data") or []
+    # Dedup by uid, keep highest score
+    best: dict[str, dict] = {}
+    for a in raw:
+        if not isinstance(a, dict):
+            continue
+        uid = a.get("uid") or f"{a.get('title', '')}|{a.get('publish_date', '')}"
+        score = float(a.get("score") or 0)
+        prev = best.get(uid)
+        if prev is None or score > float(prev.get("score") or 0):
+            best[uid] = a
+    items_sorted = sorted(
+        best.values(),
+        key=lambda x: str(x.get("publish_date") or ""),
+        reverse=True,
+    )
+    items: list[dict] = []
+    for a in items_sorted:
+        extra = a.get("extra") or {}
+        if isinstance(extra, str):
+            try:
+                extra = json.loads(extra)
+            except json.JSONDecodeError:
+                extra = {}
+        if not isinstance(extra, dict):
+            extra = {}
+        items.append({
+            "title": str(a.get("title") or ""),
+            "publish_date": str(a.get("publish_date") or "")[:10],
+            "score": a.get("score"),
+            "organization": extra.get("organization") or extra.get("org") or "",
+            "url": a.get("url") or a.get("link") or None,
+            "channel": ch,
+        })
+    return {"query": q, "channel": ch, "count": len(items), "items": items}
+
+
 def dragon_tiger_board(code: str, trade_date: str | None = None, look_back: int = 30) -> dict:
     """龙虎榜：该股近期上榜记录 + 最近一次买卖席位 TOP5 + 机构专用席位净买。"""
     trade_date = trade_date or datetime.now().strftime("%Y-%m-%d")
@@ -1158,3 +1418,278 @@ def industry_comparison(top_n: int = 20) -> dict:
     # bottom: reverse ascending by pct (worst first), not just tail of sorted-desc list
     # (tail of desc list is correct for worst N when list is full-market sorted)
     return {"top": rows[:top_n], "bottom": list(reversed(rows[-top_n:])), "total": len(rows)}
+
+
+# ---------------------------------------------------------------------------
+# Distilled from cn-financial-scraper v4.7+: ETF flow / insider changes / LPR / CN bond yield
+# Objective public data only; no rankings-as-recommendations.
+# ---------------------------------------------------------------------------
+
+def _safe_float(val, default: float = 0.0) -> float:
+    if val is None:
+        return default
+    if isinstance(val, str) and val.strip() in ("-", "--", "", "—"):
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def _norm_date(val) -> str:
+    if val is None:
+        return ""
+    s = str(val).strip().replace("/", "-").replace(".", "-")
+    if not s:
+        return ""
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return s[:10]
+
+
+def etf_fund_flow(sort_by: str = "net_inflow", limit: int = 50) -> list[dict]:
+    """ETF 资金流向排行（东财 push2 clist, fs=b:MK0021）。
+
+    sort_by: net_inflow (主力净流入) | change_pct
+    金额字段单位: 亿元。客观公开榜单, 非推荐。
+    """
+    n = max(5, min(int(limit or 50), 100))
+    fid = "f3" if sort_by == "change_pct" else "f62"
+    # po=1: descending (largest inflow / biggest gain first)
+    params = {
+        "pn": "1", "pz": str(n), "po": "1", "np": "1", "fltt": "2", "invt": "2",
+        "fid": fid, "fs": "b:MK0021",
+        "fields": "f12,f14,f2,f3,f20,f62,f66,f69,f72,f75,f78,f81,f84,f87,f124",
+    }
+    headers = {"User-Agent": UA, "Referer": "https://data.eastmoney.com/"}
+    diff: list = []
+    for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
+        try:
+            d = em_get(
+                f"https://{host}/api/qt/clist/get",
+                params=params, headers=headers, timeout=12,
+            ).json()
+            raw = (d.get("data") or {}).get("diff") or []
+            if isinstance(raw, dict):
+                raw = list(raw.values())
+            if raw:
+                diff = raw
+                break
+        except Exception:
+            continue
+    out: list[dict] = []
+    for it in diff:
+        if not isinstance(it, dict):
+            continue
+        ts = it.get("f124")
+        update_time = ""
+        try:
+            if isinstance(ts, (int, float)) and ts > 1e9:
+                update_time = datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M")
+            elif ts not in (None, "", "-"):
+                update_time = str(ts)
+        except (TypeError, ValueError, OSError):
+            update_time = ""
+        out.append({
+            "code": str(it.get("f12") or ""),
+            "name": str(it.get("f14") or ""),
+            "price": _safe_float(it.get("f2")),
+            "change_pct": _safe_float(it.get("f3")),
+            "total_mv": round(_safe_float(it.get("f20")) / 1e8, 2),
+            "main_net_inflow": round(_safe_float(it.get("f62")) / 1e8, 2),
+            "super_large_net": round(_safe_float(it.get("f66")) / 1e8, 2),
+            "large_net": round(_safe_float(it.get("f72")) / 1e8, 2),
+            "medium_net": round(_safe_float(it.get("f78")) / 1e8, 2),
+            "small_net": round(_safe_float(it.get("f84")) / 1e8, 2),
+            "update_time": update_time,
+        })
+    return out
+
+
+def shareholder_changes(
+    code: str = "",
+    change_type: str = "all",
+    limit: int = 50,
+) -> list[dict]:
+    """股东/高管增减持（东财 RPT_EXECUTIVE_HOLD_DETAILS）。
+
+    change_type: all | 增持 | 减持
+    code 为空时返回全市场最近变动; 有 code 时按个股过滤。
+    """
+    n = max(5, min(int(limit or 50), 100))
+    c = (code or "").strip()
+    if c and not re.fullmatch(r"\d{6}", c):
+        return []
+    filt = f'(SECURITY_CODE="{c}")' if c else ""
+    # Fetch extra rows so local 增持/减持 filter still yields ~n
+    fetch_n = n if change_type in ("", "all") else min(n * 3, 100)
+    data = eastmoney_datacenter(
+        "RPT_EXECUTIVE_HOLD_DETAILS",
+        filter_str=filt,
+        page_size=fetch_n,
+        sort_columns="CHANGE_DATE",
+        sort_types="-1",
+    )
+    want = change_type if change_type in ("增持", "减持") else "all"
+    out: list[dict] = []
+    for it in data:
+        shares = _safe_float(it.get("CHANGE_SHARES"))
+        direction = "增持" if shares >= 0 else "减持"
+        if want != "all" and direction != want:
+            continue
+        out.append({
+            "date": _norm_date(it.get("CHANGE_DATE")),
+            "code": str(it.get("SECURITY_CODE") or ""),
+            "name": str(it.get("SECURITY_NAME") or it.get("SECURITY_NAME_ABBR") or ""),
+            "person": str(it.get("PERSON_NAME") or ""),
+            "change_type": direction,
+            "change_shares": shares,
+            "change_ratio": _safe_float(it.get("CHANGE_RATIO")),
+            "avg_price": _safe_float(it.get("AVERAGE_PRICE")),
+            "change_amount": _safe_float(it.get("CHANGE_AMOUNT")),
+            "after_holding": _safe_float(it.get("CHANGE_AFTER_HOLDNUM")),
+            "reason": str(it.get("CHANGE_REASON") or ""),
+            "position": str(it.get("POSITION_NAME") or ""),
+        })
+        if len(out) >= n:
+            break
+    return out
+
+
+def lpr_rates(days: int = 365) -> list[dict]:
+    """LPR 贷款市场报价利率历史（全国银行间同业拆借中心 chinamoney）。
+
+    返回 [{date, one_year, five_year}, ...]，按日期降序。失败返回 []。
+    """
+    import requests
+
+    d = max(30, min(int(days or 365), 2000))
+    page_size = max(1, min(d // 20 + 10, 200))
+    url = "https://www.chinamoney.com.cn/ags/ms/cm-u-bk-currency/LprHis"
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.chinamoney.com.cn/chinese/bklpr/",
+    }
+    try:
+        r = requests.post(
+            url,
+            json={"pageNum": 1, "pageSize": page_size},
+            headers=headers,
+            timeout=15,
+        )
+        r.raise_for_status()
+        payload = r.json()
+    except Exception:
+        return []
+    records = payload.get("records") or payload.get("data") or []
+    seen: dict[str, dict] = {}
+    for row in records:
+        if not isinstance(row, dict):
+            continue
+        date = _norm_date(row.get("showDateCN") or row.get("showDateEN") or "")
+        if not date:
+            continue
+        seen[date] = {
+            "date": date,
+            "one_year": _safe_float(row.get("1Y")),
+            "five_year": _safe_float(row.get("5Y")),
+        }
+    rows = sorted(seen.values(), key=lambda x: x["date"], reverse=True)
+    # LPR updates monthly; keep roughly days/28 + buffer
+    keep = max(3, min(len(rows), d // 28 + 3))
+    return rows[:keep]
+
+
+def bond_yield_curve(curve_type: str = "treasury") -> dict:
+    """中债国债/政策性金融债收益率曲线（chinabond inityc）。
+
+    返回 {date, curve_type, source, terms, spread_10_2, spread_30_10, curve_points}。
+    失败返回 {error, warning, terms:{}, curve_points:[]}。
+    """
+    import requests
+
+    xyz = "txy" if curve_type != "policy" else "tpxy"
+    url = "https://yield.chinabond.com.cn/cbweb-mn/yc/inityc"
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json, text/javascript, */*",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": "https://yield.chinabond.com.cn/cbweb-mn/yield_main?locale=zh_CN",
+    }
+    form = {
+        "xyzSelect": xyz,
+        "workTime": "",
+        "dxbj": "0",
+        "qxll": "0",
+        "yqqxN": "N",
+        "yqqxK": "K",
+        "wrjxCBFlag": "0",
+        "locale": "zh_CN",
+    }
+    empty = {
+        "date": "", "curve_type": "", "source": "chinabond.com.cn",
+        "terms": {}, "curve_points": [],
+        "spread_10_2": None, "spread_30_10": None,
+    }
+    try:
+        r = requests.post(url, data=form, headers=headers, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        return {**empty, "error": str(e)[:120], "warning": "中债登接口不可用"}
+
+    try:
+        if not isinstance(data, list) or len(data) < 2:
+            return {**empty, "error": "bad_shape", "warning": "中债登返回格式异常"}
+        curve_obj = None
+        if isinstance(data[1], list) and data[1]:
+            inner = data[1][1] if len(data[1]) > 1 else data[1][0]
+            if isinstance(inner, list) and inner:
+                curve_obj = inner[0]
+            elif isinstance(inner, dict):
+                curve_obj = inner
+        if not isinstance(curve_obj, dict):
+            return {**empty, "error": "empty_curve", "warning": "当前无曲线数据"}
+        series = curve_obj.get("seriesData") or []
+        worktime = _norm_date(curve_obj.get("worktime"))
+        curve_name = str(curve_obj.get("ycDefName") or "国债收益率曲线")
+    except (IndexError, TypeError, KeyError) as e:
+        return {**empty, "error": str(e)[:80], "warning": "中债登解析失败"}
+
+    target_years = {"1Y": 1, "2Y": 2, "3Y": 3, "5Y": 5, "7Y": 7, "10Y": 10, "30Y": 30}
+    terms: dict[str, float] = {}
+    for label, year in target_years.items():
+        best = None
+        best_diff = float("inf")
+        for pt in series:
+            try:
+                y, v = float(pt[0]), float(pt[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            diff = abs(y - year)
+            if diff < best_diff:
+                best_diff = diff
+                best = v
+        if best is not None and best_diff < 0.05:
+            terms[label] = round(best, 4)
+
+    points: list[list[float]] = []
+    for p in series:
+        try:
+            if len(p) >= 2:
+                points.append([round(float(p[0]), 3), round(float(p[1]), 4)])
+        except (TypeError, ValueError, IndexError):
+            continue
+
+    result = {
+        "date": worktime,
+        "curve_type": curve_name,
+        "source": "中债登 chinabond.com.cn",
+        "terms": terms,
+        "curve_points": points,
+        "spread_10_2": round(terms["10Y"] - terms["2Y"], 4) if "10Y" in terms and "2Y" in terms else None,
+        "spread_30_10": round(terms["30Y"] - terms["10Y"], 4) if "30Y" in terms and "10Y" in terms else None,
+    }
+    return result

@@ -60,6 +60,7 @@ import myreports as mr
 import ovlab
 import fino
 import reflection as reflect_layer
+import weather as weather_layer
 
 app = FastAPI(title="Vibe-Research API", version="0.2.2")
 
@@ -112,6 +113,18 @@ def _validate(code: str) -> str:
 @app.get("/api/health")
 def health():
     return {"ok": True, "service": "vibe-research-api", "version": "0.2.2"}
+
+
+@app.get("/api/weather")
+def weather(
+    city: str = Query("上海", description="城市名 / 机场代码, 如 上海 / Shanghai / JFK"),
+    days: int = Query(7, ge=1, le=16, description="预报天数, 1-16, 默认 7"),
+):
+    """Current weather + multi-day forecast. Open-Meteo primary (up to 16d), wttr enrich. No API key."""
+    try:
+        return {"data": weather_layer.get_weather(city, days=days)}
+    except Exception as e:
+        raise HTTPException(502, f"天气查询失败: {e}") from e
 
 
 class LLMConfig(BaseModel):
@@ -568,6 +581,45 @@ def market_limit_pools(
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"打板池异常：{e}") from e
+
+
+@app.get("/api/market/ths-limit-up")
+def market_ths_limit_up(
+    date: str | None = Query(None, description="YYYYMMDD 或 YYYY-MM-DD"),
+):
+    """同花顺涨停揭秘（原因题材/板型/封板率）。客观公开榜单。缓存 3 分钟。"""
+    try:
+        key = (date or "").strip() or "today"
+        data = _cached(
+            "ths_limit_up",
+            key,
+            180,
+            lambda: astock.ths_limit_up_pool(date),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"同花顺涨停揭秘异常：{e}") from e
+
+
+@app.get("/api/iwencai/status")
+def iwencai_status():
+    """iwencai 是否已配置 API key（不暴露 key）。"""
+    return {"data": {"configured": astock.iwencai_configured()}}
+
+
+@app.get("/api/iwencai/search")
+def iwencai_search(
+    q: str = Query(..., min_length=1, max_length=120),
+    channel: str = Query("report", description="report|announcement|news"),
+    size: int = Query(20, ge=5, le=50),
+):
+    """iwencai NL 语义搜索（需 IWENCAI_API_KEY）。客观结果，不附推荐。"""
+    try:
+        return {"data": astock.iwencai_search(q, channel=channel, size=size)}
+    except astock.DependencyMissing as e:
+        raise HTTPException(501, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"iwencai 搜索异常：{e}") from e
 
 
 @app.get("/api/stock-basic")
@@ -1120,6 +1172,25 @@ def cls_telegraph(limit: int = Query(50, ge=10, le=100)):
         raise HTTPException(502, f"财联社电报异常：{e}") from e
 
 
+@app.get("/api/global-news")
+def global_news(limit: int = Query(50, ge=10, le=100)):
+    """东财全球财经资讯 7x24。缓存 60 秒。客观呈现，不附推荐。"""
+    try:
+        data = _cached(
+            "em_global_news",
+            str(limit),
+            60,
+            lambda: astock.eastmoney_global_news(limit),
+        )
+        if not data:
+            raise HTTPException(404, "东财全球资讯暂无数据")
+        return {"data": {"source": "东财7x24", "count": len(data), "items": data}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"东财全球资讯异常：{e}") from e
+
+
 @app.get("/api/info")
 def info(code: str = Query(...)):
     """个股基本面：行业/股本/上市时间（需 akshare）。"""
@@ -1280,6 +1351,126 @@ def fund_flow(code: str = Query(...)):
         }
     except Exception as e:
         raise HTTPException(502, f"资金流异常：{e}") from e
+
+
+@app.get("/api/fund-flow/minute")
+def fund_flow_minute(code: str = Query(...)):
+    """个股当日分钟级主力/大小单净流入（东财 push2）。缓存 60 秒。单位元。"""
+    code = _validate(code)
+    try:
+        rows = _cached(
+            "fundflow_min",
+            code,
+            60,
+            lambda: astock.eastmoney_fund_flow_minute(code),
+        )
+        last = rows[-1] if rows else None
+        day_main = round(sum(float(r.get("main_net") or 0) for r in rows), 2) if rows else 0.0
+        return {
+            "data": {
+                "code": code,
+                "count": len(rows),
+                "day_main_net": day_main,
+                "latest": last,
+                "rows": rows,
+            }
+        }
+    except Exception as e:
+        raise HTTPException(502, f"分钟资金流异常：{e}") from e
+
+
+@app.get("/api/market/etf-flow")
+def market_etf_flow(
+    sort_by: str = Query("net_inflow", description="net_inflow|change_pct"),
+    limit: int = Query(40, ge=5, le=100),
+):
+    """ETF 资金流向排行（东财）。金额单位亿元。客观公开榜单。缓存 3 分钟。"""
+    sb = sort_by if sort_by in ("net_inflow", "change_pct") else "net_inflow"
+    try:
+        rows = _cached(
+            "etf_flow",
+            f"{sb}:{limit}",
+            180,
+            lambda: astock.etf_fund_flow(sb, limit),
+        )
+        return {
+            "data": {
+                "sort_by": sb,
+                "total": len(rows),
+                "note": "客观公开榜单 · 东财 ETF 资金流 · 非推荐",
+                "rows": rows,
+            }
+        }
+    except Exception as e:
+        raise HTTPException(502, f"ETF 资金流异常：{e}") from e
+
+
+@app.get("/api/shareholder-changes")
+def shareholder_changes(
+    code: str | None = Query(None, description="6 位代码; 空=全市场"),
+    change_type: str = Query("all", description="all|增持|减持"),
+    limit: int = Query(40, ge=5, le=100),
+):
+    """股东/高管增减持（东财）。可按个股或全市场。缓存 10 分钟。"""
+    c = (code or "").strip()
+    if c:
+        c = _validate(c)
+    ct = change_type if change_type in ("all", "增持", "减持") else "all"
+    try:
+        rows = _cached(
+            "sh_chg",
+            f"{c or 'ALL'}:{ct}:{limit}",
+            600,
+            lambda: astock.shareholder_changes(c, ct, limit),
+        )
+        return {
+            "data": {
+                "code": c or None,
+                "change_type": ct,
+                "total": len(rows),
+                "note": "客观公开披露 · 非推荐",
+                "rows": rows,
+            }
+        }
+    except Exception as e:
+        raise HTTPException(502, f"增减持异常：{e}") from e
+
+
+@app.get("/api/market/lpr")
+def market_lpr(days: int = Query(365, ge=30, le=2000)):
+    """LPR 贷款市场报价利率（全国银行间同业拆借中心）。缓存 1 小时。"""
+    try:
+        rows = _cached("lpr", str(days), 3600, lambda: astock.lpr_rates(days))
+        latest = rows[0] if rows else None
+        return {
+            "data": {
+                "latest": latest,
+                "total": len(rows),
+                "source": "chinamoney.com.cn",
+                "note": "客观利率报价 · 非预测",
+                "rows": rows,
+            }
+        }
+    except Exception as e:
+        raise HTTPException(502, f"LPR 异常：{e}") from e
+
+
+@app.get("/api/market/bond-yield")
+def market_bond_yield(
+    curve_type: str = Query("treasury", description="treasury|policy"),
+):
+    """中债国债/政策性金融债收益率曲线。缓存 1 小时。"""
+    ct = curve_type if curve_type in ("treasury", "policy") else "treasury"
+    try:
+        data = _cached(
+            "cn_bond_yield",
+            ct,
+            3600,
+            lambda: astock.bond_yield_curve(ct),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"国债收益率异常：{e}") from e
 
 
 @app.get("/api/dragon-tiger")

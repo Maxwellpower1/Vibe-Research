@@ -8,6 +8,8 @@ const TOAST_MS = 3 * 60_000;
 const SEEN_KEY = "vr.cls.seenId";
 const LIMIT = 40;
 
+type FeedSource = "cls" | "em";
+
 function readSeen(): string {
   try {
     return localStorage.getItem(SEEN_KEY) || "";
@@ -49,9 +51,10 @@ function collectSince(items: ClsTelegraphItem[], sinceKey: string): ClsTelegraph
 
 type ToastState = { count: number; items: ClsTelegraphItem[] };
 
-/** Global floating CLS telegraph: polls in background, click to expand feed. */
+/** Global floating feed: CLS telegraph + Eastmoney 7x24. */
 export function ClsTelegraphBubble() {
   const [open, setOpen] = useState(false);
+  const [source, setSource] = useState<FeedSource>("cls");
   const [data, setData] = useState<ClsTelegraph | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +65,9 @@ export function ClsTelegraphBubble() {
   const openRef = useRef(false);
   const lastTopRef = useRef("");
   const toastTimerRef = useRef<number | null>(null);
+  const sourceRef = useRef<FeedSource>("cls");
   openRef.current = open;
+  sourceRef.current = source;
 
   const dismissToast = useCallback(() => {
     setToast(null);
@@ -81,35 +86,40 @@ export function ClsTelegraphBubble() {
     }, TOAST_MS);
   }, []);
 
-  const load = useCallback(async (silent = false) => {
+  const load = useCallback(async (silent = false, feed?: FeedSource) => {
+    const src = feed ?? sourceRef.current;
     if (!silent) setLoading(true);
     else setRefreshing(true);
     setErr(null);
     try {
-      const next = await api.clsTelegraph(LIMIT);
+      const next = src === "em" ? await api.globalNews(LIMIT) : await api.clsTelegraph(LIMIT);
       const items = next.items || [];
       const top = items[0] ? itemKey(items[0], 0) : "";
 
-      if (silent && !openRef.current && lastTopRef.current && top && top !== lastTopRef.current) {
-        const fresh = collectSince(items, lastTopRef.current);
-        if (fresh.length) {
-          showToast({ count: fresh.length, items: fresh.slice(0, 3) });
+      // Toast / unread badge only for CLS (primary feed)
+      if (src === "cls") {
+        if (silent && !openRef.current && lastTopRef.current && top && top !== lastTopRef.current) {
+          const fresh = collectSince(items, lastTopRef.current);
+          if (fresh.length) {
+            showToast({ count: fresh.length, items: fresh.slice(0, 3) });
+          }
+        }
+        if (top) lastTopRef.current = top;
+
+        if (!openRef.current) {
+          setNewCount(countNew(items, seenRef.current));
+        } else if (items.length) {
+          seenRef.current = top;
+          writeSeen(top);
+          setNewCount(0);
+          dismissToast();
         }
       }
-      if (top) lastTopRef.current = top;
 
-      setData(next);
-      if (!openRef.current) {
-        setNewCount(countNew(items, seenRef.current));
-      } else if (items.length) {
-        seenRef.current = top;
-        writeSeen(top);
-        setNewCount(0);
-        dismissToast();
-      }
+      if (src === sourceRef.current) setData(next);
     } catch (e) {
-      if (!silent) setData(null);
-      setErr(e instanceof ApiError ? e.message : "加载失败");
+      if (!silent && src === sourceRef.current) setData(null);
+      if (src === sourceRef.current) setErr(e instanceof ApiError ? e.message : "加载失败");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -117,8 +127,11 @@ export function ClsTelegraphBubble() {
   }, [dismissToast, showToast]);
 
   useEffect(() => {
-    void load(false);
-    const t = window.setInterval(() => void load(true), REFRESH_MS);
+    void load(false, source);
+  }, [source, load]);
+
+  useEffect(() => {
+    const t = window.setInterval(() => void load(true, "cls"), REFRESH_MS);
     return () => {
       window.clearInterval(t);
       if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
@@ -126,13 +139,13 @@ export function ClsTelegraphBubble() {
   }, [load]);
 
   useEffect(() => {
-    if (!open || !data?.items?.length) return;
+    if (!open || source !== "cls" || !data?.items?.length) return;
     const key = itemKey(data.items[0], 0);
     seenRef.current = key;
     writeSeen(key);
     setNewCount(0);
     dismissToast();
-  }, [open, data, dismissToast]);
+  }, [open, source, data, dismissToast]);
 
   useEffect(() => {
     if (!open) return;
@@ -145,15 +158,18 @@ export function ClsTelegraphBubble() {
 
   const openFromToast = () => {
     dismissToast();
+    setSource("cls");
     setOpen(true);
   };
 
   const renderItem = (it: ClsTelegraphItem, i: number) => {
-    const body = it.content && it.content !== it.title ? it.content : null;
+    const body = (it.content || it.summary) && (it.content || it.summary) !== it.title
+      ? (it.content || it.summary)
+      : null;
     const row = (
       <div className="flex gap-2.5 border-b border-border/40 py-2.5 text-sm last:border-0">
         <span className="w-11 shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
-          {(it.time || "").slice(11, 16) || "—"}
+          {(it.time || "").slice(11, 16) || (it.time || "").slice(-8, -3) || "—"}
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-medium leading-snug group-hover:text-primary">{it.title}</p>
@@ -181,9 +197,10 @@ export function ClsTelegraphBubble() {
     );
   };
 
+  const title = source === "em" ? "东财全球 7×24" : "财联社电报";
+
   return (
     <>
-      {/* Top-right toast for newly arrived items */}
       {toast && !open && (
         <div className="pointer-events-none fixed right-5 top-5 z-[60] w-[min(22rem,calc(100vw-1.5rem))] sm:right-6 sm:top-6">
           <div
@@ -237,14 +254,14 @@ export function ClsTelegraphBubble() {
           <div
             className="pointer-events-auto flex w-[min(26rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-border/70 bg-background/95 shadow-xl backdrop-blur-md"
             role="dialog"
-            aria-label="财联社电报"
+            aria-label={title}
           >
             <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5">
               <Zap className="h-4 w-4 text-primary" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">财联社电报</p>
+                <p className="text-sm font-semibold">{title}</p>
                 <p className="text-[10px] text-muted-foreground/65">
-                  {data?.count != null ? `${data.count} 条` : "—"} · 约 30 秒刷新 · 客观呈现
+                  {data?.count != null ? `${data.count} 条` : "—"} · 客观呈现
                 </p>
               </div>
               <button
@@ -266,6 +283,27 @@ export function ClsTelegraphBubble() {
               </button>
             </div>
 
+            <div className="flex gap-1 border-b border-border/40 px-2 py-1.5">
+              {([
+                { key: "cls" as const, label: "财联社" },
+                { key: "em" as const, label: "东财7×24" },
+              ]).map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setSource(t.key)}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-xs transition-colors",
+                    source === t.key
+                      ? "bg-primary/15 font-medium text-primary"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
             <div className="max-h-[min(28rem,60vh)] overflow-y-auto px-3">
               {err && (
                 <div className="my-2 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
@@ -274,10 +312,10 @@ export function ClsTelegraphBubble() {
               )}
               {loading && !data ? (
                 <p className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> 加载电报…
+                  <Loader2 className="h-4 w-4 animate-spin" /> 加载中…
                 </p>
               ) : !data?.items?.length ? (
-                <p className="py-10 text-center text-sm text-muted-foreground/60">暂无电报数据</p>
+                <p className="py-10 text-center text-sm text-muted-foreground/60">暂无数据</p>
               ) : (
                 data.items.map(renderItem)
               )}
@@ -292,7 +330,7 @@ export function ClsTelegraphBubble() {
             "pointer-events-auto relative flex h-14 w-14 items-center justify-center rounded-full border border-border/60 bg-card/95 text-primary shadow-lg backdrop-blur-md transition-transform hover:scale-105 hover:border-primary/40",
             open && "border-primary/50 bg-primary/15",
           )}
-          title={open ? "收起电报" : "打开财联社电报"}
+          title={open ? "收起资讯" : "打开资讯（财联社 / 东财7×24）"}
           aria-expanded={open}
         >
           <Zap className="h-6 w-6" />

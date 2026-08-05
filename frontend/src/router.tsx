@@ -8,6 +8,7 @@ import { Notes } from "@/pages/Notes";
 import { Ovlab } from "@/pages/Ovlab";
 import { UsMarket } from "@/pages/UsMarket";
 import { Settings } from "@/pages/Settings";
+import { Weather } from "@/pages/Weather";
 
 export const router = createBrowserRouter([
   {
@@ -15,6 +16,7 @@ export const router = createBrowserRouter([
     children: [
       { path: "/", element: <Navigate to="/a-share" replace /> },
       { path: "/a-share", element: <AShare /> },
+      { path: "/weather", element: <Weather /> },
       // legacy bookmarks
       { path: "/daily-review", element: <Navigate to="/a-share" replace /> },
       { path: "/sectors", element: <Navigate to="/a-share" replace /> },

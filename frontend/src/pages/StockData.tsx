@@ -12,7 +12,8 @@ import { Disclaimer } from "@/components/ui/Disclaimer";
 import {
   api, ApiError, type Valuation, type Report, type NewsItem, type ValPercentile, type ValMetric,
   type Financials, type Announcement, type MarginRow, type BlockTradeRow, type HolderRow,
-  type DividendRow, type FundFlowRow, type DragonTiger, type Lockup, type Blocks, type HotConcept, type QaRow,
+  type DividendRow, type FundFlowRow, type FundFlowMinute, type DragonTiger, type Lockup, type Blocks, type HotConcept, type QaRow,
+  type ShareholderChangeRow,
   type GlobalStock, type HkCashflow, type GlobalFundamentals, type GlobalStatements,
   type GlobalFundFlow, type GlobalShortVolume, type GlobalSecFilings, type GlobalOptions,
   type UsKline, type GlobalStockNews, type StockBasicInfo,
@@ -105,8 +106,10 @@ export function StockData({
   const [margin, setMargin] = useState<MarginRow[]>([]);
   const [blockT, setBlockT] = useState<BlockTradeRow[]>([]);
   const [holders, setHolders] = useState<HolderRow[]>([]);
+  const [shChanges, setShChanges] = useState<ShareholderChangeRow[]>([]);
   const [dividend, setDividend] = useState<DividendRow[]>([]);
   const [fundFlow, setFundFlow] = useState<FundFlowRow[]>([]);
+  const [fundMin, setFundMin] = useState<FundFlowMinute | null>(null);
   const [dt, setDt] = useState<DragonTiger | null>(null);
   const [lockup, setLockup] = useState<Lockup | null>(null);
   const [blocks, setBlocks] = useState<Blocks | null>(null);
@@ -134,7 +137,7 @@ export function StockData({
     if (!c) { setErr("请输入代码"); return; }
     const rid = ++runIdRef.current;
     setLoading(true); setErr(null); setDepNote(null); setVal(null); setReports([]); setNews([]); setPctl(null); setFin(null); setAnns([]);
-    setMargin([]); setBlockT([]); setHolders([]); setDividend([]); setFundFlow([]); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa(null); setBasic(null);
+    setMargin([]); setBlockT([]); setHolders([]); setShChanges([]); setDividend([]); setFundFlow([]); setFundMin(null); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa(null); setBasic(null);
     setGStock(null); setCashflow(null);
     setGFund(null); setGStmt(null); setGStmtTab("income"); setGFlow(null); setGShort(null); setGSec(null); setGSecNote(null);
     setGOpt(null); setGOptTab("0dte"); setGKline(null); setGNews(null);
@@ -177,8 +180,12 @@ export function StockData({
     api.margin(c).then(ok(setMargin)).catch(() => {});
     api.blockTrade(c).then(ok(setBlockT)).catch(() => {});
     api.holders(c).then(ok(setHolders)).catch(() => {});
+    api.shareholderChanges({ code: c, limit: 20 }).then((d) => ok(setShChanges)(d.rows || [])).catch(() => {
+      if (rid === runIdRef.current) setShChanges([]);
+    });
     api.dividend(c).then(ok(setDividend)).catch(() => {});
     api.fundFlow(c).then(ok(setFundFlow)).catch(() => {});
+    api.fundFlowMinute(c).then(ok(setFundMin)).catch(() => { if (rid === runIdRef.current) setFundMin(null); });
     api.dragonTiger(c).then(ok(setDt)).catch(() => {});
     api.lockup(c).then(ok(setLockup)).catch(() => {});
     api.blocks(c).then(ok(setBlocks)).catch(() => {});
@@ -1078,8 +1085,8 @@ export function StockData({
             )}
           </GlassCard>
 
-          {/* 资金面 · 筹码（融资融券 / 股东户数 / 主力资金流 / 分红 / 大宗交易） */}
-          {(margin.length > 0 || holders.length > 0 || fundFlow.length > 0 || dividend.length > 0) && (
+          {/* 资金面 · 筹码（融资融券 / 股东户数 / 增减持 / 主力资金流 / 分红 / 大宗交易） */}
+          {(margin.length > 0 || holders.length > 0 || shChanges.length > 0 || fundFlow.length > 0 || fundMin || dividend.length > 0) && (
             <GlassCard className="mb-4">
               <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold"><Wallet className="h-4 w-4 text-primary" /> 资金面 · 筹码</h3>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1087,8 +1094,57 @@ export function StockData({
                 {margin[0] && <Metric k="融券余额" v={yi(margin[0].rqye)} />}
                 {holders[0] && <Metric k="股东户数" v={Number(holders[0].holder_num).toLocaleString()} sub={`环比 ${pct(holders[0].change_ratio)}`} />}
                 {fundFlow.length > 0 && <Metric k="近20日主力净流入" v={yi(fundFlow.slice(-20).reduce((s, r) => s + r.main_net, 0))} />}
+                {fundMin && fundMin.count > 0 && (
+                  <Metric
+                    k="今日主力累计"
+                    v={yi(fundMin.day_main_net)}
+                    sub={fundMin.latest?.time ? `截至 ${fundMin.latest.time}` : "分钟级"}
+                  />
+                )}
                 {dividend[0] && <Metric k="最近派息(每10股)" v={`${dividend[0].bonus_rmb} 元`} sub={dividend[0].date} />}
               </div>
+              {fundMin && fundMin.rows.length > 0 && (
+                <div className="mt-3 border-t border-border/40 pt-3">
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    当日分钟资金（主力 / 超大 / 大 / 中 / 小 · 最近 {Math.min(8, fundMin.rows.length)} 档）
+                  </p>
+                  <div className="space-y-1">
+                    {fundMin.rows.slice(-8).reverse().map((r) => (
+                      <div key={r.time} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px]">
+                        <span className="w-12 shrink-0 text-muted-foreground">{(r.time || "").slice(-5)}</span>
+                        <span className={cn(r.main_net >= 0 ? "text-danger" : "text-success")}>主 {yi(r.main_net)}</span>
+                        <span className="text-muted-foreground">超 {yi(r.super_net)}</span>
+                        <span className="text-muted-foreground">大 {yi(r.large_net)}</span>
+                        <span className="text-muted-foreground">中 {yi(r.mid_net)}</span>
+                        <span className="text-muted-foreground">小 {yi(r.small_net)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {shChanges.length > 0 && (
+                <div className="mt-3 border-t border-border/40 pt-3">
+                  <p className="mb-2 text-xs text-muted-foreground">股东 / 高管增减持（{shChanges.length}）</p>
+                  <div className="space-y-1.5">
+                    {shChanges.slice(0, 8).map((r, i) => (
+                      <div key={`${r.date}-${r.person}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+                        <span className="w-20 shrink-0 font-mono text-muted-foreground">{r.date}</span>
+                        <span className={cn("w-10 shrink-0 font-medium", r.change_type === "增持" ? "text-danger" : "text-success")}>
+                          {r.change_type}
+                        </span>
+                        <span className="max-w-[5rem] truncate">{r.person || "—"}</span>
+                        <span className="w-16 shrink-0 font-mono">
+                          {r.change_shares ? `${(r.change_shares / 1e4).toFixed(1)}万` : "—"}
+                        </span>
+                        <span className="w-14 shrink-0 font-mono text-muted-foreground">
+                          {r.avg_price ? `${r.avg_price}` : "—"}
+                        </span>
+                        <span className="flex-1 truncate text-muted-foreground">{r.position || r.reason || ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {blockT.length > 0 && (
                 <div className="mt-3 border-t border-border/40 pt-3">
                   <p className="mb-2 text-xs text-muted-foreground">近期大宗交易（{blockT.length}）</p>

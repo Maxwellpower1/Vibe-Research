@@ -108,11 +108,45 @@ export interface NewsItem {
 
 /** 财联社电报 */
 export interface ClsTelegraphItem {
-  id?: string | number; title: string; content: string;
+  id?: string | number; title: string; content?: string; summary?: string;
   time: string; share_url?: string | null;
 }
 export interface ClsTelegraph {
   source?: string; count: number; items: ClsTelegraphItem[];
+}
+
+export interface FundFlowMinutePoint {
+  time: string;
+  main_net: number;
+  small_net: number;
+  mid_net: number;
+  large_net: number;
+  super_net: number;
+}
+export interface FundFlowMinute {
+  code: string;
+  count: number;
+  day_main_net: number;
+  latest: FundFlowMinutePoint | null;
+  rows: FundFlowMinutePoint[];
+}
+
+export interface ThsLimitUpRow {
+  code?: string; name?: string; price?: number | null; pct?: number | null;
+  reason?: string; board_type?: string; seal_rate?: number | null;
+  break_times?: number; seal_amount?: number | null;
+  high_days?: string; first_time?: string; is_again?: number | boolean | null;
+}
+export interface ThsLimitUpPool {
+  date: string; total: number; source?: string; note?: string; rows: ThsLimitUpRow[];
+}
+
+export interface IwencaiItem {
+  title: string; publish_date?: string; score?: number;
+  organization?: string; url?: string | null; channel?: string;
+}
+export interface IwencaiSearch {
+  query: string; channel: string; count?: number; items: IwencaiItem[];
 }
 
 export interface IndexQuote {
@@ -614,6 +648,34 @@ export interface CtpSettlementRangeData {
 export interface MarginRow { date: string; rzye: number; rzmre: number; rzche: number; rqye: number; rqmcl: number; rzrqye: number }
 export interface BlockTradeRow { date: string; price: number; close: number; premium_pct: number; vol: number; amount: number; buyer: string; seller: string }
 export interface HolderRow { date: string; holder_num: number; change_ratio: number; avg_shares: number }
+export interface EtfFlowRow {
+  code: string; name: string; price: number; change_pct: number; total_mv: number;
+  main_net_inflow: number; super_large_net: number; large_net: number;
+  medium_net: number; small_net: number; update_time?: string;
+}
+export interface EtfFlow {
+  sort_by: string; total: number; note?: string; rows: EtfFlowRow[];
+}
+export interface ShareholderChangeRow {
+  date: string; code: string; name: string; person: string; change_type: string;
+  change_shares: number; change_ratio: number; avg_price: number;
+  change_amount: number; after_holding: number; reason: string; position: string;
+}
+export interface ShareholderChanges {
+  code?: string | null; change_type: string; total: number; note?: string;
+  rows: ShareholderChangeRow[];
+}
+export interface LprRow { date: string; one_year: number; five_year: number }
+export interface LprData {
+  latest: LprRow | null; total: number; source?: string; note?: string; rows: LprRow[];
+}
+export interface CnBondYield {
+  date: string; curve_type: string; source?: string;
+  terms: Record<string, number>;
+  spread_10_2?: number | null; spread_30_10?: number | null;
+  curve_points?: number[][];
+  error?: string; warning?: string;
+}
 export interface DividendRow { date: string; bonus_rmb: number; transfer_ratio: number; bonus_ratio: number | null; plan: string }
 export interface FundFlowRow { date: string; main_net: number; small_net: number; mid_net: number; large_net: number; super_net: number }
 export interface DtSeat { name: string; buy_amt: number; sell_amt: number; net: number }
@@ -1041,6 +1103,19 @@ export const api = {
   },
   boardFlow: (boardType = "industry", period = "today", top = 20) =>
     get<BoardFlow>(`/market/board-flow?board_type=${boardType}&period=${period}&top=${top}`),
+  etfFlow: (sortBy: "net_inflow" | "change_pct" = "net_inflow", limit = 40) =>
+    get<EtfFlow>(`/market/etf-flow?sort_by=${sortBy}&limit=${limit}`),
+  shareholderChanges: (opts?: { code?: string; changeType?: "all" | "增持" | "减持"; limit?: number }) => {
+    const p = new URLSearchParams();
+    if (opts?.code) p.set("code", opts.code);
+    if (opts?.changeType) p.set("change_type", opts.changeType);
+    if (opts?.limit != null) p.set("limit", String(opts.limit));
+    const q = p.toString();
+    return get<ShareholderChanges>(`/shareholder-changes${q ? `?${q}` : ""}`);
+  },
+  lpr: (days = 365) => get<LprData>(`/market/lpr?days=${days}`),
+  cnBondYield: (curveType: "treasury" | "policy" = "treasury") =>
+    get<CnBondYield>(`/market/bond-yield?curve_type=${curveType}`),
   hsgt: () => get<HsgtLive>("/market/hsgt"),
   hotList: (source: "ths" | "em" = "ths", period = "hour", top = 30) =>
     get<HotList>(`/market/hot-list?source=${source}&period=${period}&top=${top}`),
@@ -1154,11 +1229,20 @@ export const api = {
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
   news: (code: string) => get<NewsItem[]>(`/news?code=${code}`),
   clsTelegraph: (limit = 50) => get<ClsTelegraph>(`/cls-telegraph?limit=${limit}`),
+  globalNews: (limit = 50) => get<ClsTelegraph>(`/global-news?limit=${limit}`),
   margin: (code: string) => get<MarginRow[]>(`/margin?code=${code}`),
   blockTrade: (code: string) => get<BlockTradeRow[]>(`/block-trade?code=${code}`),
   holders: (code: string) => get<HolderRow[]>(`/holders?code=${code}`),
   dividend: (code: string) => get<DividendRow[]>(`/dividend?code=${code}`),
   fundFlow: (code: string) => get<FundFlowRow[]>(`/fund-flow?code=${code}`),
+  fundFlowMinute: (code: string) => get<FundFlowMinute>(`/fund-flow/minute?code=${code}`),
+  thsLimitUp: (date?: string) =>
+    get<ThsLimitUpPool>(`/market/ths-limit-up${date ? `?date=${encodeURIComponent(date)}` : ""}`),
+  iwencaiStatus: () => get<{ configured: boolean }>("/iwencai/status"),
+  iwencaiSearch: (q: string, channel: "report" | "announcement" | "news" = "report", size = 20) =>
+    get<IwencaiSearch>(
+      `/iwencai/search?q=${encodeURIComponent(q)}&channel=${channel}&size=${size}`,
+    ),
   dragonTiger: (code: string) => get<DragonTiger>(`/dragon-tiger?code=${code}`),
   lockup: (code: string) => get<Lockup>(`/lockup?code=${code}`),
   blocks: (code: string) => get<Blocks>(`/blocks?code=${code}`),
@@ -1236,4 +1320,46 @@ export const api = {
     const p = new URLSearchParams({ report_type, start_date, end_date, codes });
     return get<FinoDetailRow[]>(`/fino/detail?${p}`);
   },
+  weather: (city = "上海", days = 7) =>
+    get<WeatherPayload>(`/weather?city=${encodeURIComponent(city)}&days=${days}`),
 };
+
+export interface WeatherCurrent {
+  temp_c: number | null;
+  feels_like_c: number | null;
+  humidity: number | null;
+  condition: string;
+  wind_kmh: number | null;
+  wind_dir: string;
+  visibility_km: number | null;
+  pressure_mb: number | null;
+  uv: number | null;
+  precip_mm: number | null;
+}
+
+export interface WeatherDay {
+  date: string;
+  max_c: number | null;
+  min_c: number | null;
+  avg_c: number | null;
+  condition: string;
+  chance_of_rain: number | null;
+  uv: number | null;
+}
+
+export interface WeatherHourly {
+  time: string;
+  temp_c: number;
+  feels_like_c: number | null;
+  condition: string;
+}
+
+export interface WeatherPayload {
+  source: string;
+  query: string;
+  location: string;
+  current: WeatherCurrent;
+  forecast: WeatherDay[];
+  hourly?: WeatherHourly[];
+  fallback_note?: string;
+}

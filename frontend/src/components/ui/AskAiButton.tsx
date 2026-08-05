@@ -91,6 +91,16 @@ const TOOL_LABEL: Record<string, string> = {
   query_valuation: "查估值",
   query_reports: "查研报",
   query_news: "查新闻",
+  query_cls_telegraph: "财联社",
+  query_global_news: "东财7x24",
+  query_iwencai: "问财",
+  query_fund_flow: "资金流",
+  query_fund_flow_minute: "分钟资金",
+  query_ths_limit_up: "涨停揭秘",
+  query_etf_flow: "ETF资金",
+  query_shareholder_changes: "增减持",
+  query_lpr: "LPR",
+  query_cn_bond_yield: "国债收益率",
 };
 
 // 数据溯源：把工具调用的关键参数压成一小段（查了哪只/哪些代码）。
