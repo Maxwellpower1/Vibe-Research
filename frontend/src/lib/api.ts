@@ -32,25 +32,6 @@ export function authHeaders(): Record<string, string> {
   return k ? { Authorization: `Bearer ${k}` } : {};
 }
 
-export interface MyReport {
-  id: string; name: string; industry: string; size: number; ext: string; ts: number;
-}
-
-// 下载/预览研报：带鉴权头 fetch → blob → 触发浏览器下载（<a download> 无法带 Authorization，故走 blob）。
-export async function downloadReport(id: string, name: string): Promise<void> {
-  const resp = await fetch(`/api/myreports/file/${id}`, { headers: authHeaders() });
-  if (!resp.ok) throw new ApiError(`下载失败 HTTP ${resp.status}`, resp.status);
-  const blob = await resp.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
 async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown): Promise<T> {
   let resp: Response;
   const headers: Record<string, string> = { ...authHeaders() };
@@ -1184,10 +1165,6 @@ export const api = {
   hotConcepts: (code: string) => get<HotConcept[]>(`/hot-concepts?code=${code}`),
   investorQa: (code: string) => get<QaRow[]>(`/investor-qa?code=${code}`),
   industry: (top = 20) => get<IndustryData>(`/industry?top=${top}`),
-  myReports: () => get<MyReport[]>("/myreports"),
-  uploadReport: (name: string, contentB64: string) =>
-    request<MyReport>("/myreports", "POST", { name, content_b64: contentB64 }),
-  deleteReport: (id: string) => request<{ ok: boolean }>(`/myreports/${id}`, "DELETE"),
   // OpenVlab 期权 / 期货波动率
   ovlabMarket: () => get<OvlabMarketRow[]>("/ovlab/market"),
   ovlabDetail: (prodUnd: string, exps?: string) =>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, Loader2, AlertCircle, RefreshCw, ArrowDownUp, TrendingUp, TrendingDown, Plus, X, Flame, Trophy, Activity, ShieldAlert } from "lucide-react";
+import { Sparkles, Loader2, AlertCircle, RefreshCw, ArrowDownUp, TrendingUp, TrendingDown, Flame, Trophy, Activity, ShieldAlert } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -10,21 +10,17 @@ import { Disclaimer } from "@/components/ui/Disclaimer";
 import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { SegmentNav, useSegment } from "@/components/ui/SegmentNav";
 import {
-  api, ApiError, type IndexQuote, type Quote, type MarketOverview, type ShortTermEmotion,
+  api, ApiError, type IndexQuote, type MarketOverview, type ShortTermEmotion,
   type TurnoverTop, type GlobalIndex, type DailyDragonTiger, type BoardFlow, type HsgtLive,
   type HotList, type MonitorPool, type AnomalyPool, type LimitPool, type IndustryData,
 } from "@/lib/api";
 import { hasLlm, chatStream } from "@/lib/llm";
 import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
-import { loadWatch, saveWatch, addCodes } from "@/lib/watchlist";
 import { storageGet, storageSet } from "@/lib/storage";
 import { cn } from "@/lib/utils";
-import { MinuteSpark, downsampleCloses } from "@/components/MinuteSpark";
 
 const TOP_AUTO_MS = 30_000;
 const TOP_AUTO_KEY = "ashare.review.topAuto";
-
-type WatchSpark = { closes: number[]; prev: number | null };
 
 // A股红涨绿跌。全球市场（美股/港股指数）**也沿用红涨**——与整个看板及东财等中国平台一致，
 // 对中国用户最不易看错（Simon 2026-07-05 确认；非国际绿涨惯例，是有意选择，勿改）。
@@ -43,7 +39,6 @@ function PctChip({ pct }: { pct: number | null | undefined }) {
 }
 
 const SEG_KEYS = ["boards", "money", "risk"] as const;
-const LEFT_TAB_KEY = "ashare.review.leftTab";
 
 export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [indices, setIndices] = useState<IndexQuote[]>([]);
@@ -67,12 +62,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [limitPool, setLimitPool] = useState<LimitPool | null>(null);
   const [limitKind, setLimitKind] = useState<"zt" | "zb" | "dt" | "yzt">("zt");
   const [industry, setIndustry] = useState<IndustryData | null>(null);
-  // 关注股票（自选，存本地）
-  const [watchCodes, setWatchCodes] = useState<string[]>(loadWatch);
-  const [watchQuotes, setWatchQuotes] = useState<Record<string, Quote>>({});
-  const [watchSparks, setWatchSparks] = useState<Record<string, WatchSpark>>({});
-  const [watchInput, setWatchInput] = useState("");
-  const [watchLoading, setWatchLoading] = useState(false);
 
   // 各数据块请求是否已结束：区分「加载中」与「数据源暂不可用」（非交易时段/被限流时后端返回空）
   const [ovDone, setOvDone] = useState(false);
@@ -83,37 +72,13 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [topRefreshing, setTopRefreshing] = useState(false);
   const [topUpdatedAt, setTopUpdatedAt] = useState<Date | null>(null);
   const [topAuto, setTopAuto] = useState(() => storageGet(TOP_AUTO_KEY) !== "0");
-  const [leftTab, setLeftTab] = useState<"global" | "watch">(() =>
-    storageGet(LEFT_TAB_KEY) === "watch" ? "watch" : "global",
-  );
   const topRefreshingRef = useRef(false);
-  const watchCodesRef = useRef(watchCodes);
-  watchCodesRef.current = watchCodes;
 
   const [seg, setSeg] = useSegment("ashare.review", [...SEG_KEYS], "boards");
 
   const topUpdatedLabel = topUpdatedAt
     ? topUpdatedAt.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
     : (topRefreshing ? "更新中…" : "—");
-
-  const loadWatchSparks = useCallback(async (codes: string[]) => {
-    if (!codes.length) {
-      setWatchSparks({});
-      return;
-    }
-    const pairs = await Promise.all(
-      codes.map(async (c) => {
-        try {
-          const k = await api.ashareLightKline(c, "1", 240);
-          const closes = (k.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
-          return [c, { closes: downsampleCloses(closes), prev: k.prev_close ?? null }] as const;
-        } catch {
-          return [c, { closes: [], prev: null }] as const;
-        }
-      }),
-    );
-    setWatchSparks(Object.fromEntries(pairs));
-  }, []);
 
   /** Refresh row1 + row2 only: 全球 / 盘面一眼 / 短线 / 行业 / 热榜 / 成交额. */
   const refreshTopRows = useCallback(() => {
@@ -141,28 +106,16 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
       setIndustry(ind);
     }).finally(() => setExtraDone(true));
 
-    const codes = watchCodesRef.current;
-    const pWatch = codes.length
-      ? Promise.all([
-          api.quote(codes.join(",")).then(setWatchQuotes).catch(() => {}),
-          loadWatchSparks(codes),
-        ])
-      : Promise.resolve();
-
-    void Promise.all([pIdx, pGlobal, pOv, pEmo, pTo, pExtra, pWatch]).finally(() => {
+    void Promise.all([pIdx, pGlobal, pOv, pEmo, pTo, pExtra]).finally(() => {
       setTopUpdatedAt(new Date());
       setTopRefreshing(false);
       topRefreshingRef.current = false;
     });
-  }, [loadWatchSparks]);
+  }, []);
 
   useEffect(() => {
     storageSet(TOP_AUTO_KEY, topAuto ? "1" : "0");
   }, [topAuto]);
-
-  useEffect(() => {
-    storageSet(LEFT_TAB_KEY, leftTab);
-  }, [leftTab]);
 
   useEffect(() => {
     if (!topAuto) return;
@@ -208,22 +161,8 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     </div>
   );
 
-  const refreshWatch = (codes: string[]) => {
-    if (!codes.length) {
-      setWatchQuotes({});
-      setWatchSparks({});
-      return;
-    }
-    setWatchLoading(true);
-    Promise.all([
-      api.quote(codes.join(",")).then(setWatchQuotes).catch(() => {}),
-      loadWatchSparks(codes),
-    ]).finally(() => setWatchLoading(false));
-  };
-
   useEffect(() => {
     loadIndices();
-    refreshWatch(loadWatch());
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- bootstrap once
 
   useEffect(() => {
@@ -233,19 +172,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   useEffect(() => {
     api.limitPools(limitKind, 40).then(setLimitPool).catch(() => setLimitPool(null));
   }, [limitKind]);
-
-  const addWatch = () => {
-    // 支持一次粘贴多只（逗号 / 空格分隔）；全部无效或重复则清空输入、无副作用。
-    const { next, added } = addCodes(watchCodes, watchInput);
-    setWatchInput("");
-    if (!added) return;
-    setWatchCodes(next); saveWatch(next); refreshWatch(next);
-  };
-
-  const removeWatch = (c: string) => {
-    const next = watchCodes.filter((x) => x !== c);
-    setWatchCodes(next); saveWatch(next); refreshWatch(next);
-  };
 
   const today = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
 
@@ -325,152 +251,48 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       <div className="mb-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(220px,26%)_minmax(0,1fr)_minmax(260px,30%)]">
-        {/* 全球 / 自选：左侧 Tab */}
+        {/* 全球指数 */}
         <GlassCard className="!mb-0 !p-0 overflow-hidden">
-          <div className="flex items-center justify-between gap-2 border-b border-border/40 px-2 py-1.5">
-            <div className="flex min-w-0 items-center gap-0.5 rounded-lg bg-muted/30 p-0.5">
-              {([
-                { key: "global", label: "全球" },
-                { key: "watch", label: `自选${watchCodes.length ? ` ${watchCodes.length}` : ""}` },
-              ] as const).map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => {
-                    setLeftTab(t.key);
-                    if (t.key === "watch") refreshWatch(watchCodes);
-                  }}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 text-xs transition-colors",
-                    leftTab === t.key
-                      ? "bg-primary/15 font-medium text-primary shadow-glow"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-1.5">
+            <p className="text-sm font-semibold text-foreground">全球</p>
             <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
           </div>
 
-          {leftTab === "global" ? (
-            indices.length === 0 && globalIdx.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground/65">
-                {idxErr ? "指数未接通，可点刷新重试" : "加载中…"}
-              </p>
-            ) : (
-              <div className="max-h-[22rem] overflow-auto">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {["指数", "市场", "点位", "涨跌%"].map((h) => (
-                        <th key={h} className={h === "点位" || h === "涨跌%" ? "num" : ""}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {indices.map((ix) => (
-                      <tr key={`a-${ix.name}`}>
-                        <td className="font-medium">{ix.name}</td>
-                        <td className="text-muted-foreground">A股</td>
-                        <td className={cn("num font-mono font-semibold", pctColor(ix.change_pct))}>{ix.price}</td>
-                        <td className="num"><PctChip pct={ix.change_pct} /></td>
-                      </tr>
-                    ))}
-                    {globalIdx.map((g) => (
-                      <tr key={g.key}>
-                        <td className="font-medium">{g.name}</td>
-                        <td className="text-muted-foreground">{g.region}</td>
-                        <td className={cn("num font-mono font-semibold", g.change_pct == null ? "text-foreground" : pctColor(g.change_pct))}>
-                          {g.price ?? "—"}
-                        </td>
-                        <td className="num"><PctChip pct={g.change_pct} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )
+          {indices.length === 0 && globalIdx.length === 0 ? (
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground/65">
+              {idxErr ? "指数未接通，可点刷新重试" : "加载中…"}
+            </p>
           ) : (
-            <div className="flex max-h-[22rem] flex-col">
-              <div className="flex items-center gap-1.5 border-b border-border/40 px-2 py-2">
-                <input
-                  value={watchInput}
-                  onChange={(e) => setWatchInput(e.target.value.replace(/[^\d,\s]/g, "").slice(0, 80))}
-                  onKeyDown={(e) => e.key === "Enter" && addWatch()}
-                  placeholder="加自选 600519"
-                  className="min-w-0 flex-1 rounded-lg border border-border bg-black/20 px-2 py-1.5 text-xs outline-none focus:border-primary/50"
-                />
-                <button
-                  type="button"
-                  onClick={addWatch}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/15 px-2 py-1.5 text-xs font-medium text-primary hover:bg-primary/25"
-                >
-                  <Plus className="h-3.5 w-3.5" /> 加
-                </button>
-                {watchCodes.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => refreshWatch(watchCodes)}
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted/40 hover:text-primary"
-                    title="刷新价格"
-                  >
-                    {watchLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  </button>
-                )}
-              </div>
-              {watchCodes.length === 0 ? (
-                <p className="px-3 py-6 text-center text-xs text-muted-foreground/60">本地自选 · 不上传</p>
-              ) : (
-                <div className="min-h-0 flex-1 overflow-auto">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        {["名称", "分时", "现价", "涨跌%", ""].map((h) => (
-                          <th key={h || "op"} className={h === "现价" || h === "涨跌%" ? "num" : ""}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {watchCodes.map((c) => {
-                        const q = watchQuotes[c];
-                        const spark = watchSparks[c];
-                        return (
-                          <tr key={c}>
-                            <td>
-                              <Link to={`/a-share?tab=chart&code=${c}`} className="hover:text-primary">
-                                <span className="font-medium">{q?.name || "—"}</span>{" "}
-                                <span className="font-mono text-[10px] text-muted-foreground/50">{c}</span>
-                              </Link>
-                            </td>
-                            <td className="w-[76px]">
-                              <Link to={`/a-share?tab=chart&code=${c}`} className="inline-block" title="看分时详情">
-                                <MinuteSpark
-                                  closes={spark?.closes ?? []}
-                                  prevClose={spark?.prev}
-                                  width={72}
-                                  height={26}
-                                />
-                              </Link>
-                            </td>
-                            <td className={cn("num font-mono", q ? pctColor(q.change_pct) : "text-muted-foreground/40")}>
-                              {q ? q.price : "—"}
-                            </td>
-                            <td className="num"><PctChip pct={q?.change_pct} /></td>
-                            <td className="num">
-                              <button type="button" onClick={() => removeWatch(c)} title="移除"
-                                className="rounded p-1 text-muted-foreground/50 hover:bg-muted/40 hover:text-destructive">
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+            <div className="max-h-[22rem] overflow-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    {["指数", "市场", "点位", "涨跌%"].map((h) => (
+                      <th key={h} className={h === "点位" || h === "涨跌%" ? "num" : ""}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {indices.map((ix) => (
+                    <tr key={`a-${ix.name}`}>
+                      <td className="font-medium">{ix.name}</td>
+                      <td className="text-muted-foreground">A股</td>
+                      <td className={cn("num font-mono font-semibold", pctColor(ix.change_pct))}>{ix.price}</td>
+                      <td className="num"><PctChip pct={ix.change_pct} /></td>
+                    </tr>
+                  ))}
+                  {globalIdx.map((g) => (
+                    <tr key={g.key}>
+                      <td className="font-medium">{g.name}</td>
+                      <td className="text-muted-foreground">{g.region}</td>
+                      <td className={cn("num font-mono font-semibold", g.change_pct == null ? "text-foreground" : pctColor(g.change_pct))}>
+                        {g.price ?? "—"}
+                      </td>
+                      <td className="num"><PctChip pct={g.change_pct} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </GlassCard>

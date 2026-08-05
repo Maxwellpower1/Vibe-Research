@@ -3,7 +3,7 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 import {
   Wallet, Settings, NotebookPen,
   Moon, Sun, ChevronsLeft, ChevronsRight, LineChart, Github,
-  Star, FileText, Waves, Landmark, CandlestickChart,
+  Star, Waves, Landmark, CandlestickChart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
@@ -20,7 +20,6 @@ const NAV = [
   { to: "/ovlab", icon: Waves, label: "期权/期货" },
   { to: "/portfolio", icon: Wallet, label: "我的持仓" },
   { to: "/watchlist", icon: Star, label: "自选股" },
-  { to: "/my-reports", icon: FileText, label: "我的研报" },
   { to: "/notes", icon: NotebookPen, label: "研究记录" },
   { to: "/settings", icon: Settings, label: "接入 AI" },
 ];

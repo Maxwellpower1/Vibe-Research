@@ -4,7 +4,6 @@ import { AShare } from "@/pages/AShare";
 import { Portfolio } from "@/pages/Portfolio";
 import { StockDataRedirect } from "@/pages/StockDataRedirect";
 import { Watchlist } from "@/pages/Watchlist";
-import { MyReports } from "@/pages/MyReports";
 import { Notes } from "@/pages/Notes";
 import { Ovlab } from "@/pages/Ovlab";
 import { UsMarket } from "@/pages/UsMarket";
@@ -22,10 +21,10 @@ export const router = createBrowserRouter([
       { path: "/sectors/:key", element: <Navigate to="/a-share" replace /> },
       { path: "/debate", element: <Navigate to="/a-share" replace /> },
       { path: "/intel", element: <Navigate to="/a-share" replace /> },
+      { path: "/my-reports", element: <Navigate to="/a-share" replace /> },
       { path: "/portfolio", element: <Portfolio /> },
       { path: "/stock-data", element: <StockDataRedirect /> },
       { path: "/watchlist", element: <Watchlist /> },
-      { path: "/my-reports", element: <MyReports /> },
       { path: "/ovlab", element: <Ovlab /> },
       { path: "/us-market", element: <UsMarket /> },
       { path: "/notes", element: <Notes /> },
