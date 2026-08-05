@@ -378,6 +378,89 @@ def us_stock_kline(symbol: str, num: int = 180) -> dict:
     }
 
 
+def _hk_yahoo_symbol(code: str) -> str:
+    """00700 -> 0700.HK (Yahoo HK convention)."""
+    n = str(code).lstrip("0") or "0"
+    return f"{n.zfill(4)}.HK"
+
+
+def hk_stock_kline(symbol: str, num: int = 180) -> dict:
+    """港股日 K（Yahoo 前复权）。symbol 如 00700 / 700。
+
+    新浪港股 K 已失效；东财 push2his 不返回港股 K。
+    Yahoo 可直连，不依赖东财 resolve（suggest 偶发挂掉时仍可用）。
+    """
+    raw = (symbol or "").strip().upper().removesuffix(".HK")
+    info = resolve_symbol(raw) if raw else None
+    if info and info.get("market") not in (None, "HK"):
+        return {}
+    # Prefer resolved 5-digit HK code; else accept pure digits (pad to 5)
+    if info and info.get("market") == "HK":
+        code = str(info["code"])
+        name = info.get("name") or code
+    elif raw.isdigit() and len(raw) <= 5:
+        code = raw.zfill(5)
+        name = code
+    else:
+        return {}
+    n = max(20, min(int(num or 180), 1000))
+    ysym = _hk_yahoo_symbol(code)
+    bars: list[dict] = []
+    try:
+        import requests
+        from datetime import datetime
+
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}"
+        r = requests.get(
+            url,
+            params={"interval": "1d", "range": "2y", "includeAdjustedClose": "true"},
+            headers={"User-Agent": astock.UA},
+            timeout=20,
+        )
+        r.raise_for_status()
+        res = ((r.json().get("chart") or {}).get("result") or [None])[0]
+        if not res:
+            return {}
+        # Prefer Yahoo shortName when Eastmoney resolve failed
+        meta = res.get("meta") or {}
+        if name == code and meta.get("shortName"):
+            name = str(meta["shortName"])
+        timestamps = res.get("timestamp") or []
+        quote = ((res.get("indicators") or {}).get("quote") or [{}])[0]
+        adj_list = ((res.get("indicators") or {}).get("adjclose") or [{}])
+        adjclose = (adj_list[0].get("adjclose") if adj_list else None) or []
+        for i, ts in enumerate(timestamps):
+            try:
+                o, h, l, c = quote["open"][i], quote["high"][i], quote["low"][i], quote["close"][i]
+                if o is None or h is None or l is None or c is None or c == 0:
+                    continue
+                adj = adjclose[i] if i < len(adjclose) else None
+                factor = (float(adj) / float(c)) if adj not in (None, 0) else 1.0
+                bars.append({
+                    "date": datetime.fromtimestamp(ts).strftime("%Y-%m-%d"),
+                    "open": round(float(o) * factor, 4),
+                    "high": round(float(h) * factor, 4),
+                    "low": round(float(l) * factor, 4),
+                    "close": round(float(c) * factor, 4),
+                    "volume": int(quote["volume"][i] or 0),
+                })
+            except (TypeError, ValueError, KeyError, IndexError):
+                continue
+        bars = bars[-n:]
+    except Exception:
+        bars = []
+    if not bars:
+        return {}
+    return {
+        "code": code,
+        "name": name,
+        "market": "HK",
+        "source": "yahoo",
+        "adjust": "qfq",
+        "bars": bars,
+    }
+
+
 # 港股现金流量表汇总科目：东财 RPT_HKSK_FN_CASHFLOW 的 STD_ITEM_CODE → 中文标签。
 # 用稳定数字码作 key（不用东财中文 ITEM_NAME，避开其编码/措辞差异）；实测每期返回这 8 行汇总。
 _HK_CF_ITEMS = {

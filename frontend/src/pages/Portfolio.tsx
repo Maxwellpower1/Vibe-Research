@@ -3,8 +3,11 @@ import * as echarts from "echarts";
 import { Plus, ShieldCheck, RefreshCw, Loader2, Trash2, AlertCircle, Landmark, Waves, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
+import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { Disclaimer } from "@/components/ui/Disclaimer";
+import { useSectionOpen } from "@/hooks/useExpandAll";
 import { api, ApiError, type PortfolioData, type CtpPortfolioData, type CtpStatus, type CtpLogEntry, type CtpSettlementRangeData } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +16,6 @@ const pnlColor = (v: number) => (v > 0 ? "text-danger" : v < 0 ? "text-success" 
 const fmt = (v: number) => v.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 const fmtPx = (v: number) => v.toLocaleString("zh-CN", { maximumFractionDigits: 4 });
 const signed = (v: number) => (v > 0 ? "+" : "") + fmt(v);
-const pctFmt = (v: number, digits = 2) => `${(v * 100).toFixed(digits)}%`;
 const pctInt = (v: number) => `${Math.round(v * 100)}%`;
 const wanInt = (v: number) => `${Math.round(v)}万`;
 
@@ -382,52 +384,55 @@ function StockPortfolio() {
         </div>
       </GlassCard>
 
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-muted-foreground">已清仓</h3>
-        {closed.length > 0 && data && (
-          <span className="text-sm">
-            已实现盈亏合计 <b className={cn("font-mono", pnlColor(data.realized_pnl))}>{data.realized_pnl > 0 ? "+" : ""}{fmt(data.realized_pnl)}</b>
-          </span>
-        )}
-      </div>
-      <GlassCard>
-        {closed.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground/60">还没有清仓记录。卖出后在上面记一笔，作为已实现盈亏的历史。</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/50 text-left text-xs text-muted-foreground">
-                  {["名称", "清仓日期", "清仓价", "股数", "成本", "已实现盈亏", "盈亏%", ""].map((h) => (
-                    <th key={h} className="whitespace-nowrap px-2 py-2 font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {closed.map((c, i) => (
-                  <tr key={i} className="border-b border-border/30">
-                    <td className="px-2 py-2.5">
-                      <span className="font-medium">{c.name}</span>
-                      <span className="ml-1.5 font-mono text-xs text-muted-foreground/60">{c.code}</span>
-                    </td>
-                    <td className="px-2 py-2.5 font-mono text-muted-foreground">{c.date}</td>
-                    <td className="px-2 py-2.5 font-mono">{fmtPx(c.price)}</td>
-                    <td className="px-2 py-2.5 font-mono text-muted-foreground">{fmt(c.shares)}</td>
-                    <td className="px-2 py-2.5 font-mono text-muted-foreground">{fmtPx(c.cost)}</td>
-                    <td className={cn("px-2 py-2.5 font-mono", pnlColor(c.pnl))}>{c.pnl > 0 ? "+" : ""}{fmt(c.pnl)}</td>
-                    <td className={cn("px-2 py-2.5 font-mono", pnlColor(c.pnl))}>{c.pnl_pct > 0 ? "+" : ""}{c.pnl_pct}%</td>
-                    <td className="px-2 py-2.5">
-                      <button onClick={() => removeClosed(i)} className="text-muted-foreground/50 hover:text-destructive" title="删除">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
+      <CollapsibleSection
+        title="已清仓"
+        storageKey="stock.closed"
+        defaultOpen={false}
+        summary={
+          closed.length > 0
+            ? `${closed.length} 笔${data ? ` · 已实现 ${data.realized_pnl > 0 ? "+" : ""}${fmt(data.realized_pnl)}` : ""}`
+            : "暂无记录"
+        }
+      >
+        <GlassCard>
+          {closed.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground/60">还没有清仓记录。卖出后在上面记一笔，作为已实现盈亏的历史。</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 text-left text-xs text-muted-foreground">
+                    {["名称", "清仓日期", "清仓价", "股数", "成本", "已实现盈亏", "盈亏%", ""].map((h) => (
+                      <th key={h} className="whitespace-nowrap px-2 py-2 font-medium">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </GlassCard>
+                </thead>
+                <tbody>
+                  {closed.map((c, i) => (
+                    <tr key={i} className="border-b border-border/30">
+                      <td className="px-2 py-2.5">
+                        <span className="font-medium">{c.name}</span>
+                        <span className="ml-1.5 font-mono text-xs text-muted-foreground/60">{c.code}</span>
+                      </td>
+                      <td className="px-2 py-2.5 font-mono text-muted-foreground">{c.date}</td>
+                      <td className="px-2 py-2.5 font-mono">{fmtPx(c.price)}</td>
+                      <td className="px-2 py-2.5 font-mono text-muted-foreground">{fmt(c.shares)}</td>
+                      <td className="px-2 py-2.5 font-mono text-muted-foreground">{fmtPx(c.cost)}</td>
+                      <td className={cn("px-2 py-2.5 font-mono", pnlColor(c.pnl))}>{c.pnl > 0 ? "+" : ""}{fmt(c.pnl)}</td>
+                      <td className={cn("px-2 py-2.5 font-mono", pnlColor(c.pnl))}>{c.pnl_pct > 0 ? "+" : ""}{c.pnl_pct}%</td>
+                      <td className="px-2 py-2.5">
+                        <button onClick={() => removeClosed(i)} className="text-muted-foreground/50 hover:text-destructive" title="删除">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </GlassCard>
+      </CollapsibleSection>
     </div>
   );
 }
@@ -460,6 +465,8 @@ function CtpPortfolio() {
   const logBoxRef = useRef<HTMLDivElement>(null);
   const loggedIn = !!(status?.logged_in);
   const [sub, setSub] = useState<"positions" | "details" | "orders" | "trades">("positions");
+  // Chart DOM unmounts when settlement CollapsibleSection is closed; re-init on open.
+  const [settleOpen] = useSectionOpen("ctp.settlement", false);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -683,7 +690,13 @@ function CtpPortfolio() {
 
   // Settlement performance charts
   useEffect(() => {
-    if (settleTab !== "settle") return;
+    if (!settleOpen || settleTab !== "settle") {
+      if (!settleOpen && equityChartInst.current) {
+        equityChartInst.current.dispose();
+        equityChartInst.current = null;
+      }
+      return;
+    }
     const el = equityChartRef.current;
     if (!el) return;
     const meta = SETTLE_CHARTS.find((c) => c.key === settleChart)!;
@@ -935,10 +948,11 @@ function CtpPortfolio() {
       zr.off("mousemove", onMove);
       zr.off("globalout", onGlobalOut);
     };
-  }, [rangeData, settleChart, settleTab, data?.account?.market_equity, data?.account?.client_equity, data?.account?.balance, data?.trading_day]);
+  }, [rangeData, settleChart, settleTab, settleOpen, data?.account?.market_equity, data?.account?.client_equity, data?.account?.balance, data?.trading_day]);
 
   // Keep chart sized when container width changes (account cards / tab switch / async ME)
   useEffect(() => {
+    if (!settleOpen) return;
     const el = equityChartRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
@@ -959,7 +973,7 @@ function CtpPortfolio() {
     const parent = el.parentElement;
     if (parent) ro.observe(parent);
     return () => ro.disconnect();
-  }, [settleTab, !!data?.account, rangeData?.analytics?.summary?.days]);
+  }, [settleTab, settleOpen, !!data?.account, rangeData?.analytics?.summary?.days]);
 
   useEffect(() => () => {
     equityChartInst.current?.dispose();
@@ -996,6 +1010,28 @@ function CtpPortfolio() {
   const riskTone = risk >= 80 ? "text-danger" : risk >= 50 ? "text-amber-600 dark:text-amber-400" : "text-foreground";
   const riskBar = risk >= 80 ? "bg-danger" : risk >= 50 ? "bg-amber-500" : "bg-primary";
   const hasBook = !!(data || loggedIn);
+  const posByTrade = totals?.detail_position_profit ?? 0;
+  const closeByTrade = totals?.detail_close_profit ?? 0;
+  const dayPnl = Math.round((posByTrade + closeByTrade) * 100) / 100;
+  const glanceEquity = acc
+    ? (acc.market_equity ?? acc.client_equity ?? acc.balance)
+    : null;
+  const ctpGlance: GlanceMetric[] = acc && Object.keys(acc).length > 0
+    ? [
+        { label: "权益", value: fmt(glanceEquity ?? 0), tone: "primary" },
+        { label: "可用", value: fmt(acc.available), tone: "muted" },
+        {
+          label: "风险度",
+          value: `${risk}%`,
+          tone: risk >= 80 ? "up" : risk >= 50 ? "flat" : "down",
+        },
+        {
+          label: "当日盈亏",
+          value: (totals?.detail_count ?? details.length) > 0 || dayPnl !== 0 ? signed(dayPnl) : "—",
+          tone: dayPnl > 0 ? "up" : dayPnl < 0 ? "down" : "flat",
+        },
+      ]
+    : [];
 
   return (
     <div className="space-y-4">
@@ -1072,6 +1108,16 @@ function CtpPortfolio() {
         <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" /> {err}
         </div>
+      )}
+
+      {ctpGlance.length > 0 && (
+        <GlanceStrip
+          title="账户一眼"
+          subtitle={data?.trading_day ? `交易日 ${data.trading_day}` : undefined}
+          metrics={ctpGlance}
+          onRefresh={loggedIn ? () => void query() : undefined}
+          refreshing={querying}
+        />
       )}
 
       {/* Empty state before first login */}
@@ -1212,10 +1258,21 @@ function CtpPortfolio() {
             </div>
           )}
 
-          <GlassCard glow className={cn(
-            "!p-0 min-w-0 overflow-hidden",
-            acc && Object.keys(acc).length > 0 ? "lg:col-span-8" : "lg:col-span-12",
-          )}>
+          <CollapsibleSection
+            title="结算 / 盈亏日历"
+            storageKey="ctp.settlement"
+            defaultOpen={false}
+            summary={
+              rangeData?.stats
+                ? `有效 ${rangeData.analytics?.summary.days ?? rangeData.chart.length}`
+                : undefined
+            }
+            className={cn(
+              "mb-0 min-w-0",
+              acc && Object.keys(acc).length > 0 ? "lg:col-span-8" : "lg:col-span-12",
+            )}
+          >
+          <GlassCard glow className="!p-0 min-w-0 overflow-hidden">
             <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-1 border-b border-border/50 px-3 sm:px-4">
               <div className="flex min-w-0 gap-0.5">
                 {([
@@ -1638,11 +1695,18 @@ function CtpPortfolio() {
               </div>
             </div>
           </GlassCard>
+          </CollapsibleSection>
         </div>
       )}
 
       {/* Order book / positions panel */}
       {hasBook && (
+      <CollapsibleSection
+        title="持仓 / 委托 / 成交"
+        storageKey="ctp.tables"
+        defaultOpen={false}
+        summary={`${positions.length} 持仓`}
+      >
       <GlassCard glow className="!p-0 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-3 pt-3 sm:px-4">
           <div className="flex gap-0.5 overflow-x-auto">
@@ -1851,6 +1915,7 @@ function CtpPortfolio() {
 
         </div>
       </GlassCard>
+      </CollapsibleSection>
       )}
 
       {/* Collapsible CTP log console */}

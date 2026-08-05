@@ -71,7 +71,7 @@ export function Notes() {
         <GlassCard>
           <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
             <NotebookPen className="h-8 w-8 text-muted-foreground/40" />
-            还没有记录。在「每日复盘」「资讯雷达」或「问 AI」里点 <b className="text-foreground">「存入沉淀」</b> 保存分析结果。
+            还没有记录。在「每日复盘」或「问 AI」里点 <b className="text-foreground">「存入沉淀」</b> 保存分析结果。
           </div>
         </GlassCard>
       ) : (

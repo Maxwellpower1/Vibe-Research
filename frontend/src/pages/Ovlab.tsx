@@ -5,6 +5,7 @@ import { RefreshCw, Loader2, AlertCircle, Search, Activity, Zap, History, ArrowU
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Disclaimer } from "@/components/ui/Disclaimer";
+import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import { api, ApiError, type OvlabMarketRow, type OvlabFlowAlert, type OvlabWarehouseHistory, type OvlabPositionProducts, type OvlabFuturePositionDetails, type OvlabRankRow, type OvlabFlowDataRow, type OvlabProductExp, type OvlabSearchItem, type OvlabPriceVolSeriesItem, type FinoOverviewRow, type FinoDetailRow } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -879,8 +880,40 @@ function MarketPanel({ onPickSymbol }: { onPickSymbol?: (symbol: string) => void
     });
   })();
 
+  const nightCnt = rows.filter((r) => Number(r.has_night_trading)).length;
+  const byCtn = [...rows].filter((r) => r.ctn != null && Number.isFinite(Number(r.ctn)));
+  byCtn.sort((a, b) => Number(b.ctn) - Number(a.ctn));
+  const topUp = byCtn[0];
+  const topDn = byCtn[byCtn.length - 1];
+  const glanceMetrics: GlanceMetric[] = [
+    { label: "品种数", value: rows.length || "—", tone: "primary" },
+    { label: "当前筛选", value: shown.length || "—", sub: filter || sector || onlyNight || expDate ? "已过滤" : "全部", tone: "muted" },
+    { label: "夜盘品种", value: nightCnt || "—", tone: "muted" },
+    { label: "板块数", value: sectors.length || "—", tone: "muted" },
+    {
+      label: "标的涨幅榜首",
+      value: topUp ? (topUp.product_alias || topUp.prodUnd || "—") : "—",
+      sub: topUp?.ctn != null ? `${Number(topUp.ctn) > 0 ? "+" : ""}${Number(topUp.ctn).toFixed(2)}%` : undefined,
+      tone: topUp?.ctn != null && Number(topUp.ctn) > 0 ? "up" : "flat",
+    },
+    {
+      label: "标的跌幅榜首",
+      value: topDn ? (topDn.product_alias || topDn.prodUnd || "—") : "—",
+      sub: topDn?.ctn != null ? `${Number(topDn.ctn) > 0 ? "+" : ""}${Number(topDn.ctn).toFixed(2)}%` : undefined,
+      tone: topDn?.ctn != null && Number(topDn.ctn) < 0 ? "down" : "flat",
+    },
+  ];
+
   return (
     <div>
+      <GlanceStrip
+        title="市场一眼"
+        subtitle="摘要常开 · 下方报价表按需筛选"
+        metrics={glanceMetrics}
+        onRefresh={() => void refresh()}
+        refreshing={refreshing || loading}
+      />
+
       <GlassCard className="mb-3 !p-3.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-1 flex-wrap items-center gap-2 min-w-[200px]">

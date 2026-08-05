@@ -30,11 +30,14 @@ python3 -m venv .venv
 | `GET /api/reports?code=600519` | 个股研报列表（含 PDF 链接） | requests |
 | `GET /api/announcements?code=600519` | 近期公告（东财） | requests |
 | `GET /api/news?code=600519` | 个股新闻 | akshare |
+| `GET /api/cls-telegraph` | 财联社电报（全市场快讯，零 key） | requests |
 | `GET /api/kline?code=600519` | K线 | mootdx |
 | — | *（AI 工具层走腾讯 K 线，mootdx 仅作备份：mootdx 是 TCP 7709，部分网络连不通要等十几秒超时）* | — |
 | `GET /api/finance?code=600519` | 季报财务快照（mootdx，前端未用 / 备用） | mootdx |
-| **资金面·筹码·信号（v3.3）** | `/api/margin` · `/block-trade` · `/holders` · `/dividend` · `/fund-flow` · `/dragon-tiger` · `/lockup` · `/blocks` · `/hot-concepts` · `/investor-qa` · `/industry` | requests |
+| **资金面·筹码·信号（v3.3）** | `/api/margin` · `/block-trade` · `/holders` · `/dividend` · `/fund-flow` · `/dragon-tiger` · `/dragon-tiger/daily`（全市场龙虎榜） · `/lockup` · `/blocks` · `/hot-concepts` · `/investor-qa` · `/industry` | requests |
 | `GET /api/market/overview` · `/api/radar` | 市场情绪+板块资金 · 资讯雷达 | akshare / stdlib |
+| `GET /api/market/board-flow` · `/hsgt` · `/hot-list` · `/stock-monitor` · `/price-anomaly` · `/limit-pools` | 板块资金流 / 北向 / 热榜 / 监控池 / 异动 / 打板池 | requests |
+| `GET /api/stock-basic?code=` | 个股基本资料（行业/股本/上市日） | requests |
 | `POST /api/chat` | 系统 AI 对话（function calling，AI 自己调数据工具） | requests |
 | `POST /api/reflect` | **反思审计**（流式 NDJSON）：对一段已写好的分析做推理审计 | requests |
 | `GET /api/portfolio/ctp/status` | CTP 配置/依赖/登录状态（不主动连前置） | — |
@@ -45,6 +48,20 @@ python3 -m venv .venv
 | `GET /api/portfolio/ctp/market-equity` | 轮询后台市值权益（`客户权益+多头期权市值-空头期权市值`，流控不阻塞主查询） | openctp-ctp |
 | `GET /api/portfolio/ctp/settlement?day=` | 查单日结算单（本地 `~/.vibe-research/ctp_settlements.json` 有则复用） | openctp-ctp |
 | `GET /api/portfolio/ctp/settlement/range?start=&end=` | 区间结算单 + 市值权益 / 净值 / 累计收益 / 盈亏日历 / 统计；缓存优先。日历：盈亏=`Δequity-出入金`，收益=`盈亏-手续费` | openctp-ctp |
+| `GET /api/global/stock/fundamentals?symbol=` | 美/港估值+分析师+机构持仓（Yahoo） | requests |
+| `GET /api/global/stock/statements?symbol=&statement=` | 三表关键科目（income/balance/cashflow，东财） | requests |
+| `GET /api/global/stock/fund-flow?symbol=` | 日级资金流 | requests |
+| `GET /api/global/stock/short-volume?symbol=` | FINRA 空头成交量时序（仅美股） | requests |
+| `GET /api/global/stock/sec-filings?symbol=` | 个股 SEC 申报列表（需 `VR_SEC_CONTACT`） | requests |
+| `GET /api/global/sec/daily` | 全市场 SEC 当日流 Form4/8-K/13F（需 `VR_SEC_CONTACT`） | requests |
+| `GET /api/global/earnings-calendar` | Nasdaq 财报日历 | requests |
+| `GET /api/global/treasury-curve` | 美债收益率曲线 1M~30Y + 关键利差（Treasury，S 级） | requests |
+| `GET /api/global/hk/kline?symbol=` | 港股日 K（Yahoo 前复权） | requests |
+| `GET /api/global/edgar/screener` | SEC EDGAR frames 全市场 screener（S 级，需 VR_SEC_CONTACT） | requests |
+| `GET /api/global/movers?board=` | 美/港涨跌与成交额榜（东财 market_stock_list，C 级） | requests |
+| `GET /api/global/short-ranking` | FINRA 全市场空头占比榜 | requests |
+| `GET /api/global/stock/news?symbol=` | 美/港个股新闻（Yahoo search，C 级） | requests |
+| `GET /api/global/stock/options?symbol=` | CBOE 延时期权概览（0DTE/近月异动·P/C·IV；仅美股，合规 C 级个人研究） | requests |
 
 `/api/reflect` 请求体：`{"source": "待审的分析文本", "title": "可选标题", "llm": {...}}`。
 事件类型：`status` · `delta` · `done` · `error`。

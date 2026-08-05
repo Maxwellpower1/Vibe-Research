@@ -11,6 +11,36 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
+
+
+def _load_dotenv(path: Path | None = None) -> None:
+    """Load backend/.env into os.environ (no python-dotenv dependency).
+
+    Existing process env wins. Lines: KEY=VALUE, optional quotes, # comments.
+    """
+    env_path = path or Path(__file__).with_name(".env")
+    if not env_path.is_file():
+        return
+    try:
+        text = env_path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        os.environ[key] = val
+
+
+_load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +51,7 @@ import astock
 import chat as chat_layer
 import cli_runtime
 import gstock
+import gstock_deep
 import newsradar
 import portfolio as pf
 import ctp_account as ctp
@@ -438,6 +469,128 @@ def market_turnover_top():
         raise HTTPException(502, f"成交额榜异常：{e}") from e
 
 
+@app.get("/api/market/board-flow")
+def market_board_flow(
+    board_type: str = Query("industry", description="industry|concept|region"),
+    period: str = Query("today", description="today|5d|10d"),
+    top: int = Query(20, ge=5, le=50),
+):
+    """板块资金流向（东财 clist）。客观公开榜单。缓存 3 分钟。"""
+    import astock_boards
+    try:
+        key = f"{board_type}:{period}:{top}"
+        data = _cached(
+            "board_flow",
+            key,
+            180,
+            lambda: astock_boards.board_fund_flow(board_type, period, top),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"板块资金流异常：{e}") from e
+
+
+@app.get("/api/market/hsgt")
+def market_hsgt():
+    """北向资金分钟流向（同花顺；深股通仅供参考）。缓存 2 分钟。"""
+    import astock_boards
+    try:
+        data = _cached("hsgt", "live", 120, astock_boards.hsgt_realtime)
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"北向资金异常：{e}") from e
+
+
+@app.get("/api/market/hot-list")
+def market_hot_list(
+    source: str = Query("ths", description="ths|em"),
+    period: str = Query("hour", description="ths: hour|day"),
+    top: int = Query(30, ge=5, le=50),
+):
+    """同花顺热榜 / 东财人气榜。客观公开榜单。缓存 3 分钟。"""
+    import astock_boards
+    try:
+        if source == "em":
+            data = _cached("hot_em", str(top), 180, lambda: astock_boards.em_hot_rank(top))
+        else:
+            data = _cached(
+                "hot_ths",
+                f"{period}:{top}",
+                180,
+                lambda: astock_boards.ths_hot_list(period, top),
+            )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"热榜异常：{e}") from e
+
+
+@app.get("/api/market/stock-monitor")
+def market_stock_monitor():
+    """交易所重点监控池。缓存 10 分钟。"""
+    import astock_boards
+    try:
+        data = _cached("monitor", "active", 600, lambda: astock_boards.em_stock_monitor(True))
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"重点监控池异常：{e}") from e
+
+
+@app.get("/api/market/price-anomaly")
+def market_price_anomaly(top: int = Query(60, ge=10, le=200)):
+    """日内严重异常波动。缓存 5 分钟。"""
+    import astock_boards
+    try:
+        data = _cached(
+            "anomaly",
+            str(top),
+            300,
+            lambda: astock_boards.em_price_anomaly(top),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"日内异动异常：{e}") from e
+
+
+@app.get("/api/market/limit-pools")
+def market_limit_pools(
+    pool: str = Query("zt", description="zt|zb|dt|yzt"),
+    top: int = Query(40, ge=5, le=100),
+):
+    """打板池明细（涨停/炸板/跌停/昨涨停）。客观公开榜单。缓存 3 分钟。"""
+    import astock_boards
+    try:
+        data = _cached(
+            "limit_pool",
+            f"{pool}:{top}",
+            180,
+            lambda: astock_boards.limit_up_pools(pool, top=top),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"打板池异常：{e}") from e
+
+
+@app.get("/api/stock-basic")
+def stock_basic(code: str = Query(...)):
+    """个股基本资料（行业/股本/上市日，东财 push2）。缓存 30 分钟。"""
+    import astock_boards
+    code = _validate(code)
+    try:
+        data = _cached(
+            "stock_basic",
+            code,
+            1800,
+            lambda: astock_boards.stock_basic_info(code),
+        )
+        if not data:
+            raise HTTPException(404, f"未找到「{code}」基本资料")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"基本资料异常：{e}") from e
+
+
 @app.get("/api/global/indices")
 def global_indices():
     """全球指数快照（道指 / 标普500 / 纳斯达克 / 恒生 / 恒生科技）—— A 股看隔夜外围脸色。缓存 5 分钟。"""
@@ -486,6 +639,29 @@ def global_us_kline(
         raise HTTPException(502, f"美股 K 线异常：{e}") from e
 
 
+@app.get("/api/global/hk/kline")
+def global_hk_kline(
+    symbol: str = Query(..., min_length=1, max_length=16),
+    num: int = Query(180, ge=20, le=1000),
+):
+    """港股日 K（Yahoo 前复权）。symbol 如 00700。缓存 5 分钟。"""
+    sym = symbol.strip()
+    try:
+        data = _cached(
+            f"hk_kline:{num}",
+            sym.upper(),
+            300,
+            lambda: gstock.hk_stock_kline(sym, num=num),
+        )
+        if not data:
+            raise HTTPException(404, f"未找到港股「{symbol}」的 K 线（仅港股）")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"港股 K 线异常：{e}") from e
+
+
 @app.get("/api/global/hk/cashflow")
 def global_hk_cashflow(symbol: str = Query(..., min_length=1, max_length=16)):
     """港股现金流量表（东财域内源 RPT_HKSK_FN_CASHFLOW）：经营/投资/筹资/净增加，多期。symbol 如 00700。"""
@@ -500,6 +676,309 @@ def global_hk_cashflow(symbol: str = Query(..., min_length=1, max_length=16)):
         raise
     except Exception as e:
         raise HTTPException(502, f"港股现金流查询异常：{e}") from e
+
+
+@app.get("/api/global/stock/fundamentals")
+def global_stock_fundamentals(symbol: str = Query(..., min_length=1, max_length=16)):
+    """美/港股估值+分析师+机构持仓（Yahoo）。韩股无此层。"""
+    try:
+        data = _cached(
+            "g_fundamentals",
+            symbol.strip().upper(),
+            900,
+            lambda: gstock_deep.stock_fundamentals(symbol.strip()),
+        )
+        if not data:
+            raise HTTPException(404, f"未找到「{symbol}」的基本面数据")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"美港股基本面异常：{e}") from e
+
+
+@app.get("/api/global/stock/statements")
+def global_stock_statements(
+    symbol: str = Query(..., min_length=1, max_length=16),
+    statement: str = Query("income", description="income|balance|cashflow"),
+    periods: int = Query(5, ge=2, le=12),
+):
+    """美/港股三表关键科目（东财，按报告期透视）。"""
+    st = statement.strip().lower()
+    if st not in ("income", "balance", "cashflow"):
+        raise HTTPException(400, "statement 须为 income / balance / cashflow")
+    try:
+        data = _cached(
+            f"g_stmt:{st}:{periods}",
+            symbol.strip().upper(),
+            1800,
+            lambda: gstock_deep.financial_statements(symbol.strip(), st, periods),
+        )
+        if not data:
+            raise HTTPException(404, f"未找到「{symbol}」的{st}报表")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"美港股报表异常：{e}") from e
+
+
+@app.get("/api/global/stock/fund-flow")
+def global_stock_fund_flow(
+    symbol: str = Query(..., min_length=1, max_length=16),
+    limit: int = Query(60, ge=5, le=200),
+):
+    """美/港股日级资金流（东财主力/大单等净流入）。"""
+    try:
+        data = _cached(
+            f"g_fflow:{limit}",
+            symbol.strip().upper(),
+            900,
+            lambda: gstock_deep.fund_flow_daily(symbol.strip(), limit),
+        )
+        if not data:
+            raise HTTPException(404, f"未找到「{symbol}」的资金流")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"美港股资金流异常：{e}") from e
+
+
+@app.get("/api/global/stock/short-volume")
+def global_stock_short_volume(
+    symbol: str = Query(..., min_length=1, max_length=16),
+    days: int = Query(10, ge=3, le=30),
+):
+    """美股 FINRA 空头成交量时序（≠ short interest，看日度趋势）。"""
+    try:
+        data = _cached(
+            f"g_short:{days}",
+            symbol.strip().upper(),
+            1800,
+            lambda: gstock_deep.short_volume_symbol(symbol.strip(), days),
+        )
+        if not data:
+            raise HTTPException(404, f"未找到美股「{symbol}」的空头成交量")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"空头成交量异常：{e}") from e
+
+
+@app.get("/api/global/stock/sec-filings")
+def global_stock_sec_filings(
+    symbol: str = Query(..., min_length=1, max_length=16),
+    limit: int = Query(40, ge=5, le=100),
+):
+    """美股个股 SEC 申报列表。需设置 VR_SEC_CONTACT。"""
+    try:
+        data = _cached(
+            f"g_sec:{limit}",
+            symbol.strip().upper(),
+            1800,
+            lambda: gstock_deep.sec_filings(symbol.strip(), limit=limit),
+        )
+        if not data:
+            raise HTTPException(404, f"未找到美股「{symbol}」的 SEC 申报")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"SEC 申报异常：{e}") from e
+
+
+@app.get("/api/global/sec/daily")
+def global_sec_daily(
+    date: str | None = Query(None, description="YYYYMMDD，默认最近有数据日"),
+    limit: int = Query(80, ge=10, le=200),
+):
+    """全市场 SEC 当日申报流（默认 Form4 / 8-K / 13F）。需 VR_SEC_CONTACT。"""
+    try:
+        key = f"{date or 'latest'}:{limit}"
+        data = _cached(
+            "g_sec_daily",
+            key,
+            900,
+            lambda: gstock_deep.daily_filings(date=date, limit=limit),
+        )
+        return {"data": data}
+    except gstock_deep.DataNotAvailable as e:
+        raise HTTPException(404, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"SEC 日报异常：{e}") from e
+
+
+@app.get("/api/global/earnings-calendar")
+def global_earnings_calendar(
+    date: str | None = Query(None, description="起始日 YYYY-MM-DD，默认美东今天"),
+    days: int = Query(7, ge=1, le=14, description="向前覆盖的交易日数(跳过周末)，默认 7"),
+):
+    """Nasdaq 美股财报日历（可看未来一段时间：盘前/盘后 + EPS 预期）。
+
+    days=1 时等同单日；默认 7 个交易日。返回 by_day 分组 + 扁平 rows。
+    """
+    try:
+        start = (date or "").strip() or None
+        data = _cached(
+            "g_earn_cal",
+            f"{start or 'today'}:{days}",
+            900,
+            lambda: gstock_deep.earnings_calendar_range(start, days),
+        )
+        if not data:
+            raise HTTPException(404, "财报日历无数据")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"财报日历异常：{e}") from e
+
+
+@app.get("/api/global/treasury-curve")
+def global_treasury_curve():
+    """美债收益率曲线 1M~30Y（Treasury 官方 CSV，S 级）。含关键利差与较前日变化。"""
+    try:
+        data = _cached(
+            "g_treasury",
+            "latest",
+            1800,
+            lambda: gstock_deep.treasury_curve_overview(),
+        )
+        if not data:
+            raise HTTPException(404, "美债收益率曲线无数据")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"美债曲线异常：{e}") from e
+
+
+@app.get("/api/global/edgar/screener")
+def global_edgar_screener(
+    tag: str = Query("净利润", description="中文标签或 us-gaap 标签"),
+    year: int | None = Query(None, description="默认去年"),
+    quarter: int | None = Query(None, ge=1, le=4, description="1-4；不传=年度"),
+    top: int = Query(20, ge=5, le=50),
+    ascending: bool = Query(False, description="True=从小到大"),
+):
+    """SEC EDGAR frames 全市场横截面 screener（S 级）。"""
+    try:
+        key = f"{tag}:{year or 'y'}:{quarter or 'A'}:{top}:{int(ascending)}"
+        data = _cached(
+            "g_edgar_screen",
+            key,
+            1800,
+            lambda: gstock_deep.edgar_screener(tag, year, quarter, top, ascending),
+        )
+        return {"data": data}
+    except gstock_deep.DataNotAvailable as e:
+        raise HTTPException(404, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"EDGAR screener 异常：{e}") from e
+
+
+@app.get("/api/global/movers")
+def global_movers(
+    board: str = Query(
+        "us_gainers",
+        description="us_gainers|us_losers|us_amount|hk_gainers|hk_losers|hk_amount",
+    ),
+    top: int = Query(20, ge=5, le=50),
+):
+    """美/港全市场涨跌与成交额榜（东财 clist）。"""
+    try:
+        data = _cached(
+            "g_movers",
+            f"{board}:{top}",
+            120,
+            lambda: gstock_deep.market_movers(board, top),
+        )
+        if not data or not data.get("stocks"):
+            raise HTTPException(404, "榜单暂无数据")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"市场榜单异常：{e}") from e
+
+
+@app.get("/api/global/short-ranking")
+def global_short_ranking(
+    top: int = Query(20, ge=5, le=50),
+    min_total: float = Query(1_000_000, ge=0, description="最小总成交过滤"),
+):
+    """FINRA 全市场空头占比榜（最新有数据交易日）。"""
+    try:
+        data = _cached(
+            "g_short_rank",
+            f"{top}:{int(min_total)}",
+            1800,
+            lambda: gstock_deep.short_volume_ranking_overview(top, min_total),
+        )
+        if not data or not data.get("rows"):
+            raise HTTPException(404, "空头榜暂无数据")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"空头榜异常：{e}") from e
+
+
+@app.get("/api/global/stock/news")
+def global_stock_news(
+    symbol: str = Query(..., min_length=1, max_length=32, description="AAPL / 00700 / Tesla"),
+    count: int = Query(10, ge=1, le=30),
+):
+    """美/港个股新闻（Yahoo Finance search，合规 C 级）。缓存 5 分钟。"""
+    try:
+        data = _cached(
+            f"g_news:{count}",
+            symbol.strip().upper(),
+            300,
+            lambda: gstock_deep.stock_news(symbol.strip(), count),
+        )
+        if not data or not data.get("items"):
+            raise HTTPException(404, f"未找到「{symbol}」相关新闻")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"个股新闻异常：{e}") from e
+
+
+@app.get("/api/global/stock/options")
+def global_stock_options(
+    symbol: str = Query(..., min_length=1, max_length=16),
+    unusual_top: int = Query(15, ge=5, le=40),
+):
+    """美股 CBOE 延时期权概览：P/C、加权 IV、0DTE/近月异动、ATM 切片。
+
+    合规 C 级：仅供个人研究；商用须先取得 Cboe 授权。不返回全链（体量过大）。
+    """
+    try:
+        data = _cached(
+            f"g_opt:{unusual_top}",
+            symbol.strip().upper(),
+            300,
+            lambda: gstock_deep.options_overview(symbol.strip(), unusual_top),
+        )
+        if not data:
+            raise HTTPException(404, f"未找到美股「{symbol}」的期权数据（仅美股）")
+        return {"data": data}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"期权数据异常：{e}") from e
 
 
 @app.get("/api/indices")
@@ -620,6 +1099,25 @@ def news(code: str = Query(...), limit: int = Query(20, ge=1, le=50)):
         raise HTTPException(501, str(e)) from e
     except Exception as e:
         raise HTTPException(502, f"新闻源异常：{e}") from e
+
+
+@app.get("/api/cls-telegraph")
+def cls_telegraph(limit: int = Query(50, ge=10, le=100)):
+    """财联社电报（全市场实时快讯，零 key）。缓存 60 秒。客观呈现，不附推荐。"""
+    try:
+        data = _cached(
+            "cls_tg",
+            str(limit),
+            60,
+            lambda: astock.cls_telegraph(limit),
+        )
+        if not data:
+            raise HTTPException(404, "财联社电报暂无数据")
+        return {"data": {"source": "财联社", "count": len(data), "items": data}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"财联社电报异常：{e}") from e
 
 
 @app.get("/api/info")
@@ -796,6 +1294,26 @@ def dragon_tiger(code: str = Query(...)):
         raise HTTPException(502, f"龙虎榜异常：{e}") from e
 
 
+@app.get("/api/dragon-tiger/daily")
+def dragon_tiger_daily(
+    date: str | None = Query(None, description="YYYY-MM-DD；默认最近有数据交易日"),
+    top: int = Query(40, ge=10, le=200),
+    min_net_buy: float | None = Query(None, description="净买入下限(万元)，可选"),
+):
+    """全市场龙虎榜（东财公开榜单）。缓存 10 分钟。客观呈现，不附推荐。"""
+    try:
+        key = f"{date or 'auto'}:{top}:{min_net_buy if min_net_buy is not None else 'all'}"
+        data = _cached(
+            "dt_daily",
+            key,
+            600,
+            lambda: astock.daily_dragon_tiger(date, min_net_buy, top=top),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"全市场龙虎榜异常：{e}") from e
+
+
 @app.get("/api/lockup")
 def lockup(code: str = Query(...)):
     """限售解禁日历：历史解禁 + 未来 90 天待解禁（东财）。缓存 30 分钟。"""
@@ -849,7 +1367,9 @@ def industry(top: int = Query(20, ge=5, le=50)):
         return {"data": hit[1]}
     try:
         data = astock.industry_comparison(top_n=top)
-        _DC_CACHE[key] = (_time.time(), data)
+        # Empty result usually means upstream blip — do not cache, allow retry
+        if data.get("top"):
+            _DC_CACHE[key] = (_time.time(), data)
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"行业排名异常：{e}") from e

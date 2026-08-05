@@ -1,9 +1,8 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { AShare } from "@/pages/AShare";
-import { Intel } from "@/pages/Intel";
 import { Portfolio } from "@/pages/Portfolio";
-import { StockData } from "@/pages/StockData";
+import { StockDataRedirect } from "@/pages/StockDataRedirect";
 import { Watchlist } from "@/pages/Watchlist";
 import { MyReports } from "@/pages/MyReports";
 import { Notes } from "@/pages/Notes";
@@ -22,9 +21,9 @@ export const router = createBrowserRouter([
       { path: "/sectors", element: <Navigate to="/a-share" replace /> },
       { path: "/sectors/:key", element: <Navigate to="/a-share" replace /> },
       { path: "/debate", element: <Navigate to="/a-share" replace /> },
-      { path: "/intel", element: <Intel /> },
+      { path: "/intel", element: <Navigate to="/a-share" replace /> },
       { path: "/portfolio", element: <Portfolio /> },
-      { path: "/stock-data", element: <StockData /> },
+      { path: "/stock-data", element: <StockDataRedirect /> },
       { path: "/watchlist", element: <Watchlist /> },
       { path: "/my-reports", element: <MyReports /> },
       { path: "/ovlab", element: <Ovlab /> },

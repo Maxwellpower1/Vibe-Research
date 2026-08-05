@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Plus, X, RefreshCw, Star } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { loadWatch, saveWatch, addCodes } from "@/lib/watchlist";
@@ -120,32 +121,7 @@ export function Watchlist() {
         }
       />
 
-      <GlassCard className="mb-4">
-        <label className="mb-1.5 block text-xs text-muted-foreground">
-          批量添加 —— 粘贴一串代码即可（逗号 / 空格 / 换行都行，自动识别 6 位 A 股代码）
-        </label>
-        <div className="flex gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) add();
-            }}
-            rows={2}
-            placeholder={"如：600519 000858, 002463\n300750 688017"}
-            className="flex-1 resize-y rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
-          />
-          <button
-            onClick={add}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 self-start rounded-lg bg-primary/15 px-4 text-sm font-medium text-primary shadow-glow hover:bg-primary/25"
-          >
-            <Plus className="h-4 w-4" /> 添加
-          </button>
-        </div>
-        {hint && <p className="mt-2 text-xs text-muted-foreground/70">{hint}</p>}
-      </GlassCard>
-
-      <GlassCard glow>
+      <GlassCard glow className="mb-4">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="flex items-center gap-1.5 font-semibold">
             <Star className="h-4 w-4 text-primary" /> 自选总览
@@ -180,7 +156,7 @@ export function Watchlist() {
         </div>
         {codes.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground/60">
-            还没有自选股，用上面的框粘贴一串代码批量添加。
+            还没有自选股，展开下方「批量添加 / 管理」粘贴代码即可。
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -223,6 +199,38 @@ export function Watchlist() {
           </div>
         )}
       </GlassCard>
+
+      <CollapsibleSection
+        title="批量添加 / 管理"
+        storageKey="watch.manage"
+        defaultOpen={false}
+        summary={`${codes.length} 只`}
+      >
+        <GlassCard>
+          <label className="mb-1.5 block text-xs text-muted-foreground">
+            批量添加 —— 粘贴一串代码即可（逗号 / 空格 / 换行都行，自动识别 6 位 A 股代码）
+          </label>
+          <div className="flex gap-2">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) add();
+              }}
+              rows={2}
+              placeholder={"如：600519 000858, 002463\n300750 688017"}
+              className="flex-1 resize-y rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+            />
+            <button
+              onClick={add}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 self-start rounded-lg bg-primary/15 px-4 text-sm font-medium text-primary shadow-glow hover:bg-primary/25"
+            >
+              <Plus className="h-4 w-4" /> 添加
+            </button>
+          </div>
+          {hint && <p className="mt-2 text-xs text-muted-foreground/70">{hint}</p>}
+        </GlassCard>
+      </CollapsibleSection>
 
       <Disclaimer />
     </div>

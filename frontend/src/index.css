@@ -84,15 +84,155 @@
     /* 纵深暖冷双光晕（顶橙 + 右下冷蓝），别留死黑 */
     background-color: hsl(var(--background));
     background-image:
-      radial-gradient(1100px 620px at 12% -12%, hsl(15 89% 56% / 0.11), transparent 60%),
+      radial-gradient(1100px 620px at 12% -12%, hsl(var(--primary) / 0.11), transparent 60%),
       radial-gradient(980px 720px at 108% 112%, hsl(220 60% 45% / 0.08), transparent 55%);
     background-attachment: fixed;
   }
 
   .light body {
     background-image:
-      radial-gradient(1100px 620px at 12% -12%, hsl(15 85% 55% / 0.08), transparent 60%),
+      radial-gradient(1100px 620px at 12% -12%, hsl(var(--primary) / 0.08), transparent 60%),
       radial-gradient(980px 720px at 108% 112%, hsl(220 65% 60% / 0.06), transparent 55%);
+  }
+
+  /* ---- Accent presets (data-accent on <html>) ---- */
+  :root[data-accent="blue"] {
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 6%;
+    --accent: 210 90% 62%;
+    --accent-foreground: 222 47% 6%;
+    --info: 217 91% 60%;
+    --glass-stroke: rgba(186, 214, 255, 0.12);
+  }
+  :root[data-accent="blue"].light {
+    --primary: 217 85% 48%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 210 80% 46%;
+    --accent-foreground: 0 0% 100%;
+    --info: 217 85% 48%;
+    --glass-stroke: rgba(30, 64, 120, 0.12);
+  }
+
+  :root[data-accent="teal"] {
+    --primary: 172 66% 45%;
+    --primary-foreground: 222 47% 6%;
+    --accent: 168 70% 42%;
+    --accent-foreground: 222 47% 6%;
+    --info: 172 66% 45%;
+    --glass-stroke: rgba(167, 243, 228, 0.12);
+  }
+  :root[data-accent="teal"].light {
+    --primary: 172 70% 36%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 168 65% 34%;
+    --accent-foreground: 0 0% 100%;
+    --info: 172 70% 36%;
+    --glass-stroke: rgba(15, 90, 80, 0.12);
+  }
+
+  /* orange = default :root tokens; keep explicit for clarity when switching back */
+  :root[data-accent="orange"] {
+    --primary: 15 89% 56%;
+    --primary-foreground: 222 47% 6%;
+    --accent: 25 95% 58%;
+    --accent-foreground: 222 47% 6%;
+    --info: 15 89% 56%;
+    --glass-stroke: rgba(255, 232, 214, 0.10);
+  }
+  :root[data-accent="orange"].light {
+    --primary: 15 82% 50%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 25 90% 50%;
+    --accent-foreground: 0 0% 100%;
+    --info: 15 82% 50%;
+    --glass-stroke: rgba(15, 40, 70, 0.10);
+  }
+
+  :root[data-accent="amber"] {
+    --primary: 38 92% 50%;
+    --primary-foreground: 222 47% 6%;
+    --accent: 32 95% 52%;
+    --accent-foreground: 222 47% 6%;
+    --info: 38 92% 50%;
+    --glass-stroke: rgba(255, 236, 180, 0.12);
+  }
+  :root[data-accent="amber"].light {
+    --primary: 32 90% 42%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 28 88% 40%;
+    --accent-foreground: 0 0% 100%;
+    --info: 32 90% 42%;
+    --glass-stroke: rgba(120, 70, 10, 0.12);
+  }
+
+  :root[data-accent="rose"] {
+    --primary: 346 77% 60%;
+    --primary-foreground: 222 47% 6%;
+    --accent: 350 80% 62%;
+    --accent-foreground: 222 47% 6%;
+    --info: 346 77% 60%;
+    --glass-stroke: rgba(255, 200, 214, 0.12);
+  }
+  :root[data-accent="rose"].light {
+    --primary: 346 72% 48%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 350 70% 46%;
+    --accent-foreground: 0 0% 100%;
+    --info: 346 72% 48%;
+    --glass-stroke: rgba(120, 30, 50, 0.12);
+  }
+
+  :root[data-accent="slate"] {
+    --primary: 215 20% 55%;
+    --primary-foreground: 222 47% 6%;
+    --accent: 210 18% 58%;
+    --accent-foreground: 222 47% 6%;
+    --info: 215 20% 55%;
+    --glass-stroke: rgba(200, 214, 230, 0.12);
+  }
+  :root[data-accent="slate"].light {
+    --primary: 215 22% 40%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 210 18% 38%;
+    --accent-foreground: 0 0% 100%;
+    --info: 215 22% 40%;
+    --glass-stroke: rgba(40, 55, 75, 0.12);
+  }
+
+  /* 墨黑: near-black primary with soft silver accent */
+  :root[data-accent="black"] {
+    --primary: 0 0% 78%;
+    --primary-foreground: 222 47% 6%;
+    --accent: 220 8% 62%;
+    --accent-foreground: 222 47% 6%;
+    --info: 0 0% 78%;
+    --glass-stroke: rgba(220, 220, 225, 0.14);
+  }
+  :root[data-accent="black"].light {
+    --primary: 0 0% 18%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 220 8% 28%;
+    --accent-foreground: 0 0% 100%;
+    --info: 0 0% 18%;
+    --glass-stroke: rgba(20, 20, 24, 0.14);
+  }
+
+  /* 黑金: muted gold primary for dark/luxury feel */
+  :root[data-accent="gold"] {
+    --primary: 43 70% 48%;
+    --primary-foreground: 222 47% 6%;
+    --accent: 38 55% 42%;
+    --accent-foreground: 222 47% 6%;
+    --info: 43 70% 48%;
+    --glass-stroke: rgba(232, 208, 140, 0.16);
+  }
+  :root[data-accent="gold"].light {
+    --primary: 40 65% 38%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 36 55% 34%;
+    --accent-foreground: 0 0% 100%;
+    --info: 40 65% 38%;
+    --glass-stroke: rgba(100, 75, 20, 0.14);
   }
 
   /* prose 表格 */
@@ -253,5 +393,50 @@
     border-bottom: 1px solid hsl(var(--border) / 0.55);
     background: linear-gradient(180deg, hsl(var(--muted) / 0.35), transparent);
     padding: 0.75rem 1rem;
+  }
+
+  /* Compact pct pill (index cards / rank lists, not only market-table) */
+  .pct-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 0.6875rem;
+    letter-spacing: 0.01em;
+  }
+  .pct-chip.up {
+    color: hsl(var(--danger));
+    background: hsl(var(--danger) / 0.12);
+  }
+  .pct-chip.down {
+    color: hsl(var(--success));
+    background: hsl(var(--success) / 0.12);
+  }
+  .pct-chip.flat {
+    color: hsl(var(--muted-foreground));
+    background: hsl(var(--muted) / 0.45);
+  }
+
+  /* A-share long-page group label */
+  .ashare-group {
+    margin: 1.75rem 0 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .ashare-group::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, hsl(var(--border) / 0.7), transparent);
+  }
+  .ashare-group span {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground) / 0.75);
   }
 }

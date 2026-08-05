@@ -69,6 +69,9 @@ TOOLS: list[dict] = [
     _t("query_company_info", "查公司基本概况：所属行业、总股本/流通股、上市日期等。", _CODE, ["code"]),
     _t("query_reports", "查个股近期研报列表（标题/机构/评级/日期）。", _CODE, ["code"]),
     _t("query_news", "查个股近期新闻（标题/时间/来源）。", _CODE, ["code"]),
+    _t("query_cls_telegraph",
+       "查财联社电报：全市场实时财经快讯（标题/正文/时间）。客观公开资讯，不构成投资建议。",
+       {"limit": {"type": "integer", "description": "条数，默认 30"}}, []),
 
     # —— 资金面与筹码 ——
     _t("query_fund_flow",
@@ -79,6 +82,12 @@ TOOLS: list[dict] = [
     _t("query_holders", "查个股股东户数变化（户数增减 = 筹码集中或分散的直接证据）。", _CODE, ["code"]),
     _t("query_block_trade", "查个股大宗交易记录：成交价、折溢价率、成交量、买卖营业部。", _CODE, ["code"]),
     _t("query_dragon_tiger", "查个股龙虎榜：近 30 日上榜记录、最近一次买卖席位 TOP5、机构专用席位净买额。", _CODE, ["code"]),
+    _t("query_daily_dragon_tiger",
+       "查全市场龙虎榜：当日（或最近有数据交易日）上榜股票、上榜原因、买卖净额(万元)、涨跌幅。客观公开榜单，不构成推荐。",
+       {
+           "date": {"type": "string", "description": "可选 YYYY-MM-DD，默认最近有数据日"},
+           "top": {"type": "integer", "description": "返回条数，默认 30"},
+       }, []),
     _t("query_dividend", "查个股历史分红方案：每股派息、股息率、除权除息日、分红进度。", _CODE, ["code"]),
 
     # —— 事件与风险 ——
@@ -642,12 +651,24 @@ _HANDLERS = {
                                      ("title", "publishDate", "orgSName", "emRatingName"), 15),
     "query_news": lambda a: _pick(astock.stock_news(str(a["code"]), limit=15),
                                   ("新闻标题", "发布时间", "文章来源"), 15),
+    "query_cls_telegraph": lambda a: {
+        "source": "财联社",
+        "items": _pick(
+            astock.cls_telegraph(int(a.get("limit") or 30)),
+            ("time", "title", "content"),
+            int(a.get("limit") or 30),
+        ),
+    },
     "query_fund_flow": _fund_flow,
     "query_margin": lambda a: _pick(astock.margin_trading(str(a["code"])),
                                     ("date", "rzye", "rzmre", "rzche", "rqye", "rzrqye"), 15),
     "query_holders": lambda a: _pick(astock.holder_num_change(str(a["code"])), None, 10),
     "query_block_trade": lambda a: _pick(astock.block_trade(str(a["code"])), None, 15),
     "query_dragon_tiger": lambda a: astock.dragon_tiger_board(str(a["code"])),
+    "query_daily_dragon_tiger": lambda a: astock.daily_dragon_tiger(
+        a.get("date") or None,
+        top=int(a.get("top") or 30),
+    ),
     "query_dividend": lambda a: _pick(astock.dividend_history(str(a["code"])), None, 12),
     "query_announcements": lambda a: _pick(astock.announcements(str(a["code"])), ("title", "date", "type"), 15),
     "query_lockup": lambda a: astock.lockup_expiry(str(a["code"])),

@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import * as echarts from "echarts";
-import { AlertCircle, Loader2, Plus, RefreshCw, X } from "lucide-react";
+import { AlertCircle, CandlestickChart, FileText, Loader2, Newspaper, Plus, RefreshCw, Search, X } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
+import { SegmentNav, useSegment } from "@/components/ui/SegmentNav";
+import { WatchlistFeed } from "@/components/WatchlistFeed";
+import { StockData } from "@/pages/StockData";
 import { api, ApiError, type AShareLightBar, type Quote } from "@/lib/api";
 import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
+
+const CHART_SEGS = ["kline", "detail", "feed"] as const;
 
 const UP = "#ef4444";
 const DN = "#22c55e";
@@ -36,8 +43,17 @@ function fmtVol(v: number | null | undefined) {
 }
 
 export function AShareLightChart() {
-  const [codes, setCodes] = useState<string[]>(loadWatch);
-  const [selected, setSelected] = useState<string>(() => loadWatch()[0] ?? "");
+  const [params, setParams] = useSearchParams();
+  const urlCode = (params.get("code") || "").trim().toUpperCase();
+  const [codes, setCodes] = useState<string[]>(() => {
+    const w = loadWatch();
+    if (urlCode && /^\d{6}$/.test(urlCode) && !w.includes(urlCode)) return [...w, urlCode];
+    return w;
+  });
+  const [selected, setSelected] = useState<string>(() => {
+    if (urlCode && /^\d{6}$/.test(urlCode)) return urlCode;
+    return loadWatch()[0] ?? "";
+  });
   const [input, setInput] = useState("");
   const [hint, setHint] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
@@ -50,6 +66,12 @@ export function AShareLightChart() {
   const [chartLoading, setChartLoading] = useState(false);
   const [chartErr, setChartErr] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [feedKind, setFeedKind] = useState<"filings" | "news">("filings");
+  const [seg, setSeg] = useSegment("ashare.chart", [...CHART_SEGS], "kline");
+  const pickStock = (c: string) => {
+    setSelected(c);
+    setSeg("kline");
+  };
 
   const chartRef = useRef<HTMLDivElement>(null);
   const echartRef = useRef<echarts.ECharts | null>(null);
@@ -122,6 +144,27 @@ export function AShareLightChart() {
 
   useEffect(() => { void loadQuotes(); }, [loadQuotes]);
   useEffect(() => { void loadChart(selected, resolution); }, [selected, resolution, loadChart]);
+
+  // Sync selection <- URL deep link (?code=); stay on K线 to show chart + 行情
+  useEffect(() => {
+    if (!urlCode || !/^\d{6}$/.test(urlCode)) return;
+    if (urlCode !== selected) {
+      setSelected(urlCode);
+      setCodes((prev) => (prev.includes(urlCode) ? prev : [...prev, urlCode]));
+    }
+    setSeg("kline");
+  }, [urlCode]); // eslint-disable-line react-hooks/exhaustive-deps -- only react to URL
+
+  // Sync URL <- selection (keep tab=chart)
+  useEffect(() => {
+    if (!selected) return;
+    const cur = (params.get("code") || "").trim().toUpperCase();
+    if (cur === selected) return;
+    const p = new URLSearchParams(params);
+    p.set("tab", "chart");
+    p.set("code", selected);
+    setParams(p, { replace: true });
+  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -437,160 +480,294 @@ export function AShareLightChart() {
   const chgPct = chg != null && base ? (chg / base) * 100 : null;
   const hovering = hoverIdx != null && bars[hoverIdx] != null;
   const selQuote = selected ? quotes[selected] : undefined;
+  const quoteChgPct = chgPct ?? selQuote?.change_pct ?? null;
+  const quoteChgAmt = chg != null
+    ? chg
+    : selQuote != null
+      ? selQuote.price - selQuote.last_close
+      : null;
+
+  // Keep chart DOM mounted so ECharts survives tab switches (hide when not on kline)
+  const showKline = seg === "kline";
+  useEffect(() => {
+    if (!showKline) return;
+    const t = window.setTimeout(() => echartRef.current?.resize(), 50);
+    return () => window.clearTimeout(t);
+  }, [showKline, selected]);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-      <GlassCard className="flex flex-col p-3">
-        <div className="mb-2 flex items-center gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") add(); }}
-            placeholder="加自选: 600519 000858"
-            className="min-w-0 flex-1 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-sm outline-none focus:border-primary/50"
-          />
-          <button
-            type="button"
-            onClick={add}
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground"
-          >
-            <Plus className="h-3.5 w-3.5" /> 添加
-          </button>
-        </div>
-        {hint ? <p className="mb-2 text-[11px] text-muted-foreground">{hint}</p> : null}
-        <div className="min-h-[320px] flex-1 space-y-0.5 overflow-auto">
-          {codes.length === 0 ? (
-            <p className="p-4 text-center text-xs text-muted-foreground">还没有自选，先加几个 6 位代码（与「自选股」同源）。</p>
-          ) : codes.map((c) => {
-            const q = quotes[c];
-            const pct = q?.change_pct;
-            const active = c === selected;
-            return (
+    <div>
+      <SegmentNav
+        storageKey="ashare.chart"
+        sticky
+        value={seg}
+        onChange={setSeg}
+        items={[
+          { key: "kline", label: "K线", icon: <CandlestickChart className="h-3.5 w-3.5" /> },
+          { key: "detail", label: "详情", icon: <Search className="h-3.5 w-3.5" />, badge: selected || undefined },
+          { key: "feed", label: "公告", icon: <Newspaper className="h-3.5 w-3.5" /> },
+        ]}
+      />
+
+      {/* K线：自选 + 图表（keep mounted for chart resize） */}
+      <div className={cn(!showKline && "hidden")}>
+        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <GlassCard className="flex flex-col !p-0 overflow-hidden">
+            <div className="market-toolbar !py-2.5">
+              <span className="text-xs font-medium text-foreground">自选列表</span>
+              <span className="text-[11px] text-muted-foreground/55">{codes.length} 只</span>
+            </div>
+            <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2.5">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+                placeholder="加自选: 600519 000858"
+                className="min-w-0 flex-1 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-sm outline-none focus:border-primary/50"
+              />
               <button
-                key={c}
                 type="button"
-                onClick={() => setSelected(c)}
-                className={cn(
-                  "group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-                  active ? "bg-primary/12 text-foreground" : "hover:bg-muted/40",
-                )}
+                onClick={add}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/15 px-2.5 py-1.5 text-xs font-medium text-primary shadow-glow hover:bg-primary/25"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="font-semibold tabular-nums">{c}</span>
-                    <span className="truncate text-[11px] text-muted-foreground">{q?.name ?? ""}</span>
-                  </div>
-                  <div className="mt-0.5 flex items-baseline gap-2 tabular-nums text-xs">
-                    <span>{fmtPrice(q?.price)}</span>
-                    <span className={cn(
-                      pct != null && pct > 0 ? "text-red-500" : pct != null && pct < 0 ? "text-emerald-500" : "text-muted-foreground",
-                    )}>
-                      {fmtPct(pct)}
+                <Plus className="h-3.5 w-3.5" /> 添加
+              </button>
+            </div>
+            {hint ? <p className="px-3 py-1.5 text-[11px] text-muted-foreground">{hint}</p> : null}
+            <div className="min-h-[320px] flex-1 space-y-0.5 overflow-auto p-2">
+              {codes.length === 0 ? (
+                <p className="p-4 text-center text-xs text-muted-foreground">还没有自选，先加几个 6 位代码（与「自选股」同源）。</p>
+              ) : codes.map((c) => {
+                const q = quotes[c];
+                const pct = q?.change_pct;
+                const active = c === selected;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => pickStock(c)}
+                    className={cn(
+                      "group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+                      active ? "bg-primary/15 text-foreground shadow-glow" : "hover:bg-muted/40",
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="font-semibold tabular-nums">{c}</span>
+                        <span className="truncate text-[11px] text-muted-foreground">{q?.name ?? ""}</span>
+                      </div>
+                      <div className="mt-0.5 flex items-baseline gap-2 tabular-nums text-xs">
+                        <span>{fmtPrice(q?.price)}</span>
+                        <span className={cn(
+                          pct != null && pct > 0 ? "text-danger" : pct != null && pct < 0 ? "text-success" : "text-muted-foreground",
+                        )}>
+                          {fmtPct(pct)}
+                        </span>
+                      </div>
+                    </div>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => remove(c, e)}
+                      onKeyDown={(e) => { if (e.key === "Enter") remove(c); }}
+                      className="rounded p-1 text-muted-foreground opacity-0 hover:bg-muted/60 hover:text-foreground group-hover:opacity-100"
+                      title="移除"
+                    >
+                      <X className="h-3.5 w-3.5" />
                     </span>
+                  </button>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+          <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_260px]">
+            {/* K线 */}
+            <GlassCard className="min-w-0 p-3 sm:p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-base font-bold tracking-tight">
+                    {meta?.name || selQuote?.name || selected || "—"}{" "}
+                    <span className="text-sm font-medium text-muted-foreground">{selected || ""}</span>
+                  </span>
+                  <span className="rounded bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {resolution === "1D" ? (meta?.adjust === "qfq" ? "前复权" : "日K") : resolution === "5" ? "5日" : "分时"}
+                  </span>
+                  <span className={cn(
+                    "rounded px-1.5 py-0.5 text-[10px]",
+                    hovering ? "bg-primary/15 text-primary" : "bg-muted/40 text-muted-foreground",
+                  )}>
+                    {hovering ? "十字光标" : "最新"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
+                    {RES_OPTS.map((r) => (
+                      <button
+                        key={r.v}
+                        type="button"
+                        onClick={() => setResolution(r.v)}
+                        className={cn(
+                          "rounded-md px-2.5 py-1 text-xs",
+                          resolution === r.v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { void loadQuotes(); if (selected) void loadChart(selected, resolution); }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", (quotesLoading || chartLoading) && "animate-spin")} />
+                    刷新
+                  </button>
+                </div>
+              </div>
+
+              {chartErr ? (
+                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 shrink-0" /> {chartErr}
+                </div>
+              ) : (
+                <div className="relative">
+                  {chartLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/40">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    </div>
+                  )}
+                  <div ref={chartRef} className="h-[480px] w-full" />
+                </div>
+              )}
+            </GlassCard>
+
+            {/* 行情：与 K 线左右并排 */}
+            <GlassCard className="flex flex-col !p-0 overflow-hidden">
+              <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
+                <p className="text-sm font-semibold">行情</p>
+                {selected && (
+                  <button
+                    type="button"
+                    onClick={() => setSeg("detail")}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/10"
+                  >
+                    <Search className="h-3 w-3" /> 更多详情
+                  </button>
+                )}
+              </div>
+              {!selected ? (
+                <p className="px-3 py-8 text-center text-xs text-muted-foreground/65">从左侧自选点一只，看实时行情</p>
+              ) : (
+                <div className="flex-1 space-y-3 overflow-auto p-3">
+                  <div>
+                    <p className="truncate text-sm font-semibold">
+                      {meta?.name || selQuote?.name || "—"}
+                      <span className="ml-1.5 font-mono text-xs font-normal text-muted-foreground">{selected}</span>
+                    </p>
+                    {bar?.datetime ? (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{bar.datetime}</p>
+                    ) : null}
+                    <p className={cn(
+                      "mt-2 font-mono text-2xl font-bold tabular-nums",
+                      quoteChgPct != null && quoteChgPct > 0 ? "text-danger" : quoteChgPct != null && quoteChgPct < 0 ? "text-success" : "text-foreground",
+                    )}>
+                      {fmtPrice(bar?.close ?? selQuote?.price)}
+                    </p>
+                    <p className={cn(
+                      "mt-0.5 text-sm tabular-nums",
+                      quoteChgPct != null && quoteChgPct > 0 ? "text-danger" : quoteChgPct != null && quoteChgPct < 0 ? "text-success" : "text-muted-foreground",
+                    )}>
+                      {quoteChgAmt != null ? `${quoteChgAmt > 0 ? "+" : ""}${quoteChgAmt.toFixed(2)}` : "—"}
+                      <span className="ml-1.5">({fmtPct(quoteChgPct)})</span>
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {(resolution === "1D" && bar
+                      ? [
+                          { k: "开", v: fmtPrice(bar.open) },
+                          { k: "高", v: fmtPrice(bar.high) },
+                          { k: "低", v: fmtPrice(bar.low) },
+                          { k: "收", v: fmtPrice(bar.close) },
+                          { k: "量", v: fmtVol(bar.volume) },
+                          { k: "昨收", v: fmtPrice(base ?? selQuote?.last_close) },
+                        ]
+                      : bar
+                        ? [
+                            { k: "价", v: fmtPrice(bar.close) },
+                            { k: "量", v: fmtVol(bar.volume) },
+                            { k: "昨收", v: fmtPrice(meta?.prev_close ?? selQuote?.last_close) },
+                            { k: "现价", v: fmtPrice(selQuote?.price) },
+                          ]
+                        : [
+                            { k: "现价", v: fmtPrice(selQuote?.price) },
+                            { k: "昨收", v: fmtPrice(selQuote?.last_close) },
+                            { k: "涨跌%", v: fmtPct(selQuote?.change_pct) },
+                          ]
+                    ).map((m) => (
+                      <div key={m.k} className="rounded-lg bg-muted/25 px-2.5 py-2">
+                        <p className="text-[10px] text-muted-foreground">{m.k}</p>
+                        <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">{m.v}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-border/40 pt-3">
+                    <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground/70">估值快照</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {[
+                        { k: "PE(TTM)", v: selQuote?.pe_ttm != null ? fmtPrice(selQuote.pe_ttm) : "—" },
+                        { k: "PB", v: selQuote?.pb != null ? fmtPrice(selQuote.pb) : "—" },
+                        { k: "换手%", v: selQuote?.turnover_pct != null ? fmtPrice(selQuote.turnover_pct) : "—" },
+                        { k: "市值(亿)", v: selQuote?.mcap_yi != null ? fmtPrice(selQuote.mcap_yi) : "—" },
+                      ].map((m) => (
+                        <div key={m.k} className="rounded-lg bg-muted/25 px-2.5 py-2">
+                          <p className="text-[10px] text-muted-foreground">{m.k}</p>
+                          <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">{m.v}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => remove(c, e)}
-                  onKeyDown={(e) => { if (e.key === "Enter") remove(c); }}
-                  className="rounded p-1 text-muted-foreground opacity-0 hover:bg-muted/60 hover:text-foreground group-hover:opacity-100"
-                  title="移除"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </GlassCard>
-
-      <GlassCard className="p-3 sm:p-4">
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-lg font-bold tracking-tight">
-                {meta?.name || selQuote?.name || selected || "—"}{" "}
-                <span className="text-sm font-medium text-muted-foreground">{selected || ""}</span>
-              </span>
-              <span className="rounded px-1.5 py-0.5 text-[10px] bg-muted/40 text-muted-foreground">
-                {resolution === "1D" ? (meta?.adjust === "qfq" ? "前复权" : "日K") : resolution === "5" ? "5日" : "分时"}
-              </span>
-              <span className={cn(
-                "rounded px-1.5 py-0.5 text-[10px]",
-                hovering ? "bg-primary/15 text-primary" : "bg-muted/40 text-muted-foreground",
-              )}>
-                {hovering ? "十字光标" : "最新"}
-              </span>
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm tabular-nums">
-              {bar?.datetime ? <span className="text-xs text-muted-foreground">{bar.datetime}</span> : null}
-              <span>
-                <span className="text-[11px] text-muted-foreground">{resolution === "1D" ? "收" : "价"}</span>{" "}
-                <b className="text-lg text-primary">{fmtPrice(bar?.close ?? selQuote?.price)}</b>
-              </span>
-              <span className={cn(
-                chgPct != null && chgPct > 0 ? "text-red-500" : chgPct != null && chgPct < 0 ? "text-emerald-500" : "text-muted-foreground",
-              )}>
-                {chg != null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}
-                <span className="ml-1 text-xs">({fmtPct(chgPct)})</span>
-              </span>
-              {resolution === "1D" && bar ? (
-                <span className="text-xs text-muted-foreground">
-                  开 <b className="text-foreground">{fmtPrice(bar.open)}</b>
-                  {" · "}高 <b className="text-foreground">{fmtPrice(bar.high)}</b>
-                  {" · "}低 <b className="text-foreground">{fmtPrice(bar.low)}</b>
-                  {" · "}量 <b className="text-foreground">{fmtVol(bar.volume)}</b>
-                </span>
-              ) : bar ? (
-                <span className="text-xs text-muted-foreground">
-                  量 <b className="text-foreground">{fmtVol(bar.volume)}</b>
-                </span>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
-              {RES_OPTS.map((r) => (
-                <button
-                  key={r.v}
-                  type="button"
-                  onClick={() => setResolution(r.v)}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 text-xs",
-                    resolution === r.v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => { void loadQuotes(); if (selected) void loadChart(selected, resolution); }}
-              className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <RefreshCw className={cn("h-3.5 w-3.5", (quotesLoading || chartLoading) && "animate-spin")} />
-              刷新
-            </button>
+              )}
+            </GlassCard>
           </div>
         </div>
+      </div>
 
-        {chartErr ? (
-          <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {chartErr}
-          </div>
+      {seg === "detail" && (
+        selected ? (
+          <StockData embedded hideSearch externalCode={selected} />
         ) : (
-          <div className="relative">
-            {chartLoading && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/40">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            )}
-            <div ref={chartRef} className="h-[480px] w-full" />
+          <GlassCard>
+            <p className="py-8 text-center text-sm text-muted-foreground/60">
+              先到「K线」选一只自选股，再看估值 / 研报 / 资金等更多详情。
+            </p>
+          </GlassCard>
+        )
+      )}
+
+      {seg === "feed" && (
+        <GlassCard>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">自选公告 / 新闻</h3>
+              <p className="text-[11px] text-muted-foreground/65">汇总本地自选近期公开披露与新闻 · 非推荐</p>
+            </div>
+            <ChipGroup>
+              <Chip active={feedKind === "filings"} onClick={() => setFeedKind("filings")}>
+                <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> A股公告</span>
+              </Chip>
+              <Chip active={feedKind === "news"} onClick={() => setFeedKind("news")}>
+                <span className="inline-flex items-center gap-1"><Newspaper className="h-3 w-3" /> 公开新闻</span>
+              </Chip>
+            </ChipGroup>
           </div>
-        )}
-      </GlassCard>
+          <WatchlistFeed kind={feedKind} storageKeyPrefix="ashare.chart.feed" />
+        </GlassCard>
+      )}
     </div>
   );
 }

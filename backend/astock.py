@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -206,6 +207,67 @@ def stock_news(code: str, limit: int = 20) -> list[dict]:
     ak = _akshare()
     df = ak.stock_news_em(symbol=code)
     return df.head(limit).to_dict("records") if df is not None and not df.empty else []
+
+
+def cls_telegraph(page_size: int = 50) -> list[dict]:
+    """财联社电报（全市场实时快讯）。v1 API + 本地签名，零 key。
+
+    sign = md5(sha1(sorted query string)); no API key required (a-stock-data §5.2).
+    Returns [{id, title, content, time, share_url}, ...].
+    """
+    import requests
+
+    n = max(10, min(int(page_size or 50), 100))
+    params = {
+        "appName": "CailianpressWeb",
+        "os": "web",
+        "sv": "7.7.5",
+        "last_time": "",
+        "refresh_type": "1",
+        "rn": str(n),
+    }
+    qs = "&".join(f"{k}={params[k]}" for k in sorted(params))
+    sign = hashlib.md5(hashlib.sha1(qs.encode()).hexdigest().encode()).hexdigest()
+    url = f"https://www.cls.cn/v1/roll/get_roll_list?{qs}&sign={sign}"
+    try:
+        r = requests.get(
+            url,
+            headers={"User-Agent": UA, "Referer": "https://www.cls.cn/"},
+            timeout=12,
+        )
+        r.raise_for_status()
+        payload = r.json()
+    except Exception:
+        return []
+    # errno may be 0 on success; tolerate missing field
+    if payload.get("errno") not in (None, 0, "0"):
+        return []
+    rows: list[dict] = []
+    for item in (payload.get("data") or {}).get("roll_data") or []:
+        if not isinstance(item, dict):
+            continue
+        ts = item.get("ctime")
+        t = ""
+        if isinstance(ts, (int, float)) and ts > 0:
+            try:
+                t = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+            except (OSError, OverflowError, ValueError):
+                t = ""
+        title = (item.get("title") or item.get("brief") or "").strip()
+        content = (item.get("content") or item.get("brief") or "").strip()
+        if not title and not content:
+            continue
+        share = item.get("shareurl") or item.get("shareUrl") or ""
+        if not share and item.get("id"):
+            share = f"https://www.cls.cn/detail/{item.get('id')}"
+        rows.append({
+            "id": item.get("id"),
+            "title": title or content[:80],
+            "content": content,
+            "time": t,
+            "share_url": share or None,
+        })
+    return rows
 
 
 def individual_info(code: str) -> dict:
@@ -588,7 +650,7 @@ def full_valuation(code: str) -> dict:
 # 不预置标的、不做主观评分、不给买卖建议。
 # 定位调整（2026-07-05）：涨停池 / 全市场成交额榜等【客观公开榜单】现已用于产品 UI
 # （每日复盘的连板股 + 成交额 TOP20）——如实展示公开榜单≠荐股，只要不附推荐/评分/预测。
-# 仍不做：主观评分排名、买卖点位、涨跌预测；龙虎榜个股名单/强势股/人气榜等带隐性倾向的甩单暂不进 UI。
+# 2026-08：全市场龙虎榜同口径进 UI（公开榜单 + 免责声明）；仍不做主观评分/买卖点/预测。
 # ===========================================================================
 
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
@@ -873,6 +935,76 @@ def dragon_tiger_board(code: str, trade_date: str | None = None, look_back: int 
     return {"records": records, "seats": seats, "institution": institution}
 
 
+def daily_dragon_tiger(
+    trade_date: str | None = None,
+    min_net_buy: float | None = None,
+    look_back_days: int = 10,
+    top: int = 50,
+) -> dict:
+    """全市场龙虎榜（东财公开榜单）。默认取最近有数据的交易日。
+
+    金额单位：万元。客观榜单呈现，不附推荐/评分。
+    """
+    n = max(5, min(int(top or 50), 200))
+    start_day = trade_date or datetime.now().strftime("%Y-%m-%d")
+    try:
+        base = datetime.strptime(start_day, "%Y-%m-%d")
+    except ValueError:
+        base = datetime.now()
+        start_day = base.strftime("%Y-%m-%d")
+
+    data: list[dict] = []
+    actual_date = start_day
+    # If explicit date empty, walk back a few calendar days (weekends / late publish)
+    days = 1 if trade_date else max(1, min(int(look_back_days or 10), 15))
+    for i in range(days):
+        d = (base - timedelta(days=i)).strftime("%Y-%m-%d")
+        rows = eastmoney_datacenter(
+            "RPT_DAILYBILLBOARD_DETAILSNEW",
+            filter_str=f"(TRADE_DATE>='{d}')(TRADE_DATE<='{d}')",
+            page_size=500,
+            sort_columns="BILLBOARD_NET_AMT",
+            sort_types="-1",
+        )
+        if rows:
+            data = rows
+            actual_date = str(rows[0].get("TRADE_DATE") or d)[:10]
+            break
+
+    if not data:
+        return {
+            "date": start_day,
+            "total_records": 0,
+            "stocks": [],
+            "note": "无数据(非交易日或盘后未更新)",
+        }
+
+    stocks = []
+    for row in data:
+        net_buy = (row.get("BILLBOARD_NET_AMT") or 0) / 10000
+        if min_net_buy is not None and net_buy < min_net_buy:
+            continue
+        stocks.append({
+            "code": row.get("SECURITY_CODE") or "",
+            "name": row.get("SECURITY_NAME_ABBR") or "",
+            "reason": row.get("EXPLANATION") or "",
+            "close": row.get("CLOSE_PRICE") or 0,
+            "change_pct": round(float(row.get("CHANGE_RATE") or 0), 2),
+            "net_buy_wan": round(net_buy, 1),
+            "buy_wan": round((row.get("BILLBOARD_BUY_AMT") or 0) / 10000, 1),
+            "sell_wan": round((row.get("BILLBOARD_SELL_AMT") or 0) / 10000, 1),
+            "turnover_pct": round(float(row.get("TURNOVERRATE") or 0), 2),
+        })
+        if len(stocks) >= n:
+            break
+    return {
+        "date": actual_date,
+        "total_records": len(stocks),
+        "stocks": stocks,
+        "note": "公开榜单,仅客观呈现,不构成投资建议",
+    }
+
+
 def lockup_expiry(code: str, trade_date: str | None = None, forward_days: int = 90) -> dict:
     """限售解禁日历：历史解禁记录 + 未来 N 天待解禁事件。
 
@@ -933,52 +1065,96 @@ def hot_concepts(code: str) -> list[dict]:
     return [{"concept": x.get("conceptName"), "bk": x.get("conceptId"), "hit": x.get("hitCount")} for x in data]
 
 
-def investor_qa(code: str, page_size: int = 30) -> list[dict]:
-    """互动易问答（巨潮）：投资者提问 + 公司回复（answer=None 表示未回复）。"""
+def investor_qa(code: str, page_size: int = 40) -> list[dict]:
+    """互动易问答（巨潮）：投资者提问 + 公司回复（answer=None 表示未回复）。
+
+    Latest asks are often unanswered; return list with answered items first
+    so the dashboard can surface company replies without paging deep.
+    """
     import requests
 
+    n = max(10, min(int(page_size or 40), 80))
     try:
-        r1 = requests.post("https://irm.cninfo.com.cn/newircs/index/queryKeyboardInfo",
-                           data={"keyWord": code}, headers={"User-Agent": UA}, timeout=10)
+        r1 = requests.post(
+            "https://irm.cninfo.com.cn/newircs/index/queryKeyboardInfo",
+            data={"keyWord": code},
+            headers={"User-Agent": UA},
+            timeout=10,
+        )
         d1 = r1.json().get("data") or []
         if not d1:
             return []
         org_id = d1[0].get("secid")
-        params = {"_t": 1, "stockcode": code, "orgId": org_id, "pageSize": page_size,
-                  "pageNum": 1, "keyWord": "", "startDay": "", "endDay": ""}
-        rows = requests.post("https://irm.cninfo.com.cn/newircs/company/question",
-                             params=params, headers={"User-Agent": UA}, timeout=10).json().get("rows") or []
+        # Params must be query string (POST with empty body), else HTTP 400
+        params = {
+            "_t": 1, "stockcode": code, "orgId": org_id, "pageSize": n,
+            "pageNum": 1, "keyWord": "", "startDay": "", "endDay": "",
+        }
+        rows = (
+            requests.post(
+                "https://irm.cninfo.com.cn/newircs/company/question",
+                params=params,
+                headers={"User-Agent": UA},
+                timeout=10,
+            ).json().get("rows")
+            or []
+        )
     except Exception:
         return []
-    out = []
+    out: list[dict] = []
     for it in rows:
         ts = it.get("pubDate")
+        ans = it.get("attachedContent")
+        if isinstance(ans, str):
+            ans = ans.strip() or None
         out.append({
             "company": it.get("companyShortName"),
-            "question": it.get("mainContent"), "answer": it.get("attachedContent"),
+            "question": it.get("mainContent"),
+            "answer": ans,
             "answerer": it.get("attachedAuthor"),
             "ask_time": datetime.fromtimestamp(ts / 1000).strftime("%Y-%m-%d %H:%M") if ts else "",
         })
-    return out
+    # Answered first (newest within each bucket) so UI surfaces company replies
+    answered = sorted(
+        [x for x in out if x.get("answer")],
+        key=lambda x: x.get("ask_time") or "",
+        reverse=True,
+    )
+    pending = sorted(
+        [x for x in out if not x.get("answer")],
+        key=lambda x: x.get("ask_time") or "",
+        reverse=True,
+    )
+    return answered + pending
 
 
 def industry_comparison(top_n: int = 20) -> dict:
-    """全行业涨跌幅排名（东财行业板块，~100 个行业）：板块级涨跌 / 涨跌家数 / 领涨。"""
+    """全行业涨跌幅排名（东财行业板块，~100 个行业）：板块级涨跌 / 涨跌家数 / 领涨。
+
+    push2(实时) 不可达时降级 push2delay(延迟行情)，与 market_turnover_rank 同策略。
+    """
     params = {"pn": "1", "pz": "100", "po": "1", "np": "1", "fltt": "2", "invt": "2",
               "fid": "f3",  # fid=f3 + po=1：按涨跌幅降序，否则 top/bottom 切片非涨幅序（a-stock-data §3.7）
               "fs": "m:90+t:2", "fields": "f2,f3,f4,f12,f13,f14,f104,f105,f128,f136,f140,f141,f207"}
-    try:
-        d = em_get("https://push2.eastmoney.com/api/qt/clist/get",
-                   params=params, headers={"User-Agent": UA}, timeout=15).json()
-    except Exception:
-        return {"top": [], "bottom": [], "total": 0}
-    items = d.get("data", {}).get("diff", [])
-    if isinstance(items, dict):
-        items = list(items.values())
+    items: list = []
+    for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
+        try:
+            d = em_get(f"https://{host}/api/qt/clist/get",
+                       params=params, headers={"User-Agent": UA}, timeout=15).json()
+            raw = (d.get("data") or {}).get("diff") or []
+            if isinstance(raw, dict):
+                raw = list(raw.values())
+            if raw:
+                items = raw
+                break
+        except Exception:
+            continue
     if not items:
         return {"top": [], "bottom": [], "total": 0}
     rows = [{
-        "rank": i + 1, "name": it.get("f14", ""), "change_pct": it.get("f3", 0),
+        "rank": i + 1, "name": it.get("f14", ""), "change_pct": it.get("f3", 0) or 0,
         "code": it.get("f12", ""), "up_count": it.get("f104", 0), "down_count": it.get("f105", 0),
     } for i, it in enumerate(items)]
-    return {"top": rows[:top_n], "bottom": rows[-top_n:], "total": len(rows)}
+    # bottom: reverse ascending by pct (worst first), not just tail of sorted-desc list
+    # (tail of desc list is correct for worst N when list is full-market sorted)
+    return {"top": rows[:top_n], "bottom": list(reversed(rows[-top_n:])), "total": len(rows)}

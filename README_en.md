@@ -26,13 +26,14 @@ Vibe-Research is an open-source research dashboard built primarily for **China A
 
 It does not make decisions for you. It pulls together quotes, analyst reports, valuation, financials, filings, fund flows and news into one clean dashboard, then leaves an interface where **you plug in your own AI**. The direction and the conclusions come from the model or agent *you* configure.
 
+**Reading model**: pages share a glance-first layout — key metrics on the first screen, detail tables collapsed by default (open state remembered locally).
+
 ## Features
 
 | Page | What's in it |
 |---|---|
-| 📊&nbsp;**Daily&nbsp;Review** | Index quotes · **Global markets** (Dow / S&P / Nasdaq overnight + Hang Seng / HS Tech) · Watchlist quotes · **Short-term sentiment** (consecutive limit-up ladder, seal rate, break rate, promotion rate) · **Market-wide turnover top 20** · Market breadth · Sector fund-flow trends · Sector rotation · One-click AI review |
-| 📡&nbsp;**News&nbsp;Radar** | 108 public RSS feeds across 12 tracks · AI-distilled "today's takeaways" · A-share filings and public news linked to your watchlist |
-| 🔍&nbsp;**Stock&nbsp;Data** | **A-share**: quotes · valuation matrix (forward PE / PEG) · **earnings snapshot** · valuation percentile vs. own 5-year history · key financials · analyst reports · filings · news · **fund flows** (margin trading, shareholder count, main-force flow, dividends, block trades) · top-list (Dragon-Tiger) · lockup expiry · sector membership · trending concepts · investor Q&A.<br>**US / HK / KR** (enter `AAPL` / `00700` / `005930.KS`): quotes · market cap · key financials (KR is quotes only) |
+| 🇨🇳&nbsp;**A-share** | Tabs: **Daily Review** (glance + sticky segments) · **Light Charts** (sub-tabs: K-line / detail / filings) |
+| 📡&nbsp;**News&nbsp;Radar** | CLS telegraph (market-wide real-time briefs) |
 | ⭐&nbsp;**Watchlist** | **Paste a whole batch of tickers at once** (commas, spaces or newlines) · one-screen table (price, change, PE, PB, turnover) · **live quotes toggle** (top right, off by default; refreshes every 3s during trading hours, auto-pauses outside them and when the tab is hidden) · hand the whole list to your AI. Stored locally |
 | 💼&nbsp;**Portfolio** | Enter cost and size, see live P&L · closed-position log (local only, never uploaded) |
 | 📄&nbsp;**My Reports** | Drag-and-drop your own research PDFs / Word / spreadsheets · auto-filed by industry from the filename · download or delete. **Stored in your local deploy directory only** |
@@ -57,9 +58,12 @@ Three public data toolkits are **vendored directly into this repo** — `git clo
 
 ### US / HK data · global-stock-data
 
-- Lives in [`global-stock-data/`](global-stock-data/) (v2.0.3). 13 data layers, 30+ endpoints, 11 sources, no auth required — quotes, candles, technicals, financial statements, fund flows, options (CBOE official chain with full Greeks and 0DTE flow), FINRA short volume, and the SEC EDGAR filing stream plus market-wide screener. Every source is labeled with its compliance tier.
-- `backend/gstock.py` ports the Eastmoney-domain subset: global indices (the "Global markets" row on Daily Review) plus US/HK quotes and key financials.
-- **Korean stocks**: append `.KS` to the 6-digit code (e.g. Samsung `005930.KS`). ⚠️ KR codes are also 6 digits like A-share tickers, so **the suffix is required** for correct routing. Quotes only, no financials. Taiwan is covered via US ADRs (e.g. `TSM`).
+- Lives in [`global-stock-data/`](global-stock-data/) (v2.0.3). 13 data layers, 30+ endpoints, 11 sources, no auth required — quotes, candles, technicals, financial statements, fund flows, options (CBOE official chain with full Greeks and 0DTE flow), FINRA short volume / market-wide short ranking, SEC EDGAR filing stream + **EDGAR frames screener**, US/HK movers boards. Every source is labeled with its compliance tier.
+- Dashboard: US page hosts EDGAR Screener, movers, FINRA short ranking, and selected-ticker options/fund-flow; stock page shows US/HK daily candles (`/api/global/us/kline`, `/api/global/hk/kline`).
+- `backend/gstock.py` + `gstock_deep.py`: global indices, US/HK quotes & key metrics, **Yahoo valuation/analyst/holders**, **3-statement summaries & fund flow**, **FINRA short volume**, **CBOE options 0DTE/unusual flow**, **SEC filings / earnings calendar**.
+- Set `VR_SEC_CONTACT="Name you@example.com"` for SEC endpoints.
+- **CBOE options**: compliance tier C — personal research only; commercial use needs a Cboe license. Delayed data, not for live trading.
+- **Korean stocks**: append `.KS` (e.g. `005930.KS`); quotes only. Taiwan via US ADRs (e.g. `TSM`).
 - **Upstream**: <https://github.com/simonlin1212/global-stock-data>
 
 ### Global news · investment-news
@@ -79,7 +83,8 @@ Vibe-Research/
 ├── global-stock-data/ US / HK data toolkit (vendored v2.0.3, ready to use)
 ├── backend/           FastAPI :8900
 │   ├── astock.py        A-share data
-│   ├── gstock.py        US / HK data
+│   ├── gstock.py        US / HK quotes & key metrics
+│   ├── gstock_deep.py   valuation / statements / SEC / short / calendar
 │   ├── newsradar.py     News radar
 │   ├── market.py        Market breadth + sector fund flows + global indices
 │   ├── portfolio.py     Portfolio (stored in your local user directory)

@@ -125,6 +125,15 @@ export interface NewsItem {
   新闻标题?: string; 发布时间?: string; 文章来源?: string; 新闻链接?: string;
 }
 
+/** 财联社电报 */
+export interface ClsTelegraphItem {
+  id?: string | number; title: string; content: string;
+  time: string; share_url?: string | null;
+}
+export interface ClsTelegraph {
+  source?: string; count: number; items: ClsTelegraphItem[];
+}
+
 export interface IndexQuote {
   name: string; price: number; change_pct: number; change_amt: number;
 }
@@ -163,6 +172,65 @@ export interface TurnoverStock {
   amount: number | null; mcap: number | null; float_cap: number | null; industry: string;
 }
 export interface TurnoverTop { stocks: TurnoverStock[]; updated: string }
+
+/** 全市场龙虎榜（东财公开榜单，金额单位：万元） */
+export interface DailyDragonTigerStock {
+  code: string; name: string; reason: string;
+  close: number; change_pct: number;
+  net_buy_wan: number; buy_wan: number; sell_wan: number; turnover_pct: number;
+}
+export interface DailyDragonTiger {
+  date: string; total_records: number; note?: string;
+  stocks: DailyDragonTigerStock[];
+}
+
+export interface BoardFlowRow {
+  rank: number; name: string; code: string;
+  change_pct: number; main_net: number; main_pct: number; leader?: string;
+  super_large_net?: number; large_net?: number; medium_net?: number; small_net?: number;
+}
+export interface BoardFlow {
+  board_type: string; period: string; total: number; note?: string; rows: BoardFlowRow[];
+}
+export interface HsgtLive {
+  date?: string; note?: string;
+  latest: { time?: string; hgt_yi?: number | null; sgt_yi?: number | null } | null;
+  points: Array<{ time: string; hgt_yi?: number | null; sgt_yi?: number | null }>;
+}
+export interface HotListRow {
+  rank?: number; code?: string; name?: string;
+  heat?: string | number; pct?: number | null; rank_chg?: number | null;
+  price?: number | null; concepts?: string[]; tag?: string;
+}
+export interface HotList { period?: string; source?: string; rows: HotListRow[] }
+export interface MonitorPool {
+  date?: string; count?: number; note?: string;
+  rows: Array<{ code: string; name: string; market: string; start: string; end: string; link?: string }>;
+}
+export interface AnomalyPool {
+  date?: string; count?: number; note?: string;
+  items: Array<{
+    code?: string; name?: string; market?: string; change_pct?: number;
+    deviation?: number; days?: number; rule?: string; is_today?: boolean;
+  }>;
+}
+export interface LimitPool {
+  pool: string; date: string; total: number; note?: string;
+  rows: Array<{
+    code?: string; name?: string; price?: number | null; pct?: number | null;
+    turnover?: number | null; industry?: string; zt_stat?: string;
+    limit_days?: number; break_times?: number; seal_fund?: number;
+    first_seal?: string; last_seal?: string; dt_days?: number;
+    amplitude?: number | null; speed?: number | null; y_limit_days?: number;
+  }>;
+}
+export interface StockBasicInfo {
+  code: string; name?: string; industry?: string;
+  total_shares?: number | null; float_shares?: number | null;
+  mcap?: number | null; float_mcap?: number | null;
+  pe_ttm?: number | null; pb?: number | null; roe?: number | null;
+  list_date?: string;
+}
 
 export interface RadarItem {
   title: string; url: string; time: string; source: string; summary?: string; zh?: string;
@@ -622,6 +690,165 @@ export interface UsKline {
   adjust?: "qfq" | "none" | string;
   bars: UsKlineBar[];
 }
+
+/** Yahoo valuation / analyst / holders bundle */
+export interface GlobalValuation {
+  code?: string; name?: string; market?: string; yahoo_symbol?: string;
+  current_price?: number | null; target_mean?: number | null;
+  target_high?: number | null; target_low?: number | null;
+  recommendation?: string | null;
+  trailing_pe?: number | null; forward_pe?: number | null; peg_ratio?: number | null;
+  price_to_book?: number | null; enterprise_value?: number | null;
+  ev_to_ebitda?: number | null; beta?: number | null;
+  profit_margin?: number | null; operating_margin?: number | null; gross_margin?: number | null;
+  return_on_equity?: number | null; return_on_assets?: number | null;
+  earnings_growth?: number | null; revenue_growth?: number | null;
+  dividend_yield?: number | null; short_ratio?: number | null;
+  market_cap?: number | null; total_cash?: number | null; total_debt?: number | null;
+}
+export interface GlobalAnalyst {
+  code?: string; name?: string; market?: string;
+  eps_trend: Array<{
+    period?: string; end_date?: string; eps_estimate?: number | null;
+    eps_high?: number | null; eps_low?: number | null;
+    revenue_estimate?: number | null; num_analysts?: number | null;
+  }>;
+  rating_trend: Array<{
+    period?: string; strong_buy?: number; buy?: number; hold?: number;
+    sell?: number; strong_sell?: number;
+  }>;
+  upgrade_downgrade: Array<{
+    date?: number; firm?: string; to_grade?: string; from_grade?: string; action?: string;
+  }>;
+}
+export interface GlobalHolders {
+  code?: string; name?: string; market?: string;
+  overview: {
+    insiders_pct?: number | null; institutions_pct?: number | null;
+    institutions_float_pct?: number | null; institutions_count?: number | null;
+  };
+  top_holders: Array<{
+    name?: string; shares?: number | null; value?: number | null;
+    pct_held?: number | null; report_date?: string | null;
+  }>;
+}
+export interface GlobalFundamentals {
+  code: string; name: string; market: string; note?: string;
+  valuation: GlobalValuation | null;
+  analyst: GlobalAnalyst | null;
+  holders: GlobalHolders | null;
+}
+export interface GlobalStmtItem { amount: number | null; yoy: number | null }
+export interface GlobalStatements {
+  code: string; name: string; market: string; statement: string;
+  currency: string | null; item_order: string[];
+  periods: Array<{
+    report_date: string; report?: string | null; currency?: string | null;
+    items: Record<string, GlobalStmtItem>;
+  }>;
+}
+export interface GlobalFundFlow {
+  code: string; name: string; market: string;
+  rows: Array<{
+    date: string; main_net: number; small_net: number; mid_net: number;
+    big_net: number; super_big_net: number; main_pct: number | null;
+  }>;
+}
+export interface GlobalShortVolume {
+  code: string; name: string; market: string; note?: string;
+  rows: Array<{ date: string; short: number; short_exempt: number; total: number; ratio: number | null }>;
+}
+export interface GlobalSecFilings {
+  code: string; name: string; cik: string; company_name?: string;
+  filings: Array<{
+    form: string; form_label?: string; date: string; description?: string; url?: string | null;
+  }>;
+}
+export interface GlobalSecDaily {
+  date: string; total: number; by_form: Record<string, number>;
+  filings: Array<{
+    form: string; form_label?: string; company: string; cik: string; date: string; url?: string | null;
+  }>;
+}
+export interface GlobalEdgarScreener {
+  compliance?: string; source?: string;
+  tag: string; tag_label: string; period: string; unit: string;
+  instant?: boolean; universe: number; ascending?: boolean;
+  tags: Array<{ label: string; tag: string }>;
+  rows: Array<{ cik?: number | string; entity?: string; value?: number; end?: string }>;
+}
+export interface GlobalMovers {
+  board: string; market: string; total: number;
+  stocks: Array<{
+    code?: string; name?: string; price?: number | null; change_pct?: number | null;
+    volume?: number | null; amount?: number | null; amplitude?: number | null;
+  }>;
+}
+export interface GlobalShortRanking {
+  date?: string; market?: string; universe?: number; min_total?: number; note?: string;
+  rows: Array<{
+    symbol: string; short: number; short_exempt: number; total: number; ratio: number | null;
+  }>;
+}
+export interface GlobalStockNews {
+  code: string; name?: string; market?: string; yahoo_symbol?: string;
+  compliance?: string; source?: string;
+  items: Array<{
+    title?: string; publisher?: string; link?: string;
+    publish_time?: string | null; publish_ts?: number | null; thumbnail?: string | null;
+  }>;
+}
+export interface GlobalTreasuryPoint {
+  tenor: string; yield: number; chg: number | null;
+}
+export interface GlobalTreasuryCurve {
+  date: string; prev_date?: string | null;
+  source?: string; compliance?: string;
+  points: GlobalTreasuryPoint[];
+  spreads: {
+    ten_two?: number | null;
+    thirty_ten?: number | null;
+    ten_three_month?: number | null;
+  };
+}
+export interface GlobalEarningsRow {
+  date?: string; symbol?: string; name?: string; time?: string;
+  eps_forecast?: string; market_cap?: string;
+}
+export interface GlobalEarningsCalendar {
+  date: string; count: number;
+  start?: string; end?: string; days?: number; total?: number;
+  by_day?: Array<{ date: string; count: number; rows: GlobalEarningsRow[] }>;
+  rows: GlobalEarningsRow[];
+}
+export interface GlobalOptContract {
+  symbol?: string; expiry?: string; type?: string; strike?: number;
+  bid?: number | null; ask?: number | null; volume?: number; open_interest?: number;
+  iv?: number | null; delta?: number | null; gamma?: number | null;
+  vega?: number | null; theta?: number | null; last_trade_price?: number | null;
+  vol_oi_ratio?: number | null;
+}
+export interface GlobalOptSummary {
+  call_volume: number; put_volume: number;
+  put_call_volume_ratio: number | null;
+  call_oi: number; put_oi: number;
+  put_call_oi_ratio: number | null;
+  volume_weighted_iv: number | null;
+  net_delta_exposure_shares: number;
+  contracts_total: number; contracts_traded: number;
+}
+export interface GlobalOptions {
+  code: string; name: string; market: string; ticker: string;
+  timestamp?: string; spot?: number | null; et_today?: string;
+  compliance?: string; note?: string;
+  expiries: string[];
+  summary_all: GlobalOptSummary;
+  summary_0dte: GlobalOptSummary | null;
+  summary_7d: GlobalOptSummary | null;
+  unusual_0dte: GlobalOptContract[];
+  unusual_7d: GlobalOptContract[];
+  atm_0dte: GlobalOptContract[];
+}
 /** A-share light chart bar (分时/5日/日K) */
 export interface AShareLightBar {
   datetime: string;
@@ -823,6 +1050,24 @@ export const api = {
   marketOverview: () => get<MarketOverview>("/market/overview"),
   emotion: () => get<ShortTermEmotion>("/market/emotion"),
   turnoverTop: () => get<TurnoverTop>("/market/turnover-top"),
+  dailyDragonTiger: (opts?: { date?: string; top?: number; minNetBuy?: number }) => {
+    const p = new URLSearchParams();
+    if (opts?.date) p.set("date", opts.date);
+    if (opts?.top != null) p.set("top", String(opts.top));
+    if (opts?.minNetBuy != null) p.set("min_net_buy", String(opts.minNetBuy));
+    const q = p.toString();
+    return get<DailyDragonTiger>(`/dragon-tiger/daily${q ? `?${q}` : ""}`);
+  },
+  boardFlow: (boardType = "industry", period = "today", top = 20) =>
+    get<BoardFlow>(`/market/board-flow?board_type=${boardType}&period=${period}&top=${top}`),
+  hsgt: () => get<HsgtLive>("/market/hsgt"),
+  hotList: (source: "ths" | "em" = "ths", period = "hour", top = 30) =>
+    get<HotList>(`/market/hot-list?source=${source}&period=${period}&top=${top}`),
+  stockMonitor: () => get<MonitorPool>("/market/stock-monitor"),
+  priceAnomaly: (top = 40) => get<AnomalyPool>(`/market/price-anomaly?top=${top}`),
+  limitPools: (pool: "zt" | "zb" | "dt" | "yzt" = "zt", top = 40) =>
+    get<LimitPool>(`/market/limit-pools?pool=${pool}&top=${top}`),
+  stockBasic: (code: string) => get<StockBasicInfo>(`/stock-basic?code=${code}`),
   globalIndices: () => get<GlobalIndex[]>("/global/indices"),
   globalStock: (symbol: string, opts?: { withMetrics?: boolean }) => {
     const p = new URLSearchParams({ symbol });
@@ -831,7 +1076,58 @@ export const api = {
   },
   usKline: (symbol: string, num = 180) =>
     get<UsKline>(`/global/us/kline?symbol=${encodeURIComponent(symbol)}&num=${num}`),
+  hkKline: (symbol: string, num = 180) =>
+    get<UsKline>(`/global/hk/kline?symbol=${encodeURIComponent(symbol)}&num=${num}`),
   hkCashflow: (symbol: string) => get<HkCashflow>(`/global/hk/cashflow?symbol=${encodeURIComponent(symbol)}`),
+  globalEdgarScreener: (opts?: {
+    tag?: string; year?: number; quarter?: number; top?: number; ascending?: boolean;
+  }) => {
+    const p = new URLSearchParams();
+    if (opts?.tag) p.set("tag", opts.tag);
+    if (opts?.year != null) p.set("year", String(opts.year));
+    if (opts?.quarter != null) p.set("quarter", String(opts.quarter));
+    if (opts?.top != null) p.set("top", String(opts.top));
+    if (opts?.ascending) p.set("ascending", "true");
+    const q = p.toString();
+    return get<GlobalEdgarScreener>(`/global/edgar/screener${q ? `?${q}` : ""}`);
+  },
+  globalMovers: (board = "us_gainers", top = 20) =>
+    get<GlobalMovers>(`/global/movers?board=${encodeURIComponent(board)}&top=${top}`),
+  globalShortRanking: (top = 20, minTotal = 1_000_000) =>
+    get<GlobalShortRanking>(`/global/short-ranking?top=${top}&min_total=${minTotal}`),
+  globalStockNews: (symbol: string, count = 10) =>
+    get<GlobalStockNews>(`/global/stock/news?symbol=${encodeURIComponent(symbol)}&count=${count}`),
+  globalFundamentals: (symbol: string) =>
+    get<GlobalFundamentals>(`/global/stock/fundamentals?symbol=${encodeURIComponent(symbol)}`),
+  globalStatements: (symbol: string, statement: "income" | "balance" | "cashflow" = "income", periods = 5) =>
+    get<GlobalStatements>(
+      `/global/stock/statements?symbol=${encodeURIComponent(symbol)}&statement=${statement}&periods=${periods}`,
+    ),
+  globalFundFlow: (symbol: string, limit = 30) =>
+    get<GlobalFundFlow>(`/global/stock/fund-flow?symbol=${encodeURIComponent(symbol)}&limit=${limit}`),
+  globalShortVolume: (symbol: string, days = 10) =>
+    get<GlobalShortVolume>(`/global/stock/short-volume?symbol=${encodeURIComponent(symbol)}&days=${days}`),
+  globalSecFilings: (symbol: string, limit = 30) =>
+    get<GlobalSecFilings>(`/global/stock/sec-filings?symbol=${encodeURIComponent(symbol)}&limit=${limit}`),
+  globalSecDaily: (opts?: { date?: string; limit?: number }) => {
+    const p = new URLSearchParams();
+    if (opts?.date) p.set("date", opts.date);
+    if (opts?.limit) p.set("limit", String(opts.limit));
+    const q = p.toString();
+    return get<GlobalSecDaily>(`/global/sec/daily${q ? `?${q}` : ""}`);
+  },
+  globalEarningsCalendar: (opts?: { date?: string; days?: number }) => {
+    const p = new URLSearchParams();
+    if (opts?.date) p.set("date", opts.date);
+    if (opts?.days != null) p.set("days", String(opts.days));
+    const q = p.toString();
+    return get<GlobalEarningsCalendar>(`/global/earnings-calendar${q ? `?${q}` : ""}`);
+  },
+  globalTreasuryCurve: () => get<GlobalTreasuryCurve>("/global/treasury-curve"),
+  globalOptions: (symbol: string, unusualTop = 15) =>
+    get<GlobalOptions>(
+      `/global/stock/options?symbol=${encodeURIComponent(symbol)}&unusual_top=${unusualTop}`,
+    ),
   radar: () => get<RadarData>("/radar"),
   radarRefresh: () => request<RadarData>("/radar/refresh", "POST"),
   portfolio: () => get<PortfolioData>("/portfolio"),
@@ -876,6 +1172,7 @@ export const api = {
     ),
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
   news: (code: string) => get<NewsItem[]>(`/news?code=${code}`),
+  clsTelegraph: (limit = 50) => get<ClsTelegraph>(`/cls-telegraph?limit=${limit}`),
   margin: (code: string) => get<MarginRow[]>(`/margin?code=${code}`),
   blockTrade: (code: string) => get<BlockTradeRow[]>(`/block-trade?code=${code}`),
   holders: (code: string) => get<HolderRow[]>(`/holders?code=${code}`),
