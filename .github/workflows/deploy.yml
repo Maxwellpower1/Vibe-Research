@@ -64,17 +64,18 @@ jobs:
       - name: Pack release (keep server .env)
         run: |
           set -euo pipefail
-          tar -czf /tmp/vibe-deploy.tgz \
-            --exclude='.git' \
-            --exclude='frontend/node_modules' \
-            --exclude='frontend/dist' \
-            --exclude='backend/.venv' \
-            --exclude='backend/.env' \
-            --exclude='**/__pycache__' \
-            --exclude='**/*.pyc' \
-            --exclude='.cursor' \
+          # Must live under $GITHUB_WORKSPACE: scp-action runs in Docker and cannot see host /tmp
+          tar -czf vibe-deploy.tgz \
+            --exclude='./.git' \
+            --exclude='./vibe-deploy.tgz' \
+            --exclude='./frontend/node_modules' \
+            --exclude='./frontend/dist' \
+            --exclude='./backend/.venv' \
+            --exclude='./backend/.env' \
+            --exclude='./backend/**/__pycache__' \
+            --exclude='./.cursor' \
             .
-          ls -lh /tmp/vibe-deploy.tgz
+          ls -lh vibe-deploy.tgz
 
       - name: Upload tarball
         uses: appleboy/scp-action@v0.1.7
@@ -83,7 +84,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          source: /tmp/vibe-deploy.tgz
+          source: vibe-deploy.tgz
           target: /tmp/
           overwrite: true
 
