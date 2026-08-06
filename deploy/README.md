@@ -86,6 +86,7 @@ grep -E '^(PasswordAuthentication|PermitRootLogin)' /etc/ssh/sshd_config
 
 - **Not a git repo**：服务器还没按第一节改成 clone。
 - **Permission denied / auth fail**：检查 `DEPLOY_USER` / `DEPLOY_PASSWORD`，以及服务器是否允许密码登录。
+- **missing server host / DEPLOY_HOST is empty**：Secret 必须建在 **Repository secrets**（不是 Environment secrets），名字精确为 `DEPLOY_HOST`（不要多空格）。改完后重新 Run workflow。
 - **frontend unit not installed**：在服务器执行 `bash deploy/install-systemd.sh`。
 - **私有仓库 pull 失败**：给服务器配 GitHub deploy key（只读），`git remote` 用 SSH 地址。
 - **构建太慢**：workflow_dispatch 勾选 `no_npm_ci`，或平时用 `bash deploy/update.sh --no-npm-ci`。

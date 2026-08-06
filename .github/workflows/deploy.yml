@@ -1,6 +1,6 @@
 # Push to main → SSH into production → git pull + deploy/update.sh
 #
-# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+# Required GitHub Secrets (repo Settings → Secrets and variables → Actions):
 #   DEPLOY_HOST      server IP or hostname
 #   DEPLOY_USER      SSH user (e.g. root)
 #   DEPLOY_PASSWORD  SSH password
@@ -29,6 +29,34 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Check deploy secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ok=1
+          if [ -z "${DEPLOY_HOST}" ]; then
+            echo "::error::DEPLOY_HOST is empty. Add Repository secret DEPLOY_HOST (Settings → Secrets → Actions)."
+            ok=0
+          else
+            echo "DEPLOY_HOST is set (len=${#DEPLOY_HOST})"
+          fi
+          if [ -z "${DEPLOY_USER}" ]; then
+            echo "::error::DEPLOY_USER is empty."
+            ok=0
+          else
+            echo "DEPLOY_USER is set"
+          fi
+          if [ -z "${DEPLOY_PASSWORD}" ]; then
+            echo "::error::DEPLOY_PASSWORD is empty."
+            ok=0
+          else
+            echo "DEPLOY_PASSWORD is set (len=${#DEPLOY_PASSWORD})"
+          fi
+          [ "$ok" = "1" ]
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -37,12 +65,11 @@ jobs:
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           command_timeout: 40m
-          script_stop: true
           envs: DEPLOY_PATH,NO_NPM_CI
           script: |
+            #!/usr/bin/env bash
             set -euo pipefail
             export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"
-            # conda python on PATH for ad-hoc checks (systemd uses absolute path)
             if [[ -f /root/miniconda3/etc/profile.d/conda.sh ]]; then
               # shellcheck disable=SC1091
               source /root/miniconda3/etc/profile.d/conda.sh
