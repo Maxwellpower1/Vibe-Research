@@ -23,7 +23,16 @@ export default defineConfig(({ mode }) => {
         "/api": { target: apiTarget, changeOrigin: true, timeout: 180_000, proxyTimeout: 180_000 },
       },
     },
+    // Same proxy for `npm run preview` (production build without nginx)
+    preview: {
+      host: true,
+      port: 5899,
+      proxy: {
+        "/api": { target: apiTarget, changeOrigin: true, timeout: 180_000, proxyTimeout: 180_000 },
+      },
+    },
     build: {
+      chunkSizeWarningLimit: 1500,
       rollupOptions: {
         output: {
           manualChunks: {

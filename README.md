@@ -150,18 +150,13 @@ cd frontend && npm install && npm run dev
 # 浏览器打开 http://localhost:5899
 ```
 
-### 服务器更新代码后（systemd）
+### 服务器部署 / 自动更新
 
-代码覆盖到服务器后，在项目根目录执行：
+- 手动：`bash deploy/update.sh`（参数见脚本注释）
+- systemd 首次安装：`bash deploy/install-systemd.sh`
+- **GitHub Actions 自动部署**（push `main` → SSH → pull + update）：见 [`deploy/README.md`](deploy/README.md)
 
-```bash
-bash deploy/update.sh                 # 后端依赖 + 重启 + 前端构建 + 重启
-bash deploy/update.sh --backend-only  # 只更后端
-bash deploy/update.sh --frontend-only # 只更前端
-bash deploy/update.sh --no-npm-ci     # 前端不重装 node_modules，只 build
-```
-
-默认假定 `VR_PYTHON=/root/miniconda3/bin/python`、服务名 `vibe-backend` / `vibe-frontend`；可用环境变量覆盖。
+默认假定 `VR_PYTHON=/root/miniconda3/bin/python`、目录 `/root/Vibe-Research-main`。
 
 ## 接入 AI
 

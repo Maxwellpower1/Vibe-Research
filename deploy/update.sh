@@ -87,13 +87,22 @@ update_frontend() {
   fi
   npm run build
   [[ -d dist ]] || die "frontend dist/ missing after build"
-  if systemctl list-unit-files | grep -q "^${FRONTEND_UNIT}.service"; then
-    systemctl restart "$FRONTEND_UNIT"
-    sleep 1
-    systemctl --no-pager --full status "$FRONTEND_UNIT" || true
-  else
-    log "frontend: unit $FRONTEND_UNIT not installed — dist/ is ready; serve it yourself"
+
+  if ! systemctl list-unit-files | grep -q "^${FRONTEND_UNIT}.service"; then
+    if [[ -f "$SCRIPT_DIR/vibe-frontend.service" ]]; then
+      log "frontend: installing systemd unit $FRONTEND_UNIT"
+      sed -e "s|/root/Vibe-Research-main|${ROOT}|g" \
+        "$SCRIPT_DIR/vibe-frontend.service" >/etc/systemd/system/${FRONTEND_UNIT}.service
+      systemctl daemon-reload
+      systemctl enable "$FRONTEND_UNIT"
+    else
+      die "frontend unit missing; run: bash deploy/install-systemd.sh"
+    fi
   fi
+  pkill -f "vite.*preview" 2>/dev/null || true
+  systemctl restart "$FRONTEND_UNIT"
+  sleep 1
+  systemctl --no-pager --full status "$FRONTEND_UNIT" || true
 }
 
 log "root=$ROOT"
