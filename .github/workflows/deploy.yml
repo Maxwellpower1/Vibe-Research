@@ -3,7 +3,7 @@
 # Required GitHub Secrets (Settings → Secrets and variables → Actions):
 #   DEPLOY_HOST      server IP or hostname
 #   DEPLOY_USER      SSH user (e.g. root)
-#   DEPLOY_SSH_KEY   private key (full PEM / openssh private key body)
+#   DEPLOY_PASSWORD  SSH password
 # Optional:
 #   DEPLOY_PORT      default 22
 #   DEPLOY_PATH      default /root/Vibe-Research-main
@@ -34,7 +34,7 @@ jobs:
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           command_timeout: 40m
           script_stop: true

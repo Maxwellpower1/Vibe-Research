@@ -41,36 +41,20 @@ git checkout -B main origin/main
 cd /root/Vibe-Research-main && git status && git log -1 --oneline
 ```
 
-## 二、给 GitHub Actions 准备 SSH 密钥
+## 二、SSH 登录方式（密码）
 
-在**本机**生成专用密钥（不要用你日常登录密钥上传到仓库）：
-
-```bash
-ssh-keygen -t ed25519 -C "github-actions-vibe" -f vibe-deploy -N ""
-```
-
-得到：
-
-- `vibe-deploy` → 私钥，放到 GitHub Secret `DEPLOY_SSH_KEY`
-- `vibe-deploy.pub` → 公钥，追加到服务器
-
-服务器：
+当前 workflow 使用**账号密码** SSH（与你日常登录一致）。服务器需允许密码登录（腾讯云默认一般已开）：
 
 ```bash
-mkdir -p /root/.ssh
-chmod 700 /root/.ssh
-# 把 vibe-deploy.pub 内容追加进去
-echo "ssh-ed25519 AAAA... github-actions-vibe" >> /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/authorized_keys
+# 可选自检
+grep -E '^(PasswordAuthentication|PermitRootLogin)' /etc/ssh/sshd_config
+# PasswordAuthentication yes
+# PermitRootLogin yes   # 或 prohibit-password 时需改用密钥
 ```
 
-本机测通：
+腾讯云安全组放行 **22**（或你的 SSH 端口）。
 
-```bash
-ssh -i vibe-deploy root@你的服务器IP "cd /root/Vibe-Research-main && git rev-parse --short HEAD"
-```
-
-腾讯云安全组放行 **22**（或你的 SSH 端口）对 GitHub Actions 出口；也可先对 `0.0.0.0/0` 开 22（仅密钥登录）。
+> 密码写在 GitHub Secrets 里；改服务器密码后记得同步改 Secret。更稳妥可日后改回密钥登录。
 
 ## 三、配置 GitHub Secrets
 
@@ -80,9 +64,11 @@ ssh -i vibe-deploy root@你的服务器IP "cd /root/Vibe-Research-main && git re
 |------|------|
 | `DEPLOY_HOST` | `1.2.3.4` |
 | `DEPLOY_USER` | `root` |
-| `DEPLOY_SSH_KEY` | `vibe-deploy` **整个私钥文件内容**（含 `BEGIN`/`END` 行） |
+| `DEPLOY_PASSWORD` | 你的 SSH 登录密码 |
 | `DEPLOY_PORT` | `22`（可省略） |
 | `DEPLOY_PATH` | `/root/Vibe-Research-main`（可省略） |
+
+若以前建过 `DEPLOY_SSH_KEY`，可删掉，已不再使用。
 
 ## 四、启用自动部署
 
@@ -99,7 +85,7 @@ ssh -i vibe-deploy root@你的服务器IP "cd /root/Vibe-Research-main && git re
 ## 五、常见问题
 
 - **Not a git repo**：服务器还没按第一节改成 clone。
-- **Permission denied (publickey)**：`DEPLOY_SSH_KEY` 不对，或公钥没进 `authorized_keys`。
+- **Permission denied / auth fail**：检查 `DEPLOY_USER` / `DEPLOY_PASSWORD`，以及服务器是否允许密码登录。
 - **frontend unit not installed**：在服务器执行 `bash deploy/install-systemd.sh`。
 - **私有仓库 pull 失败**：给服务器配 GitHub deploy key（只读），`git remote` 用 SSH 地址。
 - **构建太慢**：workflow_dispatch 勾选 `no_npm_ci`，或平时用 `bash deploy/update.sh --no-npm-ci`。
