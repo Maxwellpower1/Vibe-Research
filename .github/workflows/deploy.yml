@@ -64,8 +64,10 @@ jobs:
       - name: Pack release (keep server .env)
         run: |
           set -euo pipefail
-          # Must live under $GITHUB_WORKSPACE: scp-action runs in Docker and cannot see host /tmp
-          tar -czf vibe-deploy.tgz \
+          # Write outside workspace first (tar of "." fails if output grows inside the tree),
+          # then copy in for scp-action (Docker only sees GITHUB_WORKSPACE).
+          OUT="${RUNNER_TEMP}/vibe-deploy.tgz"
+          tar -C "${GITHUB_WORKSPACE}" -czf "$OUT" \
             --exclude='./.git' \
             --exclude='./vibe-deploy.tgz' \
             --exclude='./frontend/node_modules' \
@@ -75,6 +77,7 @@ jobs:
             --exclude='./backend/**/__pycache__' \
             --exclude='./.cursor' \
             .
+          cp -f "$OUT" "${GITHUB_WORKSPACE}/vibe-deploy.tgz"
           ls -lh vibe-deploy.tgz
 
       - name: Upload tarball
