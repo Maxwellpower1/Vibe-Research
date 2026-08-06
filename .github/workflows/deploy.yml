@@ -1,4 +1,5 @@
-# Push to main → SSH into production → git pull + deploy/update.sh
+# Push to main → pack on Actions runner → SCP to server → deploy/update.sh
+# Server does NOT need to git fetch GitHub (avoids CN network "Empty reply" issues).
 #
 # Required GitHub Secrets (repo Settings → Secrets and variables → Actions):
 #   DEPLOY_HOST      server IP or hostname
@@ -38,7 +39,7 @@ jobs:
           set -euo pipefail
           ok=1
           if [ -z "${DEPLOY_HOST}" ]; then
-            echo "::error::DEPLOY_HOST is empty. Add Repository secret DEPLOY_HOST (Settings → Secrets → Actions)."
+            echo "::error::DEPLOY_HOST is empty."
             ok=0
           else
             echo "DEPLOY_HOST is set (len=${#DEPLOY_HOST})"
@@ -57,7 +58,36 @@ jobs:
           fi
           [ "$ok" = "1" ]
 
-      - name: Deploy over SSH
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pack release (keep server .env)
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/vibe-deploy.tgz \
+            --exclude='.git' \
+            --exclude='frontend/node_modules' \
+            --exclude='frontend/dist' \
+            --exclude='backend/.venv' \
+            --exclude='backend/.env' \
+            --exclude='**/__pycache__' \
+            --exclude='**/*.pyc' \
+            --exclude='.cursor' \
+            .
+          ls -lh /tmp/vibe-deploy.tgz
+
+      - name: Upload tarball
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: /tmp/vibe-deploy.tgz
+          target: /tmp/
+          overwrite: true
+
+      - name: Extract and update
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -76,17 +106,18 @@ jobs:
               conda activate base >/dev/null 2>&1 || true
             fi
             ROOT="${DEPLOY_PATH:-/root/Vibe-Research-main}"
-            cd "$ROOT"
-            if [[ ! -d .git ]]; then
-              echo "[deploy] FATAL: $ROOT is not a git repo."
-              echo "[deploy] On server run: see deploy/README.md (convert zip dir → git clone)"
-              exit 1
+            mkdir -p "$ROOT"
+            # Preserve local secrets / data
+            if [[ -f "$ROOT/backend/.env" ]]; then
+              cp -a "$ROOT/backend/.env" /tmp/vibe.env.bak
             fi
-            echo "[deploy] $(hostname) $(pwd) $(git rev-parse --short HEAD) → fetching"
-            git fetch --prune origin
-            git checkout main
-            git reset --hard origin/main
-            echo "[deploy] now at $(git rev-parse --short HEAD) $(git log -1 --oneline)"
+            tar -xzf /tmp/vibe-deploy.tgz -C "$ROOT"
+            if [[ -f /tmp/vibe.env.bak ]]; then
+              mkdir -p "$ROOT/backend"
+              cp -a /tmp/vibe.env.bak "$ROOT/backend/.env"
+            fi
+            cd "$ROOT"
+            echo "[deploy] extracted to $ROOT"
             sed -i 's/\r$//' deploy/*.sh 2>/dev/null || true
             chmod +x deploy/*.sh 2>/dev/null || true
             if [[ "${NO_NPM_CI:-false}" == "true" ]]; then
@@ -94,6 +125,7 @@ jobs:
             else
               bash deploy/update.sh
             fi
+            rm -f /tmp/vibe-deploy.tgz /tmp/vibe.env.bak
             echo "[deploy] done"
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
