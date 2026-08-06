@@ -62,11 +62,13 @@ import ovlab
 import fino
 import reflection as reflect_layer
 import weather as weather_layer
+import review_warmup
 
 app = FastAPI(title="Vibe-Research API", version="0.2.2")
 
 # 每半小时后台刷新持仓数据
 pf.start_scheduler(1800)
+# Daily Review cache warmup starts after _cached / DC warmers are defined (see below).
 
 # CORS：默认放开（本地自托管友好）；公网部署时用 VR_ALLOW_ORIGINS 收紧成白名单。
 #   例：VR_ALLOW_ORIGINS="https://myhost"  （逗号分隔多个）
@@ -497,6 +499,12 @@ def market_turnover_top():
         return {"data": market.get_turnover_top()}
     except Exception as e:
         raise HTTPException(502, f"成交额榜异常：{e}") from e
+
+
+@app.get("/api/market/review-warmup")
+def market_review_warmup_status():
+    """复盘缓存预热状态（后台 daemon；可用 VR_REVIEW_WARMUP=0 关闭）。"""
+    return {"data": review_warmup.status()}
 
 
 @app.get("/api/market/board-flow")
@@ -1052,9 +1060,9 @@ def global_stock_options(
 
 @app.get("/api/indices")
 def indices():
-    """A股大盘指数实时行情（上证/深证成指/创业板指/沪深300）。仅标准库。"""
+    """A股/港股对照指数实时行情。仅标准库。缓存 60 秒（warmup 会预热）。"""
     try:
-        return {"data": astock.index_quote()}
+        return {"data": _cached("indices", "live", 60, astock.index_quote)}
     except Exception as e:
         raise HTTPException(502, f"指数行情异常：{e}") from e
 
@@ -1264,10 +1272,12 @@ def astock_light_kline(
     if res not in ("1", "5", "1D"):
         raise HTTPException(400, "resolution 仅支持 1 / 5 / 1D")
     try:
+        # Minute charts refresh often via warmup; 120s TTL covers open-session interval.
+        ttl = 120 if res == "1" else 60
         data = _cached(
             f"ashare_light:{res}:{num}",
             code,
-            60,
+            ttl,
             lambda: astock.light_kline(code, res, num=num),
         )
         if not data:
@@ -1307,6 +1317,125 @@ def _cached(endpoint: str, code: str, ttl: int, fetch):
     data = fetch()
     _DC_CACHE[key] = (_time.time(), data)
     return data
+
+
+def _warm_review_dc() -> tuple[int, int, list[dict]]:
+    """Warm app-level caches used by Daily Review (indices / boards / pools / 分时)."""
+    import astock_boards
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    errors: list[dict] = []
+    ok = 0
+    steps = [
+        ("indices", lambda: _cached("indices", "live", 60, astock.index_quote)),
+        (
+            "board_flow",
+            lambda: _cached(
+                "board_flow",
+                "industry:today:20",
+                180,
+                lambda: astock_boards.board_fund_flow("industry", "today", 20),
+            ),
+        ),
+        (
+            "hot_ths",
+            lambda: _cached(
+                "hot_ths",
+                "hour:25",
+                180,
+                lambda: astock_boards.ths_hot_list("hour", 25),
+            ),
+        ),
+        (
+            "industry",
+            lambda: _cached(
+                "industry",
+                "20",
+                300,
+                lambda: astock.industry_comparison(top_n=20),
+            ),
+        ),
+        (
+            "dt_daily",
+            lambda: _cached(
+                "dt_daily",
+                "auto:40:all",
+                600,
+                lambda: astock.daily_dragon_tiger(None, None, top=40),
+            ),
+        ),
+        (
+            "limit_zt",
+            lambda: _cached(
+                "limit_pool",
+                "zt:40",
+                180,
+                lambda: astock_boards.limit_up_pools("zt", top=40),
+            ),
+        ),
+        (
+            "ths_limit_up",
+            lambda: _cached(
+                "ths_limit_up",
+                "today",
+                180,
+                lambda: astock.ths_limit_up_pool(None),
+            ),
+        ),
+        (
+            "monitor",
+            lambda: _cached(
+                "monitor",
+                "active",
+                600,
+                lambda: astock_boards.em_stock_monitor(True),
+            ),
+        ),
+        (
+            "anomaly",
+            lambda: _cached(
+                "anomaly",
+                "40",
+                300,
+                lambda: astock_boards.em_price_anomaly(40),
+            ),
+        ),
+    ]
+    for name, fn in steps:
+        try:
+            fn()
+            ok += 1
+        except Exception as e:
+            errors.append({"name": name, "error": str(e)[:160]})
+
+    # Index minute charts (same key as GET /api/astock/light-kline?resolution=1&num=240)
+    def _warm_minute(sym: str) -> None:
+        data = _cached(
+            "ashare_light:1:240",
+            sym,
+            120,
+            lambda: astock.light_kline(sym, "1", num=240),
+        )
+        if not data:
+            raise RuntimeError(f"empty minute for {sym}")
+
+    minute_syms = list(getattr(astock, "A_INDICES", []) or [])
+    if minute_syms:
+        with ThreadPoolExecutor(max_workers=min(6, len(minute_syms))) as pool:
+            futs = {pool.submit(_warm_minute, sym): sym for sym in minute_syms}
+            for fut in as_completed(futs):
+                sym = futs[fut]
+                name = f"minute:{sym}"
+                try:
+                    fut.result()
+                    ok += 1
+                except Exception as e:
+                    errors.append({"name": name, "error": str(e)[:160]})
+    return ok, len(steps) + len(minute_syms) - ok, errors
+
+
+# Background: keep Daily Review caches warm (session-aware interval).
+review_warmup.start_scheduler(extra=_warm_review_dc)
 
 
 @app.get("/api/margin")

@@ -60,6 +60,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - **就在本仓库的 [`a-stock-data/`](a-stock-data/) 文件夹里**（v3.6.0）。十层数据架构、47 个端点、15 个数据源，`a-stock-data/SKILL.md` **内嵌全部调用代码**，自包含、零第三方数据封装依赖，东财接口已内置限流防封，主源被封还能降级到备用源。
 - **覆盖**：行情 / K线 / 研报 / 一致预期 / 估值 / 历史分位 / 财务三表 / 公告 / 龙虎榜 / 融资融券 / 大宗交易 / 股东户数 / 分红 / 资金流 / 解禁 / 概念板块 / 打板情绪 / ETF 期权 / 互动易 / 全市场行业排名 …
 - **轻量图表 API**：`GET /api/astock/light-kline?code=600519&resolution=1D`（`1` 分时 / `5` 五日 / `1D` 日K前复权，腾讯 ifzq，标准库即可，缓存 60 秒）
+- **复盘预热**：后端启动后后台定时预拉复盘常用接口 + **国内指数分时**（含恒生），交易时段约 90 秒一次；`GET /api/market/review-warmup` 看状态；`VR_REVIEW_WARMUP=0` 可关
 - **给 agent 用**：用 Claude Code 等 agent 跑本仓库时，要调 A 股数据就看 [`a-stock-data/SKILL.md`](a-stock-data/SKILL.md)——每个接口都有 copy-paste 即用的代码。Vibe-Research 后端的数据层（`backend/astock.py`）也是从它移植的。
 - **运行依赖**：`pip install mootdx requests pandas stockstats`（自包含，v3.0 起已移除 akshare 依赖）。
 - **更新 / 上游**：<https://github.com/simonlin1212/a-stock-data> —— 想跟进最新端点、扩数据源，去这里看；**但即便你不更新，仓库自带的这份也是固定可用的快照，可以一直用。**
@@ -148,6 +149,19 @@ cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cd frontend && npm install && npm run dev
 # 浏览器打开 http://localhost:5899
 ```
+
+### 服务器更新代码后（systemd）
+
+代码覆盖到服务器后，在项目根目录执行：
+
+```bash
+bash deploy/update.sh                 # 后端依赖 + 重启 + 前端构建 + 重启
+bash deploy/update.sh --backend-only  # 只更后端
+bash deploy/update.sh --frontend-only # 只更前端
+bash deploy/update.sh --no-npm-ci     # 前端不重装 node_modules，只 build
+```
+
+默认假定 `VR_PYTHON=/root/miniconda3/bin/python`、服务名 `vibe-backend` / `vibe-frontend`；可用环境变量覆盖。
 
 ## 接入 AI
 

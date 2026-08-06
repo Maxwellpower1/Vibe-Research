@@ -276,35 +276,33 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     storageSet(IDX_PANEL_KEY, idxPanel);
   }, [idxPanel]);
 
-  // Domestic index minute charts (sh000001 etc.) — load when CN tab active or first paint
+  // Domestic index minute charts — prefetch as soon as indices arrive (not only CN tab).
+  // Progressive: paint each spark as it lands; keep stale bars while refreshing.
   useEffect(() => {
-    if (idxPanel !== "cn") return;
     const syms = indices.map((i) => i.symbol).filter((s): s is string => !!s);
-    if (!syms.length) {
-      setIdxMinute({});
-      setIdxMinuteDone(false);
-      return;
-    }
+    if (!syms.length) return;
     let cancelled = false;
     setIdxMinuteDone(false);
     void Promise.all(
       syms.map(async (sym) => {
         try {
           const d = await api.ashareLightKline(sym, "1", 240);
+          if (!cancelled) {
+            setIdxMinute((prev) => ({ ...prev, [sym]: d }));
+          }
           return [sym, d] as const;
         } catch {
+          if (!cancelled) {
+            setIdxMinute((prev) => (sym in prev ? prev : { ...prev, [sym]: null }));
+          }
           return [sym, null] as const;
         }
       }),
-    ).then((rows) => {
-      if (cancelled) return;
-      const next: Record<string, AShareLightKline | null> = {};
-      for (const [sym, d] of rows) next[sym] = d;
-      setIdxMinute(next);
-      setIdxMinuteDone(true);
+    ).then(() => {
+      if (!cancelled) setIdxMinuteDone(true);
     });
     return () => { cancelled = true; };
-  }, [indices, idxPanel]);
+  }, [indices]);
 
   // Keep watch count badge fresh when top strip refreshes
   useEffect(() => {
