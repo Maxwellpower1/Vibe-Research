@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
+import * as echarts from "echarts";
 import { Sparkles, Loader2, AlertCircle, RefreshCw, ArrowDownUp, TrendingUp, TrendingDown, Flame, Trophy, Activity, ShieldAlert, Search } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,18 +12,23 @@ import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { SegmentNav, useSegment } from "@/components/ui/SegmentNav";
 import {
   api, ApiError, type IndexQuote, type MarketOverview, type ShortTermEmotion,
-  type TurnoverTop, type GlobalIndex, type DailyDragonTiger, type BoardFlow, type HsgtLive,
+  type TurnoverTop, type GlobalIndex, type DailyDragonTiger, type BoardFlow,
   type HotList, type MonitorPool, type AnomalyPool, type LimitPool, type IndustryData,
   type ThsLimitUpPool, type IwencaiItem, type EtfFlow, type ShareholderChanges,
-  type LprData, type CnBondYield,
+  type LprData, type CnBondYield, type AShareLightKline, type Quote,
 } from "@/lib/api";
 import { hasLlm, chatStream } from "@/lib/llm";
 import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 import { storageGet, storageSet } from "@/lib/storage";
+import { getAShareSession } from "@/lib/ashareSession";
+import { loadWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 
 const TOP_AUTO_MS = 30_000;
 const TOP_AUTO_KEY = "ashare.review.topAuto";
+const IDX_PANEL_KEY = "ashare.review.idxPanel";
+const WATCH_MINUTE_MAX = 16; // cap concurrent minute fetches
+type IdxPanel = "cn" | "global" | "watch";
 
 // A股红涨绿跌。全球市场（美股/港股指数）**也沿用红涨**——与整个看板及东财等中国平台一致，
 // 对中国用户最不易看错（Simon 2026-07-05 确认；非国际绿涨惯例，是有意选择，勿改）。
@@ -37,6 +43,40 @@ function PctChip({ pct }: { pct: number | null | undefined }) {
     <span className={cn("pct-chip", pctTone(pct))}>
       {pct > 0 ? "+" : ""}{pct}%
     </span>
+  );
+}
+
+/** Compact intraday sparkline (SVG). Red up / green down vs prev_close. */
+function MinuteSpark({
+  closes,
+  prevClose,
+  pct,
+}: {
+  closes: number[];
+  prevClose?: number | null;
+  pct: number;
+}) {
+  if (closes.length < 2) {
+    return <div className="h-9 w-full rounded bg-muted/25" />;
+  }
+  const base = prevClose != null && Number.isFinite(prevClose) ? prevClose : closes[0];
+  const min = Math.min(...closes, base);
+  const max = Math.max(...closes, base);
+  const span = max - min || 1;
+  const w = 160;
+  const h = 36;
+  const pts = closes.map((c, i) => {
+    const x = (i / (closes.length - 1)) * w;
+    const y = h - ((c - min) / span) * (h - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const y0 = h - ((base - min) / span) * (h - 4) - 2;
+  const stroke = pct > 0 ? "#ef4444" : pct < 0 ? "#22c55e" : "#94a3b8";
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-9 w-full" preserveAspectRatio="none" aria-hidden>
+      <line x1={0} y1={y0} x2={w} y2={y0} stroke="currentColor" strokeOpacity={0.18} strokeDasharray="3 2" className="text-muted-foreground" />
+      <polyline fill="none" stroke={stroke} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" points={pts} />
+    </svg>
   );
 }
 
@@ -57,7 +97,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [boardFlow, setBoardFlow] = useState<BoardFlow | null>(null);
   const [boardType, setBoardType] = useState<"industry" | "concept" | "region">("industry");
   const [boardPeriod, setBoardPeriod] = useState<"today" | "5d" | "10d">("today");
-  const [hsgt, setHsgt] = useState<HsgtLive | null>(null);
   const [hot, setHot] = useState<HotList | null>(null);
   const [monitor, setMonitor] = useState<MonitorPool | null>(null);
   const [anomaly, setAnomaly] = useState<AnomalyPool | null>(null);
@@ -77,6 +116,19 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [lpr, setLpr] = useState<LprData | null>(null);
   const [bondY, setBondY] = useState<CnBondYield | null>(null);
   const [moneyDone, setMoneyDone] = useState(false);
+  const [session, setSession] = useState(() => getAShareSession());
+  const [idxPanel, setIdxPanel] = useState<IdxPanel>(() => {
+    const s = storageGet(IDX_PANEL_KEY);
+    return s === "global" || s === "watch" || s === "cn" ? s : "cn";
+  });
+  const [idxMinute, setIdxMinute] = useState<Record<string, AShareLightKline | null>>({});
+  const [idxMinuteDone, setIdxMinuteDone] = useState(false);
+  const [watchCodes, setWatchCodes] = useState<string[]>(() => loadWatch());
+  const [watchQuotes, setWatchQuotes] = useState<Record<string, Quote>>({});
+  const [watchMinute, setWatchMinute] = useState<Record<string, AShareLightKline | null>>({});
+  const [watchDone, setWatchDone] = useState(false);
+  const bondChartRef = useRef<HTMLDivElement>(null);
+  const bondEchartRef = useRef<echarts.ECharts | null>(null);
 
   // 各数据块请求是否已结束：区分「加载中」与「数据源暂不可用」（非交易时段/被限流时后端返回空）
   const [ovDone, setOvDone] = useState(false);
@@ -112,11 +164,9 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     const pEmo = api.emotion().then(setEmotion).catch(() => setEmotion(null)).finally(() => setEmoDone(true));
     const pTo = api.turnoverTop().then(setTurnover).catch(() => setTurnover(null)).finally(() => setToDone(true));
     const pExtra = Promise.all([
-      api.hsgt().catch(() => null),
       api.hotList("ths", "hour", 25).catch(() => null),
       api.industry(20).catch(() => null),
-    ]).then(([h, ht, ind]) => {
-      setHsgt(h);
+    ]).then(([ht, ind]) => {
       setHot(ht);
       setIndustry(ind);
     }).finally(() => setExtraDone(true));
@@ -152,15 +202,14 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
       ? api.thsLimitUp().then((d) => { setThsLimit(d); return null; }).catch(() => { setThsLimit(null); return null; })
       : api.limitPools(limitKind, 40).then((d) => { setLimitPool(d); return d; }).catch(() => null);
     const pExtra = Promise.all([
-      api.hsgt().catch(() => null),
       api.hotList("ths", "hour", 25).catch(() => null),
       api.stockMonitor().catch(() => null),
       api.priceAnomaly(40).catch(() => null),
       pLimit,
       api.industry(20).catch(() => null),
       api.boardFlow(boardType, boardPeriod, 20).catch(() => null),
-    ]).then(([h, ht, mo, an, , ind, bf]) => {
-      setHsgt(h); setHot(ht); setMonitor(mo); setAnomaly(an);
+    ]).then(([ht, mo, an, , ind, bf]) => {
+      setHot(ht); setMonitor(mo); setAnomaly(an);
       setIndustry(ind); setBoardFlow(bf);
     }).finally(() => setExtraDone(true));
 
@@ -215,6 +264,161 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   useEffect(() => {
     api.iwencaiStatus().then((s) => setIwencaiReady(!!s.configured)).catch(() => setIwencaiReady(false));
   }, []);
+
+  useEffect(() => {
+    const tick = () => setSession(getAShareSession());
+    tick();
+    const t = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    storageSet(IDX_PANEL_KEY, idxPanel);
+  }, [idxPanel]);
+
+  // Domestic index minute charts (sh000001 etc.) — load when CN tab active or first paint
+  useEffect(() => {
+    if (idxPanel !== "cn") return;
+    const syms = indices.map((i) => i.symbol).filter((s): s is string => !!s);
+    if (!syms.length) {
+      setIdxMinute({});
+      setIdxMinuteDone(false);
+      return;
+    }
+    let cancelled = false;
+    setIdxMinuteDone(false);
+    void Promise.all(
+      syms.map(async (sym) => {
+        try {
+          const d = await api.ashareLightKline(sym, "1", 240);
+          return [sym, d] as const;
+        } catch {
+          return [sym, null] as const;
+        }
+      }),
+    ).then((rows) => {
+      if (cancelled) return;
+      const next: Record<string, AShareLightKline | null> = {};
+      for (const [sym, d] of rows) next[sym] = d;
+      setIdxMinute(next);
+      setIdxMinuteDone(true);
+    });
+    return () => { cancelled = true; };
+  }, [indices, idxPanel]);
+
+  // Keep watch count badge fresh when top strip refreshes
+  useEffect(() => {
+    setWatchCodes(loadWatch());
+  }, [topUpdatedAt]);
+
+  // Watchlist quotes + minute charts
+  useEffect(() => {
+    if (idxPanel !== "watch") return;
+    const codes = loadWatch();
+    setWatchCodes(codes);
+    if (!codes.length) {
+      setWatchQuotes({});
+      setWatchMinute({});
+      setWatchDone(true);
+      return;
+    }
+    let cancelled = false;
+    setWatchDone(false);
+    const slice = codes.slice(0, WATCH_MINUTE_MAX);
+    void (async () => {
+      try {
+        const q = await api.quote(codes.join(","));
+        if (!cancelled) setWatchQuotes(q);
+      } catch {
+        if (!cancelled) setWatchQuotes({});
+      }
+      const rows = await Promise.all(
+        slice.map(async (c) => {
+          try {
+            const d = await api.ashareLightKline(c, "1", 240);
+            return [c, d] as const;
+          } catch {
+            return [c, null] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      const next: Record<string, AShareLightKline | null> = {};
+      for (const [c, d] of rows) next[c] = d;
+      setWatchMinute(next);
+      setWatchDone(true);
+    })();
+    return () => { cancelled = true; };
+  }, [idxPanel, topUpdatedAt]);
+
+  // CN bond yield mini curve (money tab)
+  useEffect(() => {
+    if (seg !== "money") return;
+    const el = bondChartRef.current;
+    const pts = bondY?.curve_points ?? [];
+    if (!el || pts.length < 2) return;
+
+    let chart = bondEchartRef.current;
+    if (!chart || chart.getDom() !== el) {
+      chart?.dispose();
+      chart = echarts.init(el, undefined, { renderer: "canvas" });
+      bondEchartRef.current = chart;
+    }
+    const cssHsl = (name: string, fallback: string) => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return raw ? `hsl(${raw})` : fallback;
+    };
+    const cText = cssHsl("--chart-text", "#94a3b8");
+    const cAxis = cssHsl("--chart-axis", "#475569");
+    const cGrid = cssHsl("--chart-grid", "#334155");
+    const cPrimary = cssHsl("--primary", "#f35d2b");
+    const step = Math.max(1, Math.floor(pts.length / 40));
+    const sampled = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+    chart.setOption({
+      animation: false,
+      grid: { left: 36, right: 8, top: 12, bottom: 22 },
+      tooltip: {
+        trigger: "axis",
+        formatter: (params: unknown) => {
+          const arr = Array.isArray(params) ? params : [params];
+          const p = arr[0] as { data?: [number, number] } | undefined;
+          const d = p?.data;
+          if (!d) return "";
+          return `${d[0]}Y: ${Number(d[1]).toFixed(2)}%`;
+        },
+      },
+      xAxis: {
+        type: "value",
+        name: "年",
+        nameTextStyle: { color: cText, fontSize: 10 },
+        axisLabel: { color: cText, fontSize: 9, formatter: (v: number) => `${v}` },
+        axisLine: { lineStyle: { color: cAxis } },
+        splitLine: { show: false },
+        min: 0,
+        max: 30,
+      },
+      yAxis: {
+        type: "value",
+        scale: true,
+        axisLabel: { color: cText, fontSize: 9, formatter: (v: number) => `${v}%` },
+        splitLine: { lineStyle: { color: cGrid, opacity: 0.25 } },
+      },
+      series: [{
+        type: "line",
+        data: sampled,
+        showSymbol: false,
+        smooth: 0.25,
+        lineStyle: { color: cPrimary, width: 2 },
+        areaStyle: { color: "rgba(243,93,43,0.08)" },
+      }],
+    }, { notMerge: true });
+    requestAnimationFrame(() => chart?.resize());
+    const ro = new ResizeObserver(() => chart?.resize());
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+    };
+  }, [seg, bondY]);
 
   const runIwencai = async () => {
     const q = iwencaiQ.trim();
@@ -299,7 +503,13 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
 
   const indTop = industry?.top?.[0];
   const indBot = industry?.bottom?.[0];
-  const hgtYi = hsgt?.latest?.hgt_yi;
+  const shIdx = indices.find((i) => i.name.includes("上证")) ?? indices[0];
+  const cyIdx = indices.find((i) => i.name.includes("创业")) ?? indices.find((i) => i.name.includes("深证"));
+
+  const sessionTone =
+    session.kind === "open" ? "border-primary/40 bg-primary/10 text-primary"
+      : session.kind === "closed" ? "border-border/50 bg-muted/30 text-muted-foreground"
+        : "border-border/40 bg-muted/20 text-muted-foreground/80";
 
   return (
     <div>
@@ -310,51 +520,225 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         />
       )}
 
+      {/* Session chip + glance cards */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium",
+            sessionTone,
+          )}
+          title={session.hint}
+        >
+          <span className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            session.kind === "open" ? "bg-primary animate-pulse" : "bg-muted-foreground/45",
+          )} />
+          {session.label}
+        </span>
+        <span className="text-[11px] text-muted-foreground/65">{session.hint}</span>
+      </div>
+
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          {
+            k: shIdx?.name || "上证",
+            price: shIdx?.price,
+            pct: shIdx?.change_pct,
+            sub: shIdx ? `${shIdx.change_amt > 0 ? "+" : ""}${fmt(shIdx.change_amt)}` : (ovDone || !idxErr ? "—" : "未接通"),
+          },
+          {
+            k: cyIdx?.name || "创业板",
+            price: cyIdx?.price,
+            pct: cyIdx?.change_pct,
+            sub: cyIdx ? `${cyIdx.change_amt > 0 ? "+" : ""}${fmt(cyIdx.change_amt)}` : "—",
+          },
+          {
+            k: "涨跌家数",
+            price: sentiment ? `${sentiment.up}/${sentiment.down}` : null,
+            pct: null as number | null,
+            sub: sentiment?.breadth ? `宽度 ${sentiment.breadth}` : (ovDone ? "暂无" : "加载中…"),
+            mono: true,
+          },
+          {
+            k: "涨停 / 跌停",
+            price: sentiment ? `${sentiment.zt}/${sentiment.dt}` : null,
+            pct: null as number | null,
+            sub: emotion?.max_boards != null
+              ? `最高板 ${emotion.max_boards}`
+              : (emoDone || ovDone ? "短线情绪" : "加载中…"),
+            mono: true,
+          },
+        ].map((c) => (
+          <div
+            key={c.k}
+            className="rounded-xl border border-border/50 bg-gradient-to-br from-card/80 to-muted/20 px-3 py-2.5"
+          >
+            <p className="truncate text-[11px] text-muted-foreground">{c.k}</p>
+            <p className={cn(
+              "mt-0.5 font-mono text-xl font-bold tabular-nums tracking-tight sm:text-2xl",
+              c.pct != null && Number.isFinite(c.pct) ? pctColor(c.pct) : "text-foreground",
+            )}>
+              {c.price == null ? "—" : String(c.price)}
+            </p>
+            <div className="mt-0.5 flex items-center gap-1.5">
+              {c.pct != null && Number.isFinite(c.pct) && !("mono" in c && c.mono) ? (
+                <PctChip pct={c.pct} />
+              ) : null}
+              <p className="truncate text-[11px] text-muted-foreground/65">{c.sub}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="mb-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(220px,26%)_minmax(0,1fr)_minmax(260px,30%)]">
-        {/* 全球指数 */}
+        {/* 国内 / 全球 / 自选（Tab 切换；国内&自选带分时） */}
         <GlassCard className="!mb-0 !p-0 overflow-hidden">
-          <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-1.5">
-            <p className="text-sm font-semibold text-foreground">全球</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-3 py-1.5">
+            <ChipGroup>
+              {([
+                ["cn", "国内"],
+                ["global", "全球"],
+                ["watch", `自选${watchCodes.length ? ` ${watchCodes.length}` : ""}`],
+              ] as const).map(([k, label]) => (
+                <Chip key={k} active={idxPanel === k} onClick={() => setIdxPanel(k)}>{label}</Chip>
+              ))}
+            </ChipGroup>
             <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
           </div>
 
-          {indices.length === 0 && globalIdx.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground/65">
-              {idxErr ? "指数未接通，可点刷新重试" : "加载中…"}
-            </p>
-          ) : (
-            <div className="max-h-[22rem] overflow-auto">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {["指数", "市场", "点位", "涨跌%"].map((h) => (
-                      <th key={h} className={h === "点位" || h === "涨跌%" ? "num" : ""}>{h}</th>
+          <div className="max-h-[28rem] overflow-auto p-3">
+            {idxPanel === "cn" && (
+              indices.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground/65">
+                  {idxErr ? "A股指数未接通，可点刷新重试" : "加载中…"}
+                </p>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {indices.map((ix) => {
+                    const sym = ix.symbol || "";
+                    const kl = sym ? idxMinute[sym] : null;
+                    const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+                    return (
+                      <div key={sym || ix.name} className="rounded-xl border border-border/40 bg-card/40 px-2.5 py-2">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="truncate text-xs font-semibold">{ix.name}</span>
+                          <PctChip pct={ix.change_pct} />
+                        </div>
+                        <p className={cn("mt-0.5 font-mono text-sm font-bold tabular-nums", pctColor(ix.change_pct))}>
+                          {fmt(ix.price)}
+                        </p>
+                        <div className="mt-1">
+                          {!idxMinuteDone && !kl ? (
+                            <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">分时加载中…</div>
+                          ) : closes.length < 2 ? (
+                            <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">
+                              {sym.startsWith("hk")
+                                ? "暂无分时"
+                                : session.kind !== "open"
+                                  ? "非交易时段暂无分时"
+                                  : "暂无分时"}
+                            </div>
+                          ) : (
+                            <MinuteSpark closes={closes} prevClose={kl?.prev_close} pct={ix.change_pct} />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+
+            {idxPanel === "global" && (
+              globalIdx.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground/65">全球指数暂无</p>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      {["指数", "市场", "点位", "涨跌%"].map((h) => (
+                        <th key={h} className={h === "点位" || h === "涨跌%" ? "num" : ""}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {globalIdx.map((g) => (
+                      <tr key={g.key}>
+                        <td className="font-medium">{g.name}</td>
+                        <td className="text-muted-foreground">{g.region}</td>
+                        <td className={cn("num font-mono font-semibold", g.change_pct == null ? "text-foreground" : pctColor(g.change_pct))}>
+                          {g.price ?? "—"}
+                        </td>
+                        <td className="num"><PctChip pct={g.change_pct} /></td>
+                      </tr>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {indices.map((ix) => (
-                    <tr key={`a-${ix.name}`}>
-                      <td className="font-medium">{ix.name}</td>
-                      <td className="text-muted-foreground">A股</td>
-                      <td className={cn("num font-mono font-semibold", pctColor(ix.change_pct))}>{ix.price}</td>
-                      <td className="num"><PctChip pct={ix.change_pct} /></td>
-                    </tr>
-                  ))}
-                  {globalIdx.map((g) => (
-                    <tr key={g.key}>
-                      <td className="font-medium">{g.name}</td>
-                      <td className="text-muted-foreground">{g.region}</td>
-                      <td className={cn("num font-mono font-semibold", g.change_pct == null ? "text-foreground" : pctColor(g.change_pct))}>
-                        {g.price ?? "—"}
-                      </td>
-                      <td className="num"><PctChip pct={g.change_pct} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </tbody>
+                </table>
+              )
+            )}
+
+            {idxPanel === "watch" && (
+              watchCodes.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-8 text-center">
+                  <p className="text-sm text-muted-foreground/70">还没有自选股</p>
+                  <p className="text-[11px] text-muted-foreground/55">
+                    到「K线」或「自选股」页添加 6 位代码后，这里会显示分时。
+                  </p>
+                  <Link
+                    to="/a-share?tab=kline"
+                    className="mt-1 rounded-lg bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/25"
+                  >
+                    去 K 线加自选
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {watchCodes.slice(0, WATCH_MINUTE_MAX).map((c) => {
+                      const q = watchQuotes[c];
+                      const kl = watchMinute[c];
+                      const pct = q?.change_pct ?? 0;
+                      const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+                      return (
+                        <Link
+                          key={c}
+                          to={`/a-share?tab=kline&code=${c}`}
+                          className="block rounded-xl border border-border/40 bg-card/40 px-2.5 py-2 transition-colors hover:border-primary/35 hover:bg-primary/5"
+                        >
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="min-w-0 truncate text-xs font-semibold">
+                              <span className="font-mono tabular-nums">{c}</span>
+                              {q?.name ? <span className="ml-1 font-normal text-muted-foreground">{q.name}</span> : null}
+                            </span>
+                            <PctChip pct={q?.change_pct} />
+                          </div>
+                          <p className={cn("mt-0.5 font-mono text-sm font-bold tabular-nums", pctColor(pct))}>
+                            {q?.price != null ? fmt(q.price) : "—"}
+                          </p>
+                          <div className="mt-1">
+                            {!watchDone && !kl ? (
+                              <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">分时加载中…</div>
+                            ) : closes.length < 2 ? (
+                              <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">
+                                {session.kind !== "open" ? "非交易时段暂无分时" : "暂无分时"}
+                              </div>
+                            ) : (
+                              <MinuteSpark closes={closes} prevClose={kl?.prev_close ?? q?.last_close} pct={pct} />
+                            )}
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                  {watchCodes.length > WATCH_MINUTE_MAX && (
+                    <p className="mt-2 text-center text-[10px] text-muted-foreground/55">
+                      自选较多，分时仅展示前 {WATCH_MINUTE_MAX} 只 · 共 {watchCodes.length} 只
+                    </p>
+                  )}
+                </>
+              )
+            )}
+          </div>
         </GlassCard>
 
         {/* 盘面一眼 + 市场情绪（常开） */}
@@ -468,15 +852,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                   </div>
                 ))}
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                {hgtYi != null && (
-                  <div className="min-w-0 rounded-xl border border-border/40 bg-card/40 px-2.5 py-2">
-                    <p className="text-xs text-muted-foreground">北向沪</p>
-                    <p className={cn("mt-0.5 font-mono text-base font-bold tabular-nums", pctColor(hgtYi))}>
-                      {hgtYi > 0 ? "+" : ""}{fmt(hgtYi)} 亿
-                    </p>
-                  </div>
-                )}
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
                 {indTop && (
                   <div className="min-w-0 rounded-xl border border-border/40 bg-card/40 px-2.5 py-2">
                     <p className="text-xs text-muted-foreground">行业强</p>
@@ -864,42 +1240,9 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       )}
 
-      {/* 资金：北向 + 板块流 + 轮动（行业/热榜/成交额已常开在上方） */}
+      {/* 资金：板块流 + ETF/利率/增减持 + 轮动 */}
       {seg === "money" && (
         <div className="space-y-6">
-          <div>
-            <SectionHeader
-              icon={<Activity className="h-3.5 w-3.5 text-primary/80" />}
-              title="北向资金"
-              hint="沪股通可用 · 深股通仅供参考"
-              meta={hsgt?.latest?.time ? `截至 ${hsgt.latest.time}` : (extraDone ? "暂无" : "加载中…")}
-            />
-            <GlassCard>
-              {!hsgt?.latest ? (
-                pending(extraDone)
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-border/40 bg-muted/20 p-3.5 text-center">
-                    <p className="text-[11px] text-muted-foreground">沪股通累计净买</p>
-                    <p className={cn("mt-1 font-mono text-xl font-bold", pctColor(hsgt.latest.hgt_yi ?? 0))}>
-                      {hsgt.latest.hgt_yi == null ? "—" : `${hsgt.latest.hgt_yi > 0 ? "+" : ""}${fmt(hsgt.latest.hgt_yi)} 亿`}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-border/40 bg-muted/20 p-3.5 text-center">
-                    <p className="text-[11px] text-muted-foreground">深股通累计净买</p>
-                    <p className={cn("mt-1 font-mono text-xl font-bold", pctColor(hsgt.latest.sgt_yi ?? 0))}>
-                      {hsgt.latest.sgt_yi == null ? "—" : `${hsgt.latest.sgt_yi > 0 ? "+" : ""}${fmt(hsgt.latest.sgt_yi)} 亿`}
-                    </p>
-                  </div>
-                  <div className="col-span-2 rounded-xl border border-border/30 bg-muted/15 p-3.5 text-center sm:col-span-1">
-                    <p className="text-[11px] text-muted-foreground">说明</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/70">{hsgt.note || "同花顺分钟流向"}</p>
-                  </div>
-                </div>
-              )}
-            </GlassCard>
-          </div>
-
           <div>
             <SectionHeader
               icon={<TrendingUp className="h-3.5 w-3.5 text-primary/80" />}
@@ -1102,6 +1445,9 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                         </div>
                       ))}
                     </div>
+                    {(bondY.curve_points?.length ?? 0) >= 2 && (
+                      <div ref={bondChartRef} className="mt-3 h-[140px] w-full min-w-0" />
+                    )}
                     <div className="mt-3 flex flex-wrap gap-3 border-t border-border/40 pt-2 text-[11px] text-muted-foreground">
                       <span>
                         10Y-2Y{" "}

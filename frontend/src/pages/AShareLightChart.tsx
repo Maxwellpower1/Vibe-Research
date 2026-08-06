@@ -7,6 +7,7 @@ import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { WatchlistFeed } from "@/components/WatchlistFeed";
 import { StockData } from "@/pages/StockData";
 import { api, ApiError, type AShareLightBar, type Quote } from "@/lib/api";
+import { getAShareSession } from "@/lib/ashareSession";
 import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +74,7 @@ export function AShareLightChart({
   const [chartErr, setChartErr] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [feedKind, setFeedKind] = useState<"filings" | "news">("filings");
+  const [session, setSession] = useState(() => getAShareSession());
   const setSeg = (next: AShareChartSeg) => {
     onSegChange?.(next);
   };
@@ -83,8 +85,16 @@ export function AShareLightChart({
 
   const chartRef = useRef<HTMLDivElement>(null);
   const echartRef = useRef<echarts.ECharts | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const barsRef = useRef(bars);
   barsRef.current = bars;
+
+  useEffect(() => {
+    const tick = () => setSession(getAShareSession());
+    tick();
+    const t = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(t);
+  }, []);
 
   const persist = (next: string[]) => {
     setCodes(next);
@@ -503,8 +513,40 @@ export function AShareLightChart({
     return () => window.clearTimeout(t);
   }, [showKline, selected]);
 
+  // Scroll watchlist so deep-linked / selected code stays in view
+  useEffect(() => {
+    if (!selected || !listRef.current || !showKline) return;
+    const el = listRef.current.querySelector(`[data-code="${selected}"]`) as HTMLElement | null;
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selected, codes.length, showKline]);
+
+  const sessionTone =
+    session.kind === "open" ? "border-primary/40 bg-primary/10 text-primary"
+      : session.kind === "closed" ? "border-border/50 bg-muted/30 text-muted-foreground"
+        : "border-border/40 bg-muted/20 text-muted-foreground/80";
+
   return (
     <div>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium",
+            sessionTone,
+          )}
+          title={session.hint}
+        >
+          <span className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            session.kind === "open" ? "bg-primary animate-pulse" : "bg-muted-foreground/45",
+          )} />
+          {session.label}
+        </span>
+        <span className="text-[11px] text-muted-foreground/65">{session.hint}</span>
+        {session.kind !== "open" && (
+          <span className="text-[11px] text-muted-foreground/50">· 加载中 / 非交易时段或源暂不可用时属正常</span>
+        )}
+      </div>
+
       {/* K线：自选 + 图表（keep mounted for chart resize） */}
       <div className={cn(!showKline && "hidden")}>
         <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -530,9 +572,14 @@ export function AShareLightChart({
               </button>
             </div>
             {hint ? <p className="px-3 py-1.5 text-[11px] text-muted-foreground">{hint}</p> : null}
-            <div className="min-h-[320px] flex-1 space-y-0.5 overflow-auto p-2">
+            <div ref={listRef} className="min-h-[320px] flex-1 space-y-0.5 overflow-auto p-2">
               {codes.length === 0 ? (
-                <p className="p-4 text-center text-xs text-muted-foreground">还没有自选，先加几个 6 位代码（与「自选股」同源）。</p>
+                <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                  <p className="text-xs text-muted-foreground">还没有自选</p>
+                  <p className="text-[11px] text-muted-foreground/60">
+                    在上方输入 6 位代码添加（与「自选股」同源），或从「每日复盘」榜单点代码跳转过来。
+                  </p>
+                </div>
               ) : codes.map((c) => {
                 const q = quotes[c];
                 const pct = q?.change_pct;
@@ -541,6 +588,7 @@ export function AShareLightChart({
                   <button
                     key={c}
                     type="button"
+                    data-code={c}
                     onClick={() => pickStock(c)}
                     className={cn(
                       "group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
@@ -623,13 +671,21 @@ export function AShareLightChart({
                 </div>
               </div>
 
-              {chartErr ? (
+              {chartErr && selected ? (
                 <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
                   <AlertCircle className="h-4 w-4 shrink-0" /> {chartErr}
                 </div>
               ) : (
                 <div className="relative">
-                  {chartLoading && (
+                  {!selected && (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background/85 px-6 text-center backdrop-blur-[1px]">
+                      <p className="text-sm text-muted-foreground">先选一只股票看 K 线</p>
+                      <p className="max-w-xs text-[11px] text-muted-foreground/60">
+                        从左侧自选点选，或在上方加 6 位代码。复盘榜单点代码也会落到这里。
+                      </p>
+                    </div>
+                  )}
+                  {chartLoading && selected && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/40">
                       <Loader2 className="h-5 w-5 animate-spin" />
                     </div>
@@ -644,17 +700,29 @@ export function AShareLightChart({
               <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
                 <p className="text-sm font-semibold">行情</p>
                 {selected && (
-                  <button
-                    type="button"
-                    onClick={() => setSeg("detail")}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/10"
-                  >
-                    <Search className="h-3 w-3" /> 更多详情
-                  </button>
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setSeg("detail")}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/10"
+                    >
+                      <Search className="h-3 w-3" /> 详情
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSeg("feed")}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/10"
+                    >
+                      <Newspaper className="h-3 w-3" /> 公告
+                    </button>
+                  </div>
                 )}
               </div>
               {!selected ? (
-                <p className="px-3 py-8 text-center text-xs text-muted-foreground/65">从左侧自选点一只，看实时行情</p>
+                <div className="flex flex-col items-center gap-1.5 px-3 py-10 text-center">
+                  <p className="text-xs text-muted-foreground/65">从左侧自选点一只</p>
+                  <p className="text-[11px] text-muted-foreground/50">看实时行情与估值快照</p>
+                </div>
               ) : (
                 <div className="flex-1 space-y-3 overflow-auto p-3">
                   <div>
@@ -738,9 +806,19 @@ export function AShareLightChart({
           <StockData embedded hideSearch externalCode={selected} />
         ) : (
           <GlassCard>
-            <p className="py-8 text-center text-sm text-muted-foreground/60">
-              先到「K线」选一只自选股，再看估值 / 研报 / 资金等更多详情。
-            </p>
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <p className="text-sm text-muted-foreground/70">还没有选中股票</p>
+              <p className="text-[11px] text-muted-foreground/55">
+                先到「K线」选一只自选股，再看估值 / 研报 / 资金等详情。
+              </p>
+              <button
+                type="button"
+                onClick={() => setSeg("kline")}
+                className="mt-1 rounded-lg bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/25"
+              >
+                去 K 线选股
+              </button>
+            </div>
           </GlassCard>
         )
       )}

@@ -151,6 +151,10 @@ export interface IwencaiSearch {
 
 export interface IndexQuote {
   name: string; price: number; change_pct: number; change_amt: number;
+  /** 6-digit bare code */
+  code?: string;
+  /** Prefixed tencent symbol, e.g. sh000001 — required for index minute charts */
+  symbol?: string;
 }
 
 export interface MarketSentiment {
@@ -1221,7 +1225,8 @@ export const api = {
   financials: (code: string) => get<Financials>(`/financials?code=${code}`),
   announcements: (code: string) => get<Announcement[]>(`/announcements?code=${code}`),
   quote: (codes: string) => get<Record<string, Quote>>(`/quote?codes=${codes}`),
-  /** A 股轻量图：resolution 1=分时 / 5=五日 / 1D=日K前复权（腾讯） */
+  /** 轻量图：resolution 1=分时 / 5=五日 / 1D=日K前复权（腾讯） */
+  /** code: 6-digit / sh000001 / hkHSI / hkHSTECH */
   ashareLightKline: (code: string, resolution = "1D", num = 365) =>
     get<AShareLightKline>(
       `/astock/light-kline?code=${encodeURIComponent(code)}&resolution=${encodeURIComponent(resolution)}&num=${num}`,

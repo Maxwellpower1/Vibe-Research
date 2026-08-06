@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -101,6 +102,10 @@ async def _require_api_key(request: Request, call_next):
 
 
 _CODE_RE = r"^\d{6}$"
+_SYMBOL_RE = re.compile(
+    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|hkhsi|hkhstech)$",
+    re.IGNORECASE,
+)
 
 
 def _validate(code: str) -> str:
@@ -108,6 +113,18 @@ def _validate(code: str) -> str:
     if not code.isdigit() or len(code) != 6:
         raise HTTPException(400, "代码必须是 6 位数字")
     return code
+
+
+def _validate_symbol(code: str) -> str:
+    """6-digit, sh/sz/bj+6, or HK index hkHSI / hkHSTECH (canonical case)."""
+    raw = (code or "").strip()
+    if not _SYMBOL_RE.fullmatch(raw):
+        raise HTTPException(400, "代码须为 6 位数字、sh/sz/bj+6 位或 hkHSI/hkHSTECH")
+    # Preserve Tencent-required case for HK indices; lowercase A-share symbols
+    resolved = astock.resolve_symbol(raw)
+    if not resolved:
+        raise HTTPException(400, "代码须为 6 位数字、sh/sz/bj+6 位或 hkHSI/hkHSTECH")
+    return resolved
 
 
 @app.get("/api/health")
@@ -1233,12 +1250,16 @@ def kline(
 
 @app.get("/api/astock/light-kline")
 def astock_light_kline(
-    code: str = Query(..., min_length=6, max_length=6),
+    code: str = Query(..., min_length=5, max_length=8, description="6位 / sh000001 / hkHSI"),
     resolution: str = Query("1D", description="1=分时 / 5=五日 / 1D=日K前复权"),
     num: int = Query(365, ge=20, le=1000),
 ):
-    """A 股轻量图（腾讯）：分时 / 5日 / 日K前复权。仅需标准库，不依赖 mootdx。缓存 60 秒。"""
-    code = _validate(code)
+    """轻量图（腾讯）：分时 / 5日 / 日K前复权。仅需标准库，不依赖 mootdx。缓存 60 秒。
+
+    指数：sh000001 上证 / sz399006 创业板 / sh000688 科创50 / sh000852 中证1000 /
+    hkHSI 恒生 / hkHSTECH 恒生科技。
+    """
+    code = _validate_symbol(code)
     res = resolution.strip()
     if res not in ("1", "5", "1D"):
         raise HTTPException(400, "resolution 仅支持 1 / 5 / 1D")

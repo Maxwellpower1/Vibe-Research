@@ -15,6 +15,16 @@ def test_get_prefix():
     assert astock.get_prefix("159915") == "sz"   # 深 ETF 15 开头走默认 sz
 
 
+def test_resolve_symbol():
+    assert astock.resolve_symbol("600519") == "sh600519"
+    assert astock.resolve_symbol("000001") == "sz000001"       # bare = 平安银行
+    assert astock.resolve_symbol("sh000001") == "sh000001"     # 上证须显式前缀
+    assert astock.resolve_symbol("SZ399006") == "sz399006"
+    assert astock.resolve_symbol("hkHSI") == "hkHSI"           # case-sensitive on wire
+    assert astock.resolve_symbol("hkhstech") == "hkHSTECH"
+    assert astock.resolve_symbol("bad") == ""
+
+
 def test_calc_peg():
     assert astock.calc_peg(20, 0.2) == 20 / (0.2 * 100)  # =1.0
     assert astock.calc_peg(20, 0) == float("inf")        # 增速<=0 → inf

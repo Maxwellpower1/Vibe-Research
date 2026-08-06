@@ -26,12 +26,42 @@ UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
 
 def get_prefix(code: str) -> str:
-    """6 位代码 → 交易所前缀。5 开头是沪市基金/ETF（51/56/58 等），深市基金 15/16 开头走默认 sz。"""
+    """6 位代码 → 交易所前缀。5 开头是沪市基金/ETF（51/56/58 等），深市基金 15/16 开头走默认 sz。
+
+    注意: 000001 走 sz（平安银行）。上证指数须显式传 sh000001，勿用裸 000001。
+    """
     if code.startswith(("6", "9", "5")):
         return "sh"
     if code.startswith("8"):
         return "bj"
     return "sz"
+
+
+# Tencent HK index symbols are case-sensitive (hkhsi returns empty minute data).
+_HK_INDEX_SYMBOLS = {
+    "hkhsi": "hkHSI",
+    "hkhstech": "hkHSTECH",
+}
+
+
+def resolve_symbol(code: str) -> str:
+    """Normalize to tencent symbol: sh600519 / sz000001 / sh000001 / hkHSI.
+
+    Accepts bare 6-digit (uses get_prefix), explicit sh|sz|bj + 6 digits,
+    or HK indices hkHSI / hkHSTECH (case-insensitive input, canonical case out).
+    Indices like 上证 must be passed as sh000001 (bare 000001 = 平安银行).
+    """
+    raw = (code or "").strip()
+    hk = _HK_INDEX_SYMBOLS.get(raw.lower())
+    if hk:
+        return hk
+    low = raw.lower()
+    m = re.fullmatch(r"(sh|sz|bj)(\d{6})", low)
+    if m:
+        return f"{m.group(1)}{m.group(2)}"
+    if re.fullmatch(r"\d{6}", low):
+        return f"{get_prefix(low)}{low}"
+    return ""
 
 
 class DependencyMissing(RuntimeError):
@@ -96,18 +126,38 @@ def tencent_quote(codes: list[str]) -> dict[str, dict]:
     return _parse_gtimg(_fetch_gtimg(prefixed))
 
 
-# A股大盘指数（前缀规则与个股不同，固定带前缀代码）
-A_INDICES = ["sh000001", "sz399001", "sz399006", "sh000300"]
+# A股大盘指数（前缀规则与个股不同，固定带前缀代码）+ 港股恒生系（国内复盘对照）
+A_INDICES = [
+    "sh000001",  # 上证指数
+    "sz399001",  # 深证成指
+    "sz399006",  # 创业板指
+    "sh000300",  # 沪深300
+    "sh000688",  # 科创50
+    "sh000852",  # 中证1000
+    "hkHSI",     # 恒生指数（腾讯分时可用）
+    "hkHSTECH",  # 恒生科技
+]
 
 
 def index_quote() -> list[dict]:
-    """A股大盘指数实时行情（上证/深证成指/创业板指/沪深300）。"""
+    """大盘指数实时行情（A股六指数 + 恒生 / 恒生科技）。
+
+    返回含 symbol（如 sh000001 / hkHSI）供分时/K线直连，避免 000001 歧义。
+    """
     parsed = _parse_gtimg(_fetch_gtimg(A_INDICES))
     out = []
     for full in A_INDICES:
+        # sh000001 -> 000001; hkHSI -> HSI (gtimg key strips 2-char prefix)
         q = parsed.get(full[2:])
         if q:
-            out.append({"name": q["name"], "price": q["price"], "change_pct": q["change_pct"], "change_amt": q["change_amt"]})
+            out.append({
+                "code": full[2:],
+                "symbol": full,
+                "name": q["name"],
+                "price": q["price"],
+                "change_pct": q["change_pct"],
+                "change_amt": q["change_amt"],
+            })
     return out
 
 
@@ -345,17 +395,19 @@ def _parse_minute_line(line: str, day: str = "") -> dict | None:
 
 
 def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
-    """A 股轻量图数据（腾讯）：分时 / 5日 / 日K(前复权)。
+    """轻量图数据（腾讯）：分时 / 5日 / 日K(前复权)。
 
+    code: 6 位数字，或 sh/sz/bj + 6 位（指数请用 sh000001 / sz399006 等），
+          或港股指数 hkHSI / hkHSTECH。
     resolution: '1' 当日分时 · '5' 近5日分时 · '1D' 日K前复权
-    返回: {code, name?, resolution, adjust, source, prev_close?, bars: [...]}
+    返回: {code, symbol, name?, resolution, adjust, source, prev_close?, bars: [...]}
     bars 统一字段: datetime, open, high, low, close, volume (, amount)
     """
-    code = (code or "").strip()
-    if not re.fullmatch(r"\d{6}", code):
+    symbol = resolve_symbol(code)
+    if not symbol:
         return {}
+    code6 = symbol[2:]  # 000001 / HSI / HSTECH
     res = (resolution or "1D").strip()
-    symbol = f"{get_prefix(code)}{code}"
     n = max(20, min(int(num or 365), 1000))
 
     name = None
@@ -457,18 +509,19 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
             b["volume"] = max(0, cum - prev_v)
             prev_v = cum
 
-    # Fallback name from quote batch
+    # Fallback name from quote batch (use explicit symbol so indices stay correct)
     if not name:
         try:
-            q = tencent_quote([code]).get(code) or {}
-            name = q.get("name") or code
+            q = _parse_gtimg(_fetch_gtimg([symbol])).get(code6) or {}
+            name = q.get("name") or code6
             if prev_close is None and isinstance(q.get("last_close"), (int, float)):
                 prev_close = float(q["last_close"])
         except Exception:
-            name = code
+            name = code6
 
     return {
-        "code": code,
+        "code": code6,
+        "symbol": symbol,
         "name": name,
         "resolution": res if res in ("1", "5") else "1D",
         "adjust": adjust,
