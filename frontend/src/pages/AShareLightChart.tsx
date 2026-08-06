@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import * as echarts from "echarts";
-import { AlertCircle, CandlestickChart, FileText, Loader2, Newspaper, Plus, RefreshCw, Search, X } from "lucide-react";
+import { AlertCircle, FileText, Loader2, Newspaper, Plus, RefreshCw, Search, X } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
-import { SegmentNav, useSegment } from "@/components/ui/SegmentNav";
 import { WatchlistFeed } from "@/components/WatchlistFeed";
 import { StockData } from "@/pages/StockData";
 import { api, ApiError, type AShareLightBar, type Quote } from "@/lib/api";
 import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 
-const CHART_SEGS = ["kline", "detail", "feed"] as const;
+export type AShareChartSeg = "kline" | "detail" | "feed";
+const CHART_SEGS: AShareChartSeg[] = ["kline", "detail", "feed"];
 
 const UP = "#ef4444";
 const DN = "#22c55e";
@@ -42,7 +42,13 @@ function fmtVol(v: number | null | undefined) {
   return String(Math.round(v));
 }
 
-export function AShareLightChart() {
+export function AShareLightChart({
+  seg = "kline",
+  onSegChange,
+}: {
+  seg?: AShareChartSeg;
+  onSegChange?: (seg: AShareChartSeg) => void;
+} = {}) {
   const [params, setParams] = useSearchParams();
   const urlCode = (params.get("code") || "").trim().toUpperCase();
   const [codes, setCodes] = useState<string[]>(() => {
@@ -67,7 +73,9 @@ export function AShareLightChart() {
   const [chartErr, setChartErr] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [feedKind, setFeedKind] = useState<"filings" | "news">("filings");
-  const [seg, setSeg] = useSegment("ashare.chart", [...CHART_SEGS], "kline");
+  const setSeg = (next: AShareChartSeg) => {
+    onSegChange?.(next);
+  };
   const pickStock = (c: string) => {
     setSelected(c);
     setSeg("kline");
@@ -145,26 +153,26 @@ export function AShareLightChart() {
   useEffect(() => { void loadQuotes(); }, [loadQuotes]);
   useEffect(() => { void loadChart(selected, resolution); }, [selected, resolution, loadChart]);
 
-  // Sync selection <- URL deep link (?code=); stay on K线 to show chart + 行情
+  // Sync selection <- URL deep link (?code=)
   useEffect(() => {
     if (!urlCode || !/^\d{6}$/.test(urlCode)) return;
     if (urlCode !== selected) {
       setSelected(urlCode);
       setCodes((prev) => (prev.includes(urlCode) ? prev : [...prev, urlCode]));
     }
-    setSeg("kline");
   }, [urlCode]); // eslint-disable-line react-hooks/exhaustive-deps -- only react to URL
 
-  // Sync URL <- selection (keep tab=chart)
+  // Sync URL <- selection (keep current chart tab: kline|detail|feed)
   useEffect(() => {
     if (!selected) return;
     const cur = (params.get("code") || "").trim().toUpperCase();
-    if (cur === selected) return;
+    const tab = CHART_SEGS.includes(seg) ? seg : "kline";
+    if (cur === selected && params.get("tab") === tab) return;
     const p = new URLSearchParams(params);
-    p.set("tab", "chart");
+    p.set("tab", tab);
     p.set("code", selected);
     setParams(p, { replace: true });
-  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selected, seg]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -497,18 +505,6 @@ export function AShareLightChart() {
 
   return (
     <div>
-      <SegmentNav
-        storageKey="ashare.chart"
-        sticky
-        value={seg}
-        onChange={setSeg}
-        items={[
-          { key: "kline", label: "K线", icon: <CandlestickChart className="h-3.5 w-3.5" /> },
-          { key: "detail", label: "详情", icon: <Search className="h-3.5 w-3.5" />, badge: selected || undefined },
-          { key: "feed", label: "公告", icon: <Newspaper className="h-3.5 w-3.5" /> },
-        ]}
-      />
-
       {/* K线：自选 + 图表（keep mounted for chart resize） */}
       <div className={cn(!showKline && "hidden")}>
         <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">

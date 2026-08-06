@@ -32,7 +32,7 @@ It does not make decisions for you. It pulls together quotes, analyst reports, v
 
 | Page | What's in it |
 |---|---|
-| 🇨🇳&nbsp;**A-share** | Tabs: **Daily Review** (glance + sticky segments) · **Light Charts** (sub-tabs: K-line / detail / filings) |
+| 🇨🇳&nbsp;**A-share** | Tabs: **Daily Review** / **K-line** / **Detail** / **Filings** |
 | 📡&nbsp;**News&nbsp;Radar** | CLS telegraph (market-wide real-time briefs) |
 | ⭐&nbsp;**Watchlist** | **Paste a whole batch of tickers at once** (commas, spaces or newlines) · one-screen table (price, change, PE, PB, turnover) · **live quotes toggle** (top right, off by default; refreshes every 3s during trading hours, auto-pauses outside them and when the tab is hidden) · hand the whole list to your AI. Stored locally |
 | 💼&nbsp;**Portfolio** | Enter cost and size, see live P&L · closed-position log (local only, never uploaded) |

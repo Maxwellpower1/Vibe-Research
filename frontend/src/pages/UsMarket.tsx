@@ -956,7 +956,7 @@ export function UsMarket() {
                       const c = s.code.toUpperCase();
                       // US watchlist + K-line only accept US tickers; HK digits -> hint
                       if (/^\d+$/.test(c) || moverBoard.startsWith("hk_")) {
-                        setHint(`港股 ${c} 请到「A股 → 轻量图表」查看详情`);
+                        setHint(`港股 ${c} 请到「A股 → K线/详情」查看`);
                         return;
                       }
                       if (!codes.includes(c)) persist([...codes, c]);

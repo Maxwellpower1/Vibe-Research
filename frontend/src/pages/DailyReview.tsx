@@ -563,7 +563,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                       {emotion.lianban_stocks.slice(0, 12).map((s) => (
                         <tr key={s.code}>
                           <td>
-                            <Link to={`/a-share?tab=chart&code=${s.code}`} className="hover:text-primary">
+                            <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
                               <span className="font-medium">{s.name}</span>{" "}
                               <span className="text-muted-foreground/50">{s.code}</span>
                             </Link>
@@ -637,7 +637,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
               {hot.rows.slice(0, 20).map((r, i) => (
                 <Link
                   key={r.code || i}
-                  to={`/a-share?tab=chart&code=${r.code}`}
+                  to={`/a-share?tab=kline&code=${r.code}`}
                   className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-primary/10"
                 >
                   <span className="w-5 font-mono text-xs text-muted-foreground/45">{r.rank ?? i + 1}</span>
@@ -681,7 +681,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                     <tr key={s.code}>
                       <td className="num text-muted-foreground/50">{i + 1}</td>
                       <td>
-                        <Link to={`/a-share?tab=chart&code=${s.code}`} className="hover:text-primary">
+                        <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
                           <span className="font-medium">{s.name}</span>{" "}
                           <span className="text-muted-foreground/50">{s.code}</span>
                         </Link>
@@ -774,7 +774,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                       <tr key={`${s.code}-${s.reason}-${i}`}>
                         <td className="num text-muted-foreground/50">{i + 1}</td>
                         <td>
-                          <Link to={`/a-share?tab=chart&code=${s.code}`} className="hover:text-primary">
+                          <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
                             <span className="font-medium">{s.name}</span>{" "}
                             <span className="text-muted-foreground/50">{s.code}</span>
                           </Link>
@@ -1021,7 +1021,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                         <tr key={r.code}>
                           <td className="num text-muted-foreground/50">{i + 1}</td>
                           <td className="font-mono text-xs">
-                            <Link to={`/a-share?tab=chart&code=${r.code}`} className="hover:text-primary">{r.code}</Link>
+                            <Link to={`/a-share?tab=kline&code=${r.code}`} className="hover:text-primary">{r.code}</Link>
                           </td>
                           <td className="font-medium">{r.name}</td>
                           <td className="num"><PctChip pct={r.change_pct} /></td>
@@ -1155,7 +1155,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                         <tr key={`${r.code}-${r.date}-${r.person}-${i}`}>
                           <td className="font-mono text-xs text-muted-foreground">{r.date}</td>
                           <td className="font-mono text-xs">
-                            <Link to={`/a-share?tab=chart&code=${r.code}`} className="hover:text-primary">{r.code}</Link>
+                            <Link to={`/a-share?tab=kline&code=${r.code}`} className="hover:text-primary">{r.code}</Link>
                           </td>
                           <td className="font-medium">{r.name}</td>
                           <td className="max-w-[6rem] truncate">{r.person || "—"}</td>
@@ -1195,7 +1195,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
               ) : (
                 <div className="max-h-64 space-y-0.5 overflow-y-auto p-2">
                   {monitor.rows.map((r) => (
-                    <Link key={r.code} to={`/a-share?tab=chart&code=${r.code}`}
+                    <Link key={r.code} to={`/a-share?tab=kline&code=${r.code}`}
                       className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-warning/10">
                       <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{r.code}</span>
                       <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
@@ -1221,7 +1221,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
               ) : (
                 <div className="max-h-64 space-y-0.5 overflow-y-auto p-2">
                   {anomaly.items.slice(0, 30).map((r, i) => (
-                    <Link key={`${r.code}-${i}`} to={`/a-share?tab=chart&code=${r.code}`}
+                    <Link key={`${r.code}-${i}`} to={`/a-share?tab=kline&code=${r.code}`}
                       className="block rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-warning/10">
                       <div className="flex items-center gap-2">
                         <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{r.code}</span>
@@ -1272,7 +1272,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                         {thsLimit.rows.map((s) => (
                           <tr key={`${s.code}-${s.name}`}>
                             <td>
-                              <Link to={`/a-share?tab=chart&code=${s.code}`} className="hover:text-primary">
+                              <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
                                 <span className="font-medium">{s.name}</span>{" "}
                                 <span className="text-muted-foreground/50">{s.code}</span>
                               </Link>
@@ -1305,7 +1305,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                       {limitPool.rows.map((s) => (
                         <tr key={`${s.code}-${s.name}`}>
                           <td>
-                            <Link to={`/a-share?tab=chart&code=${s.code}`} className="hover:text-primary">
+                            <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
                               <span className="font-medium">{s.name}</span>{" "}
                               <span className="text-muted-foreground/50">{s.code}</span>
                             </Link>
