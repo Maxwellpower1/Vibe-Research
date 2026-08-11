@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-import ctp_account as ctp
+import ctp
 import myreports as mr
 import portfolio as pf
 
