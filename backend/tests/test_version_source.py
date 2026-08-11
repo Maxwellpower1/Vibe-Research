@@ -38,9 +38,9 @@ def test_turnover_projection_keeps_every_documented_field():
     """注释里列了 float_cap 却没放进取值清单——自相矛盾（codex 第四轮指出）。"""
     import inspect
 
-    import tools
+    from tools import handlers as tools_handlers
 
-    src = inspect.getsource(tools._market)
+    src = inspect.getsource(tools_handlers._market)
     idx = src.find('scope == "turnover"')
     block = src[idx:idx + 600]
     for field in ("price", "pct", "amount", "mcap", "float_cap", "industry"):
