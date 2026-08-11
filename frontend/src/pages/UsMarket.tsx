@@ -739,7 +739,11 @@ export function UsMarket() {
             {fundLoading && !fund ? (
               <p className="py-6 text-center text-xs text-muted-foreground/60">加载中…</p>
             ) : !fund || (!fund.valuation && !fund.analyst && !fund.holders) ? (
-              <p className="py-6 text-center text-xs text-muted-foreground/60">暂无基本面数据（Yahoo 不可达或该标的无覆盖）</p>
+              <EmptyState
+                className="py-6"
+                title="暂无基本面数据"
+                description="Yahoo 不可达或该标的无覆盖时属正常，可稍后刷新。"
+              />
             ) : fundTab === "val" && fund.valuation ? (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                 {[
@@ -806,7 +810,7 @@ export function UsMarket() {
                     </table>
                   </div>
                 ) : (
-                  <p className="py-4 text-center text-xs text-muted-foreground/60">暂无 EPS 预期</p>
+                  <EmptyState className="py-4" title="暂无 EPS 预期" description="该标的暂无分析师预期序列。" />
                 )}
               </div>
             ) : fundTab === "holders" && fund.holders ? (
@@ -843,11 +847,11 @@ export function UsMarket() {
                     </table>
                   </div>
                 ) : (
-                  <p className="py-4 text-center text-xs text-muted-foreground/60">暂无前十大机构明细</p>
+                  <EmptyState className="py-4" title="暂无前十大机构明细" description="持仓汇总有值但明细未返回时属正常。" />
                 )}
               </div>
             ) : (
-              <p className="py-6 text-center text-xs text-muted-foreground/60">该分类暂无数据</p>
+              <EmptyState className="py-6" title="该分类暂无数据" description="可切换估值 / 分析师 / 股东查看其他维度。" />
             )}
           </GlassCard>
         </CollapsibleSection>
@@ -870,7 +874,11 @@ export function UsMarket() {
             {shortLoading && !shortVol ? (
               <p className="py-6 text-center text-xs text-muted-foreground/60">加载中…</p>
             ) : !shortVol || shortVol.rows.length === 0 ? (
-              <p className="py-6 text-center text-xs text-muted-foreground/60">暂无 FINRA 空头数据</p>
+              <EmptyState
+                className="py-6"
+                title="暂无 FINRA 空头数据"
+                description="数据源暂不可用或该标的无覆盖，可稍后重试。"
+              />
             ) : (
               <>
                 <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -1092,7 +1100,11 @@ export function UsMarket() {
           {edgarLoading && !edgar ? (
             <p className="py-6 text-center text-xs text-muted-foreground/60">加载中…</p>
           ) : !edgar?.rows?.length ? (
-            <p className="py-6 text-center text-xs text-muted-foreground/60">暂无 screener 数据（需 VR_SEC_CONTACT）</p>
+            <EmptyState
+              className="py-6"
+              title="暂无 screener 数据"
+              description="需配置 VR_SEC_CONTACT；未配置或源限流时属正常。"
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="data-table min-w-[520px]">
@@ -1391,9 +1403,15 @@ export function UsMarket() {
               {" · "}跳过周末 · 仅客观日程与 EPS 预期
             </p>
             {!earnCal || (earnCal.total ?? earnCal.count) === 0 ? (
-              <p className="py-6 text-center text-xs text-muted-foreground/60">
-                {panelLoading ? "加载中…" : "区间内暂无财报安排（或数据源暂不可用）"}
-              </p>
+              panelLoading ? (
+                <p className="py-6 text-center text-xs text-muted-foreground/60">加载中…</p>
+              ) : (
+                <EmptyState
+                  className="py-6"
+                  title="区间内暂无财报安排"
+                  description="所选天数内无财报，或数据源暂不可用。"
+                />
+              )
             ) : (
               <div className="max-h-80 space-y-3 overflow-y-auto">
                 {(earnCal.by_day ?? [{ date: earnCal.date, count: earnCal.count, rows: earnCal.rows }])
@@ -1443,9 +1461,15 @@ export function UsMarket() {
             {secNote && !secDaily ? (
               <p className="py-4 text-xs text-muted-foreground">{secNote}</p>
             ) : !secDaily || secDaily.filings.length === 0 ? (
-              <p className="py-6 text-center text-xs text-muted-foreground/60">
-                {panelLoading ? "加载中…" : "暂无申报流"}
-              </p>
+              panelLoading ? (
+                <p className="py-6 text-center text-xs text-muted-foreground/60">加载中…</p>
+              ) : (
+                <EmptyState
+                  className="py-6"
+                  title="暂无申报流"
+                  description="需配置 VR_SEC_CONTACT；当日无 Form 4/8-K/13F 时也可能为空。"
+                />
+              )
             ) : (
               <div className="max-h-80 space-y-1 overflow-y-auto">
                 {secDaily.filings.map((f, i) => (

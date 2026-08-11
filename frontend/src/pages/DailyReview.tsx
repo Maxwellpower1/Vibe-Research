@@ -12,6 +12,9 @@ import { Disclaimer } from "@/components/ui/Disclaimer";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { SegmentNav, useSegment } from "@/components/ui/SegmentNav";
+import { PctChip } from "@/components/review/PctChip";
+import { MinuteSpark } from "@/components/review/MinuteSpark";
+import { fmt, pctColor, pctTone, yi } from "@/components/review/format";
 import { formatClock } from "@/lib/freshness";
 import {
   api, ApiError, type IndexQuote, type MarketOverview, type ShortTermEmotion,
@@ -33,56 +36,7 @@ const IDX_PANEL_KEY = "ashare.review.idxPanel";
 const WATCH_MINUTE_MAX = 16; // cap concurrent minute fetches
 type IdxPanel = "cn" | "global" | "watch";
 
-// A股红涨绿跌。全球市场（美股/港股指数）**也沿用红涨**——与整个看板及东财等中国平台一致，
-// 对中国用户最不易看错（Simon 2026-07-05 确认；非国际绿涨惯例，是有意选择，勿改）。
-const pctColor = (p: number) => (p > 0 ? "text-danger" : p < 0 ? "text-success" : "text-muted-foreground");
-const pctTone = (p: number) => (p > 0 ? "up" : p < 0 ? "down" : "flat") as "up" | "down" | "flat";
-const fmt = (v: number) => v.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
-const yi = (v: number | null) => (v == null ? "—" : `${fmt(v / 1e8)} 亿`); // 元 → 亿
-
-function PctChip({ pct }: { pct: number | null | undefined }) {
-  if (pct == null || !Number.isFinite(pct)) return <span className="pct-chip flat">—</span>;
-  return (
-    <span className={cn("pct-chip", pctTone(pct))}>
-      {pct > 0 ? "+" : ""}{pct}%
-    </span>
-  );
-}
-
-/** Compact intraday sparkline (SVG). Red up / green down vs prev_close. */
-function MinuteSpark({
-  closes,
-  prevClose,
-  pct,
-}: {
-  closes: number[];
-  prevClose?: number | null;
-  pct: number;
-}) {
-  if (closes.length < 2) {
-    return <div className="h-9 w-full rounded bg-muted/25" />;
-  }
-  const base = prevClose != null && Number.isFinite(prevClose) ? prevClose : closes[0];
-  const min = Math.min(...closes, base);
-  const max = Math.max(...closes, base);
-  const span = max - min || 1;
-  const w = 160;
-  const h = 36;
-  const pts = closes.map((c, i) => {
-    const x = (i / (closes.length - 1)) * w;
-    const y = h - ((c - min) / span) * (h - 4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-  const y0 = h - ((base - min) / span) * (h - 4) - 2;
-  const stroke = pct > 0 ? "#ef4444" : pct < 0 ? "#22c55e" : "#94a3b8";
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-9 w-full" preserveAspectRatio="none" aria-hidden>
-      <line x1={0} y1={y0} x2={w} y2={y0} stroke="currentColor" strokeOpacity={0.18} strokeDasharray="3 2" className="text-muted-foreground" />
-      <polyline fill="none" stroke={stroke} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" points={pts} />
-    </svg>
-  );
-}
-
+// A-share / China-platform convention: red up, green down (incl. global indices here).
 const SEG_KEYS = ["boards", "money", "risk"] as const;
 
 export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
@@ -580,9 +534,11 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           <div className="max-h-[28rem] overflow-auto p-3">
             {idxPanel === "cn" && (
               indices.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground/65">
-                  {idxErr ? "A股指数未接通，可点刷新重试" : "加载中…"}
-                </p>
+                idxErr ? (
+                  <EmptyState title="A股指数未接通" description="可点顶部刷新重试；非交易时段或源限流时属正常。" />
+                ) : (
+                  <p className="py-6 text-center text-sm text-muted-foreground/65">加载中…</p>
+                )
               ) : (
                 <div className="grid gap-2 sm:grid-cols-2">
                   {indices.map((ix) => {
