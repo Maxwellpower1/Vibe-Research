@@ -131,37 +131,46 @@ function AutoRefreshBar({ auto, setAuto, ms, setMs, lastUpdate, onRefresh, refre
   ms: number; setMs: (v: number) => void;
   lastUpdate: string | null; onRefresh: () => void; refreshing: boolean;
 }) {
+  // Keep interval select (Ovlab-specific); visual chrome matches FreshnessBar.
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
       <button
+        type="button"
         onClick={() => setAuto(!auto)}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-colors",
-          auto ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                : "border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground",
+          "btn-press inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5",
+          auto
+            ? "border-primary/40 bg-primary/10 text-primary"
+            : "border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground",
         )}
         title={auto ? "自动刷新开启中, 点击关闭" : "点击开启自动刷新"}
       >
-        <span className={cn("h-1.5 w-1.5 rounded-full", auto ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/40")} />
-        自动
+        <span className={cn("h-1.5 w-1.5 rounded-full", auto ? "bg-primary animate-pulse" : "bg-muted-foreground/40")} />
+        {auto ? "自动" : "手动"}
       </button>
       {auto && (
         <select
           value={ms}
           onChange={(e) => setMs(Number(e.target.value))}
           className="field-input !px-2 !py-1.5 text-xs"
+          title="自动刷新间隔"
         >
           {INTERVALS.map((i) => <option key={i.v} value={i.v}>{i.label}</option>)}
         </select>
       )}
-      {lastUpdate && <span className="text-muted-foreground/60">更新于 {lastUpdate}</span>}
+      {lastUpdate && (
+        <span className="font-mono tabular-nums text-muted-foreground/70">
+          <span className="text-muted-foreground/45">更新 </span>{lastUpdate}
+        </span>
+      )}
       <button
+        type="button"
         onClick={onRefresh}
         disabled={refreshing}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 transition-colors hover:bg-muted/50 disabled:opacity-50"
+        className="btn-press inline-flex items-center gap-1 rounded-lg border border-border/50 px-2 py-1 text-muted-foreground hover:bg-muted/40 hover:text-primary disabled:opacity-50"
       >
         <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
-        刷新
+        {refreshing ? "刷新中" : "刷新"}
       </button>
     </div>
   );

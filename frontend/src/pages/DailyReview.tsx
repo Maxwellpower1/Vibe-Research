@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import * as echarts from "echarts";
-import { Sparkles, Loader2, AlertCircle, RefreshCw, ArrowDownUp, TrendingUp, TrendingDown, Flame, Trophy, Activity, ShieldAlert, Search } from "lucide-react";
+import { Sparkles, Loader2, AlertCircle, ArrowDownUp, TrendingUp, TrendingDown, Flame, Trophy, Activity, ShieldAlert, Search } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -9,8 +9,10 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { Disclaimer } from "@/components/ui/Disclaimer";
+import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { SegmentNav, useSegment } from "@/components/ui/SegmentNav";
+import { formatClock } from "@/lib/freshness";
 import {
   api, ApiError, type IndexQuote, type MarketOverview, type ShortTermEmotion,
   type TurnoverTop, type GlobalIndex, type DailyDragonTiger, type BoardFlow,
@@ -144,9 +146,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
 
   const [seg, setSeg] = useSegment("ashare.review", [...SEG_KEYS], "boards");
 
-  const topUpdatedLabel = topUpdatedAt
-    ? topUpdatedAt.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
-    : (topRefreshing ? "更新中…" : "—");
+  const topUpdatedLabel = formatClock(topUpdatedAt, { refreshing: topRefreshing });
 
   /** Refresh row1 + row2 only: 全球 / 盘面一眼 / 短线 / 行业 / 热榜 / 成交额. */
   const refreshTopRows = useCallback(() => {
@@ -505,10 +505,38 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const shIdx = indices.find((i) => i.name.includes("上证")) ?? indices[0];
   const cyIdx = indices.find((i) => i.name.includes("创业")) ?? indices.find((i) => i.name.includes("深证"));
 
-  const sessionTone =
-    session.kind === "open" ? "border-primary/40 bg-primary/10 text-primary"
-      : session.kind === "closed" ? "border-border/50 bg-muted/30 text-muted-foreground"
-        : "border-border/40 bg-muted/20 text-muted-foreground/80";
+  const glanceMetrics: GlanceMetric[] = [
+    {
+      label: shIdx?.name || "上证",
+      value: shIdx?.price != null ? fmt(shIdx.price) : "—",
+      tone: shIdx && Number.isFinite(shIdx.change_pct) ? pctTone(shIdx.change_pct) : "muted",
+      sub: shIdx
+        ? `${shIdx.change_pct > 0 ? "+" : ""}${shIdx.change_pct}% · ${shIdx.change_amt > 0 ? "+" : ""}${fmt(shIdx.change_amt)}`
+        : (ovDone || !idxErr ? "—" : "未接通"),
+    },
+    {
+      label: cyIdx?.name || "创业板",
+      value: cyIdx?.price != null ? fmt(cyIdx.price) : "—",
+      tone: cyIdx && Number.isFinite(cyIdx.change_pct) ? pctTone(cyIdx.change_pct) : "muted",
+      sub: cyIdx
+        ? `${cyIdx.change_pct > 0 ? "+" : ""}${cyIdx.change_pct}% · ${cyIdx.change_amt > 0 ? "+" : ""}${fmt(cyIdx.change_amt)}`
+        : "—",
+    },
+    {
+      label: "涨跌家数",
+      value: sentiment ? `${sentiment.up}/${sentiment.down}` : "—",
+      tone: "primary",
+      sub: sentiment?.breadth ? `宽度 ${sentiment.breadth}` : (ovDone ? "暂无" : "加载中…"),
+    },
+    {
+      label: "涨停 / 跌停",
+      value: sentiment ? `${sentiment.zt}/${sentiment.dt}` : "—",
+      tone: "muted",
+      sub: emotion?.max_boards != null
+        ? `最高板 ${emotion.max_boards}`
+        : (emoDone || ovDone ? "短线情绪" : "加载中…"),
+    },
+  ];
 
   return (
     <div>
@@ -519,75 +547,19 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         />
       )}
 
-      {/* Session chip + glance cards */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium",
-            sessionTone,
-          )}
-          title={session.hint}
-        >
-          <span className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            session.kind === "open" ? "bg-primary animate-pulse" : "bg-muted-foreground/45",
-          )} />
-          {session.label}
-        </span>
-        <span className="text-[11px] text-muted-foreground/65">{session.hint}</span>
-      </div>
-
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[
-          {
-            k: shIdx?.name || "上证",
-            price: shIdx?.price,
-            pct: shIdx?.change_pct,
-            sub: shIdx ? `${shIdx.change_amt > 0 ? "+" : ""}${fmt(shIdx.change_amt)}` : (ovDone || !idxErr ? "—" : "未接通"),
-          },
-          {
-            k: cyIdx?.name || "创业板",
-            price: cyIdx?.price,
-            pct: cyIdx?.change_pct,
-            sub: cyIdx ? `${cyIdx.change_amt > 0 ? "+" : ""}${fmt(cyIdx.change_amt)}` : "—",
-          },
-          {
-            k: "涨跌家数",
-            price: sentiment ? `${sentiment.up}/${sentiment.down}` : null,
-            pct: null as number | null,
-            sub: sentiment?.breadth ? `宽度 ${sentiment.breadth}` : (ovDone ? "暂无" : "加载中…"),
-            mono: true,
-          },
-          {
-            k: "涨停 / 跌停",
-            price: sentiment ? `${sentiment.zt}/${sentiment.dt}` : null,
-            pct: null as number | null,
-            sub: emotion?.max_boards != null
-              ? `最高板 ${emotion.max_boards}`
-              : (emoDone || ovDone ? "短线情绪" : "加载中…"),
-            mono: true,
-          },
-        ].map((c) => (
-          <div
-            key={c.k}
-            className="rounded-xl border border-border/50 bg-gradient-to-br from-card/80 to-muted/20 px-3 py-2.5"
-          >
-            <p className="truncate text-[11px] text-muted-foreground">{c.k}</p>
-            <p className={cn(
-              "mt-0.5 font-mono text-xl font-bold tabular-nums tracking-tight sm:text-2xl",
-              c.pct != null && Number.isFinite(c.pct) ? pctColor(c.pct) : "text-foreground",
-            )}>
-              {c.price == null ? "—" : String(c.price)}
-            </p>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              {c.pct != null && Number.isFinite(c.pct) && !("mono" in c && c.mono) ? (
-                <PctChip pct={c.pct} />
-              ) : null}
-              <p className="truncate text-[11px] text-muted-foreground/65">{c.sub}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+      <GlanceStrip
+        title="复盘一眼"
+        subtitle={`${today} · ${session.hint}`}
+        metrics={glanceMetrics}
+        session={session}
+        updatedAt={topUpdatedAt}
+        refreshing={topRefreshing}
+        onRefresh={refreshTopRows}
+        auto={topAuto}
+        onAutoChange={setTopAuto}
+        autoHint="约 30 秒"
+        actions={askAi}
+      />
 
       <div className="mb-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(220px,26%)_minmax(0,1fr)_minmax(260px,30%)]">
         {/* 国内 / 全球 / 自选（Tab 切换；国内&自选带分时） */}
@@ -740,38 +712,13 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
         </GlassCard>
 
-        {/* 盘面一眼 + 市场情绪（常开） */}
+        {/* 盘面一眼 + 市场情绪（常开；刷新/自动/AI 在上方「复盘一眼」） */}
         <div className="flex h-full min-h-0 flex-col rounded-2xl border border-border/60 bg-muted/15 p-3 sm:p-3.5">
           <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <p className="text-sm font-semibold text-foreground">盘面一眼 · 市场情绪</p>
-              <button
-                type="button"
-                onClick={() => refreshTopRows()}
-                disabled={topRefreshing}
-                className="inline-flex items-center gap-1 rounded-lg border border-border/50 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-primary disabled:opacity-50"
-                title="刷新第一行与第二行：全球 / 盘面 / 短线 / 行业 / 热榜 / 成交额"
-              >
-                <RefreshCw className={cn("h-3.5 w-3.5", topRefreshing && "animate-spin")} />
-                {topRefreshing ? "刷新中" : "刷新"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setTopAuto((v) => !v)}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px]",
-                  topAuto
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border/50 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-                )}
-                title={topAuto ? "关闭自动更新（约 30 秒）" : "开启自动更新（约 30 秒）"}
-              >
-                <span className={cn("h-1.5 w-1.5 rounded-full", topAuto ? "bg-primary animate-pulse" : "bg-muted-foreground/40")} />
-                {topAuto ? "自动" : "手动"}
-              </button>
-              {askAi}
-            </div>
-            <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
+            <p className="text-sm font-semibold text-foreground">盘面一眼 · 市场情绪</p>
+            <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65" title="与顶部复盘一眼同步">
+              {topUpdatedLabel}
+            </p>
           </div>
 
           {!sentiment?.breadth && !ovDone ? (

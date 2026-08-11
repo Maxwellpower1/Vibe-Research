@@ -66,6 +66,7 @@ export function UsMarket() {
   const [hint, setHint] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<Record<string, GlobalStock | null>>({});
   const [quotesLoading, setQuotesLoading] = useState(false);
+  const [quotesUpdatedAt, setQuotesUpdatedAt] = useState<Date | null>(null);
   const [bars, setBars] = useState<UsKlineBar[]>([]);
   const [chartMeta, setChartMeta] = useState<{ code: string; name?: string; adjust?: string } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
@@ -136,20 +137,25 @@ export function UsMarket() {
   const loadQuotes = useCallback(async () => {
     if (codes.length === 0) {
       setQuotes({});
+      setQuotesUpdatedAt(new Date());
       return;
     }
     setQuotesLoading(true);
-    const entries = await Promise.all(
-      codes.map(async (c) => {
-        try {
-          return [c, await api.globalStock(c, { withMetrics: false })] as const;
-        } catch {
-          return [c, null] as const;
-        }
-      }),
-    );
-    setQuotes(Object.fromEntries(entries));
-    setQuotesLoading(false);
+    try {
+      const entries = await Promise.all(
+        codes.map(async (c) => {
+          try {
+            return [c, await api.globalStock(c, { withMetrics: false })] as const;
+          } catch {
+            return [c, null] as const;
+          }
+        }),
+      );
+      setQuotes(Object.fromEntries(entries));
+      setQuotesUpdatedAt(new Date());
+    } finally {
+      setQuotesLoading(false);
+    }
   }, [codes]);
 
   const loadChart = useCallback(async (sym: string, num: number) => {
@@ -550,6 +556,19 @@ export function UsMarket() {
         metrics={glanceMetrics}
         allOpen={allOpen}
         onToggleAll={toggleAll}
+        onRefresh={() => {
+          void loadQuotes();
+          if (selected) {
+            void loadChart(selected, KLINE_NUM);
+            void loadFund(selected);
+            void loadShort(selected);
+            void loadOptFlow(selected);
+          }
+          void loadPanels();
+          void loadEdgar(edgarTag);
+        }}
+        refreshing={quotesLoading || chartLoading || panelLoading || fundLoading || shortLoading}
+        updatedAt={quotesUpdatedAt}
       />
 
       <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">

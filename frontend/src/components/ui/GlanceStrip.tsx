@@ -1,6 +1,8 @@
 import { type ReactNode } from "react";
-import { ChevronsDownUp, ChevronsUpDown, RefreshCw } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FreshnessBar } from "@/components/ui/FreshnessBar";
+import type { AShareSession } from "@/lib/ashareSession";
 
 export type GlanceTone = "up" | "down" | "flat" | "primary" | "muted";
 
@@ -17,6 +19,12 @@ interface Props {
   subtitle?: string;
   onRefresh?: () => void;
   refreshing?: boolean;
+  updatedAt?: Date | number | string | null;
+  auto?: boolean;
+  onAutoChange?: (next: boolean) => void;
+  autoHint?: string;
+  session?: AShareSession;
+  showSessionHint?: boolean;
   /** When provided, shows expand/collapse-all control */
   allOpen?: boolean;
   onToggleAll?: () => void;
@@ -39,11 +47,31 @@ export function GlanceStrip({
   subtitle,
   onRefresh,
   refreshing,
+  updatedAt,
+  auto,
+  onAutoChange,
+  autoHint,
+  session,
+  showSessionHint,
   allOpen,
   onToggleAll,
   actions,
   className,
 }: Props) {
+  const showFreshness =
+    session != null ||
+    onRefresh != null ||
+    onAutoChange != null ||
+    updatedAt != null ||
+    refreshing;
+
+  const cols =
+    metrics.length <= 4
+      ? "grid-cols-2 sm:grid-cols-4"
+      : metrics.length <= 6
+        ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+        : "grid-cols-2 sm:grid-cols-4 xl:grid-cols-8";
+
   return (
     <div
       className={cn(
@@ -61,27 +89,29 @@ export function GlanceStrip({
             <button
               type="button"
               onClick={onToggleAll}
-              className="inline-flex items-center gap-1 rounded-lg border border-border/50 px-2.5 py-1.5 text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+              className="btn-press inline-flex items-center gap-1 rounded-lg border border-border/50 px-2.5 py-1.5 text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground"
               title={allOpen ? "全部收起" : "全部展开"}
             >
               {allOpen ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />}
               {allOpen ? "全部收起" : "全部展开"}
             </button>
           )}
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              className="rounded-lg border border-border/50 p-1.5 text-muted-foreground hover:bg-muted/40 hover:text-primary"
-              title="刷新"
-            >
-              <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
-            </button>
+          {showFreshness && (
+            <FreshnessBar
+              session={session}
+              showSessionHint={showSessionHint}
+              updatedAt={updatedAt}
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              auto={auto}
+              onAutoChange={onAutoChange}
+              autoHint={autoHint}
+            />
           )}
           {actions}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8">
+      <div className={cn("grid gap-2", cols)}>
         {metrics.map((m) => (
           <div
             key={m.label}

@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
-import { Plus, X, RefreshCw, Star } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, X, Star } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { AskAiButton } from "@/components/ui/AskAiButton";
+import { FreshnessBar } from "@/components/ui/FreshnessBar";
 import { loadWatch, saveWatch, addCodes } from "@/lib/watchlist";
 import { useLiveQuotes, isTradingHours } from "@/hooks/useLiveQuotes";
+import { getAShareSession } from "@/lib/ashareSession";
 import { cn } from "@/lib/utils";
 
 // A 股红涨绿跌（与整个看板一致）。
@@ -42,6 +44,12 @@ export function Watchlist() {
   const [live, setLive] = useState(loadLive);
 
   const { quotes, loading, updatedAt, polling, error, refresh } = useLiveQuotes(codes, live);
+  const [session, setSession] = useState(() => getAShareSession());
+
+  useEffect(() => {
+    const t = window.setInterval(() => setSession(getAShareSession()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
 
   const toggleLive = () => {
     setLive((on) => {
@@ -128,31 +136,28 @@ export function Watchlist() {
             <Star className="h-4 w-4 text-primary" /> 自选总览
             <span className="text-xs font-normal text-muted-foreground">（{codes.length}）</span>
           </h3>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70">
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
             {error ? (
-              <span className="text-warning">{error}</span>
+              <span className="text-[11px] text-warning">{error}</span>
             ) : (
-              <>
-                {/* 把「开着却没在刷」的原因说清楚，否则用户会以为坏了 */}
-                {live && !polling && codes.length > 0 && (
-                  <span>{isTradingHours() ? "已暂停（页面未激活）" : "非交易时段 · 已暂停"}</span>
-                )}
-                {polling && <span className="text-primary/80">实时 · 每 3 秒</span>}
-                {updatedAt && (
-                  <span className="font-mono">
-                    {new Date(updatedAt).toLocaleTimeString("zh-CN", { hour12: false })}
-                  </span>
-                )}
-              </>
+              <FreshnessBar
+                session={session}
+                updatedAt={updatedAt}
+                refreshing={loading}
+                onRefresh={refresh}
+                actions={
+                  <>
+                    {/* Spell out why live is on but not polling, else it looks broken. */}
+                    {live && !polling && codes.length > 0 && (
+                      <span className="text-muted-foreground/70">
+                        {isTradingHours() ? "已暂停（页面未激活）" : "非交易时段 · 已暂停"}
+                      </span>
+                    )}
+                    {polling && <span className="text-primary/80">实时 · 每 3 秒</span>}
+                  </>
+                }
+              />
             )}
-            <button
-              onClick={refresh}
-              disabled={loading}
-              className="text-muted-foreground hover:text-primary"
-              title="立即刷新"
-            >
-              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-            </button>
           </div>
         </div>
         {codes.length === 0 ? (
