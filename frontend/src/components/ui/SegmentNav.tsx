@@ -59,9 +59,9 @@ export function SegmentNav({ items, value, onChange, sticky = true, className, s
                 writeSeg(storageKey, it.key);
               }}
               className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs transition-colors sm:text-sm",
+                "btn-press inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs sm:text-sm",
                 active
-                  ? "bg-primary/15 font-medium text-primary shadow-glow"
+                  ? "bg-primary/15 font-medium text-primary ring-1 ring-primary/25"
                   : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
               )}
             >

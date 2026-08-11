@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
@@ -218,14 +219,14 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     });
   };
 
-  // 数据块占位：请求没回来 = 加载中；回来了但为空 = 数据源暂不可用（别让用户干等）
-  const pending = (done: boolean) => (
-    <div className="flex flex-col items-center justify-center gap-1.5 py-8 text-center">
-      {!done && <Loader2 className="h-4 w-4 animate-spin text-primary/70" />}
-      <p className="text-sm text-muted-foreground/65">
-        {done ? "暂无数据：非交易时段或数据源暂时不可用，可点刷新重试" : "加载中…"}
-      </p>
-    </div>
+  // Loading = skeleton; done+empty = data source unavailable (do not leave users waiting)
+  const pending = (done: boolean, skeleton: "lines" | "table" = "table") => (
+    <EmptyState
+      loading={!done}
+      skeleton={skeleton}
+      title="暂无数据"
+      description="非交易时段或数据源暂时不可用，可点刷新重试"
+    />
   );
 
   useEffect(() => {
@@ -484,7 +485,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         type="button"
         onClick={runReview}
         disabled={reviewLoading}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-2.5 py-1.5 text-[11px] font-medium text-primary shadow-glow hover:bg-primary/25 disabled:opacity-50 sm:text-xs"
+        className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-2.5 py-1.5 text-[11px] font-medium text-primary btn-press ring-1 ring-primary/20 hover:bg-primary/25 disabled:opacity-50 sm:text-xs"
       >
         {reviewLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
         {review ? "重新复盘" : "AI 复盘"}
@@ -649,7 +650,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
 
             {idxPanel === "global" && (
               globalIdx.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground/65">全球指数暂无</p>
+                <EmptyState title="全球指数暂无" description="可点刷新重试；非交易时段或源限流时属正常。" />
               ) : (
                 <table className="data-table">
                   <thead>
@@ -677,18 +678,18 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
 
             {idxPanel === "watch" && (
               watchCodes.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-8 text-center">
-                  <p className="text-sm text-muted-foreground/70">还没有自选股</p>
-                  <p className="text-[11px] text-muted-foreground/55">
-                    到「K线」或「自选股」页添加 6 位代码后，这里会显示分时。
-                  </p>
-                  <Link
-                    to="/a-share?tab=kline"
-                    className="mt-1 rounded-lg bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/25"
-                  >
-                    去 K 线加自选
-                  </Link>
-                </div>
+                <EmptyState
+                  title="还没有自选股"
+                  description="到「K线」或「自选股」页添加代码后，这里会显示分时。"
+                  action={
+                    <Link
+                      to="/a-share?tab=kline"
+                      className="btn-press mt-1 rounded-lg bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25"
+                    >
+                      去 K 线加自选
+                    </Link>
+                  }
+                />
               ) : (
                 <>
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -774,9 +775,12 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
 
           {!sentiment?.breadth && !ovDone ? (
-            <p className="py-6 text-center text-sm text-muted-foreground/65">加载中…</p>
+            pending(false, "lines")
           ) : !sentiment?.breadth ? (
-            <p className="py-6 text-center text-sm text-muted-foreground/65">市场情绪暂不可用，可点刷新重试</p>
+            <EmptyState
+              title="市场情绪暂不可用"
+              description="可点刷新重试；非交易时段或数据源限流时属正常。"
+            />
           ) : (
             <>
               <div className="grid gap-2 sm:grid-cols-2">
@@ -883,9 +887,11 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
             <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
           </div>
           {!emotion || emotion.zt_count === undefined ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground/65">
-              {emoDone ? "暂无短线数据" : "加载中…"}
-            </p>
+            emoDone ? (
+              <EmptyState title="暂无短线数据" description="非交易时段或数据源暂时不可用，可点刷新重试" />
+            ) : (
+              pending(false, "lines")
+            )
           ) : (
             <div className="grid max-h-[22rem] grid-cols-[9.5rem_minmax(0,1fr)]">
               {/* 指标竖排靠左 */}
@@ -966,9 +972,11 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
             <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
           </div>
           {!industry?.top?.length ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground/65">
-              {extraDone ? "暂无行业数据" : "加载中…"}
-            </p>
+            extraDone ? (
+              <EmptyState title="暂无行业数据" description="非交易时段或数据源暂时不可用，可点刷新重试" />
+            ) : (
+              pending(false)
+            )
           ) : (
             <div className="max-h-[22rem] overflow-auto p-2">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
@@ -1003,9 +1011,11 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
             <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
           </div>
           {!hot?.rows?.length ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground/65">
-              {extraDone ? "暂无热榜数据" : "加载中…"}
-            </p>
+            extraDone ? (
+              <EmptyState title="暂无热榜数据" description="非交易时段或数据源暂时不可用，可点刷新重试" />
+            ) : (
+              pending(false)
+            )
           ) : (
             <div className="max-h-[22rem] space-y-0.5 overflow-auto p-2">
               {hot.rows.slice(0, 20).map((r, i) => (
@@ -1037,9 +1047,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
             <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
           </div>
           {!turnover || turnover.stocks.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground/65">
-              {toDone ? "暂无数据" : "加载中…"}
-            </p>
+            pending(toDone)
           ) : (
             <div className="max-h-[22rem] overflow-auto">
               <table className="data-table">
@@ -1193,7 +1201,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                       onChange={(e) => setIwencaiQ(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && void runIwencai()}
                       placeholder="主题关键词，如 人形机器人 行星滚柱丝杠"
-                      className="min-w-0 flex-1 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+                      className="field-input min-w-0 flex-1"
                     />
                     <button
                       type="button"

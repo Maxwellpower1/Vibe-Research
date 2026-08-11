@@ -265,7 +265,7 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI", scope
           <div className="absolute inset-0 bg-black/50" onClick={close} />
           <aside className="glass relative m-3 flex h-[calc(100%-1.5rem)] w-full max-w-md flex-col rounded-2xl">
             <div className="flex items-center justify-between border-b border-border/60 p-4">
-              <span className="flex items-center gap-2 font-semibold text-glow">
+              <span className="flex items-center gap-2 font-semibold">
                 <Sparkles className="h-4 w-4 text-primary" /> 问 AI · 本页上下文
               </span>
               <div className="flex items-center gap-1">
@@ -390,7 +390,7 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI", scope
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-3 py-1.5 text-sm font-medium text-primary shadow-glow transition-colors hover:bg-primary/25"
+        className="btn-press inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-3 py-1.5 text-sm font-medium text-primary ring-1 ring-primary/25 hover:bg-primary/25"
       >
         <Sparkles className="h-4 w-4" />
         {label}

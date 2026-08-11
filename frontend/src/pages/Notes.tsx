@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
-import { Trash2, ChevronDown, ChevronRight, NotebookPen, ScanSearch, Save } from "lucide-react";
+import { Trash2, ChevronDown, ChevronRight, ScanSearch, Save } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { loadNotes, deleteNote, clearNotes, addNote, type Note } from "@/lib/notes";
 import { reflectStream } from "@/lib/agents";
@@ -69,10 +70,10 @@ export function Notes() {
 
       {notes.length === 0 ? (
         <GlassCard>
-          <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
-            <NotebookPen className="h-8 w-8 text-muted-foreground/40" />
-            还没有记录。在「每日复盘」或「问 AI」里点 <b className="text-foreground">「存入沉淀」</b> 保存分析结果。
-          </div>
+          <EmptyState
+            title="还没有研究记录"
+            description="在「每日复盘」或「问 AI」里点「存入沉淀」，把分析结果留在本地。"
+          />
         </GlassCard>
       ) : (
         <div className="space-y-2">

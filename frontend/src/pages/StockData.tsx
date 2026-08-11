@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { EarningsSnapshot } from "@/components/ui/EarningsSnapshot";
 import { Disclaimer } from "@/components/ui/Disclaimer";
@@ -329,13 +330,13 @@ export function StockData({
             onChange={(e) => setCode(e.target.value.replace(/[^a-zA-Z0-9.]/g, "").toUpperCase().slice(0, 12))}
             onKeyDown={(e) => e.key === "Enter" && void run()}
             placeholder="A 股 6 位代码，或美股/港股/韩股（AAPL / 00700 / 005930.KS）"
-            className="w-72 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50 sm:w-80"
+            className="field-input w-72 sm:w-80"
           />
           <button
             type="button"
             onClick={() => void run()}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary shadow-glow hover:bg-primary/25 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary btn-press ring-1 ring-primary/20 hover:bg-primary/25 disabled:opacity-50"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             查询
@@ -1315,12 +1316,10 @@ export function StockData({
 
       {!val && !gstock && !err && !loading && (
         <GlassCard>
-          <div className="py-10 text-center text-sm text-muted-foreground">
-            输入一个 6 位股票代码，拉取它的行情、估值、研报与新闻。<br />
-            <span className="text-xs text-muted-foreground/60">
-              也可查美股/港股（如 AAPL / 00700）。数据来自公开源；不预置标的、不做推荐。
-            </span>
-          </div>
+          <EmptyState
+            title="输入股票代码开始查询"
+            description="支持 A 股 6 位，以及美股/港股（如 AAPL / 00700）。数据来自公开源；不预置标的、不做推荐。"
+          />
         </GlassCard>
       )}
 

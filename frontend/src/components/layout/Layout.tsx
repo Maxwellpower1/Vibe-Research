@@ -40,18 +40,24 @@ export function Layout() {
   }, [collapsed]);
 
   return (
-    <div className="flex h-screen">
+    <div className="flex min-h-[100dvh]">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
+      >
+        跳到内容
+      </a>
       {/* Sidebar */}
       <aside className={cn(
-        "glass z-10 m-2 flex shrink-0 flex-col rounded-2xl transition-all duration-200",
+        "glass z-10 m-2 flex shrink-0 flex-col rounded-2xl transition-[width] duration-200 ease-out",
         collapsed ? "w-14" : "w-60",
       )}>
         {/* Brand */}
         <div className={cn("border-b border-border/50", collapsed ? "flex justify-center p-3" : "p-4")}>
           <Link to="/a-share" className={cn("flex items-center", collapsed ? "justify-center" : "gap-2")}>
-            <LineChart className="h-6 w-6 shrink-0 text-primary text-glow" />
+            <LineChart className="h-6 w-6 shrink-0 text-primary" strokeWidth={1.75} />
             {!collapsed && (
-              <span className="text-lg font-extrabold tracking-tight">
+              <span className="text-balance text-lg font-extrabold tracking-tight">
                 Vibe-<span className="text-primary">Research</span>
               </span>
             )}
@@ -69,14 +75,14 @@ export function Layout() {
                 to={to}
                 title={collapsed ? label : undefined}
                 className={cn(
-                  "flex items-center rounded-lg text-sm transition-colors",
+                  "btn-press flex items-center rounded-lg text-sm",
                   collapsed ? "justify-center p-2.5" : "gap-2.5 px-3 py-2.5",
                   active
-                    ? "bg-primary/15 font-medium text-primary shadow-glow"
+                    ? "bg-primary/15 font-medium text-primary ring-1 ring-primary/25"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                 )}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
                 {!collapsed && label}
               </Link>
             );
@@ -152,10 +158,10 @@ export function Layout() {
       </aside>
 
       {/* Main: ovlab tables need a wider canvas; other pages keep the original reading width */}
-      <main className="flex-1 overflow-auto">
+      <main id="main" className="flex-1 overflow-auto">
         <div
           className={cn(
-            "mx-auto py-6",
+            "mx-auto pb-8 pt-6",
             pathname.startsWith("/ovlab") || pathname.startsWith("/us-market") || pathname.startsWith("/a-share")
               ? "max-w-[1680px] px-3 sm:px-4"
               : "max-w-6xl px-6",

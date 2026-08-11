@@ -57,9 +57,9 @@ export function Chip({ active, onClick, children }: ChipProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-md px-2.5 py-1 text-[11px] transition-colors",
+        "btn-press rounded-md px-2.5 py-1 text-[11px]",
         active
-          ? "bg-primary/15 font-medium text-primary shadow-glow"
+          ? "bg-primary/15 font-medium text-primary ring-1 ring-primary/25"
           : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
       )}
     >

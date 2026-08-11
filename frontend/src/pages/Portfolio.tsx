@@ -3,6 +3,7 @@ import * as echarts from "echarts";
 import { Plus, ShieldCheck, RefreshCw, Loader2, Trash2, AlertCircle, Landmark, Waves, LogIn, LogOut, ChevronDown, ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import { AskAiButton } from "@/components/ui/AskAiButton";
@@ -136,7 +137,7 @@ export function Portfolio() {
             className={cn(
               "flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors",
               tab === key
-                ? "bg-primary/15 font-medium text-primary shadow-glow"
+                ? "bg-primary/15 font-medium text-primary ring-1 ring-primary/25"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -278,22 +279,22 @@ function StockPortfolio() {
         <h3 className="mb-3 text-sm font-semibold">添加持仓</h3>
         <div className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">股票代码</label>
+            <label className="field-label">股票代码</label>
             <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6 位代码"
-              className="w-28 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="field-input w-28" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">数量（股）</label>
+            <label className="field-label">数量（股）</label>
             <input value={shares} onChange={(e) => setShares(e.target.value.replace(/[^\d.]/g, ""))} placeholder="如 100"
-              className="w-28 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="field-input w-28" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">成本价</label>
+            <label className="field-label">成本价</label>
             <input value={cost} onChange={(e) => setCost(e.target.value.replace(/[^\d.-]/g, "").replace(/(?!^)-/g, ""))} placeholder="如 12.5，可负"
-              className="w-28 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="field-input w-28" />
           </div>
           <button onClick={add} disabled={adding}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary shadow-glow hover:bg-primary/25 disabled:opacity-50">
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary btn-press ring-1 ring-primary/20 hover:bg-primary/25 disabled:opacity-50">
             {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} 添加
           </button>
         </div>
@@ -312,7 +313,7 @@ function StockPortfolio() {
           {data?.updated && <span className="text-xs text-muted-foreground/60">更新于 {data.updated}</span>}
         </div>
         {holdings.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground/60">还没有持仓记录，用上面的表单添加一笔。</p>
+          <EmptyState title="还没有持仓记录" description="用上面的表单添加一笔，行情会自动刷新。" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -353,32 +354,32 @@ function StockPortfolio() {
         <h3 className="mb-3 text-sm font-semibold">添加清仓记录</h3>
         <div className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">股票代码</label>
+            <label className="field-label">股票代码</label>
             <input value={cCode} onChange={(e) => setCCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6 位代码"
-              className="w-24 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="field-input w-24" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">清仓日期</label>
+            <label className="field-label">清仓日期</label>
             <input type="date" value={cDate} onChange={(e) => setCDate(e.target.value)}
-              className="rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="field-input" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">清仓价</label>
+            <label className="field-label">清仓价</label>
             <input value={cPrice} onChange={(e) => setCPrice(e.target.value.replace(/[^\d.]/g, ""))} placeholder="卖出价"
-              className="w-24 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="field-input w-24" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">股数</label>
+            <label className="field-label">股数</label>
             <input value={cShares} onChange={(e) => setCShares(e.target.value.replace(/[^\d.]/g, ""))} placeholder="如 100"
-              className="w-24 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="field-input w-24" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">买入成本</label>
+            <label className="field-label">买入成本</label>
             <input value={cCost} onChange={(e) => setCCost(e.target.value.replace(/[^\d.-]/g, "").replace(/(?!^)-/g, ""))} placeholder="成本价，可负"
-              className="w-24 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="field-input w-24" />
           </div>
           <button onClick={addClose} disabled={closing}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary shadow-glow hover:bg-primary/25 disabled:opacity-50">
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary btn-press ring-1 ring-primary/20 hover:bg-primary/25 disabled:opacity-50">
             {closing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} 记录
           </button>
         </div>
@@ -396,7 +397,10 @@ function StockPortfolio() {
       >
         <GlassCard>
           {closed.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground/60">还没有清仓记录。卖出后在上面记一笔，作为已实现盈亏的历史。</p>
+            <EmptyState
+              title="还没有清仓记录"
+              description="卖出后在上面记一笔，作为已实现盈亏的历史。"
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1066,7 +1070,7 @@ function CtpPortfolio() {
             )}
             {!loggedIn ? (
               <button onClick={doLogin} disabled={busy || status?.ready === false}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-glow hover:opacity-90 disabled:opacity-50">
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground btn-press hover:opacity-90 disabled:opacity-50">
                 {loggingIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
                 {loggingIn ? "登录中…" : "登录账户"}
               </button>
@@ -1122,19 +1126,22 @@ function CtpPortfolio() {
 
       {/* Empty state before first login */}
       {!hasBook && status?.ready && (
-        <GlassCard glow className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Waves className="h-6 w-6" />
-          </div>
-          <h3 className="text-base font-semibold">连接期货账户</h3>
-          <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
-            登录后自动拉取资金、持仓、明细、委托与成交，做成一屏交易看板。
-          </p>
-          <button onClick={doLogin} disabled={busy}
-            className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-glow disabled:opacity-50">
-            {loggingIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-            登录账户
-          </button>
+        <GlassCard glow>
+          <EmptyState
+            title="连接期货账户"
+            description="登录后自动拉取资金、持仓、明细、委托与成交，做成一屏交易看板。"
+            action={
+              <button
+                type="button"
+                onClick={doLogin}
+                disabled={busy}
+                className="btn-press mt-1 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              >
+                {loggingIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                登录账户
+              </button>
+            }
+          />
         </GlassCard>
       )}
 
@@ -1781,7 +1788,7 @@ function CtpPortfolio() {
         {sub === "details" && (
           <>
             {details.length === 0 ? (
-              <p className="py-12 text-center text-sm text-muted-foreground/60">暂无持仓明细</p>
+              <EmptyState title="暂无持仓明细" description="登录并同步后，这里会显示合约持仓。" />
             ) : (
               <div className="space-y-2">
                 {totals && (

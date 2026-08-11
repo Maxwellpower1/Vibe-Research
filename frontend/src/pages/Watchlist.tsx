@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Plus, X, RefreshCw, Star } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { AskAiButton } from "@/components/ui/AskAiButton";
@@ -155,9 +156,10 @@ export function Watchlist() {
           </div>
         </div>
         {codes.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground/60">
-            还没有自选股，展开下方「批量添加 / 管理」粘贴代码即可。
-          </p>
+          <EmptyState
+            title="还没有自选股"
+            description="展开下方「批量添加 / 管理」，粘贴代码即可加入。"
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -219,11 +221,11 @@ export function Watchlist() {
               }}
               rows={2}
               placeholder={"如：600519 000858, 002463\n300750 688017"}
-              className="flex-1 resize-y rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50"
+              className="field-input flex-1"
             />
             <button
               onClick={add}
-              className="inline-flex h-9 shrink-0 items-center gap-1.5 self-start rounded-lg bg-primary/15 px-4 text-sm font-medium text-primary shadow-glow hover:bg-primary/25"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 self-start rounded-lg bg-primary/15 px-4 text-sm font-medium text-primary btn-press ring-1 ring-primary/20 hover:bg-primary/25"
             >
               <Plus className="h-4 w-4" /> 添加
             </button>

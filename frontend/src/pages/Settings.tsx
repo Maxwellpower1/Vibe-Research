@@ -6,22 +6,22 @@ import { toast } from "sonner";
 import { loadLlm, saveLlm, clearLlm } from "@/lib/llm";
 import { loadAccessKey, saveAccessKey } from "@/lib/api";
 import { subscriptionModels, apiModels, PROVIDER_BASE, isCliProvider, aiModels, type ProviderId } from "@/lib/ai-models";
+import { cn } from "@/lib/utils";
 
 export function Settings() {
   const existing = loadLlm();
   const existingIsCli = existing ? isCliProvider(existing.provider) : false;
 
   const [mode, setMode] = useState<"api" | "subscription">(existing && existingIsCli ? "subscription" : "api");
-  // 订阅：选中的 CLI model id
   const [cliId, setCliId] = useState(existing && existingIsCli ? existing.model : "");
-  // API：选中的模型 id + 可编辑的 baseURL / model / key
   const firstApi = apiModels[0];
   const [apiId, setApiId] = useState(existing && !existingIsCli ? existing.model : firstApi.id);
   const [baseURL, setBaseURL] = useState(existing && !existingIsCli ? existing.baseURL : (PROVIDER_BASE[firstApi.provider] || ""));
   const [modelName, setModelName] = useState(existing && !existingIsCli ? existing.model : firstApi.id);
   const [apiKey, setApiKey] = useState(existing && !existingIsCli ? existing.apiKey : "");
-  // 后端访问密钥（对应部署时的 VR_API_KEY）；本机自用不设鉴权时留空
   const [accessKey, setAccessKey] = useState(loadAccessKey());
+  const [apiErrors, setApiErrors] = useState<Record<string, string>>({});
+  const [cliError, setCliError] = useState("");
 
   const providerOf = (id: string): ProviderId => aiModels.find((m) => m.id === id)?.provider ?? "openai-compatible";
 
@@ -31,11 +31,17 @@ export function Settings() {
     setApiId(id);
     setModelName(id);
     setBaseURL(PROVIDER_BASE[m.provider] || "");
+    setApiErrors({});
   };
 
   const saveApi = () => {
-    if (!baseURL.trim() || !apiKey.trim() || !modelName.trim()) {
-      toast.error("请填完 Base URL、API Key、Model");
+    const next: Record<string, string> = {};
+    if (!baseURL.trim()) next.baseURL = "请填写 Base URL";
+    if (!modelName.trim()) next.modelName = "请填写 Model";
+    if (!apiKey.trim()) next.apiKey = "请填写 API Key";
+    setApiErrors(next);
+    if (Object.keys(next).length) {
+      toast.error("请补全标红的字段");
       return;
     }
     saveLlm({ provider: providerOf(apiId), baseURL: baseURL.trim(), apiKey: apiKey.trim(), model: modelName.trim() });
@@ -45,9 +51,11 @@ export function Settings() {
   const saveSubscription = () => {
     const m = subscriptionModels.find((x) => x.id === cliId);
     if (!m || m.comingSoon) {
-      toast.error("请选择一个可用的订阅（暂不支持标「即将支持」的）");
+      setCliError("请选择一个可用的订阅（暂不支持标「即将支持」的）");
+      toast.error("请选择一个可用的订阅");
       return;
     }
+    setCliError("");
     saveLlm({ provider: m.provider, baseURL: "", apiKey: "", model: m.id });
     toast.success(`已选「${m.name}」订阅，全站「问 AI / 复盘」将调用本机 ${m.name}`);
   };
@@ -56,6 +64,8 @@ export function Settings() {
     clearLlm();
     setApiKey("");
     setCliId("");
+    setApiErrors({});
+    setCliError("");
     toast.success("已清除本地配置");
   };
 
@@ -75,26 +85,37 @@ export function Settings() {
         <span>API key <b className="text-foreground">只存在你本地浏览器</b>，仅在你提问时发给你自己的后端去调模型，不上传、不进仓库。所有分析由你的模型给出，本产品不校准。</span>
       </div>
 
-      {/* 两种接入方式 */}
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <GlassCard glow={mode === "subscription"} onClick={() => setMode("subscription")}
-          className={mode === "subscription" ? "ring-1 ring-primary/40" : "opacity-80"}>
+        <GlassCard
+          glow={mode === "subscription"}
+          onClick={() => setMode("subscription")}
+          className={mode === "subscription" ? "ring-1 ring-primary/40" : "opacity-80"}
+        >
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
             <h3 className="font-semibold">订阅接入</h3>
             {mode === "subscription" && <Check className="ml-auto h-4 w-4 text-primary" />}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">调本机已登录的 AI CLI（Claude Code / Qwen / DeepSeek / Codex…），用订阅额度，<b className="text-foreground">免 API key</b>。需后端在本机跑。</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            调本机已登录的 AI CLI（Claude Code / Qwen / DeepSeek / Codex…），用订阅额度，
+            <b className="text-foreground">免 API key</b>。需后端在本机跑。
+          </p>
         </GlassCard>
 
-        <GlassCard glow={mode === "api"} onClick={() => setMode("api")}
-          className={mode === "api" ? "ring-1 ring-primary/40" : "opacity-80"}>
+        <GlassCard
+          glow={mode === "api"}
+          onClick={() => setMode("api")}
+          className={mode === "api" ? "ring-1 ring-primary/40" : "opacity-80"}
+        >
           <div className="flex items-center gap-2">
             <KeyRound className="h-5 w-5 text-primary" />
             <h3 className="font-semibold">API 接入</h3>
             {mode === "api" && <Check className="ml-auto h-4 w-4 text-primary" />}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">粘贴 API key，支持 DeepSeek / 豆包 / MiniMax / OpenAI / OpenRouter / 任意兼容端点。<b className="text-foreground">现已可用。</b></p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            粘贴 API key，支持 DeepSeek / 豆包 / MiniMax / OpenAI / OpenRouter / 任意兼容端点。
+            <b className="text-foreground">现已可用。</b>
+          </p>
         </GlassCard>
       </div>
 
@@ -102,26 +123,38 @@ export function Settings() {
         {mode === "subscription" ? (
           <div className="space-y-3 text-sm">
             <p className="text-xs text-muted-foreground">
-              选一个你本机已安装并登录的 CLI。Vibe-Research 后端会用它以你的订阅额度作答，<b className="text-foreground">不用填 key</b>。
-              <span className="text-muted-foreground/60">（仅当后端跑在你本机时可用；复盘 / 今日要点 / 个股问 AI 等场景。）</span>
+              选一个你本机已安装并登录的 CLI。Vibe-Research 后端会用它以你的订阅额度作答，
+              <b className="text-foreground">不用填 key</b>。
+              <span className="text-muted-foreground/60">（仅当后端跑在你本机时可用。）</span>
             </p>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-2" role="listbox" aria-label="订阅 CLI">
               {subscriptionModels.map((m) => {
                 const on = cliId === m.id;
                 return (
-                  <button key={m.id} disabled={m.comingSoon} onClick={() => setCliId(m.id)}
-                    className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                  <button
+                    key={m.id}
+                    type="button"
+                    disabled={m.comingSoon}
+                    onClick={() => {
+                      setCliId(m.id);
+                      setCliError("");
+                    }}
+                    className={cn(
+                      "btn-press flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left",
                       m.comingSoon
                         ? "cursor-not-allowed border-border/50 opacity-40"
                         : on
-                        ? "border-primary/50 bg-primary/10"
-                        : "border-border hover:bg-muted/40"
-                    }`}>
-                    <Terminal className={`h-4 w-4 shrink-0 ${on ? "text-primary" : "text-muted-foreground"}`} />
+                          ? "border-primary/50 bg-primary/10 ring-1 ring-primary/25"
+                          : "border-border hover:bg-muted/40",
+                    )}
+                  >
+                    <Terminal className={cn("h-4 w-4 shrink-0", on ? "text-primary" : "text-muted-foreground")} />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 font-medium">
                         {m.name}
-                        {m.comingSoon && <span className="rounded bg-muted/60 px-1 py-0.5 text-[9px] text-muted-foreground">即将支持</span>}
+                        {m.comingSoon && (
+                          <span className="rounded bg-muted/60 px-1 py-0.5 text-[9px] text-muted-foreground">即将支持</span>
+                        )}
                         {on && <Check className="h-3.5 w-3.5 text-primary" />}
                       </div>
                       <div className="truncate text-[11px] text-muted-foreground">{m.description}</div>
@@ -130,12 +163,21 @@ export function Settings() {
                 );
               })}
             </div>
+            {cliError && <p className="field-error" role="alert">{cliError}</p>}
             <div className="flex items-center gap-2 pt-1">
-              <button onClick={saveSubscription} className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary shadow-glow hover:bg-primary/25">
+              <button
+                type="button"
+                onClick={saveSubscription}
+                className="btn-press inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25"
+              >
                 保存
               </button>
               {existing && (
-                <button onClick={forget} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-destructive">
+                <button
+                  type="button"
+                  onClick={forget}
+                  className="btn-press inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-destructive"
+                >
                   <Trash2 className="h-4 w-4" /> 清除
                 </button>
               )}
@@ -143,38 +185,88 @@ export function Settings() {
           </div>
         ) : (
           <div className="space-y-4 text-sm">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">选择模型</label>
-              <select value={apiId} onChange={(e) => pickApiModel(e.target.value)}
-                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50">
+            <div className="field">
+              <label className="field-label" htmlFor="settings-api-model">选择模型</label>
+              <select
+                id="settings-api-model"
+                value={apiId}
+                onChange={(e) => pickApiModel(e.target.value)}
+                className="field-input"
+              >
                 {apiModels.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name} —— {m.description}</option>
+                  <option key={m.id} value={m.id}>{m.name} - {m.description}</option>
                 ))}
               </select>
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Base URL</label>
-              <input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder="https://api.deepseek.com"
-                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+            <div className="field">
+              <label className="field-label" htmlFor="settings-base-url">Base URL</label>
+              <input
+                id="settings-base-url"
+                value={baseURL}
+                onChange={(e) => {
+                  setBaseURL(e.target.value);
+                  if (apiErrors.baseURL) setApiErrors((s) => ({ ...s, baseURL: "" }));
+                }}
+                placeholder="https://api.deepseek.com"
+                aria-invalid={!!apiErrors.baseURL}
+                className="field-input"
+              />
+              {apiErrors.baseURL
+                ? <p className="field-error" role="alert">{apiErrors.baseURL}</p>
+                : <p className="field-hint">智谱等端点可用 /v4 结尾，不必再被补成 /v4/v1。</p>}
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Model</label>
-              <input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="模型名称（豆包填 ep-… 接入点 ID）"
-                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+
+            <div className="field">
+              <label className="field-label" htmlFor="settings-model-name">Model</label>
+              <input
+                id="settings-model-name"
+                value={modelName}
+                onChange={(e) => {
+                  setModelName(e.target.value);
+                  if (apiErrors.modelName) setApiErrors((s) => ({ ...s, modelName: "" }));
+                }}
+                placeholder="模型名称（豆包填 ep-… 接入点 ID）"
+                aria-invalid={!!apiErrors.modelName}
+                className="field-input"
+              />
+              {apiErrors.modelName && <p className="field-error" role="alert">{apiErrors.modelName}</p>}
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">API Key</label>
-              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…"
-                className="w-full rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+
+            <div className="field">
+              <label className="field-label" htmlFor="settings-api-key">API Key</label>
+              <input
+                id="settings-api-key"
+                type="password"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  if (apiErrors.apiKey) setApiErrors((s) => ({ ...s, apiKey: "" }));
+                }}
+                placeholder="sk-…"
+                aria-invalid={!!apiErrors.apiKey}
+                className="field-input"
+                autoComplete="off"
+              />
+              {apiErrors.apiKey
+                ? <p className="field-error" role="alert">{apiErrors.apiKey}</p>
+                : <p className="field-hint">只存本机浏览器，提问时才发给你的后端。</p>}
             </div>
 
             <div className="flex items-center gap-2">
-              <button onClick={saveApi} className="inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary shadow-glow hover:bg-primary/25">
+              <button
+                type="button"
+                onClick={saveApi}
+                className="btn-press inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25"
+              >
                 保存（存本地）
               </button>
               {existing && (
-                <button onClick={forget} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-destructive">
+                <button
+                  type="button"
+                  onClick={forget}
+                  className="btn-press inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-destructive"
+                >
                   <Trash2 className="h-4 w-4" /> 清除
                 </button>
               )}
@@ -183,7 +275,6 @@ export function Settings() {
         )}
       </GlassCard>
 
-      {/* 后端访问密钥：仅当后端部署时设置了 VR_API_KEY（公网防蹭用）才需要填 */}
       <GlassCard className="mt-4">
         <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
           <KeyRound className="h-4 w-4 text-primary" /> 后端访问密钥（可选）
@@ -193,9 +284,19 @@ export function Settings() {
           本机自用没设鉴权就留空。同样只存本地浏览器。
         </p>
         <div className="flex items-center gap-2">
-          <input type="password" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} placeholder="与后端 VR_API_KEY 保持一致"
-            className="flex-1 rounded-lg border border-border bg-black/20 px-3 py-2 text-sm outline-none focus:border-primary/50" />
-          <button onClick={saveAccess} className="rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/25">
+          <input
+            type="password"
+            value={accessKey}
+            onChange={(e) => setAccessKey(e.target.value)}
+            placeholder="与后端 VR_API_KEY 保持一致"
+            className="field-input flex-1"
+            autoComplete="off"
+          />
+          <button
+            type="button"
+            onClick={saveAccess}
+            className="btn-press shrink-0 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25"
+          >
             保存
           </button>
         </div>

@@ -566,7 +566,7 @@ export function AShareLightChart({
               <button
                 type="button"
                 onClick={add}
-                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/15 px-2.5 py-1.5 text-xs font-medium text-primary shadow-glow hover:bg-primary/25"
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary/15 px-2.5 py-1.5 text-xs font-medium text-primary btn-press ring-1 ring-primary/20 hover:bg-primary/25"
               >
                 <Plus className="h-3.5 w-3.5" /> 添加
               </button>
@@ -592,7 +592,7 @@ export function AShareLightChart({
                     onClick={() => pickStock(c)}
                     className={cn(
                       "group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-                      active ? "bg-primary/15 text-foreground shadow-glow" : "hover:bg-muted/40",
+                      active ? "bg-primary/15 text-foreground ring-1 ring-primary/20" : "hover:bg-muted/40",
                     )}
                   >
                     <div className="min-w-0 flex-1">

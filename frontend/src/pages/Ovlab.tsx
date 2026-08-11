@@ -4,6 +4,7 @@ import * as echarts from "echarts";
 import { RefreshCw, Loader2, AlertCircle, Search, Activity, Zap, History, ArrowUp, ArrowDown, ArrowUpDown, CandlestickChart, Table2, X, ChevronLeft, ChevronRight, MessagesSquare, TrendingUp, TrendingDown, Minus, Moon, CircleHelp, CalendarDays, ChevronDown } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import { api, ApiError, type OvlabMarketRow, type OvlabFlowAlert, type OvlabWarehouseHistory, type OvlabPositionProducts, type OvlabFuturePositionDetails, type OvlabRankRow, type OvlabFlowDataRow, type OvlabProductExp, type OvlabSearchItem, type OvlabPriceVolSeriesItem, type FinoOverviewRow, type FinoDetailRow } from "@/lib/api";
@@ -148,7 +149,7 @@ function AutoRefreshBar({ auto, setAuto, ms, setMs, lastUpdate, onRefresh, refre
         <select
           value={ms}
           onChange={(e) => setMs(Number(e.target.value))}
-          className="rounded-lg border border-border/60 bg-muted/30 px-2 py-1.5 text-xs outline-none focus:border-primary/50"
+          className="field-input !px-2 !py-1.5 text-xs"
         >
           {INTERVALS.map((i) => <option key={i.v} value={i.v}>{i.label}</option>)}
         </select>
@@ -480,7 +481,7 @@ function ExpiryCalendar({ data, selectedDate, onPick, onClear }: {
                     "relative flex h-12 flex-col items-center justify-start gap-0.5 rounded-lg border pt-1 px-0.5 text-xs transition-all",
                     !hasExpiry && "border-transparent text-muted-foreground/30 hover:border-border/40 hover:bg-muted/30",
                     hasExpiry && !isSelected && "border-primary/25 bg-primary/[0.03] hover:bg-primary/10 hover:border-primary/45",
-                    isSelected && "border-primary bg-primary text-primary-foreground shadow-glow",
+                    isSelected && "border-primary bg-primary text-primary-foreground",
                   )}>
                   {isToday && !isSelected ? (
                     <span className="absolute left-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-blue-500 bg-blue-500/15 text-[11px] leading-none font-bold text-blue-600 dark:text-blue-400">{d}</span>
@@ -998,15 +999,13 @@ function MarketPanel({ onPickSymbol }: { onPickSymbol?: (symbol: string) => void
       </div>
 
       {loading && rows.length === 0 ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> 加载中...
-        </div>
+        <EmptyState loading title="加载市场概览" skeleton="table" />
       ) : err ? (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           <AlertCircle className="h-4 w-4" /> {err}
         </div>
       ) : shown.length === 0 ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">暂无数据</div>
+        <EmptyState title="暂无市场数据" description="可切换品种过滤或点刷新重试。" />
       ) : (
         <GlassCard className="!p-0 overflow-hidden">
           <div className="market-toolbar">
@@ -1183,7 +1182,7 @@ function DetailPanel() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="如 510300"
-            className="w-44 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50"
+            className="w-44 field-input"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -1192,7 +1191,7 @@ function DetailPanel() {
             value={exps}
             onChange={(e) => setExps(e.target.value)}
             placeholder="留空取默认"
-            className="w-56 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50"
+            className="w-56 field-input"
           />
         </div>
         <button
@@ -1206,9 +1205,7 @@ function DetailPanel() {
       </form>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> 加载中...
-        </div>
+        <EmptyState loading title="加载单品种详情" skeleton="lines" />
       ) : err ? (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           <AlertCircle className="h-4 w-4" /> {err}
@@ -1216,7 +1213,7 @@ function DetailPanel() {
       ) : data ? (
         <DtoView data={data} />
       ) : (
-        <p className="py-16 text-center text-sm text-muted-foreground">输入标的代码后查询详情</p>
+        <EmptyState title="输入标的代码后查询详情" description="支持品种代码或合约代码。" />
       )}
     </div>
   );
@@ -1267,16 +1264,16 @@ function FlowAlertPanel() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="按合约 / 规则过滤"
-            className="w-full rounded-lg border border-border/60 bg-muted/30 py-2 pl-8 pr-3 text-sm outline-none focus:border-primary/50" />
+            className="field-input w-full !py-2 pl-8 pr-3" />
         </div>
         <AutoRefreshBar auto={auto} setAuto={setAuto} ms={ms} setMs={setMs} lastUpdate={lastUpdate} onRefresh={refresh} refreshing={refreshing || loading} />
       </div>
       {loading && rows.length === 0 ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> 加载中...</div>
+        <EmptyState loading title="加载异动榜" skeleton="table" />
       ) : err ? (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"><AlertCircle className="h-4 w-4" /> {err}</div>
       ) : shown.length === 0 ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">暂无异动</div>
+        <EmptyState title="暂无异动" description="当前阈值下没有命中，可放宽条件后重试。" />
       ) : (
         <div className="max-h-[60vh] overflow-auto rounded-xl border border-border/60">
           <table className="data-table">
@@ -1369,7 +1366,7 @@ function FlowDataPanel() {
         <div className="flex flex-col gap-1">
           <label className="text-[11px] text-muted-foreground">品种筛选 (可选)</label>
           <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="如 CU / 510500"
-            className="w-40 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+            className="w-40 field-input" />
         </div>
         <button type="submit" disabled={loading || refreshing}
           className="inline-flex items-center gap-1.5 self-end rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
@@ -1383,9 +1380,9 @@ function FlowDataPanel() {
       {err ? (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"><AlertCircle className="h-4 w-4" /> {err}</div>
       ) : loading && rows.length === 0 ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> 加载中...</div>
+        <EmptyState loading title="加载异动资金流" skeleton="table" />
       ) : shown.length === 0 ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">暂无异动资金流数据</div>
+        <EmptyState title="暂无异动资金流" description="可调整日期或阈值后重试。" />
       ) : (
         <div className="max-h-[60vh] overflow-auto rounded-xl border border-border/60">
           <table className="data-table">
@@ -1534,7 +1531,7 @@ function WarehousePanel() {
         <div className="flex flex-col gap-1">
           <label className="text-[11px] text-muted-foreground">品种代码 (product)</label>
           <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="如 MA / CU / RB"
-            className="w-40 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+            className="w-40 field-input" />
         </div>
         <button type="submit" disabled={loading || !product.trim()}
           className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
@@ -1542,7 +1539,7 @@ function WarehousePanel() {
         </button>
       </form>
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> 加载中...</div>
+        <EmptyState loading title="加载持仓历史" skeleton="lines" />
       ) : err ? (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"><AlertCircle className="h-4 w-4" /> {err}</div>
       ) : data ? (
@@ -2210,7 +2207,7 @@ function LightChartPanel({ initialSymbol }: { initialSymbol?: string } = {}) {
           <label className="text-[11px] text-muted-foreground">合约代码</label>
           <div className="flex gap-1">
             <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="如 SC2609 / 510300 / MA"
-              className="w-44 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+              className="w-44 field-input" />
             <button type="button" onClick={() => setPickerOpen(true)}
               className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-2 text-sm hover:bg-muted/50">
               <Search className="h-3.5 w-3.5" /> 选择
@@ -2358,13 +2355,13 @@ function VolSurfacePanel() {
         <div className="flex flex-col gap-1">
           <label className="text-[11px] text-muted-foreground">标的代码 (product)</label>
           <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="如 SC / CU / 510300"
-            className="w-40 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+            className="w-40 field-input" />
         </div>
         {exps.length > 0 && (
           <div className="flex flex-col gap-1">
             <label className="text-[11px] text-muted-foreground">到期月</label>
             <select value={exp} onChange={(e) => setExp(e.target.value)}
-              className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50">
+              className="field-input">
               {exps.map((e) => <option key={e} value={e}>{e}</option>)}
             </select>
           </div>
@@ -2380,7 +2377,11 @@ function VolSurfacePanel() {
       {err ? (
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"><AlertCircle className="h-4 w-4" /> {err}</div>
       ) : !block ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">{loading ? "加载中..." : "输入标的代码后查询 T 型报价"}</p>
+        loading ? (
+          <EmptyState loading title="加载 T 型报价" skeleton="table" />
+        ) : (
+          <EmptyState title="输入标的代码后查询 T 型报价" description="例如主连或具体合约代码。" />
+        )
       ) : (
         <div className="mt-3 space-y-3">
           {/* 汇总卡 */}
@@ -2582,7 +2583,7 @@ function PositionRankPanel() {
         <div className="flex flex-col gap-1">
           <label className="text-[11px] text-muted-foreground">类型</label>
           <select value={kind} onChange={(e) => { setKind(e.target.value as PosKind); }}
-            className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50">
+            className="field-input">
             <option value="future">期货持仓</option>
             <option value="option">期权持仓</option>
           </select>
@@ -2594,7 +2595,7 @@ function PositionRankPanel() {
             setProduct(np);
             const p = prodList.find((x) => x.product === np);
             if (p && p.codes[0]) setCode(p.codes[0]);
-          }} className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50">
+          }} className="field-input">
             {prodList.map((p) => (
               <option key={p.product} value={p.product}>{p.product} · {p.product_alias}</option>
             ))}
@@ -2603,7 +2604,7 @@ function PositionRankPanel() {
         <div className="flex flex-col gap-1">
           <label className="text-[11px] text-muted-foreground">合约</label>
           <select value={code} onChange={(e) => setCode(e.target.value)}
-            className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50">
+            className="field-input">
             {codes.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
@@ -2611,7 +2612,7 @@ function PositionRankPanel() {
           <div className="flex flex-col gap-1">
             <label className="text-[11px] text-muted-foreground">方向</label>
             <select value={direction} onChange={(e) => setDirection(e.target.value as "C" | "P")}
-              className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50">
+              className="field-input">
               <option value="C">Call (C)</option>
               <option value="P">Put (P)</option>
             </select>
@@ -2620,7 +2621,7 @@ function PositionRankPanel() {
         <div className="flex flex-col gap-1">
           <label className="text-[11px] text-muted-foreground">日期</label>
           <input type="date" value={day} onChange={(e) => setDay(e.target.value)}
-            className="w-36 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50" />
+            className="w-36 field-input" />
         </div>
         <button type="submit" disabled={loading || refreshing || !product.trim() || !code.trim()}
           className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
@@ -2652,7 +2653,11 @@ function PositionRankPanel() {
             <p className="text-[11px] text-muted-foreground">数据来自期货交易所每日公布的持仓排名榜; 增减相对前一交易日; 红涨绿跌 (A股配色)。</p>
           </div>
         ) : (
-          <p className="py-16 text-center text-sm text-muted-foreground">{loading ? "加载中..." : "选择品种与合约后查询持仓排名"}</p>
+          loading ? (
+            <EmptyState loading title="加载持仓排名" skeleton="table" />
+          ) : (
+            <EmptyState title="选择品种与合约后查询持仓排名" description="先选品种，再选合约日期。" />
+          )
         )
       ) : (
         <div className="mt-3">
@@ -2662,7 +2667,14 @@ function PositionRankPanel() {
               <pre className="max-h-[60vh] overflow-auto rounded-xl border border-border/60 bg-muted/20 p-3 text-xs">{JSON.stringify(optDetail, null, 2)}</pre>
             </GlassCard>
           ) : (
-            <p className="py-16 text-center text-sm text-muted-foreground">{loading ? "加载中..." : "该合约无期权持仓明细数据 (交易所未公布或该合约无排名)"}</p>
+            loading ? (
+              <EmptyState loading title="加载持仓明细" skeleton="table" />
+            ) : (
+              <EmptyState
+                title="该合约无期权持仓明细"
+                description="交易所未公布，或该合约暂无排名。"
+              />
+            )
           )}
         </div>
       )}
@@ -2689,7 +2701,7 @@ export function Ovlab() {
             className={cn(
               "flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors",
               tab === key
-                ? "bg-primary/15 font-medium text-primary shadow-glow"
+                ? "bg-primary/15 font-medium text-primary ring-1 ring-primary/25"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -2942,7 +2954,7 @@ function FinoViewsPanel() {
     return true;
   });
 
-  const inputCls = "rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm outline-none focus:border-primary/50";
+  const inputCls = "field-input";
 
   return (
     <div>
@@ -2980,7 +2992,11 @@ function FinoViewsPanel() {
       {err ? (
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"><AlertCircle className="h-4 w-4" /> {err}</div>
       ) : rows.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">{loading ? "加载中..." : "该日期无机构观点数据"}</p>
+        loading ? (
+          <EmptyState loading title="加载机构观点" skeleton="lines" />
+        ) : (
+          <EmptyState title="该日期无机构观点数据" description="可换日期或清空品种过滤后重试。" />
+        )
       ) : (
         <div className="mt-3 space-y-3">
           {summary && (

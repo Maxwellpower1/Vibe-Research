@@ -3,6 +3,7 @@ import * as echarts from "echarts";
 import { AlertCircle, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
@@ -560,12 +561,12 @@ export function UsMarket() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") add(); }}
               placeholder="加代码: AAPL TSLA"
-              className="min-w-0 flex-1 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-sm outline-none focus:border-primary/50"
+              className="field-input min-w-0 flex-1 !px-2.5 !py-1.5"
             />
             <button
               type="button"
               onClick={add}
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground"
+              className="btn-press inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground"
             >
               <Plus className="h-3.5 w-3.5" /> 添加
             </button>
@@ -574,7 +575,11 @@ export function UsMarket() {
 
           <div className="min-h-[320px] flex-1 space-y-0.5 overflow-auto">
             {codes.length === 0 ? (
-              <p className="p-4 text-center text-xs text-muted-foreground">还没有观察标的，先加几个 ticker。</p>
+              <EmptyState
+                className="py-8"
+                title="还没有观察标的"
+                description="在上方输入 ticker 添加，例如 AAPL、NVDA、MSFT。"
+              />
             ) : codes.map((c) => {
               const q = quotes[c];
               const pct = q?.quote?.change_pct;
@@ -944,7 +949,11 @@ export function UsMarket() {
             </div>
             <p className="mb-3 text-[11px] text-muted-foreground/60">东财 clist · 点行加入/切换观察标的</p>
             {!movers?.stocks?.length ? (
-              <p className="py-6 text-center text-xs text-muted-foreground/60">{panelLoading ? "加载中…" : "暂无榜单"}</p>
+              panelLoading ? (
+                <EmptyState loading title="加载榜单" skeleton="table" />
+              ) : (
+                <EmptyState title="暂无榜单" description="可切换涨跌榜或稍后重试。" />
+              )
             ) : (
               <div className="max-h-72 space-y-0.5 overflow-y-auto">
                 {movers.stocks.map((s) => (
@@ -999,7 +1008,11 @@ export function UsMarket() {
               全市场空头占比 TOP · 过滤总成交 ≥ 100 万 · ≠ short interest
             </p>
             {!shortRank?.rows?.length ? (
-              <p className="py-6 text-center text-xs text-muted-foreground/60">{panelLoading ? "加载中…" : "暂无空头榜"}</p>
+              panelLoading ? (
+                <EmptyState loading title="加载空头榜" skeleton="table" />
+              ) : (
+                <EmptyState title="暂无空头榜" description="数据源暂不可用时属正常，可稍后重试。" />
+              )
             ) : (
               <div className="max-h-72 space-y-0.5 overflow-y-auto">
                 {shortRank.rows.map((r) => (
@@ -1276,9 +1289,11 @@ export function UsMarket() {
             美国财政部官方日度曲线（S 级）· 利差仅客观呈现，不构成利率预测
           </p>
           {!treasury || treasury.points.length === 0 ? (
-            <p className="py-6 text-center text-xs text-muted-foreground/60">
-              {panelLoading ? "加载中…" : "暂无美债曲线数据"}
-            </p>
+            panelLoading ? (
+              <EmptyState loading title="加载美债曲线" skeleton="lines" />
+            ) : (
+              <EmptyState title="暂无美债曲线数据" description="可稍后刷新重试。" />
+            )
           ) : (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
               <div ref={treasuryChartRef} className="h-[220px] w-full min-w-0" />

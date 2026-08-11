@@ -3,6 +3,7 @@ import * as echarts from "echarts";
 import { CloudSun, Droplets, Eye, Gauge, MapPin, RefreshCw, Sun, Wind } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { api, ApiError, type WeatherDay, type WeatherHourly, type WeatherPayload } from "@/lib/api";
 import { storageGet, storageSet } from "@/lib/storage";
@@ -145,7 +146,7 @@ export function Weather() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="城市 / 机场代码，如 上海、JFK"
-            className="min-w-[200px] flex-1 rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-sm outline-none focus:border-primary/50"
+            className="field-input min-w-[200px] flex-1"
           />
           <button
             type="submit"
@@ -288,8 +289,8 @@ export function Weather() {
       )}
 
       {!data && !error && loading && (
-        <GlassCard>
-          <p className="py-8 text-center text-sm text-muted-foreground">正在拉取天气…</p>
+        <GlassCard className="!p-0">
+          <EmptyState loading title="正在拉取天气" skeleton="lines" />
         </GlassCard>
       )}
 
