@@ -1,23 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import * as echarts from "echarts";
-import { Sparkles, Loader2, AlertCircle, ArrowDownUp, TrendingUp, TrendingDown, Flame, Trophy, Activity, ShieldAlert, Search } from "lucide-react";
+import { Sparkles, Loader2, AlertCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
-import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { SegmentNav, useSegment } from "@/components/ui/SegmentNav";
-import { PctChip } from "@/components/review/PctChip";
 import { ReviewIndexPanel } from "@/components/review/ReviewIndexPanel";
 import { ReviewSentimentPanel } from "@/components/review/ReviewSentimentPanel";
 import { ReviewShortPanel } from "@/components/review/ReviewShortPanel";
+import { ReviewRankRow } from "@/components/review/ReviewRankRow";
+import { ReviewBoardsSeg } from "@/components/review/ReviewBoardsSeg";
+import { ReviewMoneySeg } from "@/components/review/ReviewMoneySeg";
+import { ReviewRiskSeg } from "@/components/review/ReviewRiskSeg";
 import { WATCH_MINUTE_MAX, type IdxPanel } from "@/components/review/constants";
-import { fmt, pctColor, pctTone, yi } from "@/components/review/format";
+import { fmt, pctTone } from "@/components/review/format";
+import { reviewPending } from "@/components/review/reviewPending";
 import { formatClock } from "@/lib/freshness";
 import {
   api, ApiError, type IndexQuote, type MarketOverview, type ShortTermEmotion,
@@ -30,7 +32,6 @@ import { hasLlm, chatStream } from "@/lib/llm";
 import { storageGet, storageSet } from "@/lib/storage";
 import { getAShareSession } from "@/lib/ashareSession";
 import { loadWatch } from "@/lib/watchlist";
-import { cn } from "@/lib/utils";
 
 const TOP_AUTO_MS = 30_000;
 const TOP_AUTO_KEY = "ashare.review.topAuto";
@@ -172,16 +173,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
       setTopUpdatedAt(new Date());
     });
   };
-
-  // Loading = skeleton; done+empty = data source unavailable (do not leave users waiting)
-  const pending = (done: boolean, skeleton: "lines" | "table" = "table") => (
-    <EmptyState
-      loading={!done}
-      skeleton={skeleton}
-      title="暂无数据"
-      description="非交易时段或数据源暂时不可用，可点刷新重试"
-    />
-  );
 
   useEffect(() => {
     loadIndices();
@@ -524,130 +515,26 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           updatedLabel={topUpdatedLabel}
           indTop={indTop}
           indBot={indBot}
-          pending={pending(false, "lines")}
+          pending={reviewPending(false, "lines")}
         />
         <ReviewShortPanel
           emotion={emotion}
           emoDone={emoDone}
           updatedLabel={topUpdatedLabel}
-          pending={pending(false, "lines")}
+          pending={reviewPending(false, "lines")}
         />
       </div>
 
-      {/* 第二行：行业涨跌 / 同花顺热榜 / 成交额 TOP */}
-      <div className="mb-5 grid gap-3 lg:grid-cols-3">
-        <GlassCard className="!mb-0 !p-0 overflow-hidden">
-          <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
-            <p className="text-sm font-semibold">行业涨跌</p>
-            <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
-          </div>
-          {!industry?.top?.length ? (
-            extraDone ? (
-              <EmptyState title="暂无行业数据" description="非交易时段或数据源暂时不可用，可点刷新重试" />
-            ) : (
-              pending(false)
-            )
-          ) : (
-            <div className="max-h-[22rem] overflow-auto p-2">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                <div>
-                  <p className="mb-1.5 px-1 text-[10px] font-medium text-danger">涨幅 Top</p>
-                  {industry.top.slice(0, 10).map((r) => (
-                    <div key={r.code || r.name} className="flex items-center gap-2 rounded-md px-1 py-1 text-xs hover:bg-muted/25">
-                      <span className="w-4 text-muted-foreground/45">{r.rank}</span>
-                      <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                      <PctChip pct={r.change_pct} />
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <p className="mb-1.5 px-1 text-[10px] font-medium text-success">相对弱势</p>
-                  {(industry.bottom || []).slice(0, 10).map((r, i) => (
-                    <div key={r.code || r.name} className="flex items-center gap-2 rounded-md px-1 py-1 text-xs hover:bg-muted/25">
-                      <span className="w-4 text-muted-foreground/45">{i + 1}</span>
-                      <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                      <PctChip pct={r.change_pct} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </GlassCard>
-
-        <GlassCard className="!mb-0 !p-0 overflow-hidden">
-          <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
-            <p className="text-sm font-semibold">同花顺热榜</p>
-            <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
-          </div>
-          {!hot?.rows?.length ? (
-            extraDone ? (
-              <EmptyState title="暂无热榜数据" description="非交易时段或数据源暂时不可用，可点刷新重试" />
-            ) : (
-              pending(false)
-            )
-          ) : (
-            <div className="max-h-[22rem] space-y-0.5 overflow-auto p-2">
-              {hot.rows.slice(0, 20).map((r, i) => (
-                <Link
-                  key={r.code || i}
-                  to={`/a-share?tab=kline&code=${r.code}`}
-                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-primary/10"
-                >
-                  <span className="w-5 font-mono text-xs text-muted-foreground/45">{r.rank ?? i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
-                  <PctChip pct={r.pct == null ? null : Number(r.pct)} />
-                  {r.rank_chg != null && (
-                    <span className={cn(
-                      "w-9 shrink-0 text-right font-mono text-[11px]",
-                      (r.rank_chg ?? 0) > 0 ? "text-danger" : (r.rank_chg ?? 0) < 0 ? "text-success" : "text-muted-foreground",
-                    )}>
-                      {r.rank_chg > 0 ? `↑${r.rank_chg}` : r.rank_chg < 0 ? `↓${Math.abs(r.rank_chg)}` : "—"}
-                    </span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          )}
-        </GlassCard>
-
-        <GlassCard className="!mb-0 !p-0 overflow-hidden">
-          <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
-            <p className="text-sm font-semibold">成交额 TOP</p>
-            <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
-          </div>
-          {!turnover || turnover.stocks.length === 0 ? (
-            pending(toDone)
-          ) : (
-            <div className="max-h-[22rem] overflow-auto">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {["#", "名称", "涨跌%", "成交额"].map((h) => (
-                      <th key={h} className={h !== "名称" ? "num" : ""}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {turnover.stocks.slice(0, 20).map((s, i) => (
-                    <tr key={s.code}>
-                      <td className="num text-muted-foreground/50">{i + 1}</td>
-                      <td>
-                        <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
-                          <span className="font-medium">{s.name}</span>{" "}
-                          <span className="text-muted-foreground/50">{s.code}</span>
-                        </Link>
-                      </td>
-                      <td className="num"><PctChip pct={s.pct} /></td>
-                      <td className="num font-mono">{yi(s.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </GlassCard>
-      </div>
+      <ReviewRankRow
+        updatedLabel={topUpdatedLabel}
+        industry={industry}
+        hot={hot}
+        turnover={turnover}
+        extraDone={extraDone}
+        industryPending={reviewPending(false)}
+        hotPending={reviewPending(false)}
+        turnoverPending={reviewPending(toDone)}
+      />
 
       {showReviewPanel && (
         <GlassCard glow className="mb-5">
@@ -694,554 +581,53 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         onChange={setSeg}
       />
 
-      {/* 龙虎榜 */}
       {seg === "boards" && (
-        <div>
-          <SectionHeader
-            icon={<Trophy className="h-3.5 w-3.5 text-primary/80" />}
-            title="全市场龙虎榜"
-            hint="按席位净买额 · 非推荐"
-            meta={lhb?.date ? `${lhb.date} · ${lhb.total_records} 条` : (lhbDone ? "暂无" : "加载中…")}
-          />
-          <GlassCard className="!p-0 overflow-hidden">
-            {!lhb || lhb.stocks.length === 0 ? (
-              <div className="p-5">{pending(lhbDone)}</div>
-            ) : (
-              <div className="max-h-[28rem] overflow-auto">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {["#", "名称", "涨跌%", "净买(万)", "买入(万)", "卖出(万)", "换手%", "上榜原因"].map((h) => (
-                        <th key={h} className={h !== "名称" && h !== "上榜原因" ? "num" : ""}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lhb.stocks.map((s, i) => (
-                      <tr key={`${s.code}-${s.reason}-${i}`}>
-                        <td className="num text-muted-foreground/50">{i + 1}</td>
-                        <td>
-                          <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
-                            <span className="font-medium">{s.name}</span>{" "}
-                            <span className="text-muted-foreground/50">{s.code}</span>
-                          </Link>
-                        </td>
-                        <td className="num"><PctChip pct={s.change_pct} /></td>
-                        <td className={cn("num font-mono", pctColor(s.net_buy_wan))}>
-                          {s.net_buy_wan > 0 ? "+" : ""}{fmt(s.net_buy_wan)}
-                        </td>
-                        <td className="num text-muted-foreground">{fmt(s.buy_wan)}</td>
-                        <td className="num text-muted-foreground">{fmt(s.sell_wan)}</td>
-                        <td className="num text-muted-foreground">{s.turnover_pct}</td>
-                        <td className="max-w-[220px] truncate text-muted-foreground" title={s.reason}>
-                          {s.reason || "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </GlassCard>
-
-          <div className="mt-6">
-            <SectionHeader
-              icon={<Search className="h-3.5 w-3.5 text-primary/80" />}
-              title="问财研报"
-              hint="iwencai NL 主题检索 · 需配置 key"
-              meta={iwencaiReady ? "已配置" : "未配置 key"}
-            />
-            <GlassCard>
-              {!iwencaiReady ? (
-                <p className="text-sm text-muted-foreground">
-                  在 <code className="rounded bg-muted/50 px-1">backend/.env</code> 设置{" "}
-                  <code className="rounded bg-muted/50 px-1">IWENCAI_API_KEY</code> 后重启后端即可语义搜研报
-                  （如「人形机器人 丝杠」）。按个股搜研报请用详情页东财列表。
-                </p>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      value={iwencaiQ}
-                      onChange={(e) => setIwencaiQ(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && void runIwencai()}
-                      placeholder="主题关键词，如 人形机器人 行星滚柱丝杠"
-                      className="field-input min-w-0 flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void runIwencai()}
-                      disabled={iwencaiBusy || !iwencaiQ.trim()}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-                    >
-                      {iwencaiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-                      搜索
-                    </button>
-                  </div>
-                  {iwencaiErr && (
-                    <p className="mt-2 text-xs text-destructive">{iwencaiErr}</p>
-                  )}
-                  {iwencaiItems.length > 0 && (
-                    <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
-                      {iwencaiItems.map((it, i) => (
-                        <div key={`${it.title}-${i}`} className="border-b border-border/40 pb-2 text-sm last:border-0">
-                          <div className="flex items-baseline gap-2">
-                            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{it.publish_date || "—"}</span>
-                            <span className="min-w-0 flex-1 font-medium leading-snug">{it.title}</span>
-                          </div>
-                          {(it.organization || it.url) && (
-                            <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-                              {it.organization || ""}
-                              {it.url ? (
-                                <>
-                                  {" · "}
-                                  <a href={it.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">原文</a>
-                                </>
-                              ) : null}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </GlassCard>
-          </div>
-        </div>
+        <ReviewBoardsSeg
+          lhb={lhb}
+          lhbDone={lhbDone}
+          iwencaiReady={iwencaiReady}
+          iwencaiQ={iwencaiQ}
+          onIwencaiQ={setIwencaiQ}
+          iwencaiBusy={iwencaiBusy}
+          iwencaiErr={iwencaiErr}
+          iwencaiItems={iwencaiItems}
+          onRunIwencai={() => void runIwencai()}
+        />
       )}
 
-      {/* 资金：板块流 + ETF/利率/增减持 + 轮动 */}
       {seg === "money" && (
-        <div className="space-y-6">
-          <div>
-            <SectionHeader
-              icon={<TrendingUp className="h-3.5 w-3.5 text-primary/80" />}
-              title="板块资金流"
-              hint="东财 · 主力净流入"
-              meta={boardFlow?.rows?.length ? `${boardFlow.rows.length} 条` : (extraDone ? "暂无" : "加载中…")}
-              actions={
-                <div className="flex flex-wrap items-center gap-2">
-                  <ChipGroup>
-                    {([["industry", "行业"], ["concept", "概念"], ["region", "地域"]] as const).map(([k, label]) => (
-                      <Chip key={k} active={boardType === k} onClick={() => setBoardType(k)}>{label}</Chip>
-                    ))}
-                  </ChipGroup>
-                  <ChipGroup>
-                    {([["today", "今日"], ["5d", "5日"], ["10d", "10日"]] as const).map(([k, label]) => (
-                      <Chip key={k} active={boardPeriod === k} onClick={() => setBoardPeriod(k)}>{label}</Chip>
-                    ))}
-                  </ChipGroup>
-                </div>
-              }
-            />
-            <GlassCard className="!p-0 overflow-hidden">
-              {!boardFlow?.rows?.length ? (
-                <div className="p-5">{pending(extraDone)}</div>
-              ) : (
-                <div className="max-h-[28rem] overflow-auto">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        {["#", "板块", "涨跌%", "主力净流入", "净占比", "领涨股"].map((h) => (
-                          <th key={h} className={h !== "板块" && h !== "领涨股" ? "num" : ""}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {boardFlow.rows.map((r) => (
-                        <tr key={`${r.code}-${r.name}`}>
-                          <td className="num text-muted-foreground/50">{r.rank}</td>
-                          <td className="font-medium">{r.name}</td>
-                          <td className="num"><PctChip pct={r.change_pct} /></td>
-                          <td className={cn("num font-mono", pctColor(r.main_net))}>
-                            {r.main_net > 0 ? "+" : ""}{fmt(r.main_net / 1e8)} 亿
-                          </td>
-                          <td className="num text-muted-foreground">{r.main_pct}%</td>
-                          <td className="text-muted-foreground">{r.leader || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </GlassCard>
-          </div>
-
-          <div>
-            <SectionHeader
-              icon={<ArrowDownUp className="h-3.5 w-3.5 text-primary/80" />}
-              title="资金轮动速览"
-              hint="行业级净流入 / 流出"
-              meta={sectors.length ? `${sectors.length} 行业` : (ovDone ? "暂无" : "加载中…")}
-            />
-            <div className="grid gap-4 md:grid-cols-2">
-              {[
-                { title: "流入 Top", icon: TrendingUp, color: "text-danger", rows: sectors.slice(0, 6) },
-                { title: "流出 Top", icon: TrendingDown, color: "text-success", rows: [...sectors].slice(-6).reverse() },
-              ].map((col) => (
-                <GlassCard key={col.title} className="!p-4">
-                  <h4 className={cn("mb-3 flex items-center gap-1.5 text-sm font-semibold", col.color)}>
-                    <col.icon className="h-4 w-4" /> {col.title}
-                  </h4>
-                  {col.rows.length === 0 ? (
-                    pending(ovDone)
-                  ) : (
-                    <div className="space-y-1">
-                      {col.rows.map((s, i) => (
-                        <div key={s.name} className="flex items-center gap-3 rounded-lg px-1 py-1.5 text-sm hover:bg-muted/25">
-                          <span className="w-5 text-xs text-muted-foreground/45">{i + 1}</span>
-                          <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                          <PctChip pct={s.pct} />
-                          <span className={cn("w-20 text-right font-mono text-xs", pctColor(s.net))}>{s.net > 0 ? "+" : ""}{fmt(s.net)} 亿</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </GlassCard>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <SectionHeader
-              icon={<TrendingUp className="h-3.5 w-3.5 text-primary/80" />}
-              title="ETF 资金流"
-              hint="东财 · 主力净流入(亿)"
-              meta={etfFlow?.rows?.length ? `${etfFlow.rows.length} 只` : (moneyDone ? "暂无" : "加载中…")}
-              actions={(
-                <ChipGroup>
-                  {([["net_inflow", "净流入"], ["change_pct", "涨跌幅"]] as const).map(([k, label]) => (
-                    <Chip key={k} active={etfSort === k} onClick={() => setEtfSort(k)}>{label}</Chip>
-                  ))}
-                </ChipGroup>
-              )}
-            />
-            <GlassCard className="!p-0 overflow-hidden">
-              {!etfFlow?.rows?.length ? (
-                <div className="p-5">{pending(moneyDone)}</div>
-              ) : (
-                <div className="max-h-[28rem] overflow-auto">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        {["#", "代码", "名称", "涨跌%", "主力净流入", "超大单", "大单"].map((h) => (
-                          <th key={h} className={h === "名称" || h === "代码" ? "" : "num"}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {etfFlow.rows.map((r, i) => (
-                        <tr key={r.code}>
-                          <td className="num text-muted-foreground/50">{i + 1}</td>
-                          <td className="font-mono text-xs">
-                            <Link to={`/a-share?tab=kline&code=${r.code}`} className="hover:text-primary">{r.code}</Link>
-                          </td>
-                          <td className="font-medium">{r.name}</td>
-                          <td className="num"><PctChip pct={r.change_pct} /></td>
-                          <td className={cn("num font-mono", pctColor(r.main_net_inflow))}>
-                            {r.main_net_inflow > 0 ? "+" : ""}{fmt(r.main_net_inflow)} 亿
-                          </td>
-                          <td className={cn("num font-mono text-xs", pctColor(r.super_large_net))}>
-                            {r.super_large_net > 0 ? "+" : ""}{fmt(r.super_large_net)}
-                          </td>
-                          <td className={cn("num font-mono text-xs", pctColor(r.large_net))}>
-                            {r.large_net > 0 ? "+" : ""}{fmt(r.large_net)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </GlassCard>
-            <p className="mt-1.5 text-[11px] text-muted-foreground/55">客观公开榜单，只呈现事实，不构成买卖建议。</p>
-          </div>
-
-          <div>
-            <SectionHeader
-              icon={<Activity className="h-3.5 w-3.5 text-primary/80" />}
-              title="利率 · LPR / 国债"
-              hint="中国货币网 · 中债登"
-              meta={
-                lpr?.latest?.date || bondY?.date
-                  ? `LPR ${lpr?.latest?.date ?? "—"} · 曲线 ${bondY?.date || "—"}`
-                  : (moneyDone ? "暂无" : "加载中…")
-              }
-            />
-            <div className="grid gap-4 md:grid-cols-2">
-              <GlassCard className="!p-4">
-                <h4 className="mb-3 text-sm font-semibold">LPR 报价</h4>
-                {!lpr?.latest ? (
-                  pending(moneyDone)
-                ) : (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-border/40 bg-muted/20 p-3 text-center">
-                        <p className="text-[11px] text-muted-foreground">1 年期</p>
-                        <p className="mt-1 font-mono text-xl font-bold">{lpr.latest.one_year.toFixed(2)}%</p>
-                      </div>
-                      <div className="rounded-xl border border-border/40 bg-muted/20 p-3 text-center">
-                        <p className="text-[11px] text-muted-foreground">5 年期以上</p>
-                        <p className="mt-1 font-mono text-xl font-bold">{lpr.latest.five_year.toFixed(2)}%</p>
-                      </div>
-                    </div>
-                    {lpr.rows.length > 1 && (
-                      <div className="mt-3 max-h-36 space-y-1 overflow-y-auto border-t border-border/40 pt-2">
-                        {lpr.rows.slice(0, 8).map((r) => (
-                          <div key={r.date} className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                            <span className="w-24 shrink-0">{r.date}</span>
-                            <span className="flex-1">1Y {r.one_year.toFixed(2)}%</span>
-                            <span>5Y {r.five_year.toFixed(2)}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </GlassCard>
-              <GlassCard className="!p-4">
-                <h4 className="mb-3 text-sm font-semibold">中债国债收益率</h4>
-                {!bondY?.terms || Object.keys(bondY.terms).length === 0 ? (
-                  pending(moneyDone)
-                ) : (
-                  <>
-                    <div className="flex flex-wrap gap-2">
-                      {(["1Y", "2Y", "5Y", "10Y", "30Y"] as const).map((k) => (
-                        <div key={k} className="min-w-[4.5rem] rounded-lg border border-border/40 bg-muted/20 px-2.5 py-2 text-center">
-                          <p className="text-[10px] text-muted-foreground">{k}</p>
-                          <p className="font-mono text-sm font-semibold">
-                            {bondY.terms[k] != null ? `${bondY.terms[k].toFixed(2)}%` : "—"}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                    {(bondY.curve_points?.length ?? 0) >= 2 && (
-                      <div ref={bondChartRef} className="mt-3 h-[140px] w-full min-w-0" />
-                    )}
-                    <div className="mt-3 flex flex-wrap gap-3 border-t border-border/40 pt-2 text-[11px] text-muted-foreground">
-                      <span>
-                        10Y-2Y{" "}
-                        <span className="font-mono text-foreground">
-                          {bondY.spread_10_2 == null ? "—" : `${bondY.spread_10_2 > 0 ? "+" : ""}${bondY.spread_10_2.toFixed(2)}`}
-                        </span>
-                      </span>
-                      <span>
-                        30Y-10Y{" "}
-                        <span className="font-mono text-foreground">
-                          {bondY.spread_30_10 == null ? "—" : `${bondY.spread_30_10 > 0 ? "+" : ""}${bondY.spread_30_10.toFixed(2)}`}
-                        </span>
-                      </span>
-                      {bondY.date && <span className="ml-auto">{bondY.date}</span>}
-                    </div>
-                  </>
-                )}
-              </GlassCard>
-            </div>
-          </div>
-
-          <div>
-            <SectionHeader
-              icon={<ShieldAlert className="h-3.5 w-3.5 text-primary/80" />}
-              title="股东 / 高管增减持"
-              hint="东财披露 · 客观呈现"
-              meta={shChg?.rows?.length ? `${shChg.rows.length} 条` : (moneyDone ? "暂无" : "加载中…")}
-              actions={(
-                <ChipGroup>
-                  {([["all", "全部"], ["增持", "增持"], ["减持", "减持"]] as const).map(([k, label]) => (
-                    <Chip key={k} active={shType === k} onClick={() => setShType(k)}>{label}</Chip>
-                  ))}
-                </ChipGroup>
-              )}
-            />
-            <GlassCard className="!p-0 overflow-hidden">
-              {!shChg?.rows?.length ? (
-                <div className="p-5">{pending(moneyDone)}</div>
-              ) : (
-                <div className="max-h-[28rem] overflow-auto">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        {["日期", "代码", "名称", "变动人", "方向", "股数", "均价", "职务"].map((h) => (
-                          <th key={h} className={h === "股数" || h === "均价" ? "num" : ""}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {shChg.rows.map((r, i) => (
-                        <tr key={`${r.code}-${r.date}-${r.person}-${i}`}>
-                          <td className="font-mono text-xs text-muted-foreground">{r.date}</td>
-                          <td className="font-mono text-xs">
-                            <Link to={`/a-share?tab=kline&code=${r.code}`} className="hover:text-primary">{r.code}</Link>
-                          </td>
-                          <td className="font-medium">{r.name}</td>
-                          <td className="max-w-[6rem] truncate">{r.person || "—"}</td>
-                          <td className={cn("text-xs font-medium", r.change_type === "增持" ? "text-danger" : "text-success")}>
-                            {r.change_type}
-                          </td>
-                          <td className="num font-mono text-xs">
-                            {r.change_shares ? `${(r.change_shares / 1e4).toFixed(1)} 万` : "—"}
-                          </td>
-                          <td className="num font-mono text-xs">{r.avg_price ? fmt(r.avg_price) : "—"}</td>
-                          <td className="max-w-[5rem] truncate text-xs text-muted-foreground">{r.position || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </GlassCard>
-            <p className="mt-1.5 text-[11px] text-muted-foreground/55">公开披露数据，仅供了解变动事实，不构成买卖建议。</p>
-          </div>
-        </div>
+        <ReviewMoneySeg
+          boardFlow={boardFlow}
+          boardType={boardType}
+          onBoardType={setBoardType}
+          boardPeriod={boardPeriod}
+          onBoardPeriod={setBoardPeriod}
+          sectors={sectors}
+          etfFlow={etfFlow}
+          etfSort={etfSort}
+          onEtfSort={setEtfSort}
+          lpr={lpr}
+          bondY={bondY}
+          bondChartRef={bondChartRef}
+          shChg={shChg}
+          shType={shType}
+          onShType={setShType}
+          extraDone={extraDone}
+          ovDone={ovDone}
+          moneyDone={moneyDone}
+        />
       )}
 
-      {/* 风险：监控池 + 异动 + 打板池 */}
       {seg === "risk" && (
-        <div className="space-y-6">
-          <div>
-            <SectionHeader
-              icon={<ShieldAlert className="h-3.5 w-3.5 text-warning" />}
-              title="重点监控池"
-              hint="交易所风险警示"
-              meta={monitor?.count != null ? `${monitor.count} 只` : (extraDone ? "暂无" : "加载中…")}
-            />
-            <GlassCard className="!p-0 overflow-hidden">
-              {!monitor?.rows?.length ? (
-                <div className="p-5">{pending(extraDone)}</div>
-              ) : (
-                <div className="max-h-64 space-y-0.5 overflow-y-auto p-2">
-                  {monitor.rows.map((r) => (
-                    <Link key={r.code} to={`/a-share?tab=kline&code=${r.code}`}
-                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-warning/10">
-                      <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{r.code}</span>
-                      <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
-                      <span className="shrink-0 rounded bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">{r.market}</span>
-                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground/55">{r.start}~{r.end}</span>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </GlassCard>
-          </div>
-
-          <div>
-            <SectionHeader
-              icon={<ShieldAlert className="h-3.5 w-3.5 text-warning" />}
-              title="日内异动"
-              hint="严重异常波动"
-              meta={anomaly?.date ?? (extraDone ? "暂无" : "加载中…")}
-            />
-            <GlassCard className="!p-0 overflow-hidden">
-              {!anomaly?.items?.length ? (
-                <div className="p-5">{pending(extraDone)}</div>
-              ) : (
-                <div className="max-h-64 space-y-0.5 overflow-y-auto p-2">
-                  {anomaly.items.slice(0, 30).map((r, i) => (
-                    <Link key={`${r.code}-${i}`} to={`/a-share?tab=kline&code=${r.code}`}
-                      className="block rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-warning/10">
-                      <div className="flex items-center gap-2">
-                        <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{r.code}</span>
-                        <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
-                        <PctChip pct={r.change_pct} />
-                      </div>
-                      <p className="mt-0.5 truncate pl-[3.75rem] text-[11px] text-muted-foreground/60">{r.rule}</p>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </GlassCard>
-          </div>
-
-          <div>
-            <SectionHeader
-              icon={<Flame className="h-3.5 w-3.5 text-primary/80" />}
-              title="打板池明细"
-              hint="客观公开榜单 · 非推荐"
-              meta={
-                limitKind === "jm"
-                  ? (thsLimit?.date ? `${thsLimit.date} · 共 ${thsLimit.total} 只` : (extraDone ? "暂无" : "加载中…"))
-                  : (limitPool?.date ? `${limitPool.date} · 共 ${limitPool.total} 只` : (extraDone ? "暂无" : "加载中…"))
-              }
-              actions={(
-                <ChipGroup>
-                  {([["zt", "涨停"], ["zb", "炸板"], ["dt", "跌停"], ["yzt", "昨涨停"], ["jm", "揭秘"]] as const).map(([k, label]) => (
-                    <Chip key={k} active={limitKind === k} onClick={() => setLimitKind(k)}>{label}</Chip>
-                  ))}
-                </ChipGroup>
-              )}
-            />
-            <GlassCard className="!p-0 overflow-hidden">
-              {limitKind === "jm" ? (
-                !thsLimit?.rows?.length ? (
-                  <div className="p-5">{pending(extraDone)}</div>
-                ) : (
-                  <div className="max-h-[28rem] overflow-auto">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          {["名称", "涨跌%", "几天几板", "题材原因", "板型", "封板率%", "首次"].map((h) => (
-                            <th key={h} className={h === "名称" || h === "题材原因" || h === "板型" ? "" : "num"}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {thsLimit.rows.map((s) => (
-                          <tr key={`${s.code}-${s.name}`}>
-                            <td>
-                              <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
-                                <span className="font-medium">{s.name}</span>{" "}
-                                <span className="text-muted-foreground/50">{s.code}</span>
-                              </Link>
-                            </td>
-                            <td className="num"><PctChip pct={s.pct} /></td>
-                            <td className="num font-mono text-xs">{s.high_days || "—"}</td>
-                            <td className="max-w-[10rem] truncate text-muted-foreground" title={s.reason}>{s.reason || "—"}</td>
-                            <td className="text-muted-foreground">{s.board_type || "—"}</td>
-                            <td className="num font-mono text-xs">{s.seal_rate != null ? s.seal_rate : "—"}</td>
-                            <td className="num font-mono text-xs text-muted-foreground">{s.first_time || "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )
-              ) : !limitPool?.rows?.length ? (
-                <div className="p-5">{pending(extraDone)}</div>
-              ) : (
-                <div className="max-h-[28rem] overflow-auto">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        {["名称", "涨跌%", "连板/统计", "换手%", "行业"].map((h) => (
-                          <th key={h} className={h !== "名称" && h !== "行业" ? "num" : ""}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {limitPool.rows.map((s) => (
-                        <tr key={`${s.code}-${s.name}`}>
-                          <td>
-                            <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
-                              <span className="font-medium">{s.name}</span>{" "}
-                              <span className="text-muted-foreground/50">{s.code}</span>
-                            </Link>
-                          </td>
-                          <td className="num"><PctChip pct={s.pct} /></td>
-                          <td className="num font-mono text-xs">
-                            {s.limit_days != null ? `${s.limit_days}板` : s.zt_stat || (s.dt_days != null ? `${s.dt_days}跌停` : "—")}
-                          </td>
-                          <td className="num text-muted-foreground">{s.turnover ?? "—"}</td>
-                          <td className="text-muted-foreground">{s.industry || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </GlassCard>
-          </div>
-        </div>
+        <ReviewRiskSeg
+          monitor={monitor}
+          anomaly={anomaly}
+          limitPool={limitPool}
+          thsLimit={thsLimit}
+          limitKind={limitKind}
+          onLimitKind={setLimitKind}
+          extraDone={extraDone}
+        />
       )}
 
       {!embedded && <Disclaimer />}
