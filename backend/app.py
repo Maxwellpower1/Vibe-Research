@@ -63,8 +63,11 @@ import fino
 import reflection as reflect_layer
 import weather as weather_layer
 import review_warmup
+from version import read_version
 
-app = FastAPI(title="Vibe-Research API", version="0.2.2")
+__version__ = read_version()
+
+app = FastAPI(title="Vibe-Research API", version=__version__)
 
 # 每半小时后台刷新持仓数据
 pf.start_scheduler(1800)
@@ -131,7 +134,7 @@ def _validate_symbol(code: str) -> str:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "service": "vibe-research-api", "version": "0.2.2"}
+    return {"ok": True, "service": "vibe-research-api", "version": __version__}
 
 
 @app.get("/api/weather")

@@ -444,7 +444,16 @@ def _market(args: dict):
         return {k: d.get(k) for k in ("tiers", "limitUp", "limitDown", "brokenRate", "promoteRate", "updated") if k in d} or d
     if scope == "turnover":
         d = market.get_turnover_top() or {}
-        return {"stocks": _pick(d.get("stocks", []), ("name", "code", "turnover", "changePct"), 20), "updated": d.get("updated")}
+        # Field names must match astock.market_turnover_rank() (#28).
+        # Old keys turnover/changePct do not exist → AI tools saw nulls.
+        return {
+            "stocks": _pick(
+                d.get("stocks", []),
+                ("name", "code", "price", "pct", "amount", "mcap", "float_cap", "industry"),
+                20,
+            ),
+            "updated": d.get("updated"),
+        }
     return market.get_overview()
 
 

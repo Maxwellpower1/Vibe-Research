@@ -11,7 +11,11 @@ import { useAccent } from "@/hooks/useAccent";
 import { storageGet, storageSet } from "@/lib/storage";
 import { ClsTelegraphBubble } from "@/components/ClsTelegraphBubble";
 
-const APP_VERSION = "v0.2.2";
+// Named import: only `version` is bundled, not the whole package.json
+import { version as PKG_VERSION } from "../../../package.json";
+
+// Single source of truth in package.json (#20)
+const APP_VERSION = `v${PKG_VERSION}`;
 const REPO_URL = "https://github.com/simonlin1212/Vibe-Research";
 
 const NAV = [

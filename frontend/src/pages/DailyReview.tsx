@@ -1096,7 +1096,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           )}
           {review ? (
             <>
-              <div className="prose prose-sm prose-invert mt-3 max-w-none text-foreground">
+              <div className="prose prose-sm dark:prose-invert mt-3 max-w-none text-foreground">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{review}</ReactMarkdown>
               </div>
               {!reviewLoading && (
