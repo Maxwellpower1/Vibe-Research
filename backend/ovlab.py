@@ -20,6 +20,8 @@ import logging
 import time
 from typing import Any
 
+from cache import TTLCache, is_nonempty
+
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.openvlab.cn"
@@ -74,23 +76,15 @@ def _requests():
     return requests
 
 
-_CACHE: dict = {}
 _TTL = 300  # 5 分钟, 全站共享
+_CACHE = TTLCache(maxsize=256, default_ttl=_TTL, negative_ttl=0, name="ovlab")
 
 
-def _cached(key: str, fn, valid=bool, ttl: float | None = None):
+def _cached(key: str, fn, valid=is_nonempty, ttl: float | None = None):
     """TTL 缓存. 数据源故障的空结果不缓存 (valid 判否), 下次请求直接重试.
     ttl: 自定义缓存秒数, 默认用全局 _TTL.
     """
-    now = time.time()
-    eff_ttl = _TTL if ttl is None else ttl
-    hit = _CACHE.get(key)
-    if hit and now - hit[0] < eff_ttl:
-        return hit[1]
-    val = fn()
-    if valid(val):
-        _CACHE[key] = (now, val)
-    return val
+    return _CACHE.get_or_set(key, fn, ttl=ttl, valid=valid, negative_ttl=0)
 
 
 def _get(path: str, params: dict[str, Any] | None = None, timeout: float = 20.0) -> Any:

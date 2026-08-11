@@ -22,6 +22,7 @@ import json
 import re
 
 import astock
+from cache import TTLCache
 
 _UA_H = {"User-Agent": astock.UA}
 _GS_HOSTS = ("push2.eastmoney.com", "push2delay.eastmoney.com")
@@ -41,8 +42,11 @@ _MKT = {105: (".O", "NASDAQ"), 106: (".N", "NYSE"), 107: (".O", "US"), 116: (".H
         177: (".KS", "KR")}  # 177=韩股（Kospi/Kosdaq，含三星/SK海力士等半导体龙头）；东财仅行情、无 F10 财务
 
 _QUOTE_FIELDS = "f43,f44,f45,f46,f48,f57,f58,f59,f60,f116,f170"
-# Resolve results rarely change; cache to avoid re-probing 105/106/107 on every watchlist refresh
-_RESOLVE_CACHE: dict[str, dict | None] = {}
+# Resolve results rarely change; LRU+TTL avoids unbounded growth on watchlist churn.
+# Misses (None) use a short negative TTL so a flaky suggest blip can retry soon.
+_RESOLVE_CACHE = TTLCache(
+    maxsize=512, default_ttl=6 * 3600, negative_ttl=120, name="gstock_resolve"
+)
 
 
 def _push2_stock_get(secid: str, fields: str) -> dict | None:
@@ -243,20 +247,21 @@ def resolve_symbol(query: str) -> dict | None:
         if q.endswith(suf):
             q = q[: -len(suf)]
             break
-    if q in _RESOLVE_CACHE:
-        return _RESOLVE_CACHE[q]
-
-    # Pure US tickers: skip broken suggest API, resolve via push2 (fast path for watchlist)
-    if re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,7}", q) and not q.isdigit():
-        hit = _resolve_us_via_push2(q) or _search(q)
-        _RESOLVE_CACHE[q] = hit
+    def _fetch() -> dict | None:
+        # Pure US tickers: skip broken suggest API, resolve via push2 (fast path for watchlist)
+        if re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,7}", q) and not q.isdigit():
+            return _resolve_us_via_push2(q) or _search(q)
+        hit = _search(q)
+        if hit is None and q.isdigit() and len(q) < 5:
+            hit = _search(q.zfill(5))
         return hit
 
-    hit = _search(q)
-    if hit is None and q.isdigit() and len(q) < 5:
-        hit = _search(q.zfill(5))
-    _RESOLVE_CACHE[q] = hit
-    return hit
+    return _RESOLVE_CACHE.get_or_set(
+        q,
+        _fetch,
+        valid=lambda v: v is not None,
+        negative_ttl=120,
+    )
 
 
 def _key_metrics(secucode: str) -> dict | None:

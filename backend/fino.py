@@ -33,6 +33,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from cache import TTLCache, is_nonempty
+
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.finoview.com.cn"
@@ -72,25 +74,22 @@ def _requests():
     return requests
 
 
-_CACHE: dict = {}
 _TTL = 600  # 10 分钟, 日报类数据
+_CACHE = TTLCache(maxsize=128, default_ttl=_TTL, negative_ttl=0, name="fino")
 
 # uni_id -> company name; None = not loaded yet, {} = loaded but empty/missing file
 _UNI_ID_MAP: dict[str, str] | None = None
 _UNI_ID_MAP_WARNED = False
 
 
-def _cached(key: str, fn, valid: Callable[[Any], bool] = bool, ttl: float | None = None):
+def _cached(
+    key: str,
+    fn,
+    valid: Callable[[Any], bool] = is_nonempty,
+    ttl: float | None = None,
+):
     """TTL 缓存. 数据源故障的空结果不缓存 (valid 判否), 下次请求直接重试."""
-    now = time.time()
-    eff_ttl = _TTL if ttl is None else ttl
-    hit = _CACHE.get(key)
-    if hit and now - hit[0] < eff_ttl:
-        return hit[1]
-    val = fn()
-    if valid(val):
-        _CACHE[key] = (now, val)
-    return val
+    return _CACHE.get_or_set(key, fn, ttl=ttl, valid=valid, negative_ttl=0)
 
 
 def _creds() -> tuple[str, str]:

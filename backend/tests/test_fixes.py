@@ -230,9 +230,12 @@ def test_stream_tool_calls_without_index(monkeypatch):
 # ── CLI 流式：子进程挂起时超时真正生效（不再无限期阻塞） ────────────
 
 def test_run_cli_stream_timeout(monkeypatch):
+    import sys
+
     monkeypatch.setattr(cli_runtime, "_CLI_TIMEOUT_S", 1)
     monkeypatch.setitem(cli_runtime._CLI_DEFS, "fake", {
-        "bins": ["python3"],
+        # Use current interpreter so Windows (no python3 on PATH) still runs.
+        "bins": [sys.executable],
         "delivery": "stdin",
         "build_args": lambda _: ["-c", "import time\nprint('x', flush=True)\ntime.sleep(30)"],
         "env": {},

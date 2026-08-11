@@ -56,7 +56,7 @@ def test_chat_cli_not_installed_400():
 def test_global_stock_404(monkeypatch):
     """无法解析的美股/港股代码 → 404（不 500、不崩）。"""
     import gstock
-    monkeypatch.setattr(gstock, "us_hk_stock", lambda q: {})
+    monkeypatch.setattr(gstock, "us_hk_stock", lambda q, with_metrics=True: {})
     assert client.get("/api/global/stock?symbol=ZZZZ").status_code == 404
 
 

@@ -6,28 +6,21 @@
 
 from __future__ import annotations
 
-import time
 from collections import Counter
 from datetime import datetime, timezone, timedelta
 
 import astock
 import gstock
+from cache import TTLCache, is_nonempty
 
 BEIJING = timezone(timedelta(hours=8))
-_CACHE: dict = {}
 _TTL = 300  # 5 分钟；全站共享，省数据源压力
+_CACHE = TTLCache(maxsize=128, default_ttl=_TTL, negative_ttl=0, name="market")
 
 
-def _cached(key: str, fn, valid=bool):
+def _cached(key: str, fn, valid=is_nonempty):
     """TTL 缓存。数据源故障的空结果不缓存（valid 判否），下次请求直接重试。"""
-    now = time.time()
-    hit = _CACHE.get(key)
-    if hit and now - hit[0] < _TTL:
-        return hit[1]
-    val = fn()
-    if valid(val):
-        _CACHE[key] = (now, val)
-    return val
+    return _CACHE.get_or_set(key, fn, ttl=_TTL, valid=valid, negative_ttl=0)
 
 
 def _num(v) -> int:

@@ -1082,21 +1082,21 @@ def quote(codes: str = Query(..., description="逗号分隔的 6 位代码")):
         raise HTTPException(502, f"行情源异常：{e}") from e
 
 
-import time as _time
+from cache import TTLCache, is_nonempty
 
-_PCT_CACHE: dict = {}
+_PCT_CACHE = TTLCache(maxsize=256, default_ttl=1800, negative_ttl=30, name="pct")
+_ANN_CACHE = TTLCache(maxsize=256, default_ttl=900, negative_ttl=30, name="ann")
+_FIN_CACHE = TTLCache(maxsize=256, default_ttl=1800, negative_ttl=30, name="fin")
 
 
 @app.get("/api/valuation/percentile")
 def valuation_percentile(code: str = Query(...)):
     """PE-TTM / PB 历史分位（近5年）。全站缓存 30 分钟/代码（历史序列日频、变化慢）。"""
     code = _validate(code)
-    hit = _PCT_CACHE.get(code)
-    if hit and _time.time() - hit[0] < 1800:
-        return {"data": hit[1]}
     try:
-        data = astock.valuation_percentile(code)
-        _PCT_CACHE[code] = (_time.time(), data)
+        data = _PCT_CACHE.get_or_set(
+            code, lambda: astock.valuation_percentile(code), ttl=1800
+        )
         return {"data": data}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
@@ -1104,37 +1104,23 @@ def valuation_percentile(code: str = Query(...)):
         raise HTTPException(502, f"估值分位异常：{e}") from e
 
 
-_ANN_CACHE: dict = {}
-
-
 @app.get("/api/announcements")
 def announcements(code: str = Query(...)):
     """个股近期公告（东财，仅 requests）。缓存 15 分钟/代码。"""
     code = _validate(code)
-    hit = _ANN_CACHE.get(code)
-    if hit and _time.time() - hit[0] < 900:
-        return {"data": hit[1]}
     try:
-        data = astock.announcements(code)
-        _ANN_CACHE[code] = (_time.time(), data)
+        data = _ANN_CACHE.get_or_set(code, lambda: astock.announcements(code), ttl=900)
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"公告源异常：{e}") from e
-
-
-_FIN_CACHE: dict = {}
 
 
 @app.get("/api/financials")
 def financials(code: str = Query(...)):
     """财务关键指标（同花顺财务摘要，最新报告期）。缓存 30 分钟/代码。"""
     code = _validate(code)
-    hit = _FIN_CACHE.get(code)
-    if hit and _time.time() - hit[0] < 1800:
-        return {"data": hit[1]}
     try:
-        data = astock.financials(code)
-        _FIN_CACHE[code] = (_time.time(), data)
+        data = _FIN_CACHE.get_or_set(code, lambda: astock.financials(code), ttl=1800)
         return {"data": data}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
@@ -1309,17 +1295,19 @@ def finance(code: str = Query(...)):
 # 东财有 1s 限流，这些多为日/季级静态数据，统一走 30 分钟缓存，进一步降低被封风险。
 # ---------------------------------------------------------------------------
 
-_DC_CACHE: dict = {}  # key=(endpoint, code) -> (ts, data)
+# Daily-review / fund-flow style endpoints. Empty upstream blips use a short
+# negative TTL so warmup + concurrent tabs do not stampede Eastmoney.
+_DC_CACHE = TTLCache(maxsize=512, default_ttl=300, negative_ttl=15, name="app_dc")
 
 
-def _cached(endpoint: str, code: str, ttl: int, fetch):
-    key = (endpoint, code)
-    hit = _DC_CACHE.get(key)
-    if hit and _time.time() - hit[0] < ttl:
-        return hit[1]
-    data = fetch()
-    _DC_CACHE[key] = (_time.time(), data)
-    return data
+def _cached(endpoint: str, code: str, ttl: int, fetch, valid=is_nonempty):
+    return _DC_CACHE.get_or_set(
+        (endpoint, code),
+        fetch,
+        ttl=ttl,
+        valid=valid,
+        negative_ttl=15,
+    )
 
 
 def _warm_review_dc() -> tuple[int, int, list[dict]]:
@@ -1705,15 +1693,14 @@ def investor_qa(code: str = Query(...)):
 @app.get("/api/industry")
 def industry(top: int = Query(20, ge=5, le=50)):
     """全行业涨跌幅排名（东财行业板块，板块级、零个股名单）。缓存 5 分钟。"""
-    key = ("industry", str(top))
-    hit = _DC_CACHE.get(key)
-    if hit and _time.time() - hit[0] < 300:
-        return {"data": hit[1]}
     try:
-        data = astock.industry_comparison(top_n=top)
-        # Empty result usually means upstream blip — do not cache, allow retry
-        if data.get("top"):
-            _DC_CACHE[key] = (_time.time(), data)
+        data = _cached(
+            "industry",
+            str(top),
+            300,
+            lambda: astock.industry_comparison(top_n=top),
+            valid=lambda d: bool(isinstance(d, dict) and d.get("top")),
+        )
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"行业排名异常：{e}") from e

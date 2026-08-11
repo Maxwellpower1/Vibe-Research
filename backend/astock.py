@@ -17,6 +17,7 @@ import math
 import os
 import random
 import re
+import threading
 import time
 import urllib.request
 from datetime import datetime, timedelta
@@ -709,6 +710,7 @@ def full_valuation(code: str) -> dict:
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 _EM_MIN_INTERVAL = 1.0          # 两次东财请求最小间隔（秒），内置防封节流
 _em_last_call = [0.0]
+_em_lock = threading.Lock()     # serialize rate-limit + request (warmup uses threads)
 _EM_SESSIONS: dict = {}         # {direct(bool): requests.Session}
 
 # 数据层连接模式：国内财经站（东财/腾讯/新浪）本应「直连」——很多用户开着 Clash/V2Ray
@@ -752,25 +754,33 @@ def em_get(url: str, params: dict | None = None, headers: dict | None = None, ti
 
     第一次请求探测：先直连（短超时、不重试），成功即固定走直连；失败则降级走系统代理并固定。
     探测结果整个进程复用，避免每次重试。`VR_DATA_PROXY=1` 可跳过探测、强制走代理。
+    全流程持锁：与 review_warmup 线程池共用同一配额，避免限流变量竞态。
     """
-    wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
-    if wait > 0:
-        time.sleep(wait + random.uniform(0.1, 0.5))
-    try:
-        mode = _em_mode[0]
-        if mode != "auto":
-            return _em_session(mode == "direct").get(url, params=params, headers=headers, timeout=timeout)
-        # auto：先直连，成功固定 direct；直连失败再走系统代理、成功固定 proxy。
+    with _em_lock:
+        wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
+        if wait > 0:
+            time.sleep(wait + random.uniform(0.1, 0.5))
         try:
-            r = _em_session(True).get(url, params=params, headers=headers, timeout=min(timeout, 8))
-            _em_mode[0] = "direct"
-            return r
-        except Exception:
-            r = _em_session(False).get(url, params=params, headers=headers, timeout=timeout)
-            _em_mode[0] = "proxy"
-            return r
-    finally:
-        _em_last_call[0] = time.time()
+            mode = _em_mode[0]
+            if mode != "auto":
+                return _em_session(mode == "direct").get(
+                    url, params=params, headers=headers, timeout=timeout
+                )
+            # auto: try direct first; on failure fall back to system proxy and latch.
+            try:
+                r = _em_session(True).get(
+                    url, params=params, headers=headers, timeout=min(timeout, 8)
+                )
+                _em_mode[0] = "direct"
+                return r
+            except Exception:
+                r = _em_session(False).get(
+                    url, params=params, headers=headers, timeout=timeout
+                )
+                _em_mode[0] = "proxy"
+                return r
+        finally:
+            _em_last_call[0] = time.time()
 
 
 # ---------------------------------------------------------------------------
