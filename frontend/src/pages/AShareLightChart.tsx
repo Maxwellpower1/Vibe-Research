@@ -577,7 +577,7 @@ export function AShareLightChart({
                 <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
                   <p className="text-xs text-muted-foreground">还没有自选</p>
                   <p className="text-[11px] text-muted-foreground/60">
-                    在上方输入 6 位代码添加（与「自选股」同源），或从「每日复盘」榜单点代码跳转过来。
+                    在上方输入 6 位代码添加，或从「每日复盘」榜单点代码跳转过来。
                   </p>
                 </div>
               ) : codes.map((c) => {

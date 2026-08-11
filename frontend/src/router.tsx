@@ -3,8 +3,6 @@ import { Layout } from "@/components/layout/Layout";
 import { AShare } from "@/pages/AShare";
 import { Portfolio } from "@/pages/Portfolio";
 import { StockDataRedirect } from "@/pages/StockDataRedirect";
-import { Watchlist } from "@/pages/Watchlist";
-import { Notes } from "@/pages/Notes";
 import { Ovlab } from "@/pages/Ovlab";
 import { UsMarket } from "@/pages/UsMarket";
 import { Settings } from "@/pages/Settings";
@@ -26,10 +24,10 @@ export const router = createBrowserRouter([
       { path: "/my-reports", element: <Navigate to="/a-share" replace /> },
       { path: "/portfolio", element: <Portfolio /> },
       { path: "/stock-data", element: <StockDataRedirect /> },
-      { path: "/watchlist", element: <Watchlist /> },
+      { path: "/watchlist", element: <Navigate to="/a-share?tab=kline" replace /> },
       { path: "/ovlab", element: <Ovlab /> },
       { path: "/us-market", element: <UsMarket /> },
-      { path: "/notes", element: <Notes /> },
+      { path: "/notes", element: <Navigate to="/a-share" replace /> },
       { path: "/settings", element: <Settings /> },
     ],
   },

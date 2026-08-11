@@ -7,7 +7,6 @@ import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { hasLlm, chatStream, type ChatMsg } from "@/lib/llm";
 import { ApiError } from "@/lib/api";
-import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 import { storageGet, storageSet, storageRemove } from "@/lib/storage";
 
 // 对话持久化（#19）。此前 msgs 只是组件内的 useState：切页面卸载、刷新、
@@ -335,9 +334,6 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI", scope
                           </div>
                         ) : (
                           <p className="whitespace-pre-wrap break-words">{m.content}</p>
-                        )}
-                        {m.role === "assistant" && m.content && !(loading && i === msgs.length - 1) && (
-                          <div className="mt-1.5"><SaveNoteButton kind="问AI" title={`问 AI · ${msgs[i - 1]?.content?.slice(0, 24) || "对话"}`} content={m.content} /></div>
                         )}
                       </div>
                     </div>

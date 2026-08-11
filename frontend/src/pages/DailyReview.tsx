@@ -24,7 +24,6 @@ import {
   type LprData, type CnBondYield, type AShareLightKline, type Quote,
 } from "@/lib/api";
 import { hasLlm, chatStream } from "@/lib/llm";
-import { SaveNoteButton } from "@/components/ui/SaveNoteButton";
 import { storageGet, storageSet } from "@/lib/storage";
 import { getAShareSession } from "@/lib/ashareSession";
 import { loadWatch } from "@/lib/watchlist";
@@ -608,7 +607,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
               watchCodes.length === 0 ? (
                 <EmptyState
                   title="还没有自选股"
-                  description="到「K线」或「自选股」页添加代码后，这里会显示分时。"
+                  description="到「K线」页添加代码后，这里会显示分时。"
                   action={
                     <Link
                       to="/a-share?tab=kline"
@@ -1010,11 +1009,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
               <div className="prose prose-sm dark:prose-invert mt-3 max-w-none text-foreground">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{review}</ReactMarkdown>
               </div>
-              {!reviewLoading && (
-                <div className="mt-3">
-                  <SaveNoteButton kind="复盘" title={`每日复盘 ${today}`} content={review} />
-                </div>
-              )}
             </>
           ) : null}
         </GlassCard>
