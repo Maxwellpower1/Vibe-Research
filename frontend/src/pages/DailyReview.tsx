@@ -13,7 +13,10 @@ import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { SegmentNav, useSegment } from "@/components/ui/SegmentNav";
 import { PctChip } from "@/components/review/PctChip";
-import { MinuteSpark } from "@/components/review/MinuteSpark";
+import { ReviewIndexPanel } from "@/components/review/ReviewIndexPanel";
+import { ReviewSentimentPanel } from "@/components/review/ReviewSentimentPanel";
+import { ReviewShortPanel } from "@/components/review/ReviewShortPanel";
+import { WATCH_MINUTE_MAX, type IdxPanel } from "@/components/review/constants";
 import { fmt, pctColor, pctTone, yi } from "@/components/review/format";
 import { formatClock } from "@/lib/freshness";
 import {
@@ -32,8 +35,6 @@ import { cn } from "@/lib/utils";
 const TOP_AUTO_MS = 30_000;
 const TOP_AUTO_KEY = "ashare.review.topAuto";
 const IDX_PANEL_KEY = "ashare.review.idxPanel";
-const WATCH_MINUTE_MAX = 16; // cap concurrent minute fetches
-type IdxPanel = "cn" | "global" | "watch";
 
 // A-share / China-platform convention: red up, green down (incl. global indices here).
 const SEG_KEYS = ["boards", "money", "risk"] as const;
@@ -418,19 +419,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
 
   const sentiment = overview?.sentiment;
   const sectors = overview?.sectors || [];
-  const sentCells = sentiment ? [
-    { k: "涨停", v: sentiment.zt, up: true },
-    { k: "真实涨停", v: sentiment.zt_real, up: true },
-    { k: "跌停", v: sentiment.dt, up: false },
-    { k: "真实跌停", v: sentiment.dt_real, up: false },
-    { k: "活跃度", v: sentiment.active, up: null },
-  ] : [];
-  const breadthTotal = sentiment
-    ? Math.max(1, (sentiment.up || 0) + (sentiment.down || 0) + (sentiment.flat || 0))
-    : 1;
-  const upShare = sentiment ? (sentiment.up || 0) / breadthTotal : 0;
-  const downShare = sentiment ? (sentiment.down || 0) / breadthTotal : 0;
-  const flatShare = sentiment ? (sentiment.flat || 0) / breadthTotal : 0;
 
   const askAi = (
     <>
@@ -515,355 +503,35 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
       />
 
       <div className="mb-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(220px,26%)_minmax(0,1fr)_minmax(260px,30%)]">
-        {/* 国内 / 全球 / 自选（Tab 切换；国内&自选带分时） */}
-        <GlassCard className="!mb-0 !p-0 overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-3 py-1.5">
-            <ChipGroup>
-              {([
-                ["cn", "国内"],
-                ["global", "全球"],
-                ["watch", `自选${watchCodes.length ? ` ${watchCodes.length}` : ""}`],
-              ] as const).map(([k, label]) => (
-                <Chip key={k} active={idxPanel === k} onClick={() => setIdxPanel(k)}>{label}</Chip>
-              ))}
-            </ChipGroup>
-            <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
-          </div>
-
-          <div className="max-h-[28rem] overflow-auto p-3">
-            {idxPanel === "cn" && (
-              indices.length === 0 ? (
-                idxErr ? (
-                  <EmptyState title="A股指数未接通" description="可点顶部刷新重试；非交易时段或源限流时属正常。" />
-                ) : (
-                  <p className="py-6 text-center text-sm text-muted-foreground/65">加载中…</p>
-                )
-              ) : (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {indices.map((ix) => {
-                    const sym = ix.symbol || "";
-                    const kl = sym ? idxMinute[sym] : null;
-                    const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
-                    return (
-                      <div key={sym || ix.name} className="rounded-xl border border-border/40 bg-card/40 px-2.5 py-2">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className="truncate text-xs font-semibold">{ix.name}</span>
-                          <PctChip pct={ix.change_pct} />
-                        </div>
-                        <p className={cn("mt-0.5 font-mono text-sm font-bold tabular-nums", pctColor(ix.change_pct))}>
-                          {fmt(ix.price)}
-                        </p>
-                        <div className="mt-1">
-                          {!idxMinuteDone && !kl ? (
-                            <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">分时加载中…</div>
-                          ) : closes.length < 2 ? (
-                            <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">
-                              {sym.startsWith("hk")
-                                ? "暂无分时"
-                                : session.kind !== "open"
-                                  ? "非交易时段暂无分时"
-                                  : "暂无分时"}
-                            </div>
-                          ) : (
-                            <MinuteSpark closes={closes} prevClose={kl?.prev_close} pct={ix.change_pct} />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )
-            )}
-
-            {idxPanel === "global" && (
-              globalIdx.length === 0 ? (
-                <EmptyState title="全球指数暂无" description="可点刷新重试；非交易时段或源限流时属正常。" />
-              ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {["指数", "市场", "点位", "涨跌%"].map((h) => (
-                        <th key={h} className={h === "点位" || h === "涨跌%" ? "num" : ""}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {globalIdx.map((g) => (
-                      <tr key={g.key}>
-                        <td className="font-medium">{g.name}</td>
-                        <td className="text-muted-foreground">{g.region}</td>
-                        <td className={cn("num font-mono font-semibold", g.change_pct == null ? "text-foreground" : pctColor(g.change_pct))}>
-                          {g.price ?? "—"}
-                        </td>
-                        <td className="num"><PctChip pct={g.change_pct} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )
-            )}
-
-            {idxPanel === "watch" && (
-              watchCodes.length === 0 ? (
-                <EmptyState
-                  title="还没有自选股"
-                  description="到「K线」页添加代码后，这里会显示分时。"
-                  action={
-                    <Link
-                      to="/a-share?tab=kline"
-                      className="btn-press mt-1 rounded-lg bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25"
-                    >
-                      去 K 线加自选
-                    </Link>
-                  }
-                />
-              ) : (
-                <>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {watchCodes.slice(0, WATCH_MINUTE_MAX).map((c) => {
-                      const q = watchQuotes[c];
-                      const kl = watchMinute[c];
-                      const pct = q?.change_pct ?? 0;
-                      const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
-                      return (
-                        <Link
-                          key={c}
-                          to={`/a-share?tab=kline&code=${c}`}
-                          className="block rounded-xl border border-border/40 bg-card/40 px-2.5 py-2 transition-colors hover:border-primary/35 hover:bg-primary/5"
-                        >
-                          <div className="flex items-baseline justify-between gap-2">
-                            <span className="min-w-0 truncate text-xs font-semibold">
-                              <span className="font-mono tabular-nums">{c}</span>
-                              {q?.name ? <span className="ml-1 font-normal text-muted-foreground">{q.name}</span> : null}
-                            </span>
-                            <PctChip pct={q?.change_pct} />
-                          </div>
-                          <p className={cn("mt-0.5 font-mono text-sm font-bold tabular-nums", pctColor(pct))}>
-                            {q?.price != null ? fmt(q.price) : "—"}
-                          </p>
-                          <div className="mt-1">
-                            {!watchDone && !kl ? (
-                              <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">分时加载中…</div>
-                            ) : closes.length < 2 ? (
-                              <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">
-                                {session.kind !== "open" ? "非交易时段暂无分时" : "暂无分时"}
-                              </div>
-                            ) : (
-                              <MinuteSpark closes={closes} prevClose={kl?.prev_close ?? q?.last_close} pct={pct} />
-                            )}
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                  {watchCodes.length > WATCH_MINUTE_MAX && (
-                    <p className="mt-2 text-center text-[10px] text-muted-foreground/55">
-                      自选较多，分时仅展示前 {WATCH_MINUTE_MAX} 只 · 共 {watchCodes.length} 只
-                    </p>
-                  )}
-                </>
-              )
-            )}
-          </div>
-        </GlassCard>
-
-        {/* 盘面一眼 + 市场情绪（常开；刷新/自动/AI 在上方「复盘一眼」） */}
-        <div className="flex h-full min-h-0 flex-col rounded-2xl border border-border/60 bg-muted/15 p-3 sm:p-3.5">
-          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-foreground">盘面一眼 · 市场情绪</p>
-            <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65" title="与顶部复盘一眼同步">
-              {topUpdatedLabel}
-            </p>
-          </div>
-
-          {!sentiment?.breadth && !ovDone ? (
-            pending(false, "lines")
-          ) : !sentiment?.breadth ? (
-            <EmptyState
-              title="市场情绪暂不可用"
-              description="可点刷新重试；非交易时段或数据源限流时属正常。"
-            />
-          ) : (
-            <>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {[
-                  { k: "大盘宽度", v: sentiment.breadth, hint: "冰点 / 偏弱 / 中性 / 偏强 / 普涨" },
-                  { k: "题材投机", v: sentiment.speculation, hint: "冰点 / 普通 / 活跃 / 亢奋" },
-                ].map((m) => (
-                  <div key={m.k} className="rounded-xl border border-border/40 bg-gradient-to-br from-primary/10 to-muted/20 px-3 py-2.5">
-                    <p className="text-xs text-muted-foreground">{m.k}</p>
-                    <p className="mt-0.5 text-2xl font-bold tracking-tight text-primary">{m.v}</p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground/55">{m.hint}</p>
-                  </div>
-                ))}
-              </div>
-              {/* 上涨 / 下跌联动可视化 */}
-              <div className="mt-2 rounded-xl border border-border/40 bg-card/40 px-3 py-2.5">
-                <div className="flex items-end justify-between gap-3">
-                  <div className="min-w-0 text-left">
-                    <p className="text-xs text-muted-foreground">上涨家数</p>
-                    <p className="font-mono text-xl font-bold tabular-nums text-danger">{sentiment.up}</p>
-                    <p className="text-[11px] text-danger/80">{(upShare * 100).toFixed(1)}%</p>
-                  </div>
-                  <div className="min-w-0 text-center">
-                    <p className="text-xs text-muted-foreground">平盘</p>
-                    <p className="font-mono text-sm font-semibold tabular-nums text-muted-foreground">{sentiment.flat}</p>
-                    <p className="text-[11px] text-muted-foreground/70">{(flatShare * 100).toFixed(1)}%</p>
-                  </div>
-                  <div className="min-w-0 text-right">
-                    <p className="text-xs text-muted-foreground">下跌家数</p>
-                    <p className="font-mono text-xl font-bold tabular-nums text-success">{sentiment.down}</p>
-                    <p className="text-[11px] text-success/80">{(downShare * 100).toFixed(1)}%</p>
-                  </div>
-                </div>
-                <div
-                  className="mt-2.5 flex h-3.5 overflow-hidden rounded-full bg-muted/40"
-                  title={`上涨 ${sentiment.up} · 平盘 ${sentiment.flat} · 下跌 ${sentiment.down}`}
-                >
-                  <div
-                    className="bg-danger transition-[width] duration-500 ease-out"
-                    style={{ width: `${upShare * 100}%` }}
-                  />
-                  <div
-                    className="bg-muted-foreground/35 transition-[width] duration-500 ease-out"
-                    style={{ width: `${flatShare * 100}%` }}
-                  />
-                  <div
-                    className="bg-success transition-[width] duration-500 ease-out"
-                    style={{ width: `${downShare * 100}%` }}
-                  />
-                </div>
-                <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground/60">
-                  <span>红涨占比</span>
-                  <span className="font-mono tabular-nums">
-                    {sentiment.up}:{sentiment.down}
-                    {sentiment.up + sentiment.down > 0
-                      ? ` · 涨跌比 ${(sentiment.up / Math.max(1, sentiment.down)).toFixed(2)}`
-                      : ""}
-                  </span>
-                  <span>绿跌占比</span>
-                </div>
-              </div>
-
-              <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-5">
-                {sentCells.map((c) => (
-                  <div key={c.k} className="min-w-0 rounded-xl border border-border/40 bg-card/40 px-2 py-2 text-center">
-                    <p className="truncate text-xs text-muted-foreground">{c.k}</p>
-                    <p className={cn(
-                      "mt-0.5 truncate font-mono text-base font-bold tabular-nums",
-                      c.up === null ? "text-foreground" : c.up ? "text-danger" : "text-success",
-                    )}>{c.v}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-1.5">
-                {indTop && (
-                  <div className="min-w-0 rounded-xl border border-border/40 bg-card/40 px-2.5 py-2">
-                    <p className="text-xs text-muted-foreground">行业强</p>
-                    <p className={cn("mt-0.5 truncate text-base font-bold", pctColor(indTop.change_pct))}>{indTop.name}</p>
-                    <p className="text-xs text-muted-foreground/70">
-                      {indTop.change_pct > 0 ? "+" : ""}{indTop.change_pct}%
-                    </p>
-                  </div>
-                )}
-                {indBot && (
-                  <div className="min-w-0 rounded-xl border border-border/40 bg-card/40 px-2.5 py-2">
-                    <p className="text-xs text-muted-foreground">行业弱</p>
-                    <p className={cn("mt-0.5 truncate text-base font-bold", pctColor(indBot.change_pct))}>{indBot.name}</p>
-                    <p className="text-xs text-muted-foreground/70">
-                      {indBot.change_pct > 0 ? "+" : ""}{indBot.change_pct}%
-                    </p>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* 短线：常开在顶部右侧 */}
-        <GlassCard className="!mb-0 !p-0 overflow-hidden lg:col-span-2 xl:col-span-1">
-          <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
-            <p className="inline-flex items-center gap-1.5 text-sm font-semibold">
-              <Flame className="h-3.5 w-3.5 text-primary/80" /> 短线
-            </p>
-            <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{topUpdatedLabel}</p>
-          </div>
-          {!emotion || emotion.zt_count === undefined ? (
-            emoDone ? (
-              <EmptyState title="暂无短线数据" description="非交易时段或数据源暂时不可用，可点刷新重试" />
-            ) : (
-              pending(false, "lines")
-            )
-          ) : (
-            <div className="grid max-h-[22rem] grid-cols-[9.5rem_minmax(0,1fr)]">
-              {/* 指标竖排靠左 */}
-              <div className="space-y-0.5 overflow-auto border-r border-border/40 p-2">
-                {[
-                  { k: "涨停", v: `${emotion.zt_count}`, cls: "text-danger" },
-                  { k: "跌停", v: `${emotion.dt_count}`, cls: "text-success" },
-                  { k: "最高板", v: `${emotion.max_boards}`, cls: "text-primary" },
-                  { k: "连板+", v: `${emotion.lianban_count}`, cls: "text-primary" },
-                  {
-                    k: "封板率",
-                    v: emotion.seal_rate == null ? "—" : `${(emotion.seal_rate * 100).toFixed(1)}%`,
-                    cls: "text-danger",
-                  },
-                  {
-                    k: "炸板率",
-                    v: emotion.break_rate == null ? "—" : `${(emotion.break_rate * 100).toFixed(1)}%`,
-                    cls: "text-success",
-                  },
-                  {
-                    k: "晋级率",
-                    v: emotion.promotion_rate == null ? "—" : `${(emotion.promotion_rate * 100).toFixed(1)}%`,
-                    cls: "text-danger",
-                  },
-                ].map((c) => (
-                  <div key={c.k} className="flex items-baseline justify-between gap-2 rounded-md px-1.5 py-1.5">
-                    <p className="shrink-0 text-xs text-muted-foreground">{c.k}</p>
-                    <p className={cn("text-right font-mono text-lg font-bold tabular-nums leading-tight", c.cls)}>{c.v}</p>
-                  </div>
-                ))}
-              </div>
-              {/* 连板股靠右 */}
-              <div className="min-w-0 overflow-auto">
-                <p className="sticky top-0 z-10 border-b border-border/40 bg-card/90 px-2.5 py-1.5 text-[10px] text-muted-foreground/70 backdrop-blur">
-                  连板股 · 非推荐
-                </p>
-                {emotion.lianban_stocks.length === 0 ? (
-                  <p className="px-3 py-6 text-xs text-muted-foreground/50">今日无 2 板以上</p>
-                ) : (
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        {["名称", "连板", "涨停%", "行业"].map((h) => (
-                          <th key={h} className={h === "连板" || h === "涨停%" ? "num" : ""}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {emotion.lianban_stocks.slice(0, 12).map((s) => (
-                        <tr key={s.code}>
-                          <td>
-                            <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
-                              <span className="font-medium">{s.name}</span>{" "}
-                              <span className="text-muted-foreground/50">{s.code}</span>
-                            </Link>
-                          </td>
-                          <td className="num font-bold text-primary">{s.boards}</td>
-                          <td className="num"><span className="pct-chip up">+{s.pct}%</span></td>
-                          <td className="max-w-[5.5rem] truncate text-muted-foreground" title={s.industry || undefined}>
-                            {s.industry || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          )}
-        </GlassCard>
+        <ReviewIndexPanel
+          idxPanel={idxPanel}
+          onIdxPanel={setIdxPanel}
+          updatedLabel={topUpdatedLabel}
+          session={session}
+          indices={indices}
+          idxErr={idxErr}
+          idxMinute={idxMinute}
+          idxMinuteDone={idxMinuteDone}
+          globalIdx={globalIdx}
+          watchCodes={watchCodes}
+          watchQuotes={watchQuotes}
+          watchMinute={watchMinute}
+          watchDone={watchDone}
+        />
+        <ReviewSentimentPanel
+          sentiment={sentiment}
+          ovDone={ovDone}
+          updatedLabel={topUpdatedLabel}
+          indTop={indTop}
+          indBot={indBot}
+          pending={pending(false, "lines")}
+        />
+        <ReviewShortPanel
+          emotion={emotion}
+          emoDone={emoDone}
+          updatedLabel={topUpdatedLabel}
+          pending={pending(false, "lines")}
+        />
       </div>
 
       {/* 第二行：行业涨跌 / 同花顺热榜 / 成交额 TOP */}
