@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import * as echarts from "echarts";
 import { AlertCircle, FileText, Loader2, Newspaper, Plus, RefreshCw, Search, X } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
+import { PageFallback } from "@/components/ui/PageFallback";
 import { WatchlistFeed } from "@/components/WatchlistFeed";
-import { StockData } from "@/pages/StockData";
 import { api, ApiError, type AShareLightBar, type Quote } from "@/lib/api";
 import { getAShareSession } from "@/lib/ashareSession";
 import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
+
+const StockData = lazy(() =>
+  import("@/pages/StockData").then((m) => ({ default: m.StockData })),
+)
 
 export type AShareChartSeg = "kline" | "detail" | "feed";
 const CHART_SEGS: AShareChartSeg[] = ["kline", "detail", "feed"];
@@ -803,7 +807,9 @@ export function AShareLightChart({
 
       {seg === "detail" && (
         selected ? (
-          <StockData embedded hideSearch externalCode={selected} />
+          <Suspense fallback={<PageFallback />}>
+            <StockData embedded hideSearch externalCode={selected} />
+          </Suspense>
         ) : (
           <GlassCard>
             <div className="flex flex-col items-center gap-2 py-10 text-center">

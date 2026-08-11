@@ -1,11 +1,18 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Activity, CandlestickChart, FileText, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { SegmentNav } from "@/components/ui/SegmentNav";
-import { DailyReview } from "@/pages/DailyReview";
-import { AShareLightChart, type AShareChartSeg } from "@/pages/AShareLightChart";
+import { PageFallback } from "@/components/ui/PageFallback";
+import type { AShareChartSeg } from "@/pages/AShareLightChart";
+
+const DailyReview = lazy(() =>
+  import("@/pages/DailyReview").then((m) => ({ default: m.DailyReview })),
+);
+const AShareLightChart = lazy(() =>
+  import("@/pages/AShareLightChart").then((m) => ({ default: m.AShareLightChart })),
+);
 
 type Tab = "review" | AShareChartSeg;
 
@@ -68,12 +75,18 @@ export function AShare() {
         }))}
       />
 
-      {tab === "review" && <DailyReview embedded />}
+      {tab === "review" && (
+        <Suspense fallback={<PageFallback />}>
+          <DailyReview embedded />
+        </Suspense>
+      )}
       {chartOpen && (
-        <AShareLightChart
-          seg={tab}
-          onSegChange={(s) => switchTab(s)}
-        />
+        <Suspense fallback={<PageFallback />}>
+          <AShareLightChart
+            seg={tab}
+            onSegChange={(s) => switchTab(s)}
+          />
+        </Suspense>
       )}
 
       <Disclaimer />

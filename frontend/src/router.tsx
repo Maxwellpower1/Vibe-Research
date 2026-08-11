@@ -1,12 +1,15 @@
+import { lazy } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
-import { AShare } from "@/pages/AShare";
-import { Portfolio } from "@/pages/Portfolio";
 import { StockDataRedirect } from "@/pages/StockDataRedirect";
-import { Ovlab } from "@/pages/Ovlab";
-import { UsMarket } from "@/pages/UsMarket";
-import { Settings } from "@/pages/Settings";
-import { Weather } from "@/pages/Weather";
+
+// Heavy pages load on demand; Suspense boundary lives in Layout around <Outlet />.
+const AShare = lazy(() => import("@/pages/AShare").then((m) => ({ default: m.AShare })));
+const Portfolio = lazy(() => import("@/pages/Portfolio").then((m) => ({ default: m.Portfolio })));
+const Ovlab = lazy(() => import("@/pages/Ovlab").then((m) => ({ default: m.Ovlab })));
+const UsMarket = lazy(() => import("@/pages/UsMarket").then((m) => ({ default: m.UsMarket })));
+const Weather = lazy(() => import("@/pages/Weather").then((m) => ({ default: m.Weather })));
+const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
 
 export const router = createBrowserRouter([
   {

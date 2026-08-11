@@ -1,16 +1,37 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Activity, CandlestickChart, History, MessagesSquare, Search, Table2, Zap } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Disclaimer } from "@/components/ui/Disclaimer";
+import { PageFallback } from "@/components/ui/PageFallback";
 import { cn } from "@/lib/utils";
-import { MarketPanel } from "@/components/ovlab/MarketPanel";
-import { DetailPanel } from "@/components/ovlab/DetailPanel";
-import { FlowAlertPanel, FlowDataPanel } from "@/components/ovlab/FlowPanels";
-import { WarehousePanel } from "@/components/ovlab/WarehousePanel";
-import { LightChartPanel } from "@/components/ovlab/LightChartPanel";
-import { VolSurfacePanel } from "@/components/ovlab/VolSurfacePanel";
-import { PositionRankPanel } from "@/components/ovlab/PositionRankPanel";
-import { FinoViewsPanel } from "@/components/ovlab/FinoViewsPanel";
+
+const MarketPanel = lazy(() =>
+  import("@/components/ovlab/MarketPanel").then((m) => ({ default: m.MarketPanel })),
+);
+const DetailPanel = lazy(() =>
+  import("@/components/ovlab/DetailPanel").then((m) => ({ default: m.DetailPanel })),
+);
+const FlowAlertPanel = lazy(() =>
+  import("@/components/ovlab/FlowPanels").then((m) => ({ default: m.FlowAlertPanel })),
+);
+const FlowDataPanel = lazy(() =>
+  import("@/components/ovlab/FlowPanels").then((m) => ({ default: m.FlowDataPanel })),
+);
+const WarehousePanel = lazy(() =>
+  import("@/components/ovlab/WarehousePanel").then((m) => ({ default: m.WarehousePanel })),
+);
+const LightChartPanel = lazy(() =>
+  import("@/components/ovlab/LightChartPanel").then((m) => ({ default: m.LightChartPanel })),
+);
+const VolSurfacePanel = lazy(() =>
+  import("@/components/ovlab/VolSurfacePanel").then((m) => ({ default: m.VolSurfacePanel })),
+);
+const PositionRankPanel = lazy(() =>
+  import("@/components/ovlab/PositionRankPanel").then((m) => ({ default: m.PositionRankPanel })),
+);
+const FinoViewsPanel = lazy(() =>
+  import("@/components/ovlab/FinoViewsPanel").then((m) => ({ default: m.FinoViewsPanel })),
+);
 
 type Tab = "market" | "detail" | "flow-alert" | "flow-data" | "warehouse" | "chart" | "vol-surface" | "position" | "fino";
 
@@ -55,19 +76,19 @@ export function Ovlab() {
         ))}
       </div>
 
-      {tab === "market" && <MarketPanel onPickSymbol={(s) => { setChartSymbol(s); setTab("chart"); }} />}
-      {tab === "detail" && <DetailPanel />}
-      {tab === "flow-alert" && <FlowAlertPanel />}
-      {tab === "flow-data" && <FlowDataPanel />}
-      {tab === "warehouse" && <WarehousePanel />}
-      {tab === "chart" && <LightChartPanel initialSymbol={chartSymbol} />}
-      {tab === "vol-surface" && <VolSurfacePanel />}
-      {tab === "position" && <PositionRankPanel />}
-      {tab === "fino" && <FinoViewsPanel />}
+      <Suspense fallback={<PageFallback />}>
+        {tab === "market" && <MarketPanel onPickSymbol={(s) => { setChartSymbol(s); setTab("chart"); }} />}
+        {tab === "detail" && <DetailPanel />}
+        {tab === "flow-alert" && <FlowAlertPanel />}
+        {tab === "flow-data" && <FlowDataPanel />}
+        {tab === "warehouse" && <WarehousePanel />}
+        {tab === "chart" && <LightChartPanel initialSymbol={chartSymbol} />}
+        {tab === "vol-surface" && <VolSurfacePanel />}
+        {tab === "position" && <PositionRankPanel />}
+        {tab === "fino" && <FinoViewsPanel />}
+      </Suspense>
 
       <Disclaimer />
     </div>
   );
 }
-
-

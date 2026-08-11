@@ -1,10 +1,16 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Landmark, Waves } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Disclaimer } from "@/components/ui/Disclaimer";
+import { PageFallback } from "@/components/ui/PageFallback";
 import { cn } from "@/lib/utils";
-import { StockPortfolio } from "@/components/portfolio/StockPortfolio";
-import { CtpPortfolio } from "@/components/portfolio/CtpPortfolio";
+
+const StockPortfolio = lazy(() =>
+  import("@/components/portfolio/StockPortfolio").then((m) => ({ default: m.StockPortfolio })),
+);
+const CtpPortfolio = lazy(() =>
+  import("@/components/portfolio/CtpPortfolio").then((m) => ({ default: m.CtpPortfolio })),
+);
 
 type Tab = "stock" | "ctp";
 
@@ -47,12 +53,14 @@ export function Portfolio() {
         ))}
       </div>
 
-      {tab === "stock" && <StockPortfolio />}
-      {ctpVisited && (
-        <div className={cn(tab !== "ctp" && "hidden")}>
-          <CtpPortfolio />
-        </div>
-      )}
+      <Suspense fallback={<PageFallback />}>
+        {tab === "stock" && <StockPortfolio />}
+        {ctpVisited && (
+          <div className={cn(tab !== "ctp" && "hidden")}>
+            <CtpPortfolio />
+          </div>
+        )}
+      </Suspense>
 
       <Disclaimer />
     </div>

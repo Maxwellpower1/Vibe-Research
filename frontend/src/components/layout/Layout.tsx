@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
+import { PageFallback } from "@/components/ui/PageFallback";
 import {
   Wallet, Settings,
   Moon, Sun, ChevronsLeft, ChevronsRight, LineChart, Github,
@@ -165,7 +166,9 @@ export function Layout() {
               : "max-w-6xl px-6",
           )}
         >
-          <Outlet />
+          <Suspense fallback={<PageFallback />}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
 
