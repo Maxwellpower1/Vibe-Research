@@ -167,32 +167,36 @@ export function Watchlist() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="data-table">
               <thead>
-                <tr className="border-b border-border/50 text-left text-xs text-muted-foreground">
-                  {["名称", "代码", "现价", "涨跌%", "PE(TTM)", "PB", "换手%", ""].map((h) => (
-                    <th key={h} className="whitespace-nowrap px-2 py-2 font-medium">
-                      {h}
-                    </th>
-                  ))}
+                <tr>
+                  <th>名称</th>
+                  <th>代码</th>
+                  <th className="num">现价</th>
+                  <th className="num">涨跌%</th>
+                  <th className="num">PE(TTM)</th>
+                  <th className="num">PB</th>
+                  <th className="num">换手%</th>
+                  <th className="act" aria-label="操作" />
                 </tr>
               </thead>
               <tbody>
                 {codes.map((c) => {
                   const q = quotes[c];
                   return (
-                    <tr key={c} className="border-b border-border/30">
-                      <td className="px-2 py-2.5 font-medium">{q?.name || "—"}</td>
-                      <td className="px-2 py-2.5 font-mono text-xs text-muted-foreground">{c}</td>
-                      <td className={cn("px-2 py-2.5 font-mono", color(q?.change_pct))}>{q ? q.price : "—"}</td>
-                      <td className={cn("px-2 py-2.5 font-mono", color(q?.change_pct))}>{q ? pct(q.change_pct) : "—"}</td>
-                      <td className="px-2 py-2.5 font-mono text-muted-foreground">{q?.pe_ttm ?? "—"}</td>
-                      <td className="px-2 py-2.5 font-mono text-muted-foreground">{q?.pb ?? "—"}</td>
-                      <td className="px-2 py-2.5 font-mono text-muted-foreground">{q?.turnover_pct ?? "—"}</td>
-                      <td className="px-2 py-2.5">
+                    <tr key={c}>
+                      <td className="name">{q?.name || "—"}</td>
+                      <td className="code">{c}</td>
+                      <td className={cn("num font-mono", color(q?.change_pct))}>{q ? q.price : "—"}</td>
+                      <td className={cn("num font-mono", color(q?.change_pct))}>{q ? pct(q.change_pct) : "—"}</td>
+                      <td className="num font-mono text-muted-foreground">{q?.pe_ttm ?? "—"}</td>
+                      <td className="num font-mono text-muted-foreground">{q?.pb ?? "—"}</td>
+                      <td className="num font-mono text-muted-foreground">{q?.turnover_pct ?? "—"}</td>
+                      <td className="act">
                         <button
+                          type="button"
                           onClick={() => remove(c)}
-                          className="text-muted-foreground/50 hover:text-destructive"
+                          className="btn-press text-muted-foreground/50 hover:text-destructive"
                           title="移除"
                         >
                           <X className="h-3.5 w-3.5" />

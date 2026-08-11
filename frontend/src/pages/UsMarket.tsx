@@ -780,26 +780,26 @@ export function UsMarket() {
                 )}
                 {fund.analyst.eps_trend.length > 0 ? (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[480px] text-sm">
+                    <table className="data-table min-w-[480px]">
                       <thead>
-                        <tr className="text-xs text-muted-foreground">
-                          <th className="py-1 text-left font-normal">期间</th>
-                          <th className="px-2 py-1 text-right font-normal">EPS 预期</th>
-                          <th className="px-2 py-1 text-right font-normal">高 / 低</th>
-                          <th className="px-2 py-1 text-right font-normal">分析师数</th>
+                        <tr>
+                          <th>期间</th>
+                          <th className="num">EPS 预期</th>
+                          <th className="num">高 / 低</th>
+                          <th className="num">分析师数</th>
                         </tr>
                       </thead>
                       <tbody>
                         {fund.analyst.eps_trend.slice(0, 6).map((t) => (
-                          <tr key={`${t.period}-${t.end_date}`} className="border-t border-border/40">
-                            <td className="py-1.5 text-muted-foreground">
+                          <tr key={`${t.period}-${t.end_date}`}>
+                            <td className="text-muted-foreground">
                               {t.period ?? "—"}{t.end_date ? ` · ${t.end_date}` : ""}
                             </td>
-                            <td className="px-2 py-1.5 text-right font-mono">{fmtNum(t.eps_estimate)}</td>
-                            <td className="px-2 py-1.5 text-right font-mono text-xs text-muted-foreground">
+                            <td className="num font-mono">{fmtNum(t.eps_estimate)}</td>
+                            <td className="num font-mono text-xs text-muted-foreground">
                               {fmtNum(t.eps_high)} / {fmtNum(t.eps_low)}
                             </td>
-                            <td className="px-2 py-1.5 text-right font-mono">{t.num_analysts ?? "—"}</td>
+                            <td className="num font-mono">{t.num_analysts ?? "—"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -819,24 +819,24 @@ export function UsMarket() {
                 </div>
                 {fund.holders.top_holders.length > 0 ? (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[480px] text-sm">
+                    <table className="data-table min-w-[480px]">
                       <thead>
-                        <tr className="text-xs text-muted-foreground">
-                          <th className="py-1 text-left font-normal">机构</th>
-                          <th className="px-2 py-1 text-right font-normal">持股占比</th>
-                          <th className="px-2 py-1 text-right font-normal">股数</th>
-                          <th className="px-2 py-1 text-right font-normal">报告日</th>
+                        <tr>
+                          <th>机构</th>
+                          <th className="num">持股占比</th>
+                          <th className="num">股数</th>
+                          <th className="num">报告日</th>
                         </tr>
                       </thead>
                       <tbody>
                         {fund.holders.top_holders.map((h) => (
-                          <tr key={h.name} className="border-t border-border/40">
-                            <td className="py-1.5 pr-2">{h.name ?? "—"}</td>
-                            <td className="px-2 py-1.5 text-right font-mono">{pctRatio(h.pct_held)}</td>
-                            <td className="px-2 py-1.5 text-right font-mono text-xs">
+                          <tr key={h.name}>
+                            <td className="name">{h.name ?? "—"}</td>
+                            <td className="num font-mono">{pctRatio(h.pct_held)}</td>
+                            <td className="num font-mono text-xs">
                               {h.shares != null ? h.shares.toLocaleString() : "—"}
                             </td>
-                            <td className="px-2 py-1.5 text-right text-xs text-muted-foreground">{h.report_date ?? "—"}</td>
+                            <td className="num text-xs text-muted-foreground">{h.report_date ?? "—"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -902,26 +902,26 @@ export function UsMarket() {
                   })()}
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[420px] text-sm">
+                  <table className="data-table min-w-[420px]">
                     <thead>
-                      <tr className="text-xs text-muted-foreground">
-                        <th className="py-1 text-left font-normal">日期</th>
-                        <th className="px-2 py-1 text-right font-normal">空头占比</th>
-                        <th className="px-2 py-1 text-right font-normal">空头量</th>
-                        <th className="px-2 py-1 text-right font-normal">总成交</th>
+                      <tr>
+                        <th>日期</th>
+                        <th className="num">空头占比</th>
+                        <th className="num">空头量</th>
+                        <th className="num">总成交</th>
                       </tr>
                     </thead>
                     <tbody>
                       {shortVol.rows.map((r) => (
-                        <tr key={r.date} className="border-t border-border/40">
-                          <td className="py-1.5 text-muted-foreground tabular-nums">
+                        <tr key={r.date}>
+                          <td className="text-muted-foreground tabular-nums">
                             {`${r.date.slice(0, 4)}-${r.date.slice(4, 6)}-${r.date.slice(6)}`}
                           </td>
-                          <td className="px-2 py-1.5 text-right font-mono">
+                          <td className="num font-mono">
                             {r.ratio == null ? "—" : `${(r.ratio * 100).toFixed(1)}%`}
                           </td>
-                          <td className="px-2 py-1.5 text-right font-mono text-xs">{r.short.toLocaleString()}</td>
-                          <td className="px-2 py-1.5 text-right font-mono text-xs">{r.total.toLocaleString()}</td>
+                          <td className="num font-mono text-xs">{r.short.toLocaleString()}</td>
+                          <td className="num font-mono text-xs">{r.total.toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1095,24 +1095,24 @@ export function UsMarket() {
             <p className="py-6 text-center text-xs text-muted-foreground/60">暂无 screener 数据（需 VR_SEC_CONTACT）</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-sm">
+              <table className="data-table min-w-[520px]">
                 <thead>
-                  <tr className="text-xs text-muted-foreground">
-                    <th className="py-1 text-left font-normal">#</th>
-                    <th className="px-2 py-1 text-left font-normal">公司</th>
-                    <th className="px-2 py-1 text-right font-normal">数值</th>
-                    <th className="px-2 py-1 text-right font-normal">期末</th>
+                  <tr>
+                    <th>#</th>
+                    <th>公司</th>
+                    <th className="num">数值</th>
+                    <th className="num">期末</th>
                   </tr>
                 </thead>
                 <tbody>
                   {edgar.rows.map((r, i) => (
-                    <tr key={`${r.cik}-${r.entity}`} className="border-t border-border/40">
-                      <td className="py-1.5 text-muted-foreground">{i + 1}</td>
-                      <td className="px-2 py-1.5">
-                        <div className="truncate max-w-[280px]">{r.entity ?? "—"}</div>
-                        <div className="text-[11px] text-muted-foreground">CIK {r.cik}</div>
+                    <tr key={`${r.cik}-${r.entity}`}>
+                      <td className="text-muted-foreground">{i + 1}</td>
+                      <td>
+                        <div className="name max-w-[280px]">{r.entity ?? "—"}</div>
+                        <div className="code">CIK {r.cik}</div>
                       </td>
-                      <td className="px-2 py-1.5 text-right font-mono">
+                      <td className="num font-mono">
                         {r.value == null
                           ? "—"
                           : Math.abs(r.value) >= 1e9
@@ -1121,7 +1121,7 @@ export function UsMarket() {
                               ? `${(r.value / 1e6).toFixed(1)}M`
                               : r.value.toLocaleString()}
                       </td>
-                      <td className="px-2 py-1.5 text-right text-xs text-muted-foreground">{r.end ?? "—"}</td>
+                      <td className="num text-xs text-muted-foreground">{r.end ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1180,26 +1180,26 @@ export function UsMarket() {
                   </div>
                   {flow.length > 0 ? (
                     <div className="max-h-48 overflow-y-auto">
-                      <table className="w-full min-w-[480px] text-sm">
+                      <table className="data-table min-w-[480px]">
                         <thead>
-                          <tr className="text-xs text-muted-foreground">
-                            <th className="py-1 text-left font-normal">类型</th>
-                            <th className="px-2 py-1 text-right font-normal">行权价</th>
-                            <th className="px-2 py-1 text-right font-normal">量</th>
-                            <th className="px-2 py-1 text-right font-normal">vol/OI</th>
-                            <th className="px-2 py-1 text-right font-normal">IV</th>
+                          <tr>
+                            <th>类型</th>
+                            <th className="num">行权价</th>
+                            <th className="num">量</th>
+                            <th className="num">vol/OI</th>
+                            <th className="num">IV</th>
                           </tr>
                         </thead>
                         <tbody>
                           {flow.slice(0, 12).map((c) => (
-                            <tr key={c.symbol} className="border-t border-border/40">
-                              <td className={cn("py-1", c.type === "call" ? "text-red-500" : "text-emerald-500")}>
+                            <tr key={c.symbol}>
+                              <td className={c.type === "call" ? "text-danger" : "text-success"}>
                                 {c.type === "call" ? "C" : "P"} <span className="text-muted-foreground text-xs">{c.expiry}</span>
                               </td>
-                              <td className="px-2 py-1 text-right font-mono">{fmtNum(c.strike)}</td>
-                              <td className="px-2 py-1 text-right font-mono">{c.volume?.toLocaleString() ?? "—"}</td>
-                              <td className="px-2 py-1 text-right font-mono">{c.vol_oi_ratio ?? "∞"}</td>
-                              <td className="px-2 py-1 text-right font-mono">
+                              <td className="num font-mono">{fmtNum(c.strike)}</td>
+                              <td className="num font-mono">{c.volume?.toLocaleString() ?? "—"}</td>
+                              <td className="num font-mono">{c.vol_oi_ratio ?? "∞"}</td>
+                              <td className="num font-mono">
                                 {c.iv == null ? "—" : `${(c.iv * 100).toFixed(1)}%`}
                               </td>
                             </tr>
@@ -1258,29 +1258,29 @@ export function UsMarket() {
             <h3 className="mb-1 text-sm font-semibold">资金流 · {selected}</h3>
             <p className="mb-3 text-[11px] text-muted-foreground/60">东财日级主力净流入 · 单位：亿美元 · 最近 10 日</p>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[480px] text-sm">
+              <table className="data-table min-w-[480px]">
                 <thead>
-                  <tr className="text-xs text-muted-foreground">
-                    <th className="py-1 text-left font-normal">日期</th>
-                    <th className="px-2 py-1 text-right font-normal">主力</th>
-                    <th className="px-2 py-1 text-right font-normal">超大单</th>
-                    <th className="px-2 py-1 text-right font-normal">大单</th>
-                    <th className="px-2 py-1 text-right font-normal">占比</th>
+                  <tr>
+                    <th>日期</th>
+                    <th className="num">主力</th>
+                    <th className="num">超大单</th>
+                    <th className="num">大单</th>
+                    <th className="num">占比</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[...gFlow.rows].reverse().slice(0, 10).map((r) => (
-                    <tr key={r.date} className="border-t border-border/40">
-                      <td className="py-1.5 text-muted-foreground">{r.date}</td>
+                    <tr key={r.date}>
+                      <td className="text-muted-foreground">{r.date}</td>
                       <td className={cn(
-                        "px-2 py-1.5 text-right font-mono",
-                        r.main_net > 0 ? "text-red-500" : r.main_net < 0 ? "text-emerald-500" : "",
+                        "num font-mono",
+                        r.main_net > 0 ? "text-danger" : r.main_net < 0 ? "text-success" : "",
                       )}>
                         {(r.main_net / 1e8).toFixed(2)}
                       </td>
-                      <td className="px-2 py-1.5 text-right font-mono">{(r.super_big_net / 1e8).toFixed(2)}</td>
-                      <td className="px-2 py-1.5 text-right font-mono">{(r.big_net / 1e8).toFixed(2)}</td>
-                      <td className="px-2 py-1.5 text-right font-mono">
+                      <td className="num font-mono">{(r.super_big_net / 1e8).toFixed(2)}</td>
+                      <td className="num font-mono">{(r.big_net / 1e8).toFixed(2)}</td>
+                      <td className="num font-mono">
                         {r.main_pct == null ? "—" : `${r.main_pct.toFixed(2)}%`}
                       </td>
                     </tr>

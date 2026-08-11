@@ -96,8 +96,17 @@ function buildCalDays(range: CtpSettlementRangeData): CalDayHit[] {
     };
   });
 }
-const th = "whitespace-nowrap px-2.5 py-2 font-medium text-[11px] uppercase tracking-wide";
-const td = "px-2.5 py-2 align-middle";
+/** CTP wide tables: rely on .data-table; mark numeric headers via ctpTh. */
+const CTP_NUM_HEADERS = new Set([
+  "总仓", "今/昨", "开仓成本/手", "昨结", "结算价", "占用保证金", "持仓盈亏", "平仓盈亏",
+  "开/平量", "冻结(多/空)", "手续费", "开仓价", "剩余", "已平", "保证金",
+  "平仓盈亏(逐笔)", "持仓盈亏(逐笔)", "平仓盈亏(逐日)", "报单价", "止损价",
+  "成交/剩余/总量", "成交价", "手数", "成交额",
+  "市值权益", "日盈亏", "日收益", "净值", "累计收益(万)", "出入金",
+  "市值权益(万)", "日盈亏(万)",
+]);
+const ctpTh = (h: string) => (CTP_NUM_HEADERS.has(h) ? "num" : "");
+const td = "";
 
 type Tab = "stock" | "ctp";
 
@@ -316,29 +325,34 @@ function StockPortfolio() {
           <EmptyState title="还没有持仓记录" description="用上面的表单添加一笔，行情会自动刷新。" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="data-table">
               <thead>
-                <tr className="border-b border-border/50 text-left text-xs text-muted-foreground">
-                  {["名称", "现价", "数量", "成本", "市值", "浮动盈亏", "盈亏%", ""].map((h) => (
-                    <th key={h} className="whitespace-nowrap px-2 py-2 font-medium">{h}</th>
-                  ))}
+                <tr>
+                  <th>名称</th>
+                  <th className="num">现价</th>
+                  <th className="num">数量</th>
+                  <th className="num">成本</th>
+                  <th className="num">市值</th>
+                  <th className="num">浮动盈亏</th>
+                  <th className="num">盈亏%</th>
+                  <th className="act" aria-label="操作" />
                 </tr>
               </thead>
               <tbody>
                 {holdings.map((h) => (
-                  <tr key={h.code} className="border-b border-border/30">
-                    <td className="px-2 py-2.5">
-                      <span className="font-medium">{h.name}</span>
-                      <span className="ml-1.5 font-mono text-xs text-muted-foreground/60">{h.code}</span>
+                  <tr key={h.code}>
+                    <td className="name">
+                      {h.name}
+                      <span className="code ml-1.5">{h.code}</span>
                     </td>
-                    <td className="px-2 py-2.5 font-mono">{fmtPx(h.price)}</td>
-                    <td className="px-2 py-2.5 font-mono text-muted-foreground">{fmt(h.shares)}</td>
-                    <td className="px-2 py-2.5 font-mono text-muted-foreground">{fmtPx(h.cost)}</td>
-                    <td className="px-2 py-2.5 font-mono">{fmt(h.market_value)}</td>
-                    <td className={cn("px-2 py-2.5 font-mono", pnlColor(h.pnl))}>{h.pnl > 0 ? "+" : ""}{fmt(h.pnl)}</td>
-                    <td className={cn("px-2 py-2.5 font-mono", pnlColor(h.pnl))}>{h.pnl_pct > 0 ? "+" : ""}{h.pnl_pct}%</td>
-                    <td className="px-2 py-2.5">
-                      <button onClick={() => remove(h.code)} className="text-muted-foreground/50 hover:text-destructive" title="删除">
+                    <td className="num font-mono">{fmtPx(h.price)}</td>
+                    <td className="num font-mono text-muted-foreground">{fmt(h.shares)}</td>
+                    <td className="num font-mono text-muted-foreground">{fmtPx(h.cost)}</td>
+                    <td className="num font-mono">{fmt(h.market_value)}</td>
+                    <td className={cn("num font-mono", pnlColor(h.pnl))}>{h.pnl > 0 ? "+" : ""}{fmt(h.pnl)}</td>
+                    <td className={cn("num font-mono", pnlColor(h.pnl))}>{h.pnl_pct > 0 ? "+" : ""}{h.pnl_pct}%</td>
+                    <td className="act">
+                      <button type="button" onClick={() => remove(h.code)} className="btn-press text-muted-foreground/50 hover:text-destructive" title="删除">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </td>
@@ -403,29 +417,34 @@ function StockPortfolio() {
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="data-table">
                 <thead>
-                  <tr className="border-b border-border/50 text-left text-xs text-muted-foreground">
-                    {["名称", "清仓日期", "清仓价", "股数", "成本", "已实现盈亏", "盈亏%", ""].map((h) => (
-                      <th key={h} className="whitespace-nowrap px-2 py-2 font-medium">{h}</th>
-                    ))}
+                  <tr>
+                    <th>名称</th>
+                    <th>清仓日期</th>
+                    <th className="num">清仓价</th>
+                    <th className="num">股数</th>
+                    <th className="num">成本</th>
+                    <th className="num">已实现盈亏</th>
+                    <th className="num">盈亏%</th>
+                    <th className="act" aria-label="操作" />
                   </tr>
                 </thead>
                 <tbody>
                   {closed.map((c, i) => (
-                    <tr key={i} className="border-b border-border/30">
-                      <td className="px-2 py-2.5">
-                        <span className="font-medium">{c.name}</span>
-                        <span className="ml-1.5 font-mono text-xs text-muted-foreground/60">{c.code}</span>
+                    <tr key={i}>
+                      <td className="name">
+                        {c.name}
+                        <span className="code ml-1.5">{c.code}</span>
                       </td>
-                      <td className="px-2 py-2.5 font-mono text-muted-foreground">{c.date}</td>
-                      <td className="px-2 py-2.5 font-mono">{fmtPx(c.price)}</td>
-                      <td className="px-2 py-2.5 font-mono text-muted-foreground">{fmt(c.shares)}</td>
-                      <td className="px-2 py-2.5 font-mono text-muted-foreground">{fmtPx(c.cost)}</td>
-                      <td className={cn("px-2 py-2.5 font-mono", pnlColor(c.pnl))}>{c.pnl > 0 ? "+" : ""}{fmt(c.pnl)}</td>
-                      <td className={cn("px-2 py-2.5 font-mono", pnlColor(c.pnl))}>{c.pnl_pct > 0 ? "+" : ""}{c.pnl_pct}%</td>
-                      <td className="px-2 py-2.5">
-                        <button onClick={() => removeClosed(i)} className="text-muted-foreground/50 hover:text-destructive" title="删除">
+                      <td className="font-mono text-muted-foreground">{c.date}</td>
+                      <td className="num font-mono">{fmtPx(c.price)}</td>
+                      <td className="num font-mono text-muted-foreground">{fmt(c.shares)}</td>
+                      <td className="num font-mono text-muted-foreground">{fmtPx(c.cost)}</td>
+                      <td className={cn("num font-mono", pnlColor(c.pnl))}>{c.pnl > 0 ? "+" : ""}{fmt(c.pnl)}</td>
+                      <td className={cn("num font-mono", pnlColor(c.pnl))}>{c.pnl_pct > 0 ? "+" : ""}{c.pnl_pct}%</td>
+                      <td className="act">
+                        <button type="button" onClick={() => removeClosed(i)} className="btn-press text-muted-foreground/50 hover:text-destructive" title="删除">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </td>
@@ -1747,11 +1766,11 @@ function CtpPortfolio() {
               <p className="py-12 text-center text-sm text-muted-foreground/60">当前无持仓</p>
             ) : (
               <div className="overflow-x-auto rounded-lg border border-border/40">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-muted/40 backdrop-blur">
+                <table className="data-table">
+                  <thead>
                     <tr className="border-b border-border/50 text-left text-muted-foreground">
                       {["合约", "方向", "总仓", "今/昨", "开仓成本/手", "昨结", "结算价", "占用保证金", "持仓盈亏", "平仓盈亏", "开/平量", "冻结(多/空)", "手续费", "投保", "仓型"].map((h) => (
-                        <th key={h} className={th}>{h}</th>
+                        <th key={h} className={ctpTh(h)}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1763,17 +1782,17 @@ function CtpPortfolio() {
                           {p.exchange ? <span className="ml-1.5 text-[11px] text-muted-foreground/60">{p.exchange}</span> : null}
                         </td>
                         <td className={cn(td, "font-semibold", p.direction === "多" ? "text-danger" : p.direction === "空" ? "text-success" : "")}>{p.direction}</td>
-                        <td className={cn(td, "font-mono tabular-nums")}>{fmt(p.position)}</td>
-                        <td className={cn(td, "font-mono text-xs text-muted-foreground tabular-nums")}>{fmt(p.today_position)}/{fmt(p.yd_position)}</td>
-                        <td className={cn(td, "font-mono text-xs tabular-nums")} title="OpenCost/手数 (含合约乘数)">{fmtPx(p.cost_per_lot ?? 0)}</td>
-                        <td className={cn(td, "font-mono tabular-nums")}>{fmtPx(p.pre_settlement_price)}</td>
-                        <td className={cn(td, "font-mono tabular-nums")}>{fmtPx(p.settlement_price)}</td>
-                        <td className={cn(td, "font-mono tabular-nums")}>{fmt(p.use_margin)}</td>
-                        <td className={cn(td, "font-mono tabular-nums", pnlColor(p.position_profit))}>{signed(p.position_profit)}</td>
-                        <td className={cn(td, "font-mono tabular-nums", pnlColor(p.close_profit))}>{signed(p.close_profit)}</td>
-                        <td className={cn(td, "font-mono text-xs text-muted-foreground tabular-nums")}>{fmt(p.open_volume ?? 0)}/{fmt(p.close_volume ?? 0)}</td>
-                        <td className={cn(td, "font-mono text-xs text-muted-foreground tabular-nums")}>{fmt(p.long_frozen ?? 0)}/{fmt(p.short_frozen ?? 0)}</td>
-                        <td className={cn(td, "font-mono text-xs tabular-nums")}>{fmt(p.commission)}</td>
+                        <td className={cn("num font-mono")}>{fmt(p.position)}</td>
+                        <td className={cn("num font-mono text-xs text-muted-foreground")}>{fmt(p.today_position)}/{fmt(p.yd_position)}</td>
+                        <td className={cn("num font-mono text-xs")} title="OpenCost/手数 (含合约乘数)">{fmtPx(p.cost_per_lot ?? 0)}</td>
+                        <td className={cn("num font-mono")}>{fmtPx(p.pre_settlement_price)}</td>
+                        <td className={cn("num font-mono")}>{fmtPx(p.settlement_price)}</td>
+                        <td className={cn("num font-mono")}>{fmt(p.use_margin)}</td>
+                        <td className={cn("num font-mono", pnlColor(p.position_profit))}>{signed(p.position_profit)}</td>
+                        <td className={cn("num font-mono", pnlColor(p.close_profit))}>{signed(p.close_profit)}</td>
+                        <td className={cn("num font-mono text-xs text-muted-foreground")}>{fmt(p.open_volume ?? 0)}/{fmt(p.close_volume ?? 0)}</td>
+                        <td className={cn("num font-mono text-xs text-muted-foreground")}>{fmt(p.long_frozen ?? 0)}/{fmt(p.short_frozen ?? 0)}</td>
+                        <td className={cn("num font-mono text-xs")}>{fmt(p.commission)}</td>
                         <td className={cn(td, "text-xs text-muted-foreground")}>{p.hedge}</td>
                         <td className={cn(td, "text-xs text-muted-foreground")}>{p.position_date}</td>
                       </tr>
@@ -1799,11 +1818,11 @@ function CtpPortfolio() {
                   </div>
                 )}
                 <div className="overflow-x-auto rounded-lg border border-border/40">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-muted/40 backdrop-blur">
+                  <table className="data-table">
+                    <thead>
                       <tr className="border-b border-border/50 text-left text-muted-foreground">
                         {["开仓日", "合约", "买卖", "投保", "开仓价", "剩余", "已平", "昨结", "结算价", "保证金", "平仓盈亏(逐笔)", "持仓盈亏(逐笔)", "平仓盈亏(逐日)", "成交编号"].map((h) => (
-                          <th key={h} className={th}>{h}</th>
+                          <th key={h} className={ctpTh(h)}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1817,15 +1836,15 @@ function CtpPortfolio() {
                           </td>
                           <td className={cn(td, "font-semibold", d.direction === "买" ? "text-danger" : d.direction === "卖" ? "text-success" : "")}>{d.direction}</td>
                           <td className={cn(td, "text-xs text-muted-foreground")}>{d.hedge}</td>
-                          <td className={cn(td, "font-mono tabular-nums")}>{fmtPx(d.open_price)}</td>
-                          <td className={cn(td, "font-mono tabular-nums")}>{fmt(d.volume)}</td>
-                          <td className={cn(td, "font-mono text-muted-foreground tabular-nums")}>{fmt(d.close_volume)}</td>
-                          <td className={cn(td, "font-mono tabular-nums")}>{fmtPx(d.last_settlement_price)}</td>
-                          <td className={cn(td, "font-mono tabular-nums")}>{fmtPx(d.settlement_price)}</td>
-                          <td className={cn(td, "font-mono tabular-nums")}>{fmt(d.margin)}</td>
-                          <td className={cn(td, "font-mono tabular-nums", pnlColor(d.close_profit_by_trade))}>{signed(d.close_profit_by_trade)}</td>
-                          <td className={cn(td, "font-mono tabular-nums", pnlColor(d.position_profit_by_trade))}>{signed(d.position_profit_by_trade)}</td>
-                          <td className={cn(td, "font-mono text-xs tabular-nums", pnlColor(d.close_profit_by_date))}>{signed(d.close_profit_by_date)}</td>
+                          <td className={cn("num font-mono")}>{fmtPx(d.open_price)}</td>
+                          <td className={cn("num font-mono")}>{fmt(d.volume)}</td>
+                          <td className={cn("num font-mono text-muted-foreground")}>{fmt(d.close_volume)}</td>
+                          <td className={cn("num font-mono")}>{fmtPx(d.last_settlement_price)}</td>
+                          <td className={cn("num font-mono")}>{fmtPx(d.settlement_price)}</td>
+                          <td className={cn("num font-mono")}>{fmt(d.margin)}</td>
+                          <td className={cn("num font-mono", pnlColor(d.close_profit_by_trade))}>{signed(d.close_profit_by_trade)}</td>
+                          <td className={cn("num font-mono", pnlColor(d.position_profit_by_trade))}>{signed(d.position_profit_by_trade)}</td>
+                          <td className={cn("num font-mono text-xs", pnlColor(d.close_profit_by_date))}>{signed(d.close_profit_by_date)}</td>
                           <td className={cn(td, "font-mono text-xs text-muted-foreground")}>{d.trade_id || "-"}</td>
                         </tr>
                       ))}
@@ -1843,11 +1862,11 @@ function CtpPortfolio() {
               <p className="py-12 text-center text-sm text-muted-foreground/60">当日暂无委托</p>
             ) : (
               <div className="overflow-x-auto rounded-lg border border-border/40">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-muted/40 backdrop-blur">
+                <table className="data-table">
+                  <thead>
                     <tr className="border-b border-border/50 text-left text-muted-foreground">
                       {["报单时间", "合约", "买卖", "开平", "投保", "价格类型", "报单价", "止损价", "成交/剩余/总量", "有效期", "状态", "提交状态", "撤单时间", "报单编号", "本地编号"].map((h) => (
-                        <th key={h} className={th}>{h}</th>
+                        <th key={h} className={ctpTh(h)}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1863,8 +1882,8 @@ function CtpPortfolio() {
                         <td className={cn(td, "text-muted-foreground")}>{o.offset}</td>
                         <td className={cn(td, "text-xs text-muted-foreground")}>{o.hedge}</td>
                         <td className={cn(td, "text-xs text-muted-foreground")}>{o.price_type}</td>
-                        <td className={cn(td, "font-mono tabular-nums")}>{fmtPx(o.limit_price)}</td>
-                        <td className={cn(td, "font-mono text-xs text-muted-foreground tabular-nums")}>{o.stop_price ? fmtPx(o.stop_price) : "-"}</td>
+                        <td className={cn("num font-mono")}>{fmtPx(o.limit_price)}</td>
+                        <td className={cn("num font-mono text-xs text-muted-foreground")}>{o.stop_price ? fmtPx(o.stop_price) : "-"}</td>
                         <td className={cn(td, "font-mono text-xs whitespace-nowrap tabular-nums")}>{fmt(o.volume_traded)}/{fmt(o.volume_left)}/{fmt(o.volume_total)}</td>
                         <td className={cn(td, "text-xs text-muted-foreground")} title={o.volume_condition}>{o.time_condition || "-"}</td>
                         <td className={cn(td, "text-xs")} title={o.status_msg}>{o.status}</td>
@@ -1887,11 +1906,11 @@ function CtpPortfolio() {
               <p className="py-12 text-center text-sm text-muted-foreground/60">当日暂无成交</p>
             ) : (
               <div className="overflow-x-auto rounded-lg border border-border/40">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-muted/40 backdrop-blur">
+                <table className="data-table">
+                  <thead>
                     <tr className="border-b border-border/50 text-left text-muted-foreground">
                       {["成交时间", "合约", "买卖", "开平", "投保", "成交价", "手数", "成交额", "成交编号", "报单编号"].map((h) => (
-                        <th key={h} className={th}>{h}</th>
+                        <th key={h} className={ctpTh(h)}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1906,9 +1925,9 @@ function CtpPortfolio() {
                         <td className={cn(td, "font-semibold", t.direction === "买" ? "text-danger" : t.direction === "卖" ? "text-success" : "")}>{t.direction}</td>
                         <td className={cn(td, "text-muted-foreground")}>{t.offset}</td>
                         <td className={cn(td, "text-xs text-muted-foreground")}>{t.hedge}</td>
-                        <td className={cn(td, "font-mono tabular-nums")}>{fmtPx(t.price)}</td>
-                        <td className={cn(td, "font-mono tabular-nums")}>{fmt(t.volume)}</td>
-                        <td className={cn(td, "font-mono tabular-nums")}>{fmt(t.amount ?? t.price * t.volume)}</td>
+                        <td className={cn("num font-mono")}>{fmtPx(t.price)}</td>
+                        <td className={cn("num font-mono")}>{fmt(t.volume)}</td>
+                        <td className={cn("num font-mono")}>{fmt(t.amount ?? t.price * t.volume)}</td>
                         <td className={cn(td, "font-mono text-xs text-muted-foreground")}>{t.trade_id || "-"}</td>
                         <td className={cn(td, "font-mono text-xs text-muted-foreground")}>{t.order_sys_id || "-"}</td>
                       </tr>
