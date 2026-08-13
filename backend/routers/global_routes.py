@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 import gstock
 import gstock_deep
+import market
 from api_common import _cached
 
 router = APIRouter(tags=["global"])

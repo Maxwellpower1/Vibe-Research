@@ -697,6 +697,30 @@ export interface QaRow { company: string; question: string; answer: string | nul
 export interface IndustryRow { rank: number; name: string; change_pct: number; code: string; up_count: number; down_count: number }
 export interface IndustryData { top: IndustryRow[]; bottom: IndustryRow[]; total: number }
 
+export interface ReviewSnapshotError {
+  name: string;
+  error: string;
+}
+/** Daily Review BFF: one payload for first paint (`full`) or top-row refresh (`top`). */
+export interface ReviewSnapshot {
+  scope: "top" | "full";
+  indices: IndexQuote[] | null;
+  global_indices: GlobalIndex[] | null;
+  overview: MarketOverview | null;
+  emotion: ShortTermEmotion | null;
+  turnover: TurnoverTop | null;
+  hot: HotList | null;
+  industry: IndustryData | null;
+  lhb: DailyDragonTiger | null;
+  monitor: MonitorPool | null;
+  anomaly: AnomalyPool | null;
+  limit_pool: LimitPool | null;
+  ths_limit_up: ThsLimitUpPool | null;
+  board_flow: BoardFlow | null;
+  errors: ReviewSnapshotError[];
+  updated: string;
+}
+
 // 全球市场（美股 / 港股，移植自 global-stock-data · 东财域内源）
 export interface GlobalIndex {
   key: string; name: string; region: string;
@@ -1097,6 +1121,18 @@ export const api = {
   marketOverview: () => get<MarketOverview>("/market/overview"),
   emotion: () => get<ShortTermEmotion>("/market/emotion"),
   turnoverTop: () => get<TurnoverTop>("/market/turnover-top"),
+  reviewSnapshot: (opts?: {
+    scope?: "top" | "full";
+    boardType?: "industry" | "concept" | "region";
+    period?: "today" | "5d" | "10d";
+    limitKind?: "zt" | "zb" | "dt" | "yzt" | "jm";
+  }) => {
+    const p = new URLSearchParams({ scope: opts?.scope ?? "full" });
+    if (opts?.boardType) p.set("board_type", opts.boardType);
+    if (opts?.period) p.set("period", opts.period);
+    if (opts?.limitKind) p.set("limit_kind", opts.limitKind);
+    return get<ReviewSnapshot>(`/market/review-snapshot?${p}`);
+  },
   dailyDragonTiger: (opts?: { date?: string; top?: number; minNetBuy?: number }) => {
     const p = new URLSearchParams();
     if (opts?.date) p.set("date", opts.date);

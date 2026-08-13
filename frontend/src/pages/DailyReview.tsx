@@ -27,6 +27,7 @@ import {
   type HotList, type MonitorPool, type AnomalyPool, type LimitPool, type IndustryData,
   type ThsLimitUpPool, type IwencaiItem, type EtfFlow, type ShareholderChanges,
   type LprData, type CnBondYield, type AShareLightKline, type Quote,
+  type ReviewSnapshot,
 } from "@/lib/api";
 import { hasLlm, chatStream } from "@/lib/llm";
 import { storageGet, storageSet } from "@/lib/storage";
@@ -103,6 +104,35 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
 
   const topUpdatedLabel = formatClock(topUpdatedAt, { refreshing: topRefreshing });
 
+  const applyTop = useCallback((s: ReviewSnapshot) => {
+    setIndices(s.indices ?? []);
+    setIdxErr(!(s.indices && s.indices.length));
+    setGlobalIdx(s.global_indices ?? []);
+    setOverview(s.overview ?? null);
+    setEmotion(s.emotion ?? null);
+    setTurnover(s.turnover ?? null);
+    setHot(s.hot ?? null);
+    setIndustry(s.industry ?? null);
+    setOvDone(true);
+    setEmoDone(true);
+    setToDone(true);
+    setExtraDone(true);
+  }, []);
+
+  const applyFull = useCallback((s: ReviewSnapshot, kind: typeof limitKind) => {
+    applyTop(s);
+    setLhb(s.lhb ?? null);
+    setLhbDone(true);
+    setMonitor(s.monitor ?? null);
+    setAnomaly(s.anomaly ?? null);
+    if (kind === "jm") {
+      setThsLimit(s.ths_limit_up ?? null);
+    } else {
+      setLimitPool(s.limit_pool ?? null);
+    }
+    setBoardFlow(s.board_flow ?? null);
+  }, [applyTop]);
+
   /** Refresh row1 + row2 only: 全球 / 盘面一眼 / 短线 / 行业 / 热榜 / 成交额. */
   const refreshTopRows = useCallback(() => {
     if (topRefreshingRef.current) return;
@@ -114,29 +144,55 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     setToDone(false);
     setExtraDone(false);
 
-    const pIdx = api.indices().then(setIndices).catch(() => { setIdxErr(true); setIndices([]); });
-    const pGlobal = api.globalIndices().then(setGlobalIdx).catch(() => setGlobalIdx([]));
-    const pOv = api.marketOverview().then(setOverview).catch(() => setOverview(null)).finally(() => setOvDone(true));
-    const pEmo = api.emotion().then(setEmotion).catch(() => setEmotion(null)).finally(() => setEmoDone(true));
-    const pTo = api.turnoverTop().then(setTurnover).catch(() => setTurnover(null)).finally(() => setToDone(true));
-    const pExtra = Promise.all([
-      api.hotList("ths", "hour", 25).catch(() => null),
-      api.industry(20).catch(() => null),
-    ]).then(([ht, ind]) => {
-      setHot(ht);
-      setIndustry(ind);
-    }).finally(() => setExtraDone(true));
-
-    void Promise.all([pIdx, pGlobal, pOv, pEmo, pTo, pExtra]).finally(() => {
-      setTopUpdatedAt(new Date());
-      setTopRefreshing(false);
-      topRefreshingRef.current = false;
-    });
-  }, []);
+    void api.reviewSnapshot({ scope: "top" })
+      .then(applyTop)
+      .catch(() => {
+        setIdxErr(true);
+        setIndices([]);
+        setGlobalIdx([]);
+        setOverview(null);
+        setEmotion(null);
+        setTurnover(null);
+        setOvDone(true);
+        setEmoDone(true);
+        setToDone(true);
+        setExtraDone(true);
+      })
+      .finally(() => {
+        setTopUpdatedAt(new Date());
+        setTopRefreshing(false);
+        topRefreshingRef.current = false;
+      });
+  }, [applyTop]);
 
   useEffect(() => {
     storageSet(TOP_AUTO_KEY, topAuto ? "1" : "0");
   }, [topAuto]);
+
+  /** Full page bootstrap (top rows + tab panels below). */
+  useEffect(() => {
+    let cancelled = false;
+    setOvDone(false); setEmoDone(false); setToDone(false); setLhbDone(false); setExtraDone(false);
+    setIdxErr(false);
+    void api.reviewSnapshot({
+      scope: "full",
+      boardType,
+      period: boardPeriod,
+      limitKind,
+    }).then((s) => {
+      if (cancelled) return;
+      applyFull(s, limitKind);
+    }).catch(() => {
+      if (cancelled) return;
+      setIdxErr(true);
+      setOvDone(true); setEmoDone(true); setToDone(true); setLhbDone(true); setExtraDone(true);
+    }).finally(() => {
+      if (!cancelled) setTopUpdatedAt(new Date());
+    });
+    return () => { cancelled = true; };
+    // bootstrap once; board/limit changes use the effects below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!topAuto) return;
@@ -144,45 +200,21 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     return () => window.clearInterval(t);
   }, [topAuto, refreshTopRows]);
 
-  /** Full page bootstrap (top rows + tab panels below). */
-  const loadIndices = () => {
-    setOvDone(false); setEmoDone(false); setToDone(false); setLhbDone(false); setExtraDone(false);
-    setIdxErr(false);
-    const pIdx = api.indices().then(setIndices).catch(() => setIdxErr(true));
-    const pGlobal = api.globalIndices().then(setGlobalIdx).catch(() => {});
-    const pOv = api.marketOverview().then(setOverview).catch(() => {}).finally(() => setOvDone(true));
-    const pEmo = api.emotion().then(setEmotion).catch(() => {}).finally(() => setEmoDone(true));
-    const pTo = api.turnoverTop().then(setTurnover).catch(() => {}).finally(() => setToDone(true));
-    api.dailyDragonTiger({ top: 40 }).then(setLhb).catch(() => setLhb(null)).finally(() => setLhbDone(true));
-    const pLimit = limitKind === "jm"
-      ? api.thsLimitUp().then((d) => { setThsLimit(d); return null; }).catch(() => { setThsLimit(null); return null; })
-      : api.limitPools(limitKind, 40).then((d) => { setLimitPool(d); return d; }).catch(() => null);
-    const pExtra = Promise.all([
-      api.hotList("ths", "hour", 25).catch(() => null),
-      api.stockMonitor().catch(() => null),
-      api.priceAnomaly(40).catch(() => null),
-      pLimit,
-      api.industry(20).catch(() => null),
-      api.boardFlow(boardType, boardPeriod, 20).catch(() => null),
-    ]).then(([ht, mo, an, , ind, bf]) => {
-      setHot(ht); setMonitor(mo); setAnomaly(an);
-      setIndustry(ind); setBoardFlow(bf);
-    }).finally(() => setExtraDone(true));
-
-    void Promise.all([pIdx, pGlobal, pOv, pEmo, pTo, pExtra]).finally(() => {
-      setTopUpdatedAt(new Date());
-    });
-  };
-
+  const boardBoot = useRef(true);
   useEffect(() => {
-    loadIndices();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- bootstrap once
-
-  useEffect(() => {
+    if (boardBoot.current) {
+      boardBoot.current = false;
+      return;
+    }
     api.boardFlow(boardType, boardPeriod, 20).then(setBoardFlow).catch(() => setBoardFlow(null));
   }, [boardType, boardPeriod]);
 
+  const limitBoot = useRef(true);
   useEffect(() => {
+    if (limitBoot.current) {
+      limitBoot.current = false;
+      return;
+    }
     if (limitKind === "jm") {
       api.thsLimitUp().then(setThsLimit).catch(() => setThsLimit(null));
       return;

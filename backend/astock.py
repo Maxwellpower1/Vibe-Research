@@ -23,7 +23,13 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from cache import TTLCache
+
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+
+# Watchlist / portfolio / tools share this; 4s is enough to collapse bursts.
+_QUOTE_CACHE = TTLCache(maxsize=2048, default_ttl=4.0, name="quote")
+_QUOTE_MISS = object()
 
 
 def get_prefix(code: str) -> str:
@@ -122,9 +128,38 @@ def _parse_gtimg(data: str) -> dict[str, dict]:
 
 
 def tencent_quote(codes: list[str]) -> dict[str, dict]:
-    """批量个股实时行情：现价 / 涨跌 / PE / PB / 市值 / 换手 / 涨跌停。"""
-    prefixed = [f"{get_prefix(c)}{c}" for c in codes]
-    return _parse_gtimg(_fetch_gtimg(prefixed))
+    """批量个股实时行情：现价 / 涨跌 / PE / PB / 市值 / 换手 / 涨跌停。
+
+    Per-code TTL 4s so watchlist + portfolio + tools hitting the same names
+    share one Tencent round-trip. Misses (no row) get a 2s negative cache.
+    """
+    uniq: list[str] = []
+    seen: set[str] = set()
+    for raw in codes:
+        c = (raw or "").strip()
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        uniq.append(c)
+
+    out: dict[str, dict] = {}
+    miss: list[str] = []
+    for c in uniq:
+        hit = _QUOTE_CACHE.get(c, _QUOTE_MISS)
+        if hit is _QUOTE_MISS:
+            miss.append(c)
+        elif hit is not None:
+            out[c] = hit
+    if miss:
+        fetched = _parse_gtimg(_fetch_gtimg([f"{get_prefix(c)}{c}" for c in miss]))
+        for c in miss:
+            q = fetched.get(c)
+            if q:
+                _QUOTE_CACHE.set(c, q)
+                out[c] = q
+            else:
+                _QUOTE_CACHE.set(c, None, ttl=2.0)
+    return out
 
 
 # A股大盘指数（前缀规则与个股不同，固定带前缀代码）+ 港股恒生系（国内复盘对照）

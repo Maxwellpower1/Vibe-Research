@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 import astock
 import market
 import newsradar
+import review_snapshot
 import review_warmup
 from api_common import _cached
 
@@ -63,6 +64,30 @@ def market_turnover_top():
 def market_review_warmup_status():
     """复盘缓存预热状态（后台 daemon；可用 VR_REVIEW_WARMUP=0 关闭）。"""
     return {"data": review_warmup.status()}
+
+
+@router.get("/api/market/review-snapshot")
+def market_review_snapshot(
+    scope: str = Query("full", description="top|full"),
+    board_type: str = Query("industry", description="industry|concept|region"),
+    period: str = Query("today", description="today|5d|10d"),
+    limit_kind: str = Query("zt", description="zt|zb|dt|yzt|jm"),
+):
+    """每日复盘首屏聚合。读同一套 TTL 缓存, 避免前端 10+ 请求撞东财串行锁。"""
+    sc = (scope or "full").strip().lower()
+    if sc not in ("top", "full"):
+        raise HTTPException(400, "scope 须为 top 或 full")
+    try:
+        return {
+            "data": review_snapshot.build_review_snapshot(
+                scope=sc,
+                board_type=board_type,
+                board_period=period,
+                limit_kind=limit_kind,
+            )
+        }
+    except Exception as e:
+        raise HTTPException(502, f"复盘快照异常：{e}") from e
 
 
 @router.get("/api/market/board-flow")

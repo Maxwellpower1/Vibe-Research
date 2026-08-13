@@ -117,7 +117,7 @@ def fetch_radar() -> dict:
         for s in pool:
             tasks.append((i, s))
 
-    with ThreadPoolExecutor(max_workers=40) as ex:
+    with ThreadPoolExecutor(max_workers=12) as ex:
         results = list(ex.map(lambda t: (t[0], _fetch_source(t[1], per, cutoff, redline)), tasks))
 
     failed = 0

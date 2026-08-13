@@ -64,3 +64,20 @@ def test_parse_gtimg_bad_line_ignored():
     # 字段不足 / 无引号的行应被安全跳过，不抛异常。
     assert astock._parse_gtimg("garbage;no_quotes_here;") == {}
     assert astock._parse_gtimg("") == {}
+
+
+def test_tencent_quote_short_ttl(monkeypatch):
+    astock._QUOTE_CACHE.clear()
+    calls: list[int] = []
+
+    def fake_fetch(prefixed):
+        calls.append(1)
+        return _gtimg_line()
+
+    monkeypatch.setattr(astock, "_fetch_gtimg", fake_fetch)
+    a = astock.tencent_quote(["600519"])
+    b = astock.tencent_quote(["600519", "600519"])
+    assert len(calls) == 1
+    assert a["600519"]["name"] == "贵州茅台"
+    assert b["600519"]["price"] == 1194.45
+

@@ -52,6 +52,7 @@ Three public data toolkits are **vendored directly into this repo** — `git clo
 
 - Lives in [`a-stock-data/`](a-stock-data/) (v3.6.0). Ten data layers, 47 endpoints, 15 sources, with fallback sources when a primary one gets blocked. [`a-stock-data/SKILL.md`](a-stock-data/SKILL.md) **embeds every call as runnable code** — self-contained, with built-in rate limiting for Eastmoney endpoints.
 - **Covers**: quotes / candles / analyst reports / consensus estimates / valuation / historical percentiles / financial statements / filings / Dragon-Tiger list / margin trading / block trades / shareholder counts / dividends / fund flows / lockup expiry / concept sectors / limit-up sentiment / ETF options / investor Q&A / market-wide industry rankings.
+- **Daily review snapshot**: `GET /api/market/review-snapshot` returns the first-paint payload in one round trip (same TTL keys as the individual endpoints).
 - **For agents**: running this repo with Claude Code or similar? Point them at `SKILL.md` — every endpoint has copy-paste ready code. The backend data layer (`backend/astock.py`) is ported from it.
 - **Runtime deps**: `pip install mootdx requests pandas stockstats`
 - **Upstream**: <https://github.com/simonlin1212/a-stock-data> — the vendored copy is a pinned snapshot and keeps working even if you never update it.
@@ -88,7 +89,7 @@ Vibe-Research/
 │   ├── newsradar.py     News radar
 │   ├── market.py        Market breadth + sector fund flows + global indices
 │   ├── portfolio.py     Portfolio (stored in your local user directory)
-│   ├── tools.py         AI tool layer (23 data tools, shared by chat / MCP)
+│   ├── tools.py         AI tool layer (48 data tools, shared by chat / MCP)
 │   ├── chat.py          In-app AI (OpenAI-compatible function calling)
 │   ├── reflection.py    Reflection audit (audits reasoning in existing analysis)
 │   └── mcp_server.py    MCP server (for Claude Code and other agents)

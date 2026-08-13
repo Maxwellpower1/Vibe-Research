@@ -60,7 +60,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - **就在本仓库的 [`a-stock-data/`](a-stock-data/) 文件夹里**（v3.6.0）。十层数据架构、47 个端点、15 个数据源，`a-stock-data/SKILL.md` **内嵌全部调用代码**，自包含、零第三方数据封装依赖，东财接口已内置限流防封，主源被封还能降级到备用源。
 - **覆盖**：行情 / K线 / 研报 / 一致预期 / 估值 / 历史分位 / 财务三表 / 公告 / 龙虎榜 / 融资融券 / 大宗交易 / 股东户数 / 分红 / 资金流 / 解禁 / 概念板块 / 打板情绪 / ETF 期权 / 互动易 / 全市场行业排名 …
 - **轻量图表 API**：`GET /api/astock/light-kline?code=600519&resolution=1D`（`1` 分时 / `5` 五日 / `1D` 日K前复权，腾讯 ifzq，标准库即可，缓存 60 秒）
-- **复盘预热**：后端启动后后台定时预拉复盘常用接口 + **国内指数分时**（含恒生），交易时段约 90 秒一次；`GET /api/market/review-warmup` 看状态；`VR_REVIEW_WARMUP=0` 可关
+- **复盘预热**：后端启动后后台定时预拉复盘常用接口 + **国内指数分时**（含恒生），交易时段约 90 秒一次；首屏走 `GET /api/market/review-snapshot`（一次返回复盘聚合，避免 10+ 请求撞东财限流）；`GET /api/market/review-warmup` 看预热状态；`VR_REVIEW_WARMUP=0` 可关
 - **给 agent 用**：用 Claude Code 等 agent 跑本仓库时，要调 A 股数据就看 [`a-stock-data/SKILL.md`](a-stock-data/SKILL.md)——每个接口都有 copy-paste 即用的代码。Vibe-Research 后端的数据层（`backend/astock.py`）也是从它移植的。
 - **运行依赖**：`pip install mootdx requests pandas stockstats`（自包含，v3.0 起已移除 akshare 依赖）。
 - **更新 / 上游**：<https://github.com/simonlin1212/a-stock-data> —— 想跟进最新端点、扩数据源，去这里看；**但即便你不更新，仓库自带的这份也是固定可用的快照，可以一直用。**
@@ -118,7 +118,7 @@ Vibe-Research/
 │   ├── ovlab.py         期权 / 期货波动率（移植自 openvlab.cn 爬虫）
 │   ├── portfolio.py     A 股持仓 + 已清仓（存本地用户目录）
 │   ├── ctp_account.py   期货 CTP 只读查资金/持仓（可选 openctp-ctp）
-│   ├── tools.py         AI 工具层（23 个数据工具，chat / MCP 共用）
+│   ├── tools.py         AI 工具层（48 个数据工具，chat / MCP 共用）
 │   ├── chat.py          系统 AI（OpenAI 兼容 function-calling）
 │   ├── reflection.py    反思审计（对已有分析做推理审计）
 │   └── mcp_server.py    MCP server（给 Claude Code 等 agent）

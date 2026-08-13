@@ -13,11 +13,35 @@ import logging
 import os
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 BEIJING = timezone(timedelta(hours=8))
 log = logging.getLogger("review_warmup")
+
+# Snapshot / user fetches set this so a warmup pass does not start while the
+# UI is already filling the same Eastmoney quota.
+_user_fetches = 0
+_user_lock = threading.Lock()
+
+
+@contextmanager
+def user_fetch() -> Iterator[None]:
+    """Mark a user-facing review fetch so warmup can yield the Eastmoney lock."""
+    global _user_fetches
+    with _user_lock:
+        _user_fetches += 1
+    try:
+        yield
+    finally:
+        with _user_lock:
+            _user_fetches -= 1
+
+
+def user_busy() -> bool:
+    with _user_lock:
+        return _user_fetches > 0
 
 # last run snapshot for /api/market/review-warmup
 _STATE: dict[str, Any] = {
@@ -108,7 +132,13 @@ def warm_market() -> tuple[int, int, list[dict]]:
 
 def warm_once(extra: Callable[[], tuple[int, int, list[dict]]] | None = None) -> dict:
     """One warmup pass. optional extra() warms app-level _DC_CACHE entries."""
+    if user_busy():
+        log.info("skip warmup pass: user review snapshot in flight")
+        _STATE["skipped"] = True
+        return dict(_STATE)
+
     _STATE["running"] = True
+    _STATE.pop("skipped", None)
     _STATE["last_started"] = datetime.now(BEIJING).isoformat(timespec="seconds")
     kind = session_kind()
     _STATE["session"] = kind
@@ -162,8 +192,10 @@ def start_scheduler(
                 warm_once(extra=extra)
             except Exception:
                 log.exception("review warmup pass crashed")
-            kind = session_kind()
-            delay = interval_for_session(kind)
+            if _STATE.get("skipped"):
+                delay = 5
+            else:
+                delay = interval_for_session(session_kind())
             _STATE["next_interval_sec"] = delay
             time.sleep(delay)
 
