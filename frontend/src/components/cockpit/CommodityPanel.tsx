@@ -3,17 +3,18 @@ import { QuoteLine } from "@/components/cockpit/QuoteLine";
 import { COMMODITIES, COMMODITY_CODES } from "@/config/cockpit";
 import { usePolling } from "@/hooks/usePolling";
 import { api, type FutureDaily } from "@/lib/api";
+import { useQuotes } from "@/lib/quoteHub";
 import { cn } from "@/lib/utils";
 
-const QUOTE_MS = 20_000;
 const MINUTE_MS = 60_000;
 const SPOT_MS = 8 * 3600_000;
 const DAILY_MS = 3600_000;
+const FUT_CODES = COMMODITIES.map((c) => c.code);
 
 export function CommodityPanel() {
   const [tab, setTab] = useState<"fut" | "spot" | "daily">("fut");
-  const { data, error } = usePolling(() => api.commodities(COMMODITY_CODES), QUOTE_MS, []);
-  const { data: minutes } = usePolling(() => api.commodityMinutes(COMMODITY_CODES), MINUTE_MS, []);
+  const hub = useQuotes(FUT_CODES);
+  const { data: minutes, error } = usePolling(() => api.commodityMinutes(COMMODITY_CODES), MINUTE_MS, []);
   const { data: spot, error: spotErr } = usePolling(() => api.spotTable(), SPOT_MS, [], tab === "spot");
   const { data: chem } = usePolling(
     () => api.chemSpot("7250", "碳酸亚乙烯酯"),
@@ -59,15 +60,16 @@ export function CommodityPanel() {
       <div className="min-h-0 flex-1 overflow-y-auto p-1 pt-0">
         {tab === "fut" && (
           <>
-            {!data && (
+            {!FUT_CODES.some((code) => hub[code]?.price) && (
               <p className="py-6 text-center text-[11px] text-slate-600">
                 {error ? "商品行情未接通, 自动重试中" : "加载中…"}
               </p>
             )}
             {COMMODITIES.map((c) => {
-              const q = data?.[c.code];
+              const q = hub[c.code];
               const m = minutes?.[c.code];
               const closes = (m?.points || []).map((p) => p.p).filter((n) => Number.isFinite(n) && n > 0);
+              const times = (m?.points || []).map((p) => p.t);
               return (
                 <QuoteLine
                   key={c.code}
@@ -77,6 +79,8 @@ export function CommodityPanel() {
                   unit={c.unit}
                   accent={c.accent}
                   closes={closes}
+                  times={times}
+                  session="h24"
                   prevClose={m?.prec ?? q?.prev}
                 />
               );
@@ -89,10 +93,11 @@ export function CommodityPanel() {
               <p className="py-6 text-center text-[11px] text-slate-600">加载中…</p>
             )}
             {COMMODITIES.map((c) => {
-              const q = data?.[c.code];
+              const q = hub[c.code];
               if (c.code === "BTCUSDT") {
                 const m = minutes?.[c.code];
                 const closes = (m?.points || []).map((p) => p.p).filter((n) => Number.isFinite(n) && n > 0);
+                const times = (m?.points || []).map((p) => p.t);
                 return (
                   <div key={c.code}>
                     <p className="px-1 text-[9px] text-slate-600">BTC 走分钟线, 无新浪日K</p>
@@ -103,6 +108,8 @@ export function CommodityPanel() {
                       unit={c.unit}
                       accent={c.accent}
                       closes={closes}
+                      times={times}
+                      session="h24"
                       prevClose={m?.prec ?? q?.prev}
                     />
                   </div>
@@ -110,6 +117,7 @@ export function CommodityPanel() {
               }
               const pts = daily?.[c.code]?.points ?? [];
               const closes = pts.map((p) => p.c).filter((n) => Number.isFinite(n) && n > 0);
+              const times = pts.map((p) => p.t);
               const prevClose = pts.length >= 2 ? pts[pts.length - 2].c : q?.prev;
               return (
                 <QuoteLine
@@ -120,6 +128,8 @@ export function CommodityPanel() {
                   unit={c.unit}
                   accent={c.accent}
                   closes={closes}
+                  times={times}
+                  session="daily"
                   prevClose={prevClose}
                 />
               );

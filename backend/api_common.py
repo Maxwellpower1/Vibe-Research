@@ -74,6 +74,16 @@ def _cached(endpoint: str, code: str, ttl: int, fetch, valid=is_nonempty):
     )
 
 
+def light_kline_ttl(sym: str, res: str) -> int:
+    """Index/FX minute charts stay fresher than single-stock sparks."""
+    if res != "1":
+        return 60
+    s = (sym or "").lower()
+    if s.startswith(("sh000", "sz399", "hk", "us", "wh")):
+        return 20
+    return 120
+
+
 def light_kline_map(codes: list[str], res: str = "1", num: int = 240) -> dict[str, dict | None]:
     """Batch light kline. Same cache keys as GET /astock/light-kline. Max 40."""
     seen: set[str] = set()
@@ -93,14 +103,12 @@ def light_kline_map(codes: list[str], res: str = "1", num: int = 240) -> dict[st
             continue
         jobs.append((key, sym))
 
-    ttl = 120 if res == "1" else 60
-
     def _one(pair: tuple[str, str]) -> tuple[str, str, dict | None]:
         raw, sym = pair
         data = _cached(
             f"ashare_light:{res}:{num}",
             sym,
-            ttl,
+            light_kline_ttl(sym, res),
             lambda: astock.light_kline(sym, res, num=num),
         )
         return raw, sym, data if isinstance(data, dict) and data else None

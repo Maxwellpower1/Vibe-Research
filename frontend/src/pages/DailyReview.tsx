@@ -190,7 +190,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           title: `自选${d.watchCodes.length ? ` ${d.watchCodes.length}` : ""}`,
           defaultW: 0.28,
           mobileH: "h-[400px]",
-          body: <WatchlistCockpitPanel codes={d.watchCodes} />,
+          body: <WatchlistCockpitPanel />,
         },
         {
           id: "risk",

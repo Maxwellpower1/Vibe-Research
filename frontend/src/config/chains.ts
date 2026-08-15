@@ -10,12 +10,26 @@ export interface ChainSegment {
   name: string;
   desc: string;
   stocks: ChainStock[];
+  query?: string;
 }
 
 export interface Chain {
   id: string;
   name: string;
   segments: ChainSegment[];
+  keywords: string[];
+}
+
+export function matchRelatedBoards<T extends { name: string; pct: number }>(
+  boards: T[],
+  keywords: string[],
+  n = 8,
+): T[] {
+  const keys = keywords.filter(Boolean);
+  return boards
+    .filter((b) => keys.some((k) => b.name.includes(k) || k.includes(b.name)))
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, n);
 }
 
 export const CHAINS: Chain[] = [
@@ -33,6 +47,7 @@ export const CHAINS: Chain[] = [
           { code: "601138", name: "工业富联", tag: "AI服务器" },
           { code: "000977", name: "浪潮信息", tag: "服务器" },
         ],
+        query: "算力硬件",
       },
       {
         name: "中游 · 模型与平台",
@@ -44,6 +59,7 @@ export const CHAINS: Chain[] = [
           { code: "688111", name: "金山办公", tag: "AI办公" },
           { code: "300229", name: "拓尔思", tag: "大数据" },
         ],
+        query: "大模型",
       },
       {
         name: "下游 · Agent与应用",
@@ -55,8 +71,10 @@ export const CHAINS: Chain[] = [
           { code: "688327", name: "云从科技", tag: "人机协同" },
           { code: "002362", name: "汉王科技", tag: "AI交互" },
         ],
+        query: "AI应用",
       },
     ],
+    keywords: ["大模型", "AI", "人工智能", "GPT", "多模态", "算力", "GPU", "Agent", "智能体", "训练", "推理"],
   },
   {
     id: "embodied",
@@ -72,6 +90,7 @@ export const CHAINS: Chain[] = [
           { code: "603662", name: "柯力传感", tag: "力传感" },
           { code: "300580", name: "贝斯特", tag: "滚柱丝杠" },
         ],
+        query: "减速器",
       },
       {
         name: "中游 · 整机与执行器",
@@ -83,6 +102,7 @@ export const CHAINS: Chain[] = [
           { code: "601689", name: "拓普集团", tag: "线性执行器" },
           { code: "300660", name: "江苏雷利", tag: "微特电机" },
         ],
+        query: "伺服系统",
       },
       {
         name: "下游 · 大脑与场景",
@@ -94,8 +114,10 @@ export const CHAINS: Chain[] = [
           { code: "688169", name: "石头科技", tag: "服务" },
           { code: "603486", name: "科沃斯", tag: "扫地" },
         ],
+        query: "人形机器人",
       },
     ],
+    keywords: ["具身智能", "人形机器人", "减速器", "丝杠", "灵巧手", "伺服", "传感器"],
   },
   {
     id: "semi",
@@ -111,6 +133,7 @@ export const CHAINS: Chain[] = [
           { code: "002409", name: "雅克科技", tag: "材料" },
           { code: "688037", name: "芯源微", tag: "涂胶显影" },
         ],
+        query: "半导体设备",
       },
       {
         name: "中游 · 制造与封测",
@@ -122,6 +145,7 @@ export const CHAINS: Chain[] = [
           { code: "002156", name: "通富微电", tag: "先进封装" },
           { code: "688249", name: "晶合集成", tag: "代工" },
         ],
+        query: "晶圆代工",
       },
       {
         name: "下游 · 设计与应用",
@@ -133,8 +157,10 @@ export const CHAINS: Chain[] = [
           { code: "688256", name: "寒武纪", tag: "AI芯片" },
           { code: "688008", name: "澜起科技", tag: "内存接口" },
         ],
+        query: "芯片设计",
       },
     ],
+    keywords: ["半导体", "芯片", "晶圆", "光刻", "存储", "封测", "先进封装", "碳化硅"],
   },
   {
     id: "newenergy",
@@ -150,6 +176,7 @@ export const CHAINS: Chain[] = [
           { code: "600438", name: "通威股份", tag: "硅料" },
           { code: "601012", name: "隆基绿能", tag: "硅片" },
         ],
+        query: "光伏材料",
       },
       {
         name: "中游 · 电池与电力设备",
@@ -161,6 +188,7 @@ export const CHAINS: Chain[] = [
           { code: "300274", name: "阳光电源", tag: "逆变器" },
           { code: "002202", name: "金风科技", tag: "风电" },
         ],
+        query: "动力电池",
       },
       {
         name: "下游 · 运营与整车",
@@ -172,8 +200,10 @@ export const CHAINS: Chain[] = [
           { code: "600905", name: "三峡能源", tag: "运营" },
           { code: "600406", name: "国电南瑞", tag: "电网" },
         ],
+        query: "新能源整车",
       },
     ],
+    keywords: ["新能源", "光伏", "风电", "锂电", "储能", "电池", "充电", "电动车", "逆变器"],
   },
   {
     id: "pharma",
@@ -189,6 +219,7 @@ export const CHAINS: Chain[] = [
           { code: "603127", name: "昭衍新药", tag: "安评" },
           { code: "300759", name: "康龙化成", tag: "一体化" },
         ],
+        query: "CXO",
       },
       {
         name: "中游 · 创新药企",
@@ -200,6 +231,7 @@ export const CHAINS: Chain[] = [
           { code: "002422", name: "科伦药业", tag: "ADC" },
           { code: "688266", name: "泽璟制药", tag: "小分子" },
         ],
+        query: "创新药",
       },
       {
         name: "下游 · 商业化与流通",
@@ -211,8 +243,10 @@ export const CHAINS: Chain[] = [
           { code: "603939", name: "益丰药房", tag: "连锁" },
           { code: "600998", name: "九州通", tag: "流通" },
         ],
+        query: "疫苗",
       },
     ],
+    keywords: ["创新药", "医药", "ADC", "疫苗", "临床", "CXO", "靶点"],
   },
   {
     id: "newindustrial",
@@ -228,6 +262,7 @@ export const CHAINS: Chain[] = [
           { code: "603859", name: "能科科技", tag: "数字化" },
           { code: "300687", name: "赛意信息", tag: "智能制造" },
         ],
+        query: "工业软件",
       },
       {
         name: "中游 · 智能制造装备",
@@ -239,6 +274,7 @@ export const CHAINS: Chain[] = [
           { code: "300724", name: "捷佳伟创", tag: "光伏设备" },
           { code: "002595", name: "豪迈科技", tag: "精密加工" },
         ],
+        query: "工业机器人",
       },
       {
         name: "下游 · 数字化与互联",
@@ -250,8 +286,10 @@ export const CHAINS: Chain[] = [
           { code: "688568", name: "中科星图", tag: "数字孪生" },
           { code: "002230", name: "科大讯飞", tag: "工业AI" },
         ],
+        query: "工业互联网",
       },
     ],
+    keywords: ["新型工业化", "工业互联网", "智能制造", "工业软件", "自动化", "机器人", "数字孪生"],
   },
   {
     id: "digitalgov",
@@ -267,6 +305,7 @@ export const CHAINS: Chain[] = [
           { code: "600536", name: "中国软件", tag: "国产OS" },
           { code: "603019", name: "中科曙光", tag: "算力" },
         ],
+        query: "政务云",
       },
       {
         name: "中游 · 平台与数据",
@@ -278,6 +317,7 @@ export const CHAINS: Chain[] = [
           { code: "603636", name: "南威软件", tag: "数字政务" },
           { code: "300212", name: "易华录", tag: "数据湖" },
         ],
+        query: "数字政务",
       },
       {
         name: "下游 · 智慧场景",
@@ -289,8 +329,10 @@ export const CHAINS: Chain[] = [
           { code: "600728", name: "佳都科技", tag: "智慧交通" },
           { code: "002152", name: "广电运通", tag: "终端" },
         ],
+        query: "智慧城市",
       },
     ],
+    keywords: ["数字政府", "政务", "智慧城市", "信创", "数据要素", "网络安全", "一网通办"],
   },
   {
     id: "smartmed",
@@ -306,6 +348,7 @@ export const CHAINS: Chain[] = [
           { code: "300168", name: "万达信息", tag: "智慧医疗" },
           { code: "300078", name: "思创医惠", tag: "物联网" },
         ],
+        query: "医疗信息化",
       },
       {
         name: "中游 · AI医疗与设备",
@@ -317,6 +360,7 @@ export const CHAINS: Chain[] = [
           { code: "300244", name: "迪安诊断", tag: "诊断" },
           { code: "300676", name: "华大基因", tag: "测序" },
         ],
+        query: "AI医疗",
       },
       {
         name: "下游 · 互联网与健康管理",
@@ -328,7 +372,9 @@ export const CHAINS: Chain[] = [
           { code: "300146", name: "汤臣倍健", tag: "营养" },
           { code: "600998", name: "九州通", tag: "供应链" },
         ],
+        query: "互联网医疗",
       },
     ],
+    keywords: ["智慧医疗", "医疗信息化", "AI医疗", "互联网医疗", "远程医疗", "健康管理", "影像"],
   },
 ];

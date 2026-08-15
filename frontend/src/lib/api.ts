@@ -157,6 +157,12 @@ export interface IwencaiItem {
 export interface IwencaiSearch {
   query: string; channel: string; count?: number; items: IwencaiItem[];
 }
+export interface IwencaiSelectRow {
+  code: string; name: string;
+}
+export interface IwencaiSelect {
+  query: string; total: number; rows: IwencaiSelectRow[];
+}
 
 export interface IndexQuote {
   name: string; price: number; change_pct: number; change_amt: number;
@@ -1372,6 +1378,8 @@ export const api = {
     get<FutureDaily>(`/market/future-daily?code=${encodeURIComponent(code)}&n=${n}`),
   stockBoards: (code: string) =>
     get<StockBoards>(`/market/stock-boards?code=${encodeURIComponent(code)}`),
+  stockBoardsBatch: (codes: string[]) =>
+    get<Record<string, StockBoards>>(`/market/stock-boards-batch?codes=${encodeURIComponent(codes.slice(0, 12).join(","))}`),
   marketLives: (page = 1, size = 40) =>
     get<MarketLives>(`/market/lives?page=${page}&size=${size}`),
   marketBreadth: () => get<MarketBreadth>("/market/breadth"),
@@ -1534,6 +1542,8 @@ export const api = {
     get<IwencaiSearch>(
       `/iwencai/search?q=${encodeURIComponent(q)}&channel=${channel}&size=${size}`,
     ),
+  iwencaiSelect: (q: string, limit = 12) =>
+    get<IwencaiSelect>(`/iwencai/select?q=${encodeURIComponent(q)}&limit=${limit}`),
   dragonTiger: (code: string) => get<DragonTiger>(`/dragon-tiger?code=${code}`),
   lockup: (code: string) => get<Lockup>(`/lockup?code=${code}`),
   blocks: (code: string) => get<Blocks>(`/blocks?code=${code}`),

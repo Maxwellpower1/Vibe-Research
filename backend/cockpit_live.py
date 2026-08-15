@@ -222,6 +222,11 @@ _QUOTE_CODE_RE = re.compile(
 )
 
 
+def _is_future_code(symbol: str) -> bool:
+    s = (symbol or "").strip()
+    return s == "BTCUSDT" or bool(_HF_RE.fullmatch(s))
+
+
 def _is_ashare_stock(symbol: str) -> bool:
     m = re.fullmatch(r"(sh|sz|bj)(\d{6})", symbol or "")
     if not m:
@@ -246,46 +251,96 @@ def _canon_quote_code(raw: str) -> str:
     return ""
 
 
+def _quote_item(q: dict, canon: str, *, amount: float = 0.0, turnover: float = 0.0) -> dict:
+    return {
+        "symbol": canon,
+        "name": q.get("name") or canon,
+        "price": q.get("price") or 0.0,
+        "pct": q.get("pct") or 0.0,
+        "change": q.get("change") or 0.0,
+        "prev": q.get("prev") or 0.0,
+        "amount": amount,
+        "turnover": turnover,
+    }
+
+
 def quotes_map(codes: list[str]) -> dict[str, dict]:
-    """Tencent batch quotes for the cockpit hub. Max 80. Aliases 6-digit and prefixed keys."""
+    """Tencent equities/indices only. Max 80. Aliases 6-digit keys. Futures stay on futures_quotes."""
     wanted: list[tuple[str, str]] = []
     seen_raw: set[str] = set()
     seen_canon: set[str] = set()
+    want_vix = False
     for raw in codes:
         key = (raw or "").strip()
         if not key or key in seen_raw:
             continue
         seen_raw.add(key)
+        if _is_future_code(key):
+            continue
         canon = _canon_quote_code(key)
         if not canon:
             continue
+        if canon.lower() == "usvix" or key.lower() == "usvix":
+            want_vix = True
         wanted.append((key, canon))
         seen_canon.add(canon)
         if len(seen_canon) >= 80:
             break
-    if not seen_canon:
-        return {}
-    fetched = _tencent_quotes(list(seen_canon))
     out: dict[str, dict] = {}
-    for raw, canon in wanted:
-        q = fetched.get(canon)
-        if not q or not q.get("price"):
+    if seen_canon:
+        fetched = _tencent_quotes(list(seen_canon))
+        for raw, canon in wanted:
+            q = fetched.get(canon)
+            if not q or not q.get("price"):
+                continue
+            raw_amt = q.get("amount") or 0.0
+            item = _quote_item(
+                q,
+                canon,
+                amount=(raw_amt * 10000.0) if _is_ashare_stock(canon) and raw_amt else 0.0,
+                turnover=q.get("turnover") or 0.0,
+            )
+            out[raw] = item
+            out[canon] = item
+            if re.fullmatch(r"(?:sh|sz|bj)\d{6}", canon):
+                out[canon[2:]] = item
+    if want_vix and not (out.get("usVIX") or out.get("usvix") or {}).get("price"):
+        vix = _vix_from_sina()
+        if vix and vix.get("price"):
+            item = _quote_item(vix, "usVIX")
+            out["usVIX"] = item
+            out["usvix"] = item
+            for raw, canon in wanted:
+                if raw.lower() == "usvix" or canon.lower() == "usvix":
+                    out[raw] = item
+    return out
+
+
+def quotes_cached(codes: list[str]) -> dict[str, dict]:
+    """Per-code 5s cache. One Tencent batch for misses so Hub key changes do not bust indices."""
+    from api_common import _DC_CACHE
+
+    out: dict[str, dict] = {}
+    miss: list[str] = []
+    seen: set[str] = set()
+    for raw in codes:
+        key = (raw or "").strip()
+        if not key or key in seen:
             continue
-        raw_amt = q.get("amount") or 0.0
-        item = {
-            "symbol": canon,
-            "name": q.get("name") or canon,
-            "price": q.get("price") or 0.0,
-            "pct": q.get("pct") or 0.0,
-            "change": q.get("change") or 0.0,
-            "prev": q.get("prev") or 0.0,
-            "amount": (raw_amt * 10000.0) if _is_ashare_stock(canon) and raw_amt else 0.0,
-            "turnover": q.get("turnover") or 0.0,
-        }
-        out[raw] = item
-        out[canon] = item
-        if re.fullmatch(r"(?:sh|sz|bj)\d{6}", canon):
-            out[canon[2:]] = item
+        seen.add(key)
+        hit = _DC_CACHE.get(("quote_one", key.lower()))
+        if isinstance(hit, dict) and hit.get("price"):
+            out[key] = hit
+        else:
+            miss.append(key)
+    if not miss:
+        return out
+    fetched = quotes_map(miss)
+    for k, item in fetched.items():
+        if not isinstance(item, dict) or not item.get("price"):
+            continue
+        _DC_CACHE.set(("quote_one", k.lower()), item, ttl=5)
+        out[k] = item
     return out
 
 
@@ -1136,3 +1191,30 @@ def stock_boards(code: str) -> dict:
         "concepts": concepts,
         "source": "eastmoney",
     }
+
+
+def stock_boards_map(codes: list[str]) -> dict[str, dict]:
+    """Industry / concept tags for up to 12 A-share codes. Failures are skipped."""
+    out: dict[str, dict] = {}
+    seen: set[str] = set()
+    n = 0
+    for raw in codes:
+        key = (raw or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if n >= 12:
+            break
+        try:
+            row = stock_boards(key)
+        except (ValueError, RuntimeError, OSError, TypeError):
+            continue
+        n += 1
+        out[key] = row
+        canon = str(row.get("code") or "")
+        if canon:
+            out[canon] = row
+            digits = re.sub(r"^(?:sh|sz|bj)", "", canon, flags=re.I)
+            if digits:
+                out[digits] = row
+    return out

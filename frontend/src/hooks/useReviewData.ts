@@ -13,7 +13,7 @@ import { type IdxPanel } from "@/components/review/constants";
 import { formatClock } from "@/lib/freshness";
 import { storageGet, storageSet } from "@/lib/storage";
 import { getAShareSession } from "@/lib/ashareSession";
-import { loadWatch } from "@/lib/watchlist";
+import { useWatchCodes } from "@/lib/watchlist";
 
 const TOP_AUTO_MS = 30_000;
 const TOP_AUTO_KEY = "ashare.review.topAuto";
@@ -66,7 +66,7 @@ export function useReviewData() {
   });
   const idxMinute = EMPTY_IDX_MINUTE;
   const idxMinuteDone = true;
-  const [watchCodes, setWatchCodes] = useState<string[]>(() => loadWatch());
+  const watchCodes = useWatchCodes();
 
   const [ovDone, setOvDone] = useState(false);
   const [emoDone, setEmoDone] = useState(false);
@@ -294,10 +294,6 @@ export function useReviewData() {
   }, [idxPanel]);
 
   // CN index minutes now live in WorldIndexPanel; skip the unused fan-out here.
-
-  useEffect(() => {
-    setWatchCodes(loadWatch());
-  }, [topUpdatedAt]);
 
   const runIwencai = useCallback(async () => {
     const q = iwencaiQ.trim();

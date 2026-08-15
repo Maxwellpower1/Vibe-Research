@@ -1279,17 +1279,47 @@ def iwencai_configured() -> bool:
     return bool(os.environ.get("IWENCAI_API_KEY", "").strip())
 
 
-def _iwencai_claw_headers(call_type: str = "normal") -> dict:
+def _iwencai_claw_headers(
+    call_type: str = "normal",
+    skill_id: str = "report-search",
+    skill_ver: str = "2.0.0",
+) -> dict:
     import secrets
 
     return {
         "X-Claw-Call-Type": call_type,
-        "X-Claw-Skill-Id": "report-search",
-        "X-Claw-Skill-Version": "2.0.0",
+        "X-Claw-Skill-Id": skill_id,
+        "X-Claw-Skill-Version": skill_ver,
         "X-Claw-Plugin-Id": "none",
         "X-Claw-Plugin-Version": "none",
         "X-Claw-Trace-Id": secrets.token_hex(32),
     }
+
+
+def _iwencai_code(raw: str) -> str:
+    m = re.search(r"(\d{6})", str(raw or ""))
+    return m.group(1) if m else ""
+
+
+def parse_iwencai_select(payload: dict) -> list[dict]:
+    """Normalize /v1/query2data rows to {code, name}. Drops non A-share codes."""
+    datas = payload.get("datas") if isinstance(payload, dict) else None
+    if not isinstance(datas, list):
+        datas = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(datas, list):
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for it in datas:
+        if not isinstance(it, dict):
+            continue
+        code = _iwencai_code(it.get("股票代码") or it.get("code") or "")
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        name = str(it.get("股票简称") or it.get("name") or code)
+        out.append({"code": code, "name": name})
+    return out
 
 
 def iwencai_search(query: str, channel: str = "report", size: int = 20) -> dict:
@@ -1368,6 +1398,55 @@ def iwencai_search(query: str, channel: str = "report", size: int = 20) -> dict:
             "channel": ch,
         })
     return {"query": q, "channel": ch, "count": len(items), "items": items}
+
+
+def iwencai_select(query: str, limit: int = 20) -> dict:
+    """Iwencai stock selector via /v1/query2data. Objective list only, no ranking advice."""
+    import requests
+
+    key = os.environ.get("IWENCAI_API_KEY", "").strip()
+    if not key:
+        raise DependencyMissing(
+            "未配置 IWENCAI_API_KEY。在 backend/.env 设置后重启后端；仅问财选股需要。"
+        )
+    q = (query or "").strip()
+    n = max(1, min(int(limit or 20), 30))
+    if not q:
+        return {"query": "", "total": 0, "rows": []}
+    base = os.environ.get("IWENCAI_BASE_URL", "https://openapi.iwencai.com").rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        **_iwencai_claw_headers(skill_id="hithink-astock-selector", skill_ver="1.0.0"),
+    }
+    payload = {
+        "query": q,
+        "page": "1",
+        "limit": str(n),
+        "is_cache": "1",
+        "expand_index": "true",
+    }
+    r = requests.post(
+        f"{base}/v1/query2data",
+        json=payload,
+        headers=headers,
+        timeout=15,
+    )
+    text = (r.text or "").replace("\n", " ").strip()
+    if r.status_code != 200:
+        if "次数已用完" in text:
+            raise RuntimeError("问财今日次数已用完")
+        raise RuntimeError(f"iwencai select HTTP {r.status_code}: {text[:160]}")
+    data = r.json() if r.content else {}
+    if not isinstance(data, dict):
+        raise RuntimeError("iwencai select 返回非 JSON 对象")
+    rows = parse_iwencai_select(data)
+    total = data.get("code_count")
+    try:
+        total_n = int(total) if total is not None else len(rows)
+    except (TypeError, ValueError):
+        total_n = len(rows)
+    return {"query": q, "total": total_n, "rows": rows[:n]}
 
 
 def dragon_tiger_board(code: str, trade_date: str | None = None, look_back: int = 30) -> dict:

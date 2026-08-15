@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { MinuteSpark } from "@/components/review/MinuteSpark";
 import { PctChip } from "@/components/review/PctChip";
 import { fmt, fmtAmt, pctColor } from "@/components/review/format";
+import type { SparkSession } from "@/lib/sparkAxis";
 import { cn } from "@/lib/utils";
 
 export function QuoteLine({
@@ -13,6 +14,8 @@ export function QuoteLine({
   extraClass,
   rank,
   closes,
+  times,
+  session,
   prevClose,
   href,
   unit,
@@ -26,6 +29,8 @@ export function QuoteLine({
   extraClass?: string;
   rank?: number;
   closes?: number[];
+  times?: string[];
+  session?: SparkSession;
   prevClose?: number | null;
   href?: string;
   unit?: string;
@@ -46,7 +51,7 @@ export function QuoteLine({
       </span>
       <div className="min-w-0">
         {closes && closes.length > 1 ? (
-          <MinuteSpark closes={closes} prevClose={prevClose} pct={pct ?? 0} />
+          <MinuteSpark closes={closes} times={times} session={session} prevClose={prevClose} pct={pct ?? 0} />
         ) : (
           <div className="h-7" />
         )}

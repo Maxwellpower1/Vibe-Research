@@ -11,6 +11,7 @@ from api_common import (
     _validate,
     _validate_symbol,
     light_kline_map,
+    light_kline_ttl,
 )
 
 router = APIRouter(tags=["ashare"])
@@ -181,7 +182,8 @@ def astock_light_kline(
     resolution: str = Query("1D", description="1=分时 / 5=五日 / 1D=日K前复权"),
     num: int = Query(365, ge=20, le=1000),
 ):
-    """轻量图（腾讯）：分时 / 5日 / 日K前复权。仅需标准库，不依赖 mootdx。缓存 60 秒。
+    """轻量图（腾讯）：分时 / 5日 / 日K前复权。仅需标准库，不依赖 mootdx。
+    分时缓存: 指数/汇率 20 秒, 个股 120 秒; 5日/日K 60 秒。
 
     指数：sh000001 上证 / sz399006 创业板 / sh000688 科创50 / sh000852 中证1000 /
     hkHSI 恒生 / hkHSTECH 恒生科技 / usIXIC 纳斯达克等美股指数 (usMinute) /
@@ -192,8 +194,7 @@ def astock_light_kline(
     if res not in ("1", "5", "1D"):
         raise HTTPException(400, "resolution 仅支持 1 / 5 / 1D")
     try:
-        # Minute charts refresh often via warmup; 120s TTL covers open-session interval.
-        ttl = 120 if res == "1" else 60
+        ttl = light_kline_ttl(code, res)
         data = _cached(
             f"ashare_light:{res}:{num}",
             code,

@@ -2,7 +2,8 @@ import { QuoteStockRow } from "@/components/cockpit/QuoteStockRow";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { usePolling } from "@/hooks/usePolling";
 import { api } from "@/lib/api";
-import { klineFromBatch, loadLightKlineBatch } from "@/lib/lightKline";
+import { sparkFromKline } from "@/lib/lightKline";
+import { useMinutes } from "@/lib/minuteHub";
 
 const POLL_MS = 20_000;
 
@@ -40,12 +41,7 @@ export function StockRankPanel({ tab }: { tab: RankTab }) {
     [tab],
   );
   const codes = (data ?? []).map((s) => s.code);
-  const { data: sparks } = usePolling(
-    () => (codes.length ? loadLightKlineBatch(codes, "1", 240) : Promise.resolve({})),
-    60_000,
-    [tab, codes.join(",")],
-    codes.length > 0,
-  );
+  const minutes = useMinutes(codes);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -55,8 +51,7 @@ export function StockRankPanel({ tab }: { tab: RankTab }) {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5 pt-0">
         {(data ?? []).map((s, i) => {
-          const kl = klineFromBatch(sparks, s.code, s.symbol);
-          const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+          const sp = sparkFromKline(minutes[s.code] || minutes[s.symbol]);
           return (
             <QuoteStockRow
               key={s.symbol || s.code}
@@ -69,7 +64,7 @@ export function StockRankPanel({ tab }: { tab: RankTab }) {
               mainNet={s.main_net}
               mainPct={s.main_pct}
               rank={i + 1}
-              spark={kl ? { closes, prevClose: kl.prev_close } : sparks ? { closes: [] } : undefined}
+              spark={sp ?? { closes: [] }}
             />
           );
         })}

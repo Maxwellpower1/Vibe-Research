@@ -1,11 +1,17 @@
+import { sparkXs, type SparkSession } from "@/lib/sparkAxis";
+
 /** Compact intraday sparkline (SVG). Red up / green down vs prev_close. */
 export function MinuteSpark({
   closes,
+  times,
+  session = "ashare",
   prevClose,
   pct,
   className,
 }: {
   closes: number[];
+  times?: string[];
+  session?: SparkSession;
   prevClose?: number | null;
   pct: number;
   className?: string;
@@ -19,10 +25,10 @@ export function MinuteSpark({
   const span = max - min || 1;
   const w = 160;
   const h = 36;
+  const xs = sparkXs(times, closes.length, w, session);
   const pts = closes.map((c, i) => {
-    const x = (i / (closes.length - 1)) * w;
     const y = h - ((c - min) / span) * (h - 4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
+    return `${xs[i].toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
   const y0 = h - ((base - min) / span) * (h - 4) - 2;
   const stroke = pct > 0 ? "#ef4444" : pct < 0 ? "#22c55e" : "#94a3b8";

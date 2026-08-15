@@ -40,3 +40,11 @@ def test_light_kline_map_hits_same_cache(monkeypatch):
 def test_light_kline_map_accepts_fx():
     assert api_common._validate_symbol("whUSDCNY") == "whUSDCNY"
     assert api_common._validate_symbol("whusdcny") == "whUSDCNY"
+
+
+def test_light_kline_ttl_index_faster_than_stock():
+    assert api_common.light_kline_ttl("sh000001", "1") == 20
+    assert api_common.light_kline_ttl("usIXIC", "1") == 20
+    assert api_common.light_kline_ttl("whUSDCNY", "1") == 20
+    assert api_common.light_kline_ttl("sh600519", "1") == 120
+    assert api_common.light_kline_ttl("sh000001", "1D") == 60

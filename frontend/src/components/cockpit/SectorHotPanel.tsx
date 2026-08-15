@@ -5,7 +5,8 @@ import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { pctColor } from "@/components/review/format";
 import { usePolling } from "@/hooks/usePolling";
 import { api, type SectorBoard } from "@/lib/api";
-import { klineFromBatch, loadLightKlineBatch } from "@/lib/lightKline";
+import { sparkFromKline } from "@/lib/lightKline";
+import { useMinutes } from "@/lib/minuteHub";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 20_000;
@@ -117,12 +118,7 @@ export function SectorHotPanel() {
     !ths && !!stockCode,
   );
   const stockCodes = (stocks ?? []).map((s) => s.code);
-  const { data: sparks } = usePolling(
-    () => (stockCodes.length ? loadLightKlineBatch(stockCodes, "1", 240) : Promise.resolve({})),
-    60_000,
-    [stockCodes.join(",")],
-    !ths && stockCodes.length > 0,
-  );
+  const minutes = useMinutes(!ths ? stockCodes : []);
 
   const { data: thsData, error: thsErr } = usePolling(
     () => api.thsRotation(view === "ths-i" ? "industry" : "concept", 30),
@@ -275,8 +271,7 @@ export function SectorHotPanel() {
               <p className="py-4 text-center text-[11px] text-slate-600">成分股加载中…</p>
             )}
             {(stocks ?? []).map((s) => {
-              const kl = klineFromBatch(sparks, s.code, s.symbol);
-              const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+              const sp = sparkFromKline(minutes[s.code] || minutes[s.symbol || ""]);
               return (
                 <QuoteStockRow
                   key={s.code}
@@ -288,9 +283,10 @@ export function SectorHotPanel() {
                   amount={s.amount}
                   turnover={s.turnover}
                   link={false}
+                  boards={false}
                   mainNet={s.main_net}
                   mainPct={s.main_pct}
-                  spark={kl ? { closes, prevClose: kl.prev_close } : sparks ? { closes: [] } : null}
+                  spark={sp ?? { closes: [] }}
                 />
               );
             })}

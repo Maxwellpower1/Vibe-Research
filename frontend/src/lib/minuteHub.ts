@@ -1,35 +1,23 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
-import { api } from "@/lib/api";
+import { loadLightKlineBatch } from "@/lib/lightKline";
+import type { AShareLightKline } from "@/lib/api";
 
 /**
- * Cockpit quote hub: 5s loop. Equities/indices and futures are fetched in parallel
- * so a slow Sina/Binance tick cannot stall index prices.
+ * Merge cockpit minute-spark subscriptions into one 20s batch.
+ * Backend TTL is 20s for indices and 120s for stocks, so extra stock polls hit cache.
  */
 
-export interface HubQuote {
-  name?: string;
-  price: number;
-  pct: number;
-  amount?: number;
-  turnover?: number;
-  prev?: number;
-  updated: number;
-}
+export const MINUTE_POLL_MS = 20_000;
+const CHUNK = 40;
+const MAX_AGE_MS = 15_000;
 
-export const QUOTE_POLL_MS = 5000;
-const CHUNK = 80;
-
-const entries = new Map<string, HubQuote>();
+const entries = new Map<string, AShareLightKline | null>();
 const refCounts = new Map<string, number>();
 const listeners = new Set<() => void>();
 let version = 0;
 let timer: number | null = null;
 let flushTimer: number | null = null;
 let lastFlush = 0;
-
-export function isFuturesCode(code: string): boolean {
-  return /^(hf_|nf_)/i.test(code) || code === "BTCUSDT";
-}
 
 function emit() {
   version += 1;
@@ -51,45 +39,21 @@ function chunks(codes: string[]): string[][] {
   return out;
 }
 
-function applyQuote(
-  code: string,
-  q: { name?: string; price: number; pct: number; amount?: number; turnover?: number; prev?: number },
-  now: number,
-): boolean {
-  if (!q || !Number.isFinite(q.price) || q.price <= 0) return false;
-  const next: HubQuote = {
-    name: q.name,
-    price: q.price,
-    pct: q.pct,
-    amount: q.amount,
-    turnover: q.turnover,
-    prev: q.prev,
-    updated: now,
-  };
-  const old = entries.get(code);
-  if (!old || old.price !== next.price || old.pct !== next.pct
-    || old.amount !== next.amount || old.turnover !== next.turnover) {
-    entries.set(code, next);
-    return true;
-  }
-  return false;
-}
-
 async function tick() {
   if (!refCounts.size) return;
   const codes = [...refCounts.keys()];
-  const stocks = codes.filter((c) => !isFuturesCode(c));
-  const futures = codes.filter(isFuturesCode);
-  const jobs: Promise<Record<string, { name?: string; price: number; pct: number; amount?: number; turnover?: number; prev?: number }>>[] = [];
-  for (const c of chunks(stocks)) jobs.push(api.marketQuotes(c));
-  if (futures.length) jobs.push(api.commodities(futures.join(",")));
-  const rs = await Promise.allSettled(jobs);
-  const now = Date.now();
+  const rs = await Promise.allSettled(
+    chunks(codes).map((c) => loadLightKlineBatch(c, "1", 240, MAX_AGE_MS)),
+  );
   let changed = false;
   for (const r of rs) {
     if (r.status !== "fulfilled") continue;
-    for (const [code, q] of Object.entries(r.value || {})) {
-      if (applyQuote(code, q, now)) changed = true;
+    for (const [code, kl] of Object.entries(r.value || {})) {
+      const old = entries.get(code);
+      if (old !== kl) {
+        entries.set(code, kl);
+        changed = true;
+      }
     }
   }
   if (changed) emit();
@@ -103,7 +67,7 @@ function ensureLoop() {
   if (timer != null) return;
   timer = window.setInterval(() => {
     if (!document.hidden) void tick();
-  }, QUOTE_POLL_MS);
+  }, MINUTE_POLL_MS);
   document.addEventListener("visibilitychange", onVisibility);
 }
 
@@ -147,20 +111,14 @@ function useCodes(codes: string[]) {
   }, [key]);
 }
 
-export function useQuote(code: string, enabled = true): HubQuote | null {
-  useCodes(enabled && code ? [code] : []);
-  return useSyncExternalStore(subscribe, () => (enabled && code ? entries.get(code) ?? null : null));
-}
-
-export function useQuotes(codes: string[]): Record<string, HubQuote> {
+export function useMinutes(codes: string[]): Record<string, AShareLightKline | null> {
   useCodes(codes);
   const v = useSyncExternalStore(subscribe, getVersion);
   const key = codes.join(",");
   return useMemo(() => {
-    const result: Record<string, HubQuote> = {};
+    const result: Record<string, AShareLightKline | null> = {};
     for (const c of codes) {
-      const e = entries.get(c);
-      if (e) result[c] = e;
+      if (entries.has(c)) result[c] = entries.get(c) ?? null;
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps

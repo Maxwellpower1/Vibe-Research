@@ -111,31 +111,56 @@ export function seedLightKline(
   cache.set(`${code}:${resolution}:${num}`, { at: Date.now(), data });
 }
 
-/** One HTTP for many codes. Seeds the per-code 55s cache. */
+/** One HTTP for many codes. Seeds the per-code cache. maxAgeMs skips still-fresh rows. */
 export async function loadLightKlineBatch(
   codes: string[],
   resolution = "1",
   num = 240,
+  maxAgeMs = TTL_MS,
 ): Promise<Record<string, AShareLightKline | null>> {
   const uniq = [...new Set(codes.map((c) => c.trim()).filter(Boolean))].slice(0, 40);
   if (!uniq.length) return {};
+  const out: Record<string, AShareLightKline | null> = {};
+  const need: string[] = [];
+  const now = Date.now();
+  for (const c of uniq) {
+    const hit = cache.get(`${c}:${resolution}:${num}`);
+    if (hit && now - hit.at < maxAgeMs) out[c] = hit.data;
+    else need.push(c);
+  }
+  if (!need.length) return out;
   const map = await withFallback(
-    () => api.ashareLightKlineBatch(uniq, resolution, num),
+    () => api.ashareLightKlineBatch(need, resolution, num),
     resolution === "1"
       ? async () => {
-        const out: Record<string, AShareLightKline | null> = {};
-        await Promise.all(uniq.filter(canDirectMinute).map(async (code) => {
-          try { out[code] = await directKline(code); } catch { out[code] = null; }
+        const fresh: Record<string, AShareLightKline | null> = {};
+        await Promise.all(need.filter(canDirectMinute).map(async (code) => {
+          try { fresh[code] = await directKline(code); } catch { fresh[code] = null; }
         }));
-        return out;
+        return fresh;
       }
       : undefined,
     8000,
   );
   for (const [code, data] of Object.entries(map || {})) {
     seedLightKline(code, data, resolution, num);
+    out[code] = data;
   }
-  return map || {};
+  return out;
+}
+
+export function sparkFromKline(kl: AShareLightKline | null | undefined): {
+  closes: number[];
+  times: string[];
+  prevClose?: number | null;
+} | null {
+  if (!kl) return null;
+  const bars = kl.bars || [];
+  return {
+    closes: bars.map((b) => b.close).filter((n) => Number.isFinite(n)),
+    times: bars.map((b) => b.datetime),
+    prevClose: kl.prev_close,
+  };
 }
 
 export function klineFromBatch(

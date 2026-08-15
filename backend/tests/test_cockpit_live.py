@@ -218,6 +218,67 @@ def test_quotes_map_skips_empty_price(monkeypatch):
     assert cl.quotes_map(["000001"]) == {}
 
 
+def test_quotes_map_skips_futures(monkeypatch):
+    monkeypatch.setattr(cl, "_tencent_quotes", lambda codes: {
+        "sh600519": {
+            "symbol": "sh600519", "name": "贵州茅台", "price": 1400.0,
+            "pct": 1.0, "change": 14.0, "prev": 1386.0, "amount": 1.0, "turnover": 0.2,
+        },
+    })
+    called = []
+    monkeypatch.setattr(cl, "futures_quotes", lambda raw: called.append(raw) or {})
+    out = cl.quotes_map(["600519", "hf_CL", "BTCUSDT", "nf_AU0"])
+    assert out["600519"]["price"] == 1400.0
+    assert "hf_CL" not in out
+    assert "BTCUSDT" not in out
+    assert called == []
+
+
+def test_quotes_map_vix_falls_back_to_sina(monkeypatch):
+    monkeypatch.setattr(cl, "_tencent_quotes", lambda codes: {})
+    monkeypatch.setattr(cl, "_vix_from_sina", lambda: {
+        "name": "恐慌指数", "price": 16.2, "pct": 1.1, "change": 0.2, "prev": 16.0,
+    })
+    out = cl.quotes_map(["usVIX", "sh000001"])
+    assert out["usVIX"]["price"] == 16.2
+    assert out["usvix"]["price"] == 16.2
+
+
+def test_quotes_cached_reuses_per_code(monkeypatch):
+    import api_common
+
+    api_common._DC_CACHE.clear()
+    calls = []
+
+    def fake_map(codes):
+        calls.append(list(codes))
+        return {c: {"symbol": c, "name": c, "price": 10.0, "pct": 0.1} for c in codes if c != "usIXIC"}
+
+    monkeypatch.setattr(cl, "quotes_map", fake_map)
+    a = cl.quotes_cached(["sh000001", "usIXIC"])
+    b = cl.quotes_cached(["sh000001", "sz399001"])
+    assert a["sh000001"]["price"] == 10.0
+    assert b["sh000001"]["price"] == 10.0
+    assert calls[0] == ["sh000001", "usIXIC"]
+    assert calls[1] == ["sz399001"]
+
+
+def test_stock_boards_map_aliases_and_skips(monkeypatch):
+    def fake(code):
+        if "bad" in (code or ""):
+            raise ValueError("bad code")
+        return {
+            "code": "sh600519", "name": "茅台", "industry": "白酒",
+            "area": "贵州", "concepts": ["消费"], "source": "eastmoney",
+        }
+
+    monkeypatch.setattr(cl, "stock_boards", fake)
+    out = cl.stock_boards_map(["600519", "sh600519", "bad!!"])
+    assert out["600519"]["industry"] == "白酒"
+    assert out["sh600519"]["industry"] == "白酒"
+    assert "bad!!" not in out
+
+
 def test_turnover_top_prefers_sina(monkeypatch):
     import astock
     import market

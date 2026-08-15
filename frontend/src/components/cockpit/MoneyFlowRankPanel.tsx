@@ -3,7 +3,8 @@ import { QuoteStockRow } from "@/components/cockpit/QuoteStockRow";
 import { fmtAmt, pctColor } from "@/components/review/format";
 import { usePolling } from "@/hooks/usePolling";
 import { api } from "@/lib/api";
-import { klineFromBatch, loadLightKlineBatch } from "@/lib/lightKline";
+import { sparkFromKline } from "@/lib/lightKline";
+import { useMinutes } from "@/lib/minuteHub";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 120_000;
@@ -23,12 +24,7 @@ export function MoneyFlowRankPanel({
   const rows = data?.rows ?? [];
   const total = rows.reduce((s, r) => s + (r.main_net || 0), 0);
   const codes = rows.map((r) => r.code);
-  const { data: sparks } = usePolling(
-    () => (codes.length ? loadLightKlineBatch(codes, "1", 240) : Promise.resolve({})),
-    60_000,
-    [sectorFilter?.code, codes.join(",")],
-    codes.length > 0,
-  );
+  const minutes = useMinutes(codes);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -53,8 +49,7 @@ export function MoneyFlowRankPanel({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5 pt-0">
         {rows.map((r) => {
-          const kl = klineFromBatch(sparks, r.code);
-          const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+          const sp = sparkFromKline(minutes[r.code]);
           return (
             <QuoteStockRow
               key={r.code}
@@ -66,7 +61,7 @@ export function MoneyFlowRankPanel({
               turnover={r.turnover}
               mainNet={r.main_net}
               mainPct={r.main_pct}
-              spark={kl ? { closes, prevClose: kl.prev_close } : sparks ? { closes: [] } : undefined}
+              spark={sp ?? { closes: [] }}
             />
           );
         })}

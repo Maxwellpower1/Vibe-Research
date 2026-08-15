@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { WORLD_INDEX_DEFS } from "@/config/cockpit";
+import { COMMODITIES, WORLD_INDEX_DEFS } from "@/config/cockpit";
 import type { TapeItem } from "@/components/cockpit/TickerTape";
 import { api, type GlobalTreasuryCurve } from "@/lib/api";
 import { useQuotes } from "@/lib/quoteHub";
 
 const TAPE_MS = 20_000;
-const INDEX_CODES = WORLD_INDEX_DEFS.map((d) => d.code);
+const TAPE_CODES = [
+  ...WORLD_INDEX_DEFS.map((d) => d.code),
+  ...COMMODITIES.map((d) => d.code),
+];
 
-/** Site-wide tape: quote hub for world indices + US 10Y/2Y. */
+/** Site-wide tape: quote hub for world indices + commodities + US 10Y/2Y. */
 export function useTapeQuotes() {
-  const hub = useQuotes(INDEX_CODES);
+  const hub = useQuotes(TAPE_CODES);
   const [treasury, setTreasury] = useState<GlobalTreasuryCurve | null>(null);
 
   useEffect(() => {
@@ -41,6 +44,11 @@ export function useTapeQuotes() {
       if (!q || !Number.isFinite(q.price) || q.price <= 0) return [];
       return [{ key: d.code, label: q.name || d.label, price: q.price, pct: q.pct }];
     });
+    for (const d of COMMODITIES) {
+      const q = hub[d.code];
+      if (!q || !Number.isFinite(q.price) || q.price <= 0) continue;
+      list.push({ key: d.code, label: d.label, price: q.price, pct: q.pct });
+    }
     const pick = (tenor: string, label: string) => {
       const p = treasury?.points?.find((x) => x.tenor === tenor);
       if (!p || !Number.isFinite(p.yield)) return;

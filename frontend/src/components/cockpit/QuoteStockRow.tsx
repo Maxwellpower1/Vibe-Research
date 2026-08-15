@@ -1,11 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { WatchStar } from "@/components/cockpit/WatchStar";
 import { MinuteSpark } from "@/components/review/MinuteSpark";
 import { bgChg, fmtAmt, fmtPrice, pctColor } from "@/components/review/format";
 import { usePolling } from "@/hooks/usePolling";
-import { loadLightKline } from "@/lib/lightKline";
+import { loadLightKline, sparkFromKline } from "@/lib/lightKline";
 import { useQuote } from "@/lib/quoteHub";
+import { useStockBoards } from "@/lib/stockBoardsHub";
 import { cn } from "@/lib/utils";
+import { watchDigits } from "@/lib/watchlist";
 import { klineHref } from "@/components/cockpit/QuoteLine";
 
 const COMPACT_W = 400;
@@ -49,6 +52,12 @@ function useRowBox() {
   return { setEl, on, rowW };
 }
 
+export interface RowSpark {
+  closes: number[];
+  times?: string[];
+  prevClose?: number | null;
+}
+
 /** Two-row stock line: name/code, spark, amount/price, main-net/ratio bar, turnover, pct. */
 export function QuoteStockRow({
   code,
@@ -63,6 +72,8 @@ export function QuoteStockRow({
   symbol,
   link = true,
   spark,
+  watchable = true,
+  boards: wantBoards = true,
 }: {
   code: string;
   name: string;
@@ -76,7 +87,10 @@ export function QuoteStockRow({
   symbol?: string;
   link?: boolean;
   /** Parent-owned spark. undefined = fetch here. */
-  spark?: { closes: number[]; prevClose?: number | null } | null;
+  spark?: RowSpark | null;
+  watchable?: boolean;
+  /** Industry/concept tag. Off for rotating sector rows to spare em_get. */
+  boards?: boolean;
 }) {
   const { setEl, on: visible, rowW } = useRowBox();
   const compact = rowW > 0 && rowW < COMPACT_W;
@@ -87,6 +101,9 @@ export function QuoteStockRow({
   const livePct = hub ? hub.pct : pct;
   const liveAmt = amount ?? hub?.amount;
   const liveTurn = turnover ?? hub?.turnover;
+  const boards = useStockBoards(code, visible && wantBoards);
+  const tag = boards?.industry || boards?.concepts?.[0] || "";
+  const showStar = watchable && !!watchDigits(code);
 
   const { data: kl } = usePolling(
     () => loadLightKline(code, "1", 240),
@@ -94,10 +111,10 @@ export function QuoteStockRow({
     [code],
     visible && !owned,
   );
-  const closes = owned
-    ? (spark?.closes ?? [])
-    : (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
-  const prevClose = owned ? spark?.prevClose : kl?.prev_close;
+  const ownSpark = owned ? spark : sparkFromKline(kl);
+  const closes = ownSpark?.closes ?? [];
+  const times = ownSpark?.times;
+  const prevClose = ownSpark?.prevClose;
   const href = link ? klineHref(code) : undefined;
   const hasAmt = liveAmt != null && liveAmt > 0;
   const hasTurn = liveTurn != null && liveTurn > 0;
@@ -108,10 +125,15 @@ export function QuoteStockRow({
     <div
       className="grid items-center gap-x-1"
       style={{
-        gridTemplateColumns: `${rank != null ? "auto " : ""}72px minmax(0,1fr) minmax(0,1fr) ${hasAmt ? "64px" : "0px"} 60px`,
+        gridTemplateColumns: `${showStar ? "14px " : ""}${rank != null ? "auto " : ""}72px minmax(0,1fr) minmax(0,1fr) ${hasAmt ? "64px" : "0px"} 60px`,
         gridTemplateRows: "20px 16px",
       }}
     >
+      {showStar && (
+        <div className="row-span-2 self-center">
+          <WatchStar code={code} />
+        </div>
+      )}
       {rank != null && (
         <div className={cn("row-span-2 self-center text-[11px] font-bold leading-none tabular-nums", rankCls)}>
           {rank}
@@ -119,11 +141,20 @@ export function QuoteStockRow({
       )}
       <div className="row-span-2 flex min-w-0 flex-col justify-center gap-1 leading-none">
         <span className="truncate text-[11px] text-slate-200">{name}</span>
-        <span className="truncate text-[10px] text-slate-500">{symbol || code}</span>
+        <span className="truncate text-[10px] text-slate-500">
+          {symbol || code}{tag ? ` · ${tag}` : ""}
+        </span>
       </div>
       <div className="col-span-2 flex h-5 min-w-0 items-center self-center">
         {closes.length > 1 ? (
-          <MinuteSpark closes={closes} prevClose={prevClose} pct={livePct ?? 0} className="h-5" />
+          <MinuteSpark
+            closes={closes}
+            times={times}
+            session="ashare"
+            prevClose={prevClose}
+            pct={livePct ?? 0}
+            className="h-5"
+          />
         ) : (
           <span className="text-[10px] text-slate-600">——</span>
         )}

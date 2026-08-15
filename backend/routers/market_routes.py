@@ -289,6 +289,22 @@ def iwencai_search(
         raise HTTPException(502, f"iwencai 搜索异常：{e}") from e
 
 
+@router.get("/api/iwencai/select")
+def iwencai_select(
+    q: str = Query(..., min_length=1, max_length=80),
+    limit: int = Query(12, ge=1, le=30),
+):
+    """iwencai 选股 (/v1/query2data)。客观名单, 不附推荐。需 IWENCAI_API_KEY。"""
+    try:
+        return {"data": astock.iwencai_select(q, limit=limit)}
+    except astock.DependencyMissing as e:
+        raise HTTPException(501, str(e)) from e
+    except Exception as e:
+        msg = str(e)
+        status = 429 if "次数已用完" in msg else 502
+        raise HTTPException(status, f"iwencai 选股异常：{e}") from e
+
+
 @router.get("/api/cls-telegraph")
 def cls_telegraph(limit: int = Query(50, ge=10, le=100)):
     """财联社电报（全市场实时快讯，零 key）。缓存 60 秒。客观呈现，不附推荐。"""
@@ -376,15 +392,13 @@ def market_lpr(days: int = Query(365, ge=30, le=2000)):
 def market_quotes(
     codes: str = Query(..., min_length=3, description="comma-separated sh600519,usIXIC,whUSDCNY"),
 ):
-    """Cockpit quote hub. Tencent batch, 5s cache, max 80 codes."""
+    """Cockpit quote hub. Tencent equities/indices only (per-code 5s cache). Futures use /commodities."""
     import cockpit_live
     raw = [c.strip() for c in codes.split(",") if c.strip()][:80]
     if not raw:
         raise HTTPException(400, "codes 不能为空")
-    key = ",".join(sorted(raw))
     try:
-        data = _cached("quotes", key, 5, lambda: cockpit_live.quotes_map(raw))
-        return {"data": data}
+        return {"data": cockpit_live.quotes_cached(raw)}
     except Exception as e:
         raise HTTPException(502, f"行情批量异常：{e}") from e
 
@@ -616,6 +630,34 @@ def market_stock_boards(code: str = Query(..., min_length=6, max_length=8)):
         raise HTTPException(400, str(e)) from e
     except Exception as e:
         raise HTTPException(502, f"个股板块异常：{e}") from e
+
+
+@router.get("/api/market/stock-boards-batch")
+def market_stock_boards_batch(codes: str = Query(..., min_length=6, max_length=200)):
+    """批量个股行业/概念, 最多 12 只. 与单票接口共用 24h 缓存."""
+    import cockpit_live
+    raw: list[str] = []
+    seen: set[str] = set()
+    for part in codes.split(","):
+        k = part.strip()
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        raw.append(k)
+        if len(raw) >= 12:
+            break
+    out: dict = {}
+    for c in raw:
+        try:
+            out[c] = _cached(
+                "stock_boards",
+                c.lower(),
+                24 * 3600,
+                lambda c=c: cockpit_live.stock_boards(c),
+            )
+        except Exception:
+            continue
+    return {"data": out}
 
 
 @router.get("/api/market/lives")

@@ -20,7 +20,6 @@ export function usePolling<T>(
     if (!enabled) return;
     if (prevDepKey.current !== depKey) {
       prevDepKey.current = depKey;
-      setData(null);
       setError(null);
     }
     let cancelled = false;
