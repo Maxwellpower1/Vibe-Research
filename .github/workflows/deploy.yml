@@ -8,6 +8,12 @@
 # Optional:
 #   DEPLOY_PORT      default 22
 #   DEPLOY_PATH      default /root/Vibe-Research-main
+#   NOTIFY_EMAIL     更新成功后收件人
+#   SMTP_USER        发件邮箱 (QQ 填完整地址, 如 you@qq.com)
+#   SMTP_PASS        QQ 邮箱授权码, 不是登录密码
+#   SMTP_HOST        default smtp.qq.com
+#   SMTP_PORT        default 465
+#   SMTP_FROM        default SMTP_USER
 
 name: Deploy production
 
@@ -115,7 +121,26 @@ jobs:
             if [[ -f "$ROOT/backend/.env" ]]; then
               cp -a "$ROOT/backend/.env" /tmp/vibe.env.bak
             fi
-            tar -xzf /tmp/vibe-deploy.tgz -C "$ROOT"
+            STAGE="/tmp/vibe-extract-$$"
+            rm -rf "$STAGE"
+            mkdir -p "$STAGE"
+            tar -xzf /tmp/vibe-deploy.tgz -C "$STAGE"
+            # Overlay tar never deletes; drop source files removed in this release.
+            if command -v rsync >/dev/null 2>&1; then
+              rsync -a --delete \
+                --exclude '/backend/.env' \
+                --exclude '/backend/.venv/' \
+                --exclude '/backend/.cache/' \
+                --exclude '/backend/.pytest_cache/' \
+                --exclude '/frontend/node_modules/' \
+                --exclude '/frontend/dist/' \
+                --exclude '/.git/' \
+                "$STAGE/" "$ROOT/"
+            else
+              tar -xzf /tmp/vibe-deploy.tgz -C "$ROOT"
+              rm -f "$ROOT/frontend/src/pages/Weather.tsx" "$ROOT/backend/weather.py"
+            fi
+            rm -rf "$STAGE"
             if [[ -f /tmp/vibe.env.bak ]]; then
               mkdir -p "$ROOT/backend"
               cp -a /tmp/vibe.env.bak "$ROOT/backend/.env"
@@ -134,3 +159,37 @@ jobs:
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           NO_NPM_CI: ${{ github.event_name == 'workflow_dispatch' && inputs.no_npm_ci || false }}
+
+      - name: Deploy meta
+        if: success()
+        id: meta
+        run: |
+          set -euo pipefail
+          echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "ver=$(node -p "require('./frontend/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Email after successful deploy
+        if: ${{ success() && secrets.NOTIFY_EMAIL != '' && secrets.SMTP_USER != '' && secrets.SMTP_PASS != '' }}
+        continue-on-error: true
+        uses: dawidd6/action-send-mail@v4
+        with:
+          server_address: ${{ secrets.SMTP_HOST || 'smtp.qq.com' }}
+          server_port: ${{ secrets.SMTP_PORT || 465 }}
+          secure: ${{ (secrets.SMTP_PORT || '465') == '465' }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          from: Vibe-Research <${{ secrets.SMTP_FROM || secrets.SMTP_USER }}>
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          subject: Vibe-Research v${{ steps.meta.outputs.ver }} 服务器更新成功 (${{ steps.meta.outputs.short }})
+          convert_markdown: true
+          body: |
+            生产环境已更新成功。
+
+            - 版本: ${{ steps.meta.outputs.ver }}
+            - 仓库: ${{ github.repository }}
+            - 提交: ${{ github.sha }}
+            - 说明: ${{ github.event.head_commit.message || 'workflow_dispatch' }}
+            - 触发: ${{ github.event_name }} / ${{ github.actor }}
+            - 日志: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            打开站点确认即可。

@@ -171,7 +171,7 @@ cd frontend && npm install && npm run dev
 
 - 手动：`bash deploy/update.sh`（参数见脚本注释）
 - systemd 首次安装：`bash deploy/install-systemd.sh`
-- **GitHub Actions 自动部署**（push `main` → SSH → pull + update）：见 [`deploy/README.md`](deploy/README.md)
+- **GitHub Actions 自动部署**（push `main` → SSH → update；成功可发邮件）：见 [`deploy/README.md`](deploy/README.md)
 
 默认假定 `VR_PYTHON=/root/miniconda3/bin/python`、目录 `/root/Vibe-Research-main`。
 

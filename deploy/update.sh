@@ -71,9 +71,25 @@ update_backend() {
   fi
 }
 
+# tar overlay never deletes; leftover pages still get typechecked.
+prune_stale_sources() {
+  local stale=(
+    "$ROOT/frontend/src/pages/Weather.tsx"
+    "$ROOT/backend/weather.py"
+  )
+  local f
+  for f in "${stale[@]}"; do
+    if [[ -e "$f" ]]; then
+      log "prune leftover: $f"
+      rm -f "$f"
+    fi
+  done
+}
+
 update_frontend() {
   log "frontend: build + restart ($FRONTEND_UNIT)"
   command -v npm >/dev/null 2>&1 || die "npm not found (need Node 18+)"
+  prune_stale_sources
   cd "$ROOT/frontend"
   if [[ "$NPM_CI" -eq 1 ]]; then
     rm -rf node_modules
