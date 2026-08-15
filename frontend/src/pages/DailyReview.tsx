@@ -8,7 +8,7 @@ import { AskAiButton } from "@/components/ui/AskAiButton";
 import { Disclaimer } from "@/components/ui/Disclaimer";
 import { CockpitLayout, type CockpitRow } from "@/components/cockpit/CockpitLayout";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
-import { ReviewIndexPanel } from "@/components/review/ReviewIndexPanel";
+import { WatchlistCockpitPanel } from "@/components/cockpit/WatchlistCockpitPanel";
 import { ReviewSentimentPanel } from "@/components/review/ReviewSentimentPanel";
 import { ReviewShortPanel } from "@/components/review/ReviewShortPanel";
 import { ReviewBoardsSeg } from "@/components/review/ReviewBoardsSeg";
@@ -81,20 +81,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     extraDone: d.extraDone,
     ovDone: d.ovDone,
     moneyDone: d.moneyDone,
-  };
-
-  const indexShared = {
-    updatedLabel: d.topUpdatedLabel,
-    session: d.session,
-    indices: d.indices,
-    idxErr: d.idxErr,
-    idxMinute: d.idxMinute,
-    idxMinuteDone: d.idxMinuteDone,
-    globalIdx: d.globalIdx,
-    watchCodes: d.watchCodes,
-    watchQuotes: d.watchQuotes,
-    watchMinute: d.watchMinute,
-    watchDone: d.watchDone,
   };
 
   const rows: CockpitRow[] = [
@@ -204,14 +190,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           title: `自选${d.watchCodes.length ? ` ${d.watchCodes.length}` : ""}`,
           defaultW: 0.28,
           mobileH: "h-[400px]",
-          body: (
-            <ReviewIndexPanel
-              variant="watch"
-              idxPanel="watch"
-              onIdxPanel={d.setIdxPanel}
-              {...indexShared}
-            />
-          ),
+          body: <WatchlistCockpitPanel codes={d.watchCodes} />,
         },
         {
           id: "risk",

@@ -5,6 +5,7 @@ Validation, process-local TTL caches, and Daily Review warmup hook.
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import astock
 from cache import TTLCache, is_nonempty
@@ -12,10 +13,10 @@ from fastapi import HTTPException
 
 _CODE_RE = r"^\d{6}$"
 _SYMBOL_RE = re.compile(
-    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|hkhsi|hkhstech|usdji|usixic|usinx|usvix|ussoxx)$",
+    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|hkhsi|hkhstech|usdji|usixic|usinx|usvix|ussoxx|whusdcny)$",
     re.IGNORECASE,
 )
-_SYMBOL_HINT = "代码须为 6 位数字、sh/sz/bj+6 位、hkHSI/hkHSTECH 或 usIXIC 等美股指数"
+_SYMBOL_HINT = "代码须为 6 位数字、sh/sz/bj+6 位、hkHSI/hkHSTECH、usIXIC 等美股指数或 whUSDCNY"
 
 
 def _validate(code: str) -> str:
@@ -26,7 +27,7 @@ def _validate(code: str) -> str:
 
 
 def _validate_symbol(code: str) -> str:
-    """6-digit, sh/sz/bj+6, HK hkHSI/hkHSTECH, or US usIXIC/usDJI (canonical case)."""
+    """6-digit, sh/sz/bj+6, HK/US indices, or FX whUSDCNY (canonical case)."""
     raw = (code or "").strip()
     if not _SYMBOL_RE.fullmatch(raw):
         raise HTTPException(400, _SYMBOL_HINT)
@@ -71,6 +72,47 @@ def _cached(endpoint: str, code: str, ttl: int, fetch, valid=is_nonempty):
         valid=valid,
         negative_ttl=15,
     )
+
+
+def light_kline_map(codes: list[str], res: str = "1", num: int = 240) -> dict[str, dict | None]:
+    """Batch light kline. Same cache keys as GET /astock/light-kline. Max 40."""
+    seen: set[str] = set()
+    jobs: list[tuple[str, str]] = []
+    out: dict[str, dict | None] = {}
+    for raw in codes:
+        key = (raw or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if len(jobs) >= 40:
+            break
+        try:
+            sym = _validate_symbol(key)
+        except HTTPException:
+            out[key] = None
+            continue
+        jobs.append((key, sym))
+
+    ttl = 120 if res == "1" else 60
+
+    def _one(pair: tuple[str, str]) -> tuple[str, str, dict | None]:
+        raw, sym = pair
+        data = _cached(
+            f"ashare_light:{res}:{num}",
+            sym,
+            ttl,
+            lambda: astock.light_kline(sym, res, num=num),
+        )
+        return raw, sym, data if isinstance(data, dict) and data else None
+
+    if not jobs:
+        return out
+    with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as pool:
+        for raw, sym, data in pool.map(_one, jobs):
+            out[raw] = data
+            if sym != raw:
+                out[sym] = data
+    return out
 
 
 def _warm_review_dc() -> tuple[int, int, list[dict]]:
@@ -175,7 +217,7 @@ def _warm_review_dc() -> tuple[int, int, list[dict]]:
 
     minute_syms = list(getattr(astock, "A_INDICES", []) or []) + list(
         getattr(astock, "US_INDICES", []) or []
-    )
+    ) + list(getattr(astock, "FX_INDICES", []) or [])
     if minute_syms:
         with ThreadPoolExecutor(max_workers=min(6, len(minute_syms))) as pool:
             futs = {pool.submit(_warm_minute, sym): sym for sym in minute_syms}

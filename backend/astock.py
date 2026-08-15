@@ -56,15 +56,19 @@ _US_INDEX_SYMBOLS = {
     "usvix": "usVIX",
     "ussoxx": "usSOXX",
 }
+_FX_SYMBOLS = {
+    "whusdcny": "whUSDCNY",
+}
 US_INDICES = list(_US_INDEX_SYMBOLS.values())
+FX_INDICES = list(_FX_SYMBOLS.values())
 
 
 def resolve_symbol(code: str) -> str:
-    """Normalize to tencent symbol: sh600519 / sz000001 / sh000001 / hkHSI / usIXIC.
+    """Normalize to tencent symbol: sh600519 / sz000001 / sh000001 / hkHSI / usIXIC / whUSDCNY.
 
     Accepts bare 6-digit (uses get_prefix), explicit sh|sz|bj + 6 digits,
-    HK indices hkHSI / hkHSTECH, or US indices usDJI / usIXIC / usINX / usVIX / usSOXX
-    (case-insensitive input, canonical case out).
+    HK indices hkHSI / hkHSTECH, US indices usDJI / usIXIC / usINX / usVIX / usSOXX,
+    or FX whUSDCNY (case-insensitive input, canonical case out).
     Indices like 上证 must be passed as sh000001 (bare 000001 = 平安银行).
     """
     raw = (code or "").strip()
@@ -74,6 +78,9 @@ def resolve_symbol(code: str) -> str:
     us = _US_INDEX_SYMBOLS.get(raw.lower())
     if us:
         return us
+    fx = _FX_SYMBOLS.get(raw.lower())
+    if fx:
+        return fx
     low = raw.lower()
     m = re.fullmatch(r"(sh|sz|bj)(\d{6})", low)
     if m:
@@ -472,11 +479,68 @@ def _parse_minute_line(line: str, day: str = "") -> dict | None:
     }
 
 
+def _em_fx_minute(symbol: str, n: int) -> dict:
+    """Offshore USD/CNH 1-minute K. Tencent wh* minute returns a single point."""
+    try:
+        r = em_get(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+            params={
+                "secid": "133.USDCNH",
+                "fields1": "f1,f2,f3,f4,f5,f6",
+                "fields2": "f51,f52,f53,f54,f55,f56",
+                "klt": "1",
+                "fqt": "1",
+                "beg": "0",
+                "end": "20500101",
+                "lmt": str(n),
+            },
+            headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
+            timeout=12,
+        )
+        data = (r.json() or {}).get("data") or {}
+    except Exception:
+        return {}
+    bars: list[dict] = []
+    for row in data.get("klines") or []:
+        f = str(row).split(",")
+        if len(f) < 5:
+            continue
+        try:
+            bars.append({
+                "datetime": f[0],
+                "open": float(f[1]),
+                "close": float(f[2]),
+                "high": float(f[3]),
+                "low": float(f[4]),
+                "volume": int(float(f[5])) if len(f) > 5 else 0,
+            })
+        except (TypeError, ValueError):
+            continue
+    if not bars:
+        return {}
+    prev = data.get("preKPrice")
+    try:
+        prev_close = float(prev) if prev not in (None, "") else bars[0]["open"]
+    except (TypeError, ValueError):
+        prev_close = bars[0]["open"]
+    return {
+        "code": "USDCNH",
+        "symbol": symbol,
+        "name": "美元/人民币",
+        "resolution": "1",
+        "adjust": "none",
+        "source": "eastmoney USDCNH",
+        "prev_close": prev_close,
+        "bars": bars,
+    }
+
+
 def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
     """轻量图数据（腾讯）：分时 / 5日 / 日K(前复权)。
 
     code: 6 位数字，或 sh/sz/bj + 6 位（指数请用 sh000001 / sz399006 等），
-          或港股指数 hkHSI / hkHSTECH，或美股指数 usIXIC / usDJI 等。
+          或港股指数 hkHSI / hkHSTECH，或美股指数 usIXIC / usDJI 等，
+          或外汇 whUSDCNY（东财离岸 USDCNH 1 分钟 K）。
     resolution: '1' 当日分时 · '5' 近5日分时 · '1D' 日K前复权
     返回: {code, symbol, name?, resolution, adjust, source, prev_close?, bars: [...]}
     bars 统一字段: datetime, open, high, low, close, volume (, amount)
@@ -487,6 +551,8 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
     code6 = symbol[2:]  # 000001 / HSI / HSTECH
     res = (resolution or "1D").strip()
     n = max(20, min(int(num or 365), 1000))
+    if symbol.startswith("wh") and res == "1":
+        return _em_fx_minute(symbol, n)
 
     name = None
     prev_close = None
@@ -790,7 +856,9 @@ def full_valuation(code: str) -> dict:
 
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 _EM_MIN_INTERVAL = 1.0          # 两次东财请求最小间隔（秒），内置防封节流
+_EM_FFLOW_INTERVAL = 0.2        # fflow/kline only; butterfly curves need ~16 hits
 _em_last_call = [0.0]
+_em_fflow_last = [0.0]
 _em_lock = threading.Lock()     # serialize launch gap only; HTTP runs unlocked
 _EM_SESSIONS: dict = {}         # {direct(bool): requests.Session}
 
@@ -830,17 +898,23 @@ def _em_session(direct: bool):
     return s
 
 
-def _em_reserve_slot() -> None:
+def _em_reserve_slot(url: str = "") -> None:
     """Reserve the next Eastmoney launch slot. HTTP stays outside the lock.
 
-    Only the inter-request gap is serialized. Holding the lock for the full RTT
-    used to make a 200ms quote wait behind a 3s clist page.
+    Default lane stays ~1s. fflow/kline uses a 200ms lane so board-flow curves
+    do not sit behind clist/ulist. Sleep is outside the lock so the two lanes
+    do not block each other.
     """
+    fast = "fflow/kline" in (url or "")
+    last = _em_fflow_last if fast else _em_last_call
+    gap = _EM_FFLOW_INTERVAL if fast else _EM_MIN_INTERVAL
     with _em_lock:
-        wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
-        if wait > 0:
-            time.sleep(wait + random.uniform(0.02, 0.12))
-        _em_last_call[0] = time.time()
+        now = time.time()
+        wait = gap - (now - last[0])
+        jitter = random.uniform(0.02, 0.08 if fast else 0.12) if wait > 0 else 0.0
+        last[0] = now + wait if wait > 0 else now
+    if wait > 0:
+        time.sleep(wait + jitter)
 
 
 def em_get(url: str, params: dict | None = None, headers: dict | None = None, timeout: int = 15):
@@ -849,8 +923,9 @@ def em_get(url: str, params: dict | None = None, headers: dict | None = None, ti
     第一次请求探测：先直连（短超时、不重试），成功即固定走直连；失败则降级走系统代理并固定。
     探测结果整个进程复用，避免每次重试。`VR_DATA_PROXY=1` 可跳过探测、强制走代理。
     锁只卡发起间隔, HTTP RTT 在锁外, 与 warmup 线程池共用同一配额。
+    fflow/kline 走 200ms 快车道, 其余仍约 1s.
     """
-    _em_reserve_slot()
+    _em_reserve_slot(url)
     mode = _em_mode[0]
     if mode != "auto":
         return _em_session(mode == "direct").get(

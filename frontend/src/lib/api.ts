@@ -1,5 +1,14 @@
 // Vibe-Research 后端 API 客户端。/api → vite 代理到本地 FastAPI（默认 8900）。
 // 后端未启动或数据源异常时抛 ApiError，页面据此优雅降级。
+// 腾讯系行情在后端慢/挂时由浏览器直连 qt.gtimg.cn / ifzq 兜底。
+
+import { WORLD_INDEX_DEFS } from "@/config/cockpit";
+import {
+  fetchDirectBoards,
+  fetchDirectQuotes,
+  withFallback,
+  type DirectQuote,
+} from "@/lib/tencentDirect";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -241,6 +250,11 @@ export interface StockFlow {
 export interface WorldIndex {
   symbol: string; name: string; label: string; region: "CN" | "HK" | "US" | "FX" | string;
   price: number; change: number; change_pct: number; amount?: number;
+}
+/** Cockpit quote hub row (Tencent). amount is yuan. */
+export interface MarketQuote {
+  symbol: string; name: string; price: number; pct: number;
+  change?: number; prev?: number; amount?: number; turnover?: number;
 }
 export interface SectorBoard {
   code: string; raw_code?: string; name: string;
@@ -1295,9 +1309,52 @@ export const api = {
     get<BoardFlow>(`/market/board-flow?board_type=${boardType}&period=${period}&top=${top}`),
   stockFlow: (top = 15, board?: string | null) =>
     get<StockFlow>(`/market/stock-flow?top=${top}${board ? `&board=${encodeURIComponent(board)}` : ""}`),
-  worldIndices: () => get<WorldIndex[]>("/market/world-indices"),
+  worldIndices: () =>
+    withFallback(
+      () => get<WorldIndex[]>("/market/world-indices"),
+      async () => {
+        const map = await fetchDirectQuotes(WORLD_INDEX_DEFS.map((d) => d.code));
+        return WORLD_INDEX_DEFS.flatMap((d) => {
+          const q = map[d.code];
+          if (!q || !q.price) return [];
+          return [{
+            symbol: d.code, name: q.name || d.label, label: d.label, region: d.region,
+            price: q.price, change: q.change, change_pct: q.pct, amount: q.amount,
+          }];
+        });
+      },
+      6000,
+    ),
+  marketQuotes: (codes: string[]) =>
+    withFallback(
+      () => get<Record<string, MarketQuote>>(
+        `/market/quotes?codes=${encodeURIComponent(codes.slice(0, 80).join(","))}`,
+      ),
+      async () => {
+        const map = await fetchDirectQuotes(codes.slice(0, 80));
+        const out: Record<string, MarketQuote> = {};
+        const put = (k: string, q: DirectQuote) => { out[k] = q; };
+        for (const [k, q] of Object.entries(map)) {
+          put(k, q);
+          put(q.symbol, q);
+          if (/^(sh|sz|bj)\d{6}$/i.test(q.symbol)) put(q.symbol.slice(2), q);
+        }
+        return out;
+      },
+    ),
   sectorBoards: (kind: "01" | "02" = "01", direction: "0" | "1" = "0", n = 40) =>
-    get<SectorBoard[]>(`/market/boards?kind=${kind}&direction=${direction}&n=${n}`),
+    withFallback(
+      () => get<SectorBoard[]>(`/market/boards?kind=${kind}&direction=${direction}&n=${n}`),
+      async () => {
+        const rows = await fetchDirectBoards(kind, direction === "1" ? 1 : 0, n);
+        return rows.map((b) => ({
+          code: b.code, raw_code: b.raw_code, name: b.name,
+          price: b.price, change: b.change, pct: b.pct,
+          lead_code: b.lead_code, lead_name: b.lead_name, lead_pct: b.lead_pct,
+          pct5: b.pct5, pct20: b.pct20,
+        }));
+      },
+    ),
   boardStocks: (code: string, n = 12) =>
     get<BoardStock[]>(`/market/board-stocks?code=${encodeURIComponent(code)}&n=${n}`),
   stockRank: (sort: "amount" | "changepercent" = "amount", asc: 0 | 1 = 0, n = 30) =>
@@ -1453,6 +1510,12 @@ export const api = {
   ashareLightKline: (code: string, resolution = "1D", num = 365) =>
     get<AShareLightKline>(
       `/astock/light-kline?code=${encodeURIComponent(code)}&resolution=${encodeURIComponent(resolution)}&num=${num}`,
+    ),
+  /** One request, many codes. Same payload as ashareLightKline per key. */
+  ashareLightKlineBatch: (codes: string[], resolution = "1", num = 240) =>
+    get<Record<string, AShareLightKline | null>>(
+      `/astock/light-kline-batch?codes=${encodeURIComponent(codes.slice(0, 40).join(","))}`
+      + `&resolution=${encodeURIComponent(resolution)}&num=${num}`,
     ),
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
   news: (code: string) => get<NewsItem[]>(`/news?code=${code}`),

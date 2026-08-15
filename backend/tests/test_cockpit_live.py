@@ -191,6 +191,33 @@ def test_stock_rank_falls_back_to_eastmoney(monkeypatch):
     assert out[0]["code"] == "000001"
 
 
+def test_quotes_map_aliases_and_filters(monkeypatch):
+    monkeypatch.setattr(cl, "_tencent_quotes", lambda codes: {
+        "sh600519": {
+            "symbol": "sh600519", "name": "贵州茅台", "price": 1400.0,
+            "pct": 1.2, "change": 16.0, "prev": 1384.0, "amount": 12.5, "turnover": 0.31,
+        },
+        "usIXIC": {
+            "symbol": "usIXIC", "name": "纳斯达克", "price": 21000.0,
+            "pct": 0.4, "change": 80.0, "prev": 20920.0, "amount": 0, "turnover": 0,
+        },
+    })
+    out = cl.quotes_map(["600519", "sh600519", "usIXIC", "bad!!", "600519"])
+    assert out["600519"]["price"] == 1400.0
+    assert out["sh600519"]["price"] == 1400.0
+    assert out["600519"]["amount"] == 12.5 * 10000
+    assert out["usIXIC"]["name"] == "纳斯达克"
+    assert out["usIXIC"]["amount"] == 0
+    assert "bad!!" not in out
+
+
+def test_quotes_map_skips_empty_price(monkeypatch):
+    monkeypatch.setattr(cl, "_tencent_quotes", lambda codes: {
+        "sz000001": {"symbol": "sz000001", "name": "平安银行", "price": 0, "pct": 0},
+    })
+    assert cl.quotes_map(["000001"]) == {}
+
+
 def test_turnover_top_prefers_sina(monkeypatch):
     import astock
     import market

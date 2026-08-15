@@ -25,6 +25,8 @@ def test_resolve_symbol():
     assert astock.resolve_symbol("usIXIC") == "usIXIC"
     assert astock.resolve_symbol("usixic") == "usIXIC"
     assert astock.resolve_symbol("usDJI") == "usDJI"
+    assert astock.resolve_symbol("whUSDCNY") == "whUSDCNY"
+    assert astock.resolve_symbol("whusdcny") == "whUSDCNY"
     assert astock.resolve_symbol("bad") == ""
 
 
@@ -49,6 +51,27 @@ def test_light_kline_us_minute(monkeypatch):
     assert out["name"] == "纳斯达克"
     assert out["prev_close"] == 99
     assert [b["close"] for b in out["bars"]] == [100.0, 101.0]
+
+
+def test_light_kline_fx_usdcnh(monkeypatch):
+    class _Resp:
+        def json(self):
+            return {
+                "data": {
+                    "preKPrice": 7.17,
+                    "klines": [
+                        "2026-08-15 09:30,7.17,7.18,7.19,7.16,0",
+                        "2026-08-15 09:31,7.18,7.19,7.20,7.17,0",
+                    ],
+                }
+            }
+
+    monkeypatch.setattr(astock, "em_get", lambda *_a, **_k: _Resp())
+    out = astock.light_kline("whUSDCNY", "1", num=240)
+    assert out["symbol"] == "whUSDCNY"
+    assert out["source"] == "eastmoney USDCNH"
+    assert out["prev_close"] == 7.17
+    assert [b["close"] for b in out["bars"]] == [7.18, 7.19]
 
 
 def test_calc_peg():

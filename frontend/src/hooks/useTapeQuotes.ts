@@ -1,49 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type GlobalTreasuryCurve, type WorldIndex } from "@/lib/api";
+import { WORLD_INDEX_DEFS } from "@/config/cockpit";
 import type { TapeItem } from "@/components/cockpit/TickerTape";
+import { api, type GlobalTreasuryCurve } from "@/lib/api";
+import { useQuotes } from "@/lib/quoteHub";
 
 const TAPE_MS = 20_000;
+const INDEX_CODES = WORLD_INDEX_DEFS.map((d) => d.code);
 
-function toItems(
-  world: WorldIndex[],
-  treasury: GlobalTreasuryCurve | null,
-): TapeItem[] {
-  const list: TapeItem[] = world
-    .filter((i) => Number.isFinite(i.price))
-    .map((i) => ({
-      key: i.symbol,
-      label: i.name || i.label,
-      price: i.price,
-      pct: i.change_pct,
-    }));
-  const pick = (tenor: string, label: string) => {
-    const p = treasury?.points?.find((x) => x.tenor === tenor);
-    if (!p || !Number.isFinite(p.yield)) return;
-    const chg = p.chg;
-    const pct = chg != null && p.yield ? (chg / p.yield) * 100 : 0;
-    list.push({ key: `us${tenor}`, label, price: p.yield, pct, digits: 3 });
-  };
-  pick("10Y", "美债10Y");
-  pick("2Y", "美债2Y");
-  return list;
-}
-
-/** Site-wide tape: same world-indices cache as the cockpit panel + US 10Y/2Y. */
+/** Site-wide tape: quote hub for world indices + US 10Y/2Y. */
 export function useTapeQuotes() {
-  const [world, setWorld] = useState<WorldIndex[]>([]);
+  const hub = useQuotes(INDEX_CODES);
   const [treasury, setTreasury] = useState<GlobalTreasuryCurve | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = () => {
       if (typeof document !== "undefined" && document.hidden) return;
-      void Promise.all([
-        api.worldIndices().catch(() => [] as WorldIndex[]),
-        api.globalTreasuryCurve().catch(() => null),
-      ]).then(([wi, ty]) => {
-        if (cancelled) return;
-        setWorld(wi ?? []);
-        setTreasury(ty);
+      void api.globalTreasuryCurve().then((ty) => {
+        if (!cancelled) setTreasury(ty);
+      }).catch(() => {
+        if (!cancelled) setTreasury(null);
       });
     };
     const onVis = () => {
@@ -59,5 +35,21 @@ export function useTapeQuotes() {
     };
   }, []);
 
-  return useMemo(() => toItems(world, treasury), [world, treasury]);
+  return useMemo(() => {
+    const list: TapeItem[] = WORLD_INDEX_DEFS.flatMap((d) => {
+      const q = hub[d.code];
+      if (!q || !Number.isFinite(q.price) || q.price <= 0) return [];
+      return [{ key: d.code, label: q.name || d.label, price: q.price, pct: q.pct }];
+    });
+    const pick = (tenor: string, label: string) => {
+      const p = treasury?.points?.find((x) => x.tenor === tenor);
+      if (!p || !Number.isFinite(p.yield)) return;
+      const chg = p.chg;
+      const pct = chg != null && p.yield ? (chg / p.yield) * 100 : 0;
+      list.push({ key: `us${tenor}`, label, price: p.yield, pct, digits: 3 });
+    };
+    pick("10Y", "美债10Y");
+    pick("2Y", "美债2Y");
+    return list;
+  }, [hub, treasury]);
 }

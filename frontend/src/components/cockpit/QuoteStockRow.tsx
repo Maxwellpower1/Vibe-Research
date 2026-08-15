@@ -4,6 +4,7 @@ import { MinuteSpark } from "@/components/review/MinuteSpark";
 import { bgChg, fmtAmt, fmtPrice, pctColor } from "@/components/review/format";
 import { usePolling } from "@/hooks/usePolling";
 import { loadLightKline } from "@/lib/lightKline";
+import { useQuote } from "@/lib/quoteHub";
 import { cn } from "@/lib/utils";
 import { klineHref } from "@/components/cockpit/QuoteLine";
 
@@ -61,6 +62,7 @@ export function QuoteStockRow({
   rank,
   symbol,
   link = true,
+  spark,
 }: {
   code: string;
   name: string;
@@ -73,20 +75,32 @@ export function QuoteStockRow({
   rank?: number;
   symbol?: string;
   link?: boolean;
+  /** Parent-owned spark. undefined = fetch here. */
+  spark?: { closes: number[]; prevClose?: number | null } | null;
 }) {
   const { setEl, on: visible, rowW } = useRowBox();
   const compact = rowW > 0 && rowW < COMPACT_W;
+  const owned = spark !== undefined;
+  const hubCode = symbol && /^(sh|sz|bj)/i.test(symbol) ? symbol : code;
+  const hub = useQuote(hubCode);
+  const livePrice = hub && hub.price > 0 ? hub.price : price;
+  const livePct = hub ? hub.pct : pct;
+  const liveAmt = amount ?? hub?.amount;
+  const liveTurn = turnover ?? hub?.turnover;
 
   const { data: kl } = usePolling(
     () => loadLightKline(code, "1", 240),
     KLINE_MS,
     [code],
-    visible,
+    visible && !owned,
   );
-  const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+  const closes = owned
+    ? (spark?.closes ?? [])
+    : (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+  const prevClose = owned ? spark?.prevClose : kl?.prev_close;
   const href = link ? klineHref(code) : undefined;
-  const hasAmt = amount != null && amount > 0;
-  const hasTurn = turnover != null && turnover > 0;
+  const hasAmt = liveAmt != null && liveAmt > 0;
+  const hasTurn = liveTurn != null && liveTurn > 0;
   const ratioBar = mainPct != null ? Math.min(100, Math.abs(mainPct) * 2) : 0;
   const rankCls = rank != null && rank <= 3 ? "text-amber-400" : "text-slate-600";
 
@@ -109,13 +123,13 @@ export function QuoteStockRow({
       </div>
       <div className="col-span-2 flex h-5 min-w-0 items-center self-center">
         {closes.length > 1 ? (
-          <MinuteSpark closes={closes} prevClose={kl?.prev_close} pct={pct ?? 0} className="h-5" />
+          <MinuteSpark closes={closes} prevClose={prevClose} pct={livePct ?? 0} className="h-5" />
         ) : (
           <span className="text-[10px] text-slate-600">——</span>
         )}
       </div>
-      {hasAmt ? <Stat label="额" value={fmtAmt(amount)} /> : <div />}
-      <Stat label="价" value={fmtPrice(price)} />
+      {hasAmt ? <Stat label="额" value={fmtAmt(liveAmt)} /> : <div />}
+      <Stat label="价" value={fmtPrice(livePrice)} />
       <Stat
         label={compact ? "净" : "主力净额"}
         value={fmtAmt(mainNet)}
@@ -133,13 +147,13 @@ export function QuoteStockRow({
           {mainPct != null && Number.isFinite(mainPct) ? `${mainPct.toFixed(1)}%` : "—"}
         </span>
       </div>
-      {hasTurn ? <Stat label="换" value={`${turnover!.toFixed(1)}%`} /> : <div />}
+      {hasTurn ? <Stat label="换" value={`${liveTurn!.toFixed(1)}%`} /> : <div />}
       <Stat
         label="幅"
         value={
-          pct != null && Number.isFinite(pct) ? (
-            <span className={cn("rounded px-0.5 font-semibold", bgChg(pct))}>
-              {pct > 0 ? "+" : ""}{pct.toFixed(2)}%
+          livePct != null && Number.isFinite(livePct) ? (
+            <span className={cn("rounded px-0.5 font-semibold", bgChg(livePct))}>
+              {livePct > 0 ? "+" : ""}{livePct.toFixed(2)}%
             </span>
           ) : "—"
         }

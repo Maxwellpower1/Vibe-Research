@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CHAINS } from "@/config/chains";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
-import { api, type Quote } from "@/lib/api";
 import { pctColor } from "@/components/review/format";
+import { useQuotes } from "@/lib/quoteHub";
 import { cn } from "@/lib/utils";
 import { storageGet, storageSet } from "@/lib/storage";
 
@@ -15,26 +15,16 @@ export function ChainPanel() {
     const s = storageGet(CHAIN_KEY);
     return s && CHAINS.some((c) => c.id === s) ? s : CHAINS[0].id;
   });
-  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const chain = CHAINS.find((c) => c.id === id) ?? CHAINS[0];
   const codes = useMemo(
     () => chain.segments.flatMap((s) => s.stocks.map((x) => x.code)),
     [chain],
   );
+  const quotes = useQuotes(codes);
 
   useEffect(() => {
     storageSet(CHAIN_KEY, id);
   }, [id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void api.quote(codes.join(",")).then((q) => {
-      if (!cancelled) setQuotes(q);
-    }).catch(() => {
-      if (!cancelled) setQuotes({});
-    });
-    return () => { cancelled = true; };
-  }, [codes]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -55,7 +45,7 @@ export function ChainPanel() {
               <div className="space-y-0.5">
                 {seg.stocks.map((st) => {
                   const q = quotes[st.code];
-                  const pct = q?.change_pct;
+                  const pct = q?.pct;
                   return (
                     <Link
                       key={st.code}

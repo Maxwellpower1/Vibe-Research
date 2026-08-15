@@ -1,14 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { QuoteLine } from "@/components/cockpit/QuoteLine";
 import { QuoteStockRow } from "@/components/cockpit/QuoteStockRow";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { pctColor } from "@/components/review/format";
 import { usePolling } from "@/hooks/usePolling";
 import { api, type SectorBoard } from "@/lib/api";
+import { klineFromBatch, loadLightKlineBatch } from "@/lib/lightKline";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 20_000;
 const MAX_STOCK_ROWS = 40;
+const ROTATE_MS = 10_000;
 
 function fmtPct(v?: number | null): string {
   if (v == null || !Number.isFinite(v)) return "—";
@@ -19,8 +21,13 @@ function BoardRow({
   b, maxAbs, active, onClick,
 }: { b: SectorBoard; maxAbs: number; active: boolean; onClick: () => void }) {
   const w = maxAbs > 0 ? Math.min(100, (Math.abs(b.pct) / maxAbs) * 100) : 0;
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onClick}
       className={cn(
@@ -61,6 +68,8 @@ export function SectorHotPanel() {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<SectorBoard | null>(null);
   const [thsPick, setThsPick] = useState<string | null>(null);
+  const [auto, setAuto] = useState(true);
+  const [idx, setIdx] = useState(0);
   const kind = view === "em02" ? "02" : "01";
   const ths = view.startsWith("ths");
 
@@ -76,15 +85,29 @@ export function SectorHotPanel() {
     [data, q],
   );
 
-  // Same as marketingdashboard: no click still shows first board on the right.
+  const filterKey = `${view}|${dir}|${q}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
+    setIdx(0);
+  }
+
+  useEffect(() => {
+    if (!auto || ths || !filtered.length) return;
+    const t = window.setInterval(() => setIdx((i) => i + 1), ROTATE_MS);
+    return () => window.clearInterval(t);
+  }, [auto, ths, filtered.length]);
+
+  // Same as marketingdashboard: rotate or keep the clicked board; default first.
   const activeBoard = useMemo(() => {
     if (!filtered.length) return null;
+    if (auto) return filtered[idx % filtered.length];
     if (selected) {
       const cur = filtered.find((b) => b.code === selected.code);
       if (cur) return cur;
     }
     return filtered[0];
-  }, [filtered, selected]);
+  }, [auto, filtered, idx, selected]);
 
   const stockCode = activeBoard?.raw_code || activeBoard?.code || "";
   const { data: stocks } = usePolling(
@@ -92,6 +115,13 @@ export function SectorHotPanel() {
     POLL_MS,
     [stockCode],
     !ths && !!stockCode,
+  );
+  const stockCodes = (stocks ?? []).map((s) => s.code);
+  const { data: sparks } = usePolling(
+    () => (stockCodes.length ? loadLightKlineBatch(stockCodes, "1", 240) : Promise.resolve({})),
+    60_000,
+    [stockCodes.join(",")],
+    !ths && stockCodes.length > 0,
   );
 
   const { data: thsData, error: thsErr } = usePolling(
@@ -113,6 +143,13 @@ export function SectorHotPanel() {
     setView(next);
     setSelected(null);
     setThsPick(null);
+    setAuto(!next.startsWith("ths"));
+    setIdx(0);
+  };
+
+  const pickBoard = (b: SectorBoard) => {
+    setAuto(false);
+    setSelected(selected?.code === b.code && !auto ? null : b);
   };
 
   const showRight = ths ? Boolean(thsSel) : Boolean(activeBoard);
@@ -130,6 +167,19 @@ export function SectorHotPanel() {
           <Chip active={dir === "0"} onClick={() => setDir("0")}>领涨</Chip>
           <Chip active={dir === "1"} onClick={() => setDir("1")}>领跌</Chip>
         </ChipGroup>
+        {!ths && (
+          <button
+            type="button"
+            onClick={() => setAuto((a) => !a)}
+            title={auto ? `轮播中(${ROTATE_MS / 1000}s),点击暂停` : "已暂停,点击恢复轮播"}
+            className={cn(
+              "rounded px-1.5 py-0.5 text-[10px]",
+              auto ? "bg-cyan-500/20 text-cyan-300" : "text-slate-500 hover:text-slate-300",
+            )}
+          >
+            轮播
+          </button>
+        )}
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -182,7 +232,7 @@ export function SectorHotPanel() {
                   b={b}
                   maxAbs={maxAbs}
                   active={activeBoard?.code === b.code}
-                  onClick={() => setSelected(selected?.code === b.code ? null : b)}
+                  onClick={() => pickBoard(b)}
                 />
               ))}
             </>
@@ -224,21 +274,26 @@ export function SectorHotPanel() {
             {!stocks && (
               <p className="py-4 text-center text-[11px] text-slate-600">成分股加载中…</p>
             )}
-            {(stocks ?? []).map((s) => (
-              <QuoteStockRow
-                key={s.code}
-                code={s.code}
-                symbol={s.symbol || s.code}
-                name={s.name}
-                price={s.price}
-                pct={s.pct}
-                amount={s.amount}
-                turnover={s.turnover}
-                link={false}
-                mainNet={s.main_net}
-                mainPct={s.main_pct}
-              />
-            ))}
+            {(stocks ?? []).map((s) => {
+              const kl = klineFromBatch(sparks, s.code, s.symbol);
+              const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+              return (
+                <QuoteStockRow
+                  key={s.code}
+                  code={s.code}
+                  symbol={s.symbol || s.code}
+                  name={s.name}
+                  price={s.price}
+                  pct={s.pct}
+                  amount={s.amount}
+                  turnover={s.turnover}
+                  link={false}
+                  mainNet={s.main_net}
+                  mainPct={s.main_pct}
+                  spark={kl ? { closes, prevClose: kl.prev_close } : sparks ? { closes: [] } : null}
+                />
+              );
+            })}
             {!!stocks?.length && (
               <p className="px-1.5 pt-1 text-right text-[9px] text-slate-600">
                 领涨前 {stocks.length} 只成分股

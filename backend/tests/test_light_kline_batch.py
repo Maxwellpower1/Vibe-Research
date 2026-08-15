@@ -1,0 +1,42 @@
+"""Batch light-kline map (no network)."""
+import api_common
+
+
+def test_light_kline_map_parallel_and_alias(monkeypatch):
+    calls: list[str] = []
+
+    def fake_kline(sym, res, num=240):
+        calls.append(sym)
+        return {"symbol": sym, "resolution": res, "bars": [{"close": 1}]}
+
+    monkeypatch.setattr(api_common.astock, "light_kline", fake_kline)
+    api_common._DC_CACHE.clear()
+    out = api_common.light_kline_map(["sh000001", "usIXIC", "bad!!", "sh000001"], "1", 240)
+    assert out["sh000001"]["symbol"] == "sh000001"
+    assert out["usIXIC"]["symbol"] == "usIXIC"
+    assert out["bad!!"] is None
+    assert calls.count("sh000001") == 1
+    assert "usIXIC" in calls
+
+
+def test_light_kline_map_hits_same_cache(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        api_common.astock,
+        "light_kline",
+        lambda sym, res, num=240: calls.append(sym) or {"symbol": sym, "bars": [{"close": 2}]},
+    )
+    api_common._DC_CACHE.clear()
+    api_common.light_kline_map(["600519"], "1", 240)
+    api_common._cached(
+        "ashare_light:1:240",
+        "sh600519",
+        120,
+        lambda: (_ for _ in ()).throw(AssertionError("should be cached")),
+    )
+    assert calls == ["sh600519"]
+
+
+def test_light_kline_map_accepts_fx():
+    assert api_common._validate_symbol("whUSDCNY") == "whUSDCNY"
+    assert api_common._validate_symbol("whusdcny") == "whUSDCNY"

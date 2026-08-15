@@ -10,6 +10,7 @@ from api_common import (
     _cached,
     _validate,
     _validate_symbol,
+    light_kline_map,
 )
 
 router = APIRouter(tags=["ashare"])
@@ -176,14 +177,15 @@ def kline(
 
 @router.get("/api/astock/light-kline")
 def astock_light_kline(
-    code: str = Query(..., min_length=5, max_length=8, description="6位 / sh000001 / hkHSI / usIXIC"),
+    code: str = Query(..., min_length=5, max_length=8, description="6位 / sh000001 / hkHSI / usIXIC / whUSDCNY"),
     resolution: str = Query("1D", description="1=分时 / 5=五日 / 1D=日K前复权"),
     num: int = Query(365, ge=20, le=1000),
 ):
     """轻量图（腾讯）：分时 / 5日 / 日K前复权。仅需标准库，不依赖 mootdx。缓存 60 秒。
 
     指数：sh000001 上证 / sz399006 创业板 / sh000688 科创50 / sh000852 中证1000 /
-    hkHSI 恒生 / hkHSTECH 恒生科技 / usIXIC 纳斯达克等美股指数 (usMinute)。
+    hkHSI 恒生 / hkHSTECH 恒生科技 / usIXIC 纳斯达克等美股指数 (usMinute) /
+    whUSDCNY 美元人民币 (东财离岸 USDCNH 1 分钟 K)。
     """
     code = _validate_symbol(code)
     res = resolution.strip()
@@ -205,6 +207,25 @@ def astock_light_kline(
         raise
     except Exception as e:
         raise HTTPException(502, f"A股轻量K线异常：{e}") from e
+
+
+@router.get("/api/astock/light-kline-batch")
+def astock_light_kline_batch(
+    codes: str = Query(..., min_length=5, description="comma-separated sh000001,usIXIC,600519"),
+    resolution: str = Query("1", description="1=分时 / 5=五日 / 1D=日K前复权"),
+    num: int = Query(240, ge=20, le=1000),
+):
+    """Batch light kline. One HTTP, server fans out. Same cache as /light-kline."""
+    res = resolution.strip()
+    if res not in ("1", "5", "1D"):
+        raise HTTPException(400, "resolution 仅支持 1 / 5 / 1D")
+    raw = [c.strip() for c in codes.split(",") if c.strip()]
+    if not raw:
+        raise HTTPException(400, "codes 不能为空")
+    try:
+        return {"data": light_kline_map(raw, res, num)}
+    except Exception as e:
+        raise HTTPException(502, f"A股批量轻量K线异常：{e}") from e
 
 
 @router.get("/api/finance")

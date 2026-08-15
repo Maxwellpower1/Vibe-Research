@@ -126,6 +126,7 @@ def parse_tencent_quote_line(line: str) -> dict | None:
         "change": _num(f[31]),
         "pct": _num(f[32]),
         "amount": _num(f[37]) if len(f) > 37 else 0.0,
+        "turnover": _num(f[38]) if len(f) > 38 else 0.0,
     }
 
 
@@ -213,6 +214,79 @@ def _tencent_quotes(codes: list[str]) -> dict[str, dict]:
         return {}
     url = "https://qt.gtimg.cn/q=" + ",".join(codes)
     return parse_tencent_quotes(_fetch_text(url, encoding="gbk", timeout=10))
+
+
+_QUOTE_CODE_RE = re.compile(
+    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|us[A-Za-z]{2,8}|hk[A-Za-z]{2,8}|wh[A-Za-z]{3,8})$",
+    re.I,
+)
+
+
+def _is_ashare_stock(symbol: str) -> bool:
+    m = re.fullmatch(r"(sh|sz|bj)(\d{6})", symbol or "")
+    if not m:
+        return False
+    pfx, digits = m.group(1), m.group(2)
+    if pfx == "sh":
+        return digits[0] in "569"
+    if pfx == "sz":
+        return digits[0] in "0123"
+    return True
+
+
+def _canon_quote_code(raw: str) -> str:
+    s = (raw or "").strip()
+    if not s or not _QUOTE_CODE_RE.fullmatch(s):
+        return ""
+    resolved = astock.resolve_symbol(s)
+    if resolved:
+        return resolved
+    if re.fullmatch(r"(?:us|hk|wh)[A-Za-z]{2,8}", s, re.I):
+        return s
+    return ""
+
+
+def quotes_map(codes: list[str]) -> dict[str, dict]:
+    """Tencent batch quotes for the cockpit hub. Max 80. Aliases 6-digit and prefixed keys."""
+    wanted: list[tuple[str, str]] = []
+    seen_raw: set[str] = set()
+    seen_canon: set[str] = set()
+    for raw in codes:
+        key = (raw or "").strip()
+        if not key or key in seen_raw:
+            continue
+        seen_raw.add(key)
+        canon = _canon_quote_code(key)
+        if not canon:
+            continue
+        wanted.append((key, canon))
+        seen_canon.add(canon)
+        if len(seen_canon) >= 80:
+            break
+    if not seen_canon:
+        return {}
+    fetched = _tencent_quotes(list(seen_canon))
+    out: dict[str, dict] = {}
+    for raw, canon in wanted:
+        q = fetched.get(canon)
+        if not q or not q.get("price"):
+            continue
+        raw_amt = q.get("amount") or 0.0
+        item = {
+            "symbol": canon,
+            "name": q.get("name") or canon,
+            "price": q.get("price") or 0.0,
+            "pct": q.get("pct") or 0.0,
+            "change": q.get("change") or 0.0,
+            "prev": q.get("prev") or 0.0,
+            "amount": (raw_amt * 10000.0) if _is_ashare_stock(canon) and raw_amt else 0.0,
+            "turnover": q.get("turnover") or 0.0,
+        }
+        out[raw] = item
+        out[canon] = item
+        if re.fullmatch(r"(?:sh|sz|bj)\d{6}", canon):
+            out[canon[2:]] = item
+    return out
 
 
 def _vix_from_sina() -> dict | None:

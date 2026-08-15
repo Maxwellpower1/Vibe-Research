@@ -2,6 +2,7 @@ import { QuoteStockRow } from "@/components/cockpit/QuoteStockRow";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { usePolling } from "@/hooks/usePolling";
 import { api } from "@/lib/api";
+import { klineFromBatch, loadLightKlineBatch } from "@/lib/lightKline";
 
 const POLL_MS = 20_000;
 
@@ -38,6 +39,13 @@ export function StockRankPanel({ tab }: { tab: RankTab }) {
     POLL_MS,
     [tab],
   );
+  const codes = (data ?? []).map((s) => s.code);
+  const { data: sparks } = usePolling(
+    () => (codes.length ? loadLightKlineBatch(codes, "1", 240) : Promise.resolve({})),
+    60_000,
+    [tab, codes.join(",")],
+    codes.length > 0,
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -46,20 +54,25 @@ export function StockRankPanel({ tab }: { tab: RankTab }) {
         <span>主力资金 · 成交额 · 现价</span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5 pt-0">
-        {(data ?? []).map((s, i) => (
-          <QuoteStockRow
-            key={s.symbol || s.code}
-            code={s.code}
-            name={s.name}
-            price={s.price}
-            pct={s.pct}
-            amount={s.amount}
-            turnover={s.turnover}
-            mainNet={s.main_net}
-            mainPct={s.main_pct}
-            rank={i + 1}
-          />
-        ))}
+        {(data ?? []).map((s, i) => {
+          const kl = klineFromBatch(sparks, s.code, s.symbol);
+          const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+          return (
+            <QuoteStockRow
+              key={s.symbol || s.code}
+              code={s.code}
+              name={s.name}
+              price={s.price}
+              pct={s.pct}
+              amount={s.amount}
+              turnover={s.turnover}
+              mainNet={s.main_net}
+              mainPct={s.main_pct}
+              rank={i + 1}
+              spark={kl ? { closes, prevClose: kl.prev_close } : sparks ? { closes: [] } : undefined}
+            />
+          );
+        })}
         {!data && (
           <p className="py-6 text-center text-[11px] text-slate-600">
             {error ? "榜单源未接通, 自动重试中" : "榜单加载中…"}

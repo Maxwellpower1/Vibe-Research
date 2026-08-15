@@ -4,18 +4,16 @@ import {
   type TurnoverTop, type GlobalIndex, type DailyDragonTiger, type BoardFlow,
   type HotList, type MonitorPool, type AnomalyPool, type LimitPool, type IndustryData,
   type ThsLimitUpPool, type IwencaiItem, type EtfFlow, type ShareholderChanges,
-  type LprData, type CnBondYield, type AShareLightKline, type Quote,
-  type ReviewSnapshot, type HsgtLive, type StockFlow, type BoardFlowRow,
-  type MarketBreadth,
+  type LprData, type CnBondYield, type ReviewSnapshot, type HsgtLive, type StockFlow, type BoardFlowRow,
+  type MarketBreadth, type AShareLightKline,
 } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { useSegment } from "@/components/ui/SegmentNav";
-import { WATCH_MINUTE_MAX, type IdxPanel } from "@/components/review/constants";
+import { type IdxPanel } from "@/components/review/constants";
 import { formatClock } from "@/lib/freshness";
 import { storageGet, storageSet } from "@/lib/storage";
 import { getAShareSession } from "@/lib/ashareSession";
 import { loadWatch } from "@/lib/watchlist";
-import { loadLightKline } from "@/lib/lightKline";
 
 const TOP_AUTO_MS = 30_000;
 const TOP_AUTO_KEY = "ashare.review.topAuto";
@@ -69,9 +67,6 @@ export function useReviewData() {
   const idxMinute = EMPTY_IDX_MINUTE;
   const idxMinuteDone = true;
   const [watchCodes, setWatchCodes] = useState<string[]>(() => loadWatch());
-  const [watchQuotes, setWatchQuotes] = useState<Record<string, Quote>>({});
-  const [watchMinute, setWatchMinute] = useState<Record<string, AShareLightKline | null>>({});
-  const [watchDone, setWatchDone] = useState(false);
 
   const [ovDone, setOvDone] = useState(false);
   const [emoDone, setEmoDone] = useState(false);
@@ -304,44 +299,6 @@ export function useReviewData() {
     setWatchCodes(loadWatch());
   }, [topUpdatedAt]);
 
-  useEffect(() => {
-    const codes = loadWatch();
-    setWatchCodes(codes);
-    if (!codes.length) {
-      setWatchQuotes({});
-      setWatchMinute({});
-      setWatchDone(true);
-      return;
-    }
-    let cancelled = false;
-    setWatchDone(false);
-    const slice = codes.slice(0, WATCH_MINUTE_MAX);
-    void (async () => {
-      try {
-        const q = await api.quote(codes.join(","));
-        if (!cancelled) setWatchQuotes(q);
-      } catch {
-        if (!cancelled) setWatchQuotes({});
-      }
-      const rows = await Promise.all(
-        slice.map(async (c) => {
-          try {
-            const d = await loadLightKline(c, "1", 240);
-            return [c, d] as const;
-          } catch {
-            return [c, null] as const;
-          }
-        }),
-      );
-      if (cancelled) return;
-      const next: Record<string, AShareLightKline | null> = {};
-      for (const [c, d] of rows) next[c] = d;
-      setWatchMinute(next);
-      setWatchDone(true);
-    })();
-    return () => { cancelled = true; };
-  }, [topUpdatedAt]);
-
   const runIwencai = useCallback(async () => {
     const q = iwencaiQ.trim();
     if (!q) return;
@@ -415,9 +372,6 @@ export function useReviewData() {
     idxMinute,
     idxMinuteDone,
     watchCodes,
-    watchQuotes,
-    watchMinute,
-    watchDone,
     ovDone,
     emoDone,
     toDone,

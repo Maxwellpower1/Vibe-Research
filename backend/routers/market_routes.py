@@ -372,6 +372,23 @@ def market_lpr(days: int = Query(365, ge=30, le=2000)):
         raise HTTPException(502, f"LPR 异常：{e}") from e
 
 
+@router.get("/api/market/quotes")
+def market_quotes(
+    codes: str = Query(..., min_length=3, description="comma-separated sh600519,usIXIC,whUSDCNY"),
+):
+    """Cockpit quote hub. Tencent batch, 5s cache, max 80 codes."""
+    import cockpit_live
+    raw = [c.strip() for c in codes.split(",") if c.strip()][:80]
+    if not raw:
+        raise HTTPException(400, "codes 不能为空")
+    key = ",".join(sorted(raw))
+    try:
+        data = _cached("quotes", key, 5, lambda: cockpit_live.quotes_map(raw))
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"行情批量异常：{e}") from e
+
+
 @router.get("/api/market/world-indices")
 def market_world_indices():
     """全球关键指数 (A/HK/US/FX). 缓存 20 秒."""
