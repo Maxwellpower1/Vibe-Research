@@ -19,7 +19,7 @@ export type CockpitRow = {
   panels: CockpitCell[];
 };
 
-/** One-screen rows: desktop fills leftover viewport; mobile stacks and scrolls. */
+/** Desktop: one-screen rows. Mobile: stack full-height cards and scroll. */
 export function CockpitLayout({ rows }: { rows: CockpitRow[] }) {
   const zoomRows: ZoomRowDef[] = rows.map((r) => ({
     defaultH: r.defaultH,
@@ -28,17 +28,19 @@ export function CockpitLayout({ rows }: { rows: CockpitRow[] }) {
   const { isZoomed, toggle, layout } = usePanelZoom(zoomRows);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1 p-1">
+    <div className="flex flex-col gap-1 p-1 lg:h-full lg:min-h-0 lg:flex-1">
       {rows.map((row, rowIdx) => (
         <div
           key={row.panels.map((p) => p.id).join("-")}
-          className="flex min-h-0 flex-col gap-1 transition-all duration-300 lg:h-[var(--row-h)] lg:flex-row"
+          className="flex flex-col gap-1 transition-all duration-300 lg:h-[var(--row-h)] lg:min-h-0 lg:flex-row"
           style={{ "--row-h": `${layout.rowHeights[rowIdx] * 100}%` } as React.CSSProperties}
         >
           {row.panels.map((panel, panelIdx) => (
             <div
               key={panel.id}
-              className={`min-h-0 w-full transition-all duration-300 ${panel.mobileH} lg:h-full lg:w-[var(--panel-w)]`}
+              className={`w-full shrink-0 transition-all duration-300 lg:h-full lg:min-h-0 lg:w-[var(--panel-w)] lg:shrink ${
+                isZoomed(panel.id) ? "h-[70vh] lg:h-full" : panel.mobileH
+              }`}
               style={{ "--panel-w": `${layout.rowWidths[rowIdx][panelIdx] * 100}%` } as React.CSSProperties}
             >
               <Panel

@@ -264,7 +264,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     </>
   );
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-background lg:h-full lg:overflow-hidden">
+    <div className="relative flex flex-col bg-background lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-hidden">
       {headerSlot ? createPortal(headerActions, headerSlot) : null}
       <CockpitLayout rows={rows} />
 

@@ -24,7 +24,7 @@ const CELLS = [
 
 export function AiWatch() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex flex-col lg:h-full lg:min-h-0 lg:flex-1">
       <AiGrid cells={CELLS} />
     </div>
   );

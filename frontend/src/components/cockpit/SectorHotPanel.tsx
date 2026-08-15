@@ -159,7 +159,7 @@ export function SectorHotPanel() {
           className="ml-auto h-6 w-20 rounded border border-slate-700/60 bg-slate-900/50 px-1.5 text-[10px] text-slate-300 outline-none focus:border-cyan-500/50"
         />
       </div>
-      <div className={cn("min-h-0 flex-1", activeBoard ? "flex" : "")}>
+      <div className={cn("min-h-0 flex-1", activeBoard ? "flex flex-col sm:flex-row" : "")}>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1">
           {!data && (
             <p className="py-6 text-center text-[11px] text-slate-600">
@@ -178,7 +178,7 @@ export function SectorHotPanel() {
           ))}
         </div>
         {activeBoard && (
-          <div className="min-h-0 w-[min(440px,50%)] shrink-0 overflow-y-auto border-l border-slate-700/40 p-1">
+          <div className="min-h-0 w-full shrink-0 overflow-y-auto border-t border-slate-700/40 p-1 sm:w-[min(440px,50%)] sm:border-l sm:border-t-0">
             <div className="mb-1 flex items-baseline justify-between px-1.5 pt-1">
               <span className="truncate text-[12px] font-semibold text-cyan-300">{activeBoard.name}</span>
               <span className={cn("font-mono text-[12px] font-semibold tabular-nums", pctColor(activeBoard.pct))}>

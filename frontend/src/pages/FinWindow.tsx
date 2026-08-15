@@ -114,7 +114,7 @@ function FinBody() {
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background lg:h-full lg:overflow-hidden">
+    <div className="flex flex-col bg-background lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-hidden">
       <CockpitLayout rows={rows} />
     </div>
   );

@@ -54,7 +54,7 @@ export function Panel({
         <h2 className="min-w-0 flex-1 truncate text-[12px] font-semibold tracking-wide text-slate-200">
           {title}
         </h2>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 max-w-[min(240px,48vw)] shrink items-center justify-end gap-1 overflow-x-auto sm:max-w-none sm:shrink-0 sm:gap-2">
           {right}
           {panelId && onToggleZoom && (
             <button

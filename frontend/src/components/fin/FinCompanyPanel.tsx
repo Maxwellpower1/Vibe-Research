@@ -145,10 +145,10 @@ export function FinCompanyPanel() {
                       <span className="h-[6px] rounded-sm bg-amber-500/50" style={{ width: `${Math.min(100, (m.profit_ratio ?? 0) * 100)}%` }} />
                     </span>
                     <span className="w-[52px] shrink-0 text-right text-slate-400" style={TNUM}>{fmtYiYuan(m.income)}</span>
-                    <span className="w-[40px] shrink-0 text-right text-[9px] text-amber-400/80" style={TNUM}>
+                    <span className="hidden w-[40px] shrink-0 text-right text-[9px] text-amber-400/80 sm:block" style={TNUM}>
                       {((m.profit_ratio ?? 0) * 100).toFixed(0)}%
                     </span>
-                    <span className="w-[56px] shrink-0 text-right text-[9px] text-slate-500" style={TNUM}>
+                    <span className="hidden w-[56px] shrink-0 text-right text-[9px] text-slate-500 sm:block" style={TNUM}>
                       毛利 {((m.margin ?? 0) * 100).toFixed(0)}%
                     </span>
                   </div>
