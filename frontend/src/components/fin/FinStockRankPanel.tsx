@@ -3,14 +3,11 @@ import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { useFin } from "@/components/fin/FinContext";
 import { fmtYiYuan } from "@/components/fin/utils";
 import { pctColor } from "@/components/review/format";
-import { usePolling } from "@/hooks/usePolling";
-import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function FinStockRankPanel() {
-  const { period, select, company } = useFin();
+  const { select, company, board: data, boardError: error } = useFin();
   const [mode, setMode] = useState<"amt" | "yoy">("amt");
-  const { data, error } = usePolling(() => api.finBoard(period), 3600_000, [period]);
   const rows = [...(data?.stocks ?? [])];
   if (mode === "yoy") {
     rows.sort((a, b) => b.profit_yoy - a.profit_yoy);

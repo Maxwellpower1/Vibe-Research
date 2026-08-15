@@ -1,7 +1,7 @@
 import { Suspense, useEffect } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 import { PageFallback } from "@/components/ui/PageFallback";
-import { CockpitHeader } from "@/components/cockpit/CockpitHeader";
+import { A_SHARE_TABS, CockpitHeader, parseAShareTab } from "@/components/cockpit/CockpitHeader";
 import { TickerTape } from "@/components/cockpit/TickerTape";
 import { ClsTelegraphBubble } from "@/components/ClsTelegraphBubble";
 import { useFullscreen } from "@/hooks/useFullscreen";
@@ -68,20 +68,22 @@ export function Layout() {
         {pathname.startsWith("/a-share") && (
           <>
             <span className="mx-0.5 h-4 w-px self-center bg-slate-700" />
-            {[
-              { to: "/a-share", label: "复盘" },
-              { to: "/a-share?tab=kline", label: "K线" },
-              { to: "/a-share?tab=detail", label: "详情" },
-              { to: "/a-share?tab=feed", label: "公告" },
-            ].map((t) => (
-              <Link
-                key={t.label}
-                to={t.to}
-                className="shrink-0 px-1.5 py-0.5 text-[10px] text-slate-500"
-              >
-                {t.label}
-              </Link>
-            ))}
+            {A_SHARE_TABS.map((t) => {
+              const aTab = parseAShareTab(params.get("tab"));
+              const active = t.tab === null ? aTab === "review" : aTab === t.tab;
+              return (
+                <Link
+                  key={t.label}
+                  to={t.to}
+                  className={cn(
+                    "shrink-0 px-1.5 py-0.5 text-[10px]",
+                    active ? "text-cyan-300" : "text-slate-500",
+                  )}
+                >
+                  {t.label}
+                </Link>
+              );
+            })}
           </>
         )}
       </nav>

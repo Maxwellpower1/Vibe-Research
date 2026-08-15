@@ -5,6 +5,10 @@ import { usePolling } from "@/hooks/usePolling";
 import { api, type AShareLightKline } from "@/lib/api";
 
 const POLL_MS = 20_000;
+const KLINE_MS = 60_000;
+const KLINE_SYMS = WORLD_INDEX_DEFS
+  .filter((d) => /^(sh|sz|hk)/i.test(d.code))
+  .map((d) => d.code);
 
 /** A + HK + US + FX key indices (replaces the old CN/global tabbed index cell). */
 export function WorldIndexPanel() {
@@ -12,24 +16,32 @@ export function WorldIndexPanel() {
   const [minutes, setMinutes] = useState<Record<string, AShareLightKline | null>>({});
 
   useEffect(() => {
-    const rows = data ?? [];
-    const syms = rows
-      .map((r) => r.symbol)
-      .filter((s) => /^(sh|sz|hk)/i.test(s));
-    if (!syms.length) return;
     let cancelled = false;
-    void Promise.all(
-      syms.map(async (sym) => {
-        try {
-          const d = await api.ashareLightKline(sym, "1", 240);
-          if (!cancelled) setMinutes((prev) => ({ ...prev, [sym]: d }));
-        } catch {
-          if (!cancelled) setMinutes((prev) => (sym in prev ? prev : { ...prev, [sym]: null }));
-        }
-      }),
-    );
-    return () => { cancelled = true; };
-  }, [data]);
+    const load = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void Promise.all(
+        KLINE_SYMS.map(async (sym) => {
+          try {
+            const d = await api.ashareLightKline(sym, "1", 240);
+            if (!cancelled) setMinutes((prev) => ({ ...prev, [sym]: d }));
+          } catch {
+            if (!cancelled) setMinutes((prev) => (sym in prev ? prev : { ...prev, [sym]: null }));
+          }
+        }),
+      );
+    };
+    const onVis = () => {
+      if (!document.hidden) load();
+    };
+    load();
+    const id = window.setInterval(load, KLINE_MS);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
 
   const bySym = new Map((data ?? []).map((r) => [r.symbol, r]));
   const groups = [
@@ -44,7 +56,7 @@ export function WorldIndexPanel() {
           {error ? "全球指数未接通, 自动重试中" : "加载中…"}
         </p>
       )}
-      {groups.map((g) => (
+      {data && groups.map((g) => (
         <div key={g.name}>
           <div className="px-1 pb-0.5 pt-1 text-[9px] font-medium uppercase tracking-widest text-slate-500">
             {g.name}

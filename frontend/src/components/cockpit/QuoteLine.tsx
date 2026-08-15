@@ -10,6 +10,7 @@ export function QuoteLine({
   pct,
   amount,
   extra,
+  extraClass,
   rank,
   closes,
   prevClose,
@@ -22,6 +23,7 @@ export function QuoteLine({
   pct: number | null | undefined;
   amount?: number | null;
   extra?: string;
+  extraClass?: string;
   rank?: number;
   closes?: number[];
   prevClose?: number | null;
@@ -53,7 +55,9 @@ export function QuoteLine({
         {amount != null && amount > 0 && (
           <span className="block font-mono text-[10px] tabular-nums text-slate-400">{fmtAmt(amount)}</span>
         )}
-        {extra && <span className="block font-mono text-[10px] tabular-nums text-slate-500">{extra}</span>}
+        {extra && (
+          <span className={cn("block font-mono text-[10px] tabular-nums text-slate-500", extraClass)}>{extra}</span>
+        )}
         <span className={cn("block font-mono text-[12px] font-bold tabular-nums", pctColor(pct ?? 0))}>
           {price != null && Number.isFinite(price) ? fmt(price) : "—"}
         </span>

@@ -9,6 +9,7 @@ export type CockpitCell = {
   mobileH: string;
   maxZoomW?: number;
   icon?: ReactNode;
+  accent?: string;
   right?: ReactNode;
   body: ReactNode;
 };
@@ -44,6 +45,7 @@ export function CockpitLayout({ rows }: { rows: CockpitRow[] }) {
                 className="h-full"
                 title={panel.title}
                 icon={panel.icon}
+                accent={panel.accent}
                 right={panel.right}
                 panelId={panel.id}
                 isZoomed={isZoomed(panel.id)}

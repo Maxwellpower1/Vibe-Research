@@ -32,7 +32,7 @@ It does not make decisions for you. It pulls together quotes, analyst reports, v
 
 | Page | What's in it |
 |---|---|
-| 🇨🇳&nbsp;**A-share** | Header: **Review** / **K-line** / **Detail** / **Filings**. Site-wide ticker tape under the header (A-share / global / US 10Y·2Y, ~30s). Review is a one-screen cockpit: **world indices** (CN/HK/US/FX) / **live sector boards** / sentiment + northbound / **intraday board-flow** (click to filter) / **main-force inflow rank** / **stock ranks with turnover** / **commodities** / limit pools / watchlist / LHB · funds · 8 industry chains. **7×24 news stays a floating bubble** (CLS / Eastmoney) |
+| 🇨🇳&nbsp;**A-share** | Header: **Review** / **K-line** / **Detail** / **Filings**. Site-wide ticker tape under the header (world indices + US 10Y·2Y, ~20s, shares `world-indices` with the cockpit). Review is a one-screen cockpit: **world indices** (CN/HK/US/FX) / **live sector boards** / sentiment + northbound / **intraday board-flow** (click to filter) / **main-force inflow rank** / **stock ranks with turnover** / **commodities** / limit pools / watchlist / LHB · funds · 8 industry chains. **7×24 news stays a floating bubble** (CLS / Eastmoney) |
 | 🪟&nbsp;**Earnings** | Header `/fin`: A-share disclosure calendar + **US earnings calendar**, forecasts, industry/stock profit ranks, 12-period company trend. Selecting a name overlays existing **financials / forward valuation / filings / reports** |
 | 🤖&nbsp;**AI Watch** | OpenRouter public-cloud token share · TrakToken LLM price trend / cut events · AA model table + intelligence×cost scatter (optional key) · AI infra CapEx/ROI (SEC + labeled forecast) |
 | 📡&nbsp;**News&nbsp;Radar** | CLS telegraph (market-wide real-time briefs) |
@@ -54,7 +54,7 @@ Three public data toolkits are **vendored directly into this repo** — `git clo
 
 - Lives in [`a-stock-data/`](a-stock-data/) (v3.6.0). Ten data layers, 47 endpoints, 15 sources, with fallback sources when a primary one gets blocked. [`a-stock-data/SKILL.md`](a-stock-data/SKILL.md) **embeds every call as runnable code** — self-contained, with built-in rate limiting for Eastmoney endpoints.
 - **Covers**: quotes / candles / analyst reports / consensus estimates / valuation / historical percentiles / financial statements / filings / Dragon-Tiger list / margin trading / block trades / shareholder counts / dividends / fund flows / lockup expiry / concept sectors / limit-up sentiment / ETF options / investor Q&A / market-wide industry rankings.
-- **Daily review snapshot**: `GET /api/market/review-snapshot` returns the first-paint payload in one round trip (same TTL keys as the individual endpoints).
+- **Daily review snapshot / warmup**: `GET /api/market/review-snapshot` returns the first-paint payload in one round trip. Background warmup also prefetches cockpit hot paths (world indices / sector boards / stock rank / main-force inflow / intraday board-flow / commodities). Intraday board-flow is cached per board so a second hit does not fire 16 serial Eastmoney kline calls. The header tape shares `world-indices` with the cockpit panel. `GET /api/market/review-warmup` shows status; `VR_REVIEW_WARMUP=0` disables it.
 - **For agents**: running this repo with Claude Code or similar? Point them at `SKILL.md` — every endpoint has copy-paste ready code. The backend data layer (`backend/astock.py`) is ported from it.
 - **Runtime deps**: `pip install mootdx requests pandas stockstats`
 - **Upstream**: <https://github.com/simonlin1212/a-stock-data> — the vendored copy is a pinned snapshot and keeps working even if you never update it.
@@ -62,7 +62,7 @@ Three public data toolkits are **vendored directly into this repo** — `git clo
 ### US / HK data · global-stock-data
 
 - Lives in [`global-stock-data/`](global-stock-data/) (v2.0.3). 13 data layers, 30+ endpoints, 11 sources, no auth required — quotes, candles, technicals, financial statements, fund flows, options (CBOE official chain with full Greeks and 0DTE flow), FINRA short volume / market-wide short ranking, SEC EDGAR filing stream + **EDGAR frames screener**, US/HK movers boards. Every source is labeled with its compliance tier.
-- Dashboard: US page hosts EDGAR Screener, movers, FINRA short ranking, and selected-ticker options/fund-flow; stock page shows US/HK daily candles (`/api/global/us/kline`, `/api/global/hk/kline`).
+- Dashboard: US page hosts EDGAR Screener, movers, FINRA short ranking, and selected-ticker options/fund-flow; stock page shows US/HK daily candles (`/api/global/us/kline` Yahoo then Sina; `/api/global/hk/kline` Yahoo query1/query2, Tencent ifzq qfq on 403).
 - `backend/gstock.py` + `gstock_deep.py`: global indices, US/HK quotes & key metrics, **Yahoo valuation/analyst/holders**, **3-statement summaries & fund flow**, **FINRA short volume**, **CBOE options 0DTE/unusual flow**, **SEC filings / earnings calendar**, **Yahoo stock news (RSS fallback when crumb is blocked)**.
 - Set `VR_SEC_CONTACT="Name you@example.com"` for SEC endpoints.
 - **CBOE options**: compliance tier C — personal research only; commercial use needs a Cboe license. Delayed data, not for live trading.

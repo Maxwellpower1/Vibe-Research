@@ -27,6 +27,39 @@ def test_secu_and_bare():
     assert fw.secu_code("AAPL") is None
 
 
+def test_finance_main_falls_back_to_dc(monkeypatch):
+    calls: list[tuple] = []
+
+    def fake_dc_rows(report, filt, n, sort, source="WEB", url=None):
+        calls.append((report, source, url))
+        if source == "HSF10":
+            return []
+        if report == "RPT_F10_FINANCE_MAINFINADATA":
+            return [{
+                "REPORT_DATE_NAME": "2026一季报",
+                "REPORT_DATE": "2026-03-31",
+                "TOTALOPERATEREVE": 100.0,
+                "PARENTNETPROFIT": 20.0,
+                "TOTALOPERATEREVETZ": 10.0,
+                "PARENTNETPROFITTZ": 8.0,
+                "ROEJQ": 12.0,
+                "XSMLL": 40.0,
+                "XSJLL": 20.0,
+                "ZCFZL": 30.0,
+                "EPSJB": 1.2,
+                "MGJYXJJE": 2.0,
+                "SECURITY_NAME_ABBR": "测试股",
+            }]
+        return [{"BOARD_NAME_2LEVEL": "白酒"}]
+
+    monkeypatch.setattr(fw, "_dc_rows", fake_dc_rows)
+    main = fw.finance_main("600519")
+    assert main["name"] == "测试股"
+    assert len(main["reports"]) == 1
+    assert main["industry"] == "白酒"
+    assert any(c[1] == "WEB" for c in calls)
+
+
 def test_classify_forecast():
     assert fw.classify_forecast("预增", "") == "预增"
     assert fw.classify_forecast("", "预计净利润预减约 20%") == "预减"

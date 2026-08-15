@@ -241,28 +241,22 @@ def finance_forecast(period: str | None = None) -> dict:
     return {"period": p, "stats": stats, "items": items}
 
 
+def _f10_rows(report_name: str, filt: str, page_size: int, sort_columns: str) -> list[dict]:
+    """HSF10 securities API first; fall back to datacenter-web if empty."""
+    rows = _dc_rows(report_name, filt, page_size, sort_columns, source="HSF10", url=_SEC)
+    if rows:
+        return rows
+    return _dc_rows(report_name, filt, page_size, sort_columns, source="WEB", url=_DC)
+
+
 def finance_main(code: str) -> dict:
     """Last 12 F10 periods (revenue / profit / ROE / margins)."""
     secu = secu_code(code)
     if not secu:
         raise ValueError(f"bad code: {code}")
     filt = f'(SECUCODE="{secu}")'
-    fin_rows = _dc_rows(
-        "RPT_F10_FINANCE_MAINFINADATA",
-        filt,
-        12,
-        "REPORT_DATE",
-        source="HSF10",
-        url=_SEC,
-    )
-    org_rows = _dc_rows(
-        "RPT_F10_ORG_BASICINFO",
-        filt,
-        1,
-        "SECUCODE",
-        source="HSF10",
-        url=_SEC,
-    )
+    fin_rows = _f10_rows("RPT_F10_FINANCE_MAINFINADATA", filt, 12, "REPORT_DATE")
+    org_rows = _f10_rows("RPT_F10_ORG_BASICINFO", filt, 1, "SECUCODE")
     org = org_rows[0] if org_rows else {}
     industry = (
         org.get("BOARD_NAME_2LEVEL")

@@ -51,6 +51,16 @@ _FIN_CACHE = TTLCache(maxsize=256, default_ttl=1800, negative_ttl=30, name="fin"
 # negative TTL so warmup + concurrent tabs do not stampede Eastmoney.
 _DC_CACHE = TTLCache(maxsize=512, default_ttl=300, negative_ttl=15, name="app_dc")
 
+# Same keys as GET /api/market/{world-indices,boards,rank,stock-flow,board-flow-intraday,commodities}
+COCKPIT_WARM_KEYS = (
+    "world_indices",
+    "commodities",
+    "sector_boards",
+    "stock_rank",
+    "stock_flow",
+    "board_flow_intraday",
+)
+
 
 def _cached(endpoint: str, code: str, ttl: int, fetch, valid=is_nonempty):
     return _DC_CACHE.get_or_set(
@@ -174,7 +184,65 @@ def _warm_review_dc() -> tuple[int, int, list[dict]]:
                     ok += 1
                 except Exception as e:
                     errors.append({"name": name, "error": str(e)[:160]})
-    return ok, len(steps) + len(minute_syms) - ok, errors
+
+    # Cockpit first-paint keys (Tencent/Sina first, Eastmoney last).
+    import cockpit_live
+
+    cockpit_steps = [
+        ("world_indices", lambda: _cached("world_indices", "live", 20, cockpit_live.world_indices)),
+        (
+            "commodities",
+            lambda: _cached(
+                "commodities",
+                cockpit_live.DEFAULT_FUTURES,
+                20,
+                lambda: cockpit_live.futures_quotes(cockpit_live.DEFAULT_FUTURES),
+            ),
+        ),
+        (
+            "sector_boards",
+            lambda: _cached(
+                "sector_boards",
+                "01:0:80",
+                20,
+                lambda: cockpit_live.sector_boards("01", "0", 80),
+            ),
+        ),
+        (
+            "stock_rank",
+            lambda: _cached(
+                "stock_rank",
+                "amount:0:30",
+                20,
+                lambda: cockpit_live.stock_rank("amount", 0, 30),
+            ),
+        ),
+        (
+            "stock_flow",
+            lambda: _cached(
+                "stock_flow",
+                "all:15",
+                120,
+                lambda: astock_boards.stock_moneyflow(15, None),
+            ),
+        ),
+        (
+            "board_flow_intraday",
+            lambda: _cached(
+                "board_flow_intraday",
+                "16",
+                120,
+                lambda: cockpit_live.board_flow_intraday(16),
+            ),
+        ),
+    ]
+    for name, fn in cockpit_steps:
+        try:
+            fn()
+            ok += 1
+        except Exception as e:
+            errors.append({"name": name, "error": str(e)[:160]})
+    return ok, len(steps) + len(minute_syms) + len(cockpit_steps) - ok, errors
 
 
 # Background: keep Daily Review caches warm (session-aware interval).

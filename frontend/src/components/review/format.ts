@@ -3,6 +3,17 @@
 export const pctColor = (p: number) =>
   p > 0 ? "text-danger" : p < 0 ? "text-success" : "text-muted-foreground";
 
+export const bgChg = (p: number) =>
+  p > 0 ? "bg-rose-500/15 text-rose-300" : p < 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-slate-500/15 text-slate-300";
+
+export function fmtPrice(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  if (v >= 10000) return v.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+  if (v >= 100) return v.toFixed(2);
+  if (v >= 10) return v.toFixed(2);
+  return v.toFixed(3);
+}
+
 export const pctTone = (p: number) =>
   (p > 0 ? "up" : p < 0 ? "down" : "flat") as "up" | "down" | "flat";
 

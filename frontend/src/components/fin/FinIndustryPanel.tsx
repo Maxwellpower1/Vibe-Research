@@ -1,13 +1,10 @@
 import { useFin } from "@/components/fin/FinContext";
 import { fmtYiYuan } from "@/components/fin/utils";
 import { pctColor } from "@/components/review/format";
-import { usePolling } from "@/hooks/usePolling";
-import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function FinIndustryPanel() {
-  const { period } = useFin();
-  const { data, error } = usePolling(() => api.finBoard(period), 3600_000, [period]);
+  const { board: data, boardError: error } = useFin();
   const rows = data?.industries ?? [];
   const maxAbs = Math.max(...rows.map((r) => Math.abs(r.net_profit)), 1);
   const live = new Map((data?.sector_tape?.top ?? []).map((r) => [r.name, r.change_pct]));

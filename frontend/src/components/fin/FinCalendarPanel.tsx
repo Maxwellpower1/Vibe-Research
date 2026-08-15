@@ -14,13 +14,13 @@ const dateKey = (t: number) => {
 };
 
 export function FinCalendarPanel() {
-  const { period, select } = useFin();
+  const { select, board: data, boardError: error } = useFin();
   const [tab, setTab] = useState<"cn" | "us">("cn");
-  const { data, error } = usePolling(() => api.finBoard(period), 3600_000, [period]);
-  const { data: us } = usePolling(
+  const { data: us, error: usError } = usePolling(
     () => api.globalEarningsCalendar({ days: 14 }),
     3600_000,
-    [tab],
+    [],
+    tab === "us",
   );
 
   const view = useMemo(() => {
@@ -116,7 +116,11 @@ export function FinCalendarPanel() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-          {!us && <p className="py-6 text-center text-[11px] text-slate-600">美股财报日历加载中…</p>}
+          {!us && (
+            <p className="py-6 text-center text-[11px] text-slate-600">
+              {usError ? "美股日历未接通" : "美股财报日历加载中…"}
+            </p>
+          )}
           {usRows.slice(0, 40).map((r, i) => (
             <div key={`${r.symbol}-${r.date}-${i}`} className="flex items-center gap-2 px-1 py-0.5">
               <span className="w-16 shrink-0 font-mono text-[10px] text-slate-500">{(r.date || "").slice(5)}</span>

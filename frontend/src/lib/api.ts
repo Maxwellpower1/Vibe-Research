@@ -241,6 +241,7 @@ export interface BoardStock {
 export interface StockRankRow {
   symbol: string; code: string; name: string;
   price: number; pct: number; amount: number; turnover?: number;
+  main_net?: number; main_pct?: number;
 }
 export interface BoardFlowPoint { t: string; v: number }
 export interface BoardFlowIntraday {

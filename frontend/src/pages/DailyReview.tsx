@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, Loader2, AlertCircle, RefreshCw, X } from "lucide-react";
+import { Sparkles, Loader2, AlertCircle, RefreshCw, X, ArrowLeftRight, ListOrdered } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AskAiButton } from "@/components/ui/AskAiButton";
@@ -18,7 +18,7 @@ import { WorldIndexPanel } from "@/components/cockpit/WorldIndexPanel";
 import { SectorHotPanel } from "@/components/cockpit/SectorHotPanel";
 import { BoardFlowLivePanel } from "@/components/cockpit/BoardFlowLivePanel";
 import { MoneyFlowRankPanel } from "@/components/cockpit/MoneyFlowRankPanel";
-import { StockRankPanel } from "@/components/cockpit/StockRankPanel";
+import { RankTabBar, StockRankPanel, type RankTab } from "@/components/cockpit/StockRankPanel";
 import { CommodityPanel } from "@/components/cockpit/CommodityPanel";
 import { reviewPending } from "@/components/review/reviewPending";
 import { useReviewData } from "@/hooks/useReviewData";
@@ -33,6 +33,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [needConfig, setNeedConfig] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [flowSector, setFlowSector] = useState<{ code: string; name: string } | null>(null);
+  const [rankTab, setRankTab] = useState<RankTab>("hot");
 
   const runReview = async () => {
     setReviewErr(null);
@@ -75,10 +76,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     extraDone: d.extraDone,
     ovDone: d.ovDone,
     moneyDone: d.moneyDone,
-    stockFlow: d.stockFlow,
-    boardStockFlow: d.boardStockFlow,
-    flowBoard: d.flowBoard,
-    onFlowBoard: d.setFlowBoard,
   };
 
   const indexShared = {
@@ -162,6 +159,8 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         {
           id: "moneyflow",
           title: "主力净流入排行",
+          icon: <ArrowLeftRight size={14} />,
+          accent: "#fb7185",
           defaultW: 0.24,
           mobileH: "h-[380px]",
           body: (
@@ -174,9 +173,12 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         {
           id: "rank",
           title: "个股榜单",
+          icon: <ListOrdered size={14} />,
+          accent: "#fbbf24",
           defaultW: 0.26,
           mobileH: "h-[380px]",
-          body: <StockRankPanel />,
+          right: <RankTabBar tab={rankTab} onTab={setRankTab} />,
+          body: <StockRankPanel tab={rankTab} />,
         },
         {
           id: "goods",
@@ -270,7 +272,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         <p className="hidden truncate text-[10px] text-slate-500 sm:block">
           {d.today} · {d.session.hint} · {d.topUpdatedLabel}
         </p>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
           <button
             type="button"
             onClick={d.refreshTopRows}

@@ -309,52 +309,65 @@ def us_hk_stock(query: str, *, with_metrics: bool = True) -> dict:
     }
 
 
+def _yahoo_chart_bars(ysym: str, n: int) -> tuple[list[dict], str]:
+    """Yahoo chart v8: try query1 then query2. Returns (bars, short_name)."""
+    import requests
+    from datetime import datetime
+
+    last_err: Exception | None = None
+    for host in ("query1", "query2"):
+        try:
+            r = requests.get(
+                f"https://{host}.finance.yahoo.com/v8/finance/chart/{ysym}",
+                params={"interval": "1d", "range": "2y", "includeAdjustedClose": "true"},
+                headers={"User-Agent": astock.UA},
+                timeout=20,
+            )
+            r.raise_for_status()
+            res = ((r.json().get("chart") or {}).get("result") or [None])[0]
+            if not res:
+                continue
+            timestamps = res.get("timestamp") or []
+            quote = ((res.get("indicators") or {}).get("quote") or [{}])[0]
+            adj_list = ((res.get("indicators") or {}).get("adjclose") or [{}])
+            adjclose = (adj_list[0].get("adjclose") if adj_list else None) or []
+            bars: list[dict] = []
+            for i, ts in enumerate(timestamps):
+                try:
+                    o, h, l, c = quote["open"][i], quote["high"][i], quote["low"][i], quote["close"][i]
+                    if o is None or h is None or l is None or c is None or c == 0:
+                        continue
+                    adj = adjclose[i] if i < len(adjclose) else None
+                    factor = (float(adj) / float(c)) if adj not in (None, 0) else 1.0
+                    bars.append({
+                        "date": datetime.fromtimestamp(ts).strftime("%Y-%m-%d"),
+                        "open": round(float(o) * factor, 4),
+                        "high": round(float(h) * factor, 4),
+                        "low": round(float(l) * factor, 4),
+                        "close": round(float(c) * factor, 4),
+                        "volume": int(quote["volume"][i] or 0),
+                    })
+                except (TypeError, ValueError, KeyError, IndexError):
+                    continue
+            if bars:
+                meta = res.get("meta") or {}
+                return bars[-n:], str(meta.get("shortName") or "")
+        except Exception as e:
+            last_err = e
+            continue
+    if last_err:
+        raise last_err
+    return [], ""
+
+
 def _us_kline_yahoo_qfq(code: str, n: int) -> list[dict]:
     """Yahoo chart v8: forward-adjust OHLC by adjclose/close (前复权).
 
     Latest close stays aligned with market price; history scaled for splits/dividends.
     Yahoo class shares use '-' (BRK-B); normalize '.' -> '-'.
     """
-    import requests
-    from datetime import datetime
-
-    ysym = code.replace(".", "-")
-    # 365 trading days ~ 1.5y calendar; pull 2y then truncate
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}"
-    r = requests.get(
-        url,
-        params={"interval": "1d", "range": "2y", "includeAdjustedClose": "true"},
-        headers={"User-Agent": astock.UA},
-        timeout=20,
-    )
-    r.raise_for_status()
-    res = ((r.json().get("chart") or {}).get("result") or [None])[0]
-    if not res:
-        return []
-    timestamps = res.get("timestamp") or []
-    quote = ((res.get("indicators") or {}).get("quote") or [{}])[0]
-    adj_list = ((res.get("indicators") or {}).get("adjclose") or [{}])
-    adjclose = (adj_list[0].get("adjclose") if adj_list else None) or []
-
-    bars: list[dict] = []
-    for i, ts in enumerate(timestamps):
-        try:
-            o, h, l, c = quote["open"][i], quote["high"][i], quote["low"][i], quote["close"][i]
-            if o is None or h is None or l is None or c is None or c == 0:
-                continue
-            adj = adjclose[i] if i < len(adjclose) else None
-            factor = (float(adj) / float(c)) if adj not in (None, 0) else 1.0
-            bars.append({
-                "date": datetime.fromtimestamp(ts).strftime("%Y-%m-%d"),
-                "open": round(float(o) * factor, 4),
-                "high": round(float(h) * factor, 4),
-                "low": round(float(l) * factor, 4),
-                "close": round(float(c) * factor, 4),
-                "volume": int(quote["volume"][i] or 0),
-            })
-        except (TypeError, ValueError, KeyError, IndexError):
-            continue
-    return bars[-n:]
+    bars, _name = _yahoo_chart_bars(code.replace(".", "-"), n)
+    return bars
 
 
 def _us_kline_sina(code: str, n: int) -> list[dict]:
@@ -438,10 +451,10 @@ def _hk_yahoo_symbol(code: str) -> str:
 
 
 def hk_stock_kline(symbol: str, num: int = 180) -> dict:
-    """港股日 K（Yahoo 前复权）。symbol 如 00700 / 700。
+    """港股日 K。symbol 如 00700 / 700。
 
+    Yahoo chart (query1/query2) first; Tencent ifzq qfq if Yahoo 403s.
     新浪港股 K 已失效；东财 push2his 不返回港股 K。
-    Yahoo 可直连，不依赖东财 resolve（suggest 偶发挂掉时仍可用）。
     """
     raw = (symbol or "").strip().upper().removesuffix(".HK")
     info = resolve_symbol(raw) if raw else None
@@ -459,59 +472,62 @@ def hk_stock_kline(symbol: str, num: int = 180) -> dict:
     n = max(20, min(int(num or 180), 1000))
     ysym = _hk_yahoo_symbol(code)
     bars: list[dict] = []
+    source, adjust = "yahoo", "qfq"
     try:
-        import requests
-        from datetime import datetime
-
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ysym}"
-        r = requests.get(
-            url,
-            params={"interval": "1d", "range": "2y", "includeAdjustedClose": "true"},
-            headers={"User-Agent": astock.UA},
-            timeout=20,
-        )
-        r.raise_for_status()
-        res = ((r.json().get("chart") or {}).get("result") or [None])[0]
-        if not res:
-            return {}
-        # Prefer Yahoo shortName when Eastmoney resolve failed
-        meta = res.get("meta") or {}
-        if name == code and meta.get("shortName"):
-            name = str(meta["shortName"])
-        timestamps = res.get("timestamp") or []
-        quote = ((res.get("indicators") or {}).get("quote") or [{}])[0]
-        adj_list = ((res.get("indicators") or {}).get("adjclose") or [{}])
-        adjclose = (adj_list[0].get("adjclose") if adj_list else None) or []
-        for i, ts in enumerate(timestamps):
-            try:
-                o, h, l, c = quote["open"][i], quote["high"][i], quote["low"][i], quote["close"][i]
-                if o is None or h is None or l is None or c is None or c == 0:
-                    continue
-                adj = adjclose[i] if i < len(adjclose) else None
-                factor = (float(adj) / float(c)) if adj not in (None, 0) else 1.0
-                bars.append({
-                    "date": datetime.fromtimestamp(ts).strftime("%Y-%m-%d"),
-                    "open": round(float(o) * factor, 4),
-                    "high": round(float(h) * factor, 4),
-                    "low": round(float(l) * factor, 4),
-                    "close": round(float(c) * factor, 4),
-                    "volume": int(quote["volume"][i] or 0),
-                })
-            except (TypeError, ValueError, KeyError, IndexError):
-                continue
-        bars = bars[-n:]
+        bars, short = _yahoo_chart_bars(ysym, n)
+        if name == code and short:
+            name = short
     except Exception:
         bars = []
+    if not bars:
+        try:
+            bars, tname = _hk_kline_tencent(code, n)
+            source, adjust = "tencent", "qfq"
+            if name == code and tname:
+                name = tname
+        except Exception:
+            bars = []
     if not bars:
         return {}
     return {
         "code": code,
         "name": name,
         "market": "HK",
-        "source": "yahoo",
-        "adjust": "qfq",
+        "source": source,
+        "adjust": adjust,
         "bars": bars,
     }
+
+
+def _hk_kline_tencent(code: str, n: int) -> tuple[list[dict], str]:
+    """Tencent ifzq daily qfq for HK (hk00700). Fallback when Yahoo 403s."""
+    symbol = f"hk{str(code).zfill(5)}"
+    param = f"{symbol},day,,,{n},qfq"
+    d = astock._tencent_json(
+        f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={param}"
+    )
+    block = ((d.get("data") or {}).get(symbol) or {})
+    rows = block.get("qfqday") or block.get("day") or []
+    bars: list[dict] = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) < 6:
+            continue
+        try:
+            bars.append({
+                "date": str(row[0])[:10],
+                "open": float(row[1]),
+                "high": float(row[3]),
+                "low": float(row[4]),
+                "close": float(row[2]),
+                "volume": int(float(row[5])),
+            })
+        except (TypeError, ValueError):
+            continue
+    name = ""
+    qt = (block.get("qt") or {}).get(symbol) or []
+    if isinstance(qt, list) and len(qt) > 1 and isinstance(qt[1], str):
+        name = qt[1]
+    return bars[-n:], name
 
 
 # 港股现金流量表汇总科目：东财 RPT_HKSK_FN_CASHFLOW 的 STD_ITEM_CODE → 中文标签。

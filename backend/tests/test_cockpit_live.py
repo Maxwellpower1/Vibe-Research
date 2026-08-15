@@ -52,6 +52,18 @@ def test_parse_jsonp():
     assert cl.parse_jsonp('var t=({"minLine_1d":[["09:31",1]]});') == {"minLine_1d": [["09:31", 1]]}
 
 
+def test_board_fflow_kline_cached_hits_same_key(monkeypatch):
+    from api_common import _DC_CACHE
+
+    calls = []
+    monkeypatch.setattr(cl, "_board_fflow_kline", lambda code: calls.append(code) or [{"t": "09:31", "v": 1.0}])
+    _DC_CACHE.clear()
+    a = cl._board_fflow_kline_cached("bk0474")
+    b = cl._board_fflow_kline_cached("BK0474")
+    assert a == b == [{"t": "09:31", "v": 1.0}]
+    assert calls == ["BK0474"]
+
+
 def test_sanitize_future_codes():
     codes = cl._sanitize_future_codes("hf_GC,nf_AU0,BTCUSDT,../etc,hf_TOOLONGSYMBOLXXXX,hf_CL")
     assert codes == ["hf_GC", "nf_AU0", "BTCUSDT", "hf_CL"]

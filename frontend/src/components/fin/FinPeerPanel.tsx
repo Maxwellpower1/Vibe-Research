@@ -2,16 +2,12 @@ import { useMemo } from "react";
 import { useFin } from "@/components/fin/FinContext";
 import { fmtYiYuan } from "@/components/fin/utils";
 import { pctColor } from "@/components/review/format";
-import { usePolling } from "@/hooks/usePolling";
-import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function FinPeerPanel() {
-  const { company, period, select } = useFin();
-  const { data: board } = usePolling(() => api.finBoard(period), 3600_000, [period]);
-  const { data: bundle } = usePolling(() => api.finCompany(company.code), 1800_000, [company.code]);
+  const { company, select, board, companyBundle: bundle } = useFin();
 
-  const industry = bundle?.main.industry || board?.stocks.find((s) => s.code === company.code)?.industry || "";
+  const industry = bundle?.main?.industry || board?.stocks.find((s) => s.code === company.code)?.industry || "";
   const peers = useMemo(() => {
     const rows = (board?.stocks ?? []).filter((s) => industry && s.industry === industry);
     return rows.slice(0, 18);

@@ -3,7 +3,7 @@ import { BoardFlowChart } from "@/components/cockpit/BoardFlowChart";
 import { usePolling } from "@/hooks/usePolling";
 import { api } from "@/lib/api";
 
-const POLL_MS = 30_000;
+const POLL_MS = 120_000;
 const DURATION_MS = 12_000;
 const STEP_MS = 100;
 

@@ -1,11 +1,11 @@
 import { X } from "lucide-react";
-import { QuoteLine, klineHref } from "@/components/cockpit/QuoteLine";
+import { QuoteStockRow } from "@/components/cockpit/QuoteStockRow";
 import { fmtAmt, pctColor } from "@/components/review/format";
 import { usePolling } from "@/hooks/usePolling";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const POLL_MS = 20_000;
+const POLL_MS = 120_000;
 
 export function MoneyFlowRankPanel({
   sectorFilter,
@@ -24,7 +24,7 @@ export function MoneyFlowRankPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-1 border-b border-slate-700/40 px-1.5 py-1 text-[10px] text-slate-500">
+      <div className="flex shrink-0 items-center justify-between gap-1 px-2 py-1 text-[10px] text-slate-500">
         <span className="flex min-w-0 items-center gap-1">
           {sectorFilter ? (
             <span className="inline-flex items-center gap-1 rounded bg-rose-500/15 px-1.5 py-0.5 text-rose-300">
@@ -34,32 +34,32 @@ export function MoneyFlowRankPanel({
               </button>
             </span>
           ) : (
-            <span>个股 · 主力净额</span>
+            <span>个股 · 主力净额/净占比</span>
           )}
         </span>
         <span>
-          合计 <span className={cn("font-mono", pctColor(total))}>{fmtAmt(total)}</span>
+          {sectorFilter ? `板块内 ${rows.length} 只` : "TOP15 合计"}
+          <span className={cn("ml-1 font-mono", pctColor(total))}>{fmtAmt(total)}</span>
+          <span className="ml-2 text-slate-600">成交额 · 现价</span>
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-1">
-        <div className="flex items-center justify-between px-1.5 py-0.5 text-[10px] text-slate-600">
-          <span>名称</span>
-          <span>成交额 · 现价</span>
-        </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-1.5 pt-0">
         {rows.map((r) => (
-          <QuoteLine
+          <QuoteStockRow
             key={r.code}
+            code={r.code}
             name={r.name}
             price={r.price}
             pct={r.change_pct}
             amount={r.amount}
-            extra={fmtAmt(r.main_net)}
-            href={klineHref(r.code)}
+            turnover={r.turnover}
+            mainNet={r.main_net}
+            mainPct={r.main_pct}
           />
         ))}
         {!data && (
           <p className="py-6 text-center text-[11px] text-slate-600">
-            {error ? "资金流未接通, 自动重试中" : "加载中…"}
+            {error ? "资金流未接通, 自动重试中" : "资金流数据加载中…"}
           </p>
         )}
         {data && rows.length === 0 && sectorFilter && (

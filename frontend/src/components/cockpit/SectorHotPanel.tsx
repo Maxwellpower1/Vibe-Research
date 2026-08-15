@@ -107,6 +107,9 @@ export function SectorHotPanel() {
         {selected && (
           <div className="min-h-0 overflow-y-auto border-l border-slate-700/40 p-1">
             <p className="px-1.5 py-1 text-[10px] text-slate-500">{selected.name} 成分</p>
+            {!stocks && (
+              <p className="py-4 text-center text-[11px] text-slate-600">成分加载中…</p>
+            )}
             {(stocks ?? []).map((s) => (
               <QuoteLine
                 key={s.code}

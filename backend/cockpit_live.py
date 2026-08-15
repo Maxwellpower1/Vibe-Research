@@ -441,7 +441,7 @@ def _em_rank(sort: str, po: int, want: int) -> list[dict]:
         "pn": "1", "pz": str(want), "po": str(po), "np": "1",
         "fltt": "2", "invt": "2", "fid": fid,
         "fs": "m:0+t:6,m:0+t:80",
-        "fields": "f12,f14,f2,f3,f6,f8",
+        "fields": "f12,f14,f2,f3,f6,f8,f62,f184",
     }
     data: dict = {}
     for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
@@ -476,6 +476,8 @@ def _em_rank(sort: str, po: int, want: int) -> list[dict]:
             "pct": it.get("f3") if isinstance(it.get("f3"), (int, float)) else 0,
             "amount": it.get("f6") if isinstance(it.get("f6"), (int, float)) else 0,
             "turnover": it.get("f8") if isinstance(it.get("f8"), (int, float)) else 0,
+            "main_net": it.get("f62") if isinstance(it.get("f62"), (int, float)) else 0,
+            "main_pct": it.get("f184") if isinstance(it.get("f184"), (int, float)) else 0,
         })
     return rows
 
@@ -502,6 +504,7 @@ def _sina_rank(sort: str, asc: int, want: int) -> list[dict]:
             "name": s.get("name") or "",
             "price": price,
             "pct": _num(s.get("changepercent")),
+            # Sina getHQNodeData amount is yuan, same as Eastmoney f6.
             "amount": _num(s.get("amount")),
             "turnover": _num(s.get("turnoverratio")),
         })
@@ -554,9 +557,23 @@ def board_flow_intraday(n: int = 20) -> list[dict]:
     boards = ups + [d for d in downs if d["code"] not in seen]
     out = []
     for b in boards:
-        points = _board_fflow_kline(b["code"])
+        points = _board_fflow_kline_cached(b["code"])
         out.append({**b, "points": points})
     return out
+
+
+def _board_fflow_kline_cached(code: str) -> list[dict]:
+    """Per-board minute curve. Same TTL key as a later full-list refresh."""
+    from api_common import _cached
+
+    bk = normalize_board_code(code)
+    return _cached(
+        "board_fflow_kline",
+        bk,
+        120,
+        lambda: _board_fflow_kline(bk),
+        valid=lambda d: isinstance(d, list) and len(d) > 0,
+    )
 
 
 def _board_fflow_kline(code: str) -> list[dict]:

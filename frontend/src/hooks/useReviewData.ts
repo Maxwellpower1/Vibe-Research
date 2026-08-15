@@ -18,6 +18,7 @@ const TOP_AUTO_MS = 30_000;
 const TOP_AUTO_KEY = "ashare.review.topAuto";
 const IDX_PANEL_KEY = "ashare.review.idxPanel";
 const SEG_KEYS = ["boards", "money", "chain"] as const;
+const EMPTY_IDX_MINUTE: Record<string, AShareLightKline | null> = {};
 
 export type ReviewSeg = "boards" | "money" | "chain";
 export type LimitKind = "zt" | "zb" | "dt" | "yzt" | "jm";
@@ -54,7 +55,6 @@ export function useReviewData() {
   const [lpr, setLpr] = useState<LprData | null>(null);
   const [bondY, setBondY] = useState<CnBondYield | null>(null);
   const [hsgt, setHsgt] = useState<HsgtLive | null>(null);
-  const [stockFlow, setStockFlow] = useState<StockFlow | null>(null);
   const [boardStockFlow, setBoardStockFlow] = useState<StockFlow | null>(null);
   const [flowBoard, setFlowBoard] = useState<BoardFlowRow | null>(null);
   const [moneyDone, setMoneyDone] = useState(false);
@@ -63,8 +63,8 @@ export function useReviewData() {
     const s = storageGet(IDX_PANEL_KEY);
     return s === "global" || s === "watch" || s === "cn" ? s : "cn";
   });
-  const [idxMinute, setIdxMinute] = useState<Record<string, AShareLightKline | null>>({});
-  const [idxMinuteDone, setIdxMinuteDone] = useState(false);
+  const idxMinute = EMPTY_IDX_MINUTE;
+  const idxMinuteDone = true;
   const [watchCodes, setWatchCodes] = useState<string[]>(() => loadWatch());
   const [watchQuotes, setWatchQuotes] = useState<Record<string, Quote>>({});
   const [watchMinute, setWatchMinute] = useState<Record<string, AShareLightKline | null>>({});
@@ -177,8 +177,19 @@ export function useReviewData() {
 
   useEffect(() => {
     if (!topAuto) return;
-    const t = window.setInterval(() => refreshTopRows(), TOP_AUTO_MS);
-    return () => window.clearInterval(t);
+    const tick = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      refreshTopRows();
+    };
+    const onVis = () => {
+      if (!document.hidden) refreshTopRows();
+    };
+    const t = window.setInterval(tick, TOP_AUTO_MS);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [topAuto, refreshTopRows]);
 
   const boardBoot = useRef(true);
@@ -225,16 +236,6 @@ export function useReviewData() {
   }, [etfSort, shType]);
 
   useEffect(() => {
-    let cancelled = false;
-    void api.stockFlow(15).then((d) => {
-      if (!cancelled) setStockFlow(d);
-    }).catch(() => {
-      if (!cancelled) setStockFlow(null);
-    });
-    return () => { cancelled = true; };
-  }, [topUpdatedAt]);
-
-  useEffect(() => {
     if (!flowBoard?.code) {
       setBoardStockFlow(null);
       return;
@@ -263,29 +264,7 @@ export function useReviewData() {
     storageSet(IDX_PANEL_KEY, idxPanel);
   }, [idxPanel]);
 
-  useEffect(() => {
-    const syms = indices.map((i) => i.symbol).filter((s): s is string => !!s);
-    if (!syms.length) return;
-    let cancelled = false;
-    setIdxMinuteDone(false);
-    void Promise.all(
-      syms.map(async (sym) => {
-        try {
-          const d = await api.ashareLightKline(sym, "1", 240);
-          if (!cancelled) {
-            setIdxMinute((prev) => ({ ...prev, [sym]: d }));
-          }
-        } catch {
-          if (!cancelled) {
-            setIdxMinute((prev) => (sym in prev ? prev : { ...prev, [sym]: null }));
-          }
-        }
-      }),
-    ).then(() => {
-      if (!cancelled) setIdxMinuteDone(true);
-    });
-    return () => { cancelled = true; };
-  }, [indices]);
+  // CN index minutes now live in WorldIndexPanel; skip the unused fan-out here.
 
   useEffect(() => {
     setWatchCodes(loadWatch());
@@ -388,7 +367,7 @@ export function useReviewData() {
     lpr,
     bondY,
     hsgt,
-    stockFlow,
+    stockFlow: null,
     boardStockFlow,
     flowBoard,
     setFlowBoard,

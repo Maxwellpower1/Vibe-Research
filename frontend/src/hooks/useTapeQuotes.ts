@@ -1,26 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type GlobalIndex, type GlobalTreasuryCurve, type IndexQuote } from "@/lib/api";
+import { api, type GlobalTreasuryCurve, type WorldIndex } from "@/lib/api";
 import type { TapeItem } from "@/components/cockpit/TickerTape";
 
-const TAPE_MS = 30_000;
+const TAPE_MS = 20_000;
 
 function toItems(
-  indices: IndexQuote[],
-  globalIdx: GlobalIndex[],
+  world: WorldIndex[],
   treasury: GlobalTreasuryCurve | null,
 ): TapeItem[] {
-  const list: TapeItem[] = indices
+  const list: TapeItem[] = world
     .filter((i) => Number.isFinite(i.price))
     .map((i) => ({
-      key: i.symbol || i.name,
-      label: i.name,
+      key: i.symbol,
+      label: i.name || i.label,
       price: i.price,
       pct: i.change_pct,
     }));
-  for (const g of globalIdx) {
-    if (g.price == null || g.change_pct == null) continue;
-    list.push({ key: g.key, label: g.name, price: g.price, pct: g.change_pct });
-  }
   const pick = (tenor: string, label: string) => {
     const p = treasury?.points?.find((x) => x.tenor === tenor);
     if (!p || !Number.isFinite(p.yield)) return;
@@ -33,33 +28,36 @@ function toItems(
   return list;
 }
 
-/** Site-wide tape: A-share indices + global + US 10Y/2Y. */
+/** Site-wide tape: same world-indices cache as the cockpit panel + US 10Y/2Y. */
 export function useTapeQuotes() {
-  const [indices, setIndices] = useState<IndexQuote[]>([]);
-  const [globalIdx, setGlobalIdx] = useState<GlobalIndex[]>([]);
+  const [world, setWorld] = useState<WorldIndex[]>([]);
   const [treasury, setTreasury] = useState<GlobalTreasuryCurve | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       void Promise.all([
-        api.indices().catch(() => [] as IndexQuote[]),
-        api.globalIndices().catch(() => [] as GlobalIndex[]),
+        api.worldIndices().catch(() => [] as WorldIndex[]),
         api.globalTreasuryCurve().catch(() => null),
-      ]).then(([ix, gi, ty]) => {
+      ]).then(([wi, ty]) => {
         if (cancelled) return;
-        setIndices(ix ?? []);
-        setGlobalIdx(gi ?? []);
+        setWorld(wi ?? []);
         setTreasury(ty);
       });
     };
+    const onVis = () => {
+      if (!document.hidden) load();
+    };
     load();
     const t = window.setInterval(load, TAPE_MS);
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
       window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 
-  return useMemo(() => toItems(indices, globalIdx, treasury), [indices, globalIdx, treasury]);
+  return useMemo(() => toItems(world, treasury), [world, treasury]);
 }

@@ -3,16 +3,13 @@ import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { useFin } from "@/components/fin/FinContext";
 import { quarterLabel } from "@/components/fin/utils";
 import { useElementSize } from "@/hooks/useElementSize";
-import { usePolling } from "@/hooks/usePolling";
-import { api } from "@/lib/api";
 
 type Tab = "perf" | "quality";
 
 export function FinTrendPanel() {
-  const { company } = useFin();
+  const { company, companyBundle: data, companyError: error } = useFin();
   const [tab, setTab] = useState<Tab>("perf");
-  const { data, error } = usePolling(() => api.finCompany(company.code), 1800_000, [company.code]);
-  const reports = [...(data?.main.reports ?? [])].reverse();
+  const reports = [...(data?.main?.reports ?? [])].reverse();
   const { ref, size } = useElementSize();
 
   type Chart = {
@@ -69,14 +66,15 @@ export function FinTrendPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between border-b border-slate-700/40 px-1.5 py-1">
-        <span className="truncate text-[10px] text-cyan-300">{data?.main.name || company.name}</span>
+        <span className="truncate text-[10px] text-cyan-300">{data?.main?.name || company.name || "未选公司"}</span>
         <ChipGroup>
           <Chip active={tab === "perf"} onClick={() => setTab("perf")}>业绩</Chip>
           <Chip active={tab === "quality"} onClick={() => setTab("quality")}>质量</Chip>
         </ChipGroup>
       </div>
       <div ref={ref} className="min-h-0 flex-1">
-        {!data && <p className="py-8 text-center text-[11px] text-slate-600">{error ? "趋势未接通" : "加载中…"}</p>}
+        {!company.code && <p className="py-8 text-center text-[11px] text-slate-600">选公司后看近 12 期趋势</p>}
+        {company.code && !data && <p className="py-8 text-center text-[11px] text-slate-600">{error ? "趋势未接通" : "加载中…"}</p>}
         {data && reports.length < 2 && (
           <p className="py-8 text-center text-[11px] text-slate-600">暂无足够报告期</p>
         )}

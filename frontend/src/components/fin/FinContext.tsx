@@ -1,4 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { usePolling } from "@/hooks/usePolling";
+import { api, type FinBoard, type FinCompanyBundle } from "@/lib/api";
 import { storageGet, storageSet } from "@/lib/storage";
 
 export interface FinCompany {
@@ -13,10 +15,15 @@ interface FinCtx {
   period: string;
   setPeriod: (p: string) => void;
   periods: { value: string; label: string }[];
+  board: FinBoard | null;
+  boardError: string | null;
+  companyBundle: FinCompanyBundle | null;
+  companyError: string | null;
 }
 
-const DEFAULT: FinCompany = { code: "600519", name: "贵州茅台" };
-const LS_KEY = "fin:recent";
+const EMPTY: FinCompany = { code: "", name: "" };
+const LS_RECENT = "fin:recent";
+const LS_CURRENT = "fin:company";
 const MAX_RECENT = 6;
 
 function currentPeriod(d = new Date()): string {
@@ -52,12 +59,29 @@ const PERIOD_OPTIONS = [
   { value: PREV, label: periodLabel(PREV) },
 ];
 
+function parseCompany(raw: string | null): FinCompany | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as unknown;
+    if (!v || typeof v !== "object") return null;
+    const code = String((v as FinCompany).code || "").replace(/^(sh|sz|bj)/i, "");
+    const name = String((v as FinCompany).name || "");
+    if (!/^\d{6}$/.test(code)) return null;
+    return { code, name: name || code };
+  } catch {
+    return null;
+  }
+}
+
 function loadRecent(): FinCompany[] {
   try {
-    const raw = storageGet(LS_KEY);
+    const raw = storageGet(LS_RECENT);
     const v = raw ? JSON.parse(raw) : null;
     if (Array.isArray(v)) {
-      return v.filter((x) => x && typeof x.code === "string" && typeof x.name === "string").slice(0, MAX_RECENT);
+      return v
+        .map((x) => parseCompany(JSON.stringify(x)))
+        .filter((x): x is FinCompany => !!x)
+        .slice(0, MAX_RECENT);
     }
   } catch {
     /* ignore */
@@ -65,33 +89,64 @@ function loadRecent(): FinCompany[] {
   return [];
 }
 
+function loadCompany(recent: FinCompany[]): FinCompany {
+  return parseCompany(storageGet(LS_CURRENT)) ?? recent[0] ?? EMPTY;
+}
+
 const FinContext = createContext<FinCtx>({
-  company: DEFAULT,
+  company: EMPTY,
   recent: [],
   select: () => {},
   period: CUR,
   setPeriod: () => {},
   periods: PERIOD_OPTIONS,
+  board: null,
+  boardError: null,
+  companyBundle: null,
+  companyError: null,
 });
 
 export function FinProvider({ children }: { children: ReactNode }) {
-  const [company, setCompany] = useState<FinCompany>(DEFAULT);
-  const [recent, setRecent] = useState<FinCompany[]>(loadRecent);
+  const recentInit = loadRecent();
+  const [company, setCompany] = useState<FinCompany>(() => loadCompany(recentInit));
+  const [recent, setRecent] = useState<FinCompany[]>(recentInit);
   const [period, setPeriod] = useState(CUR);
 
   const select = useCallback((code: string, name: string) => {
     const bare = code.replace(/^(sh|sz|bj)/i, "");
-    setCompany({ code: bare, name });
+    if (!/^\d{6}$/.test(bare)) return;
+    const next = { code: bare, name: name || bare };
+    setCompany(next);
+    storageSet(LS_CURRENT, JSON.stringify(next));
     setRecent((rs) => {
-      const next = [{ code: bare, name }, ...rs.filter((r) => r.code !== bare)].slice(0, MAX_RECENT);
-      storageSet(LS_KEY, JSON.stringify(next));
-      return next;
+      const list = [next, ...rs.filter((r) => r.code !== bare)].slice(0, MAX_RECENT);
+      storageSet(LS_RECENT, JSON.stringify(list));
+      return list;
     });
   }, []);
 
+  const boardPoll = usePolling(() => api.finBoard(period), 3600_000, [period]);
+  const companyPoll = usePolling(
+    () => api.finCompany(company.code),
+    1800_000,
+    [company.code],
+    Boolean(company.code),
+  );
+
   const value = useMemo(
-    () => ({ company, recent, select, period, setPeriod, periods: PERIOD_OPTIONS }),
-    [company, recent, select, period],
+    () => ({
+      company,
+      recent,
+      select,
+      period,
+      setPeriod,
+      periods: PERIOD_OPTIONS,
+      board: boardPoll.data,
+      boardError: boardPoll.error,
+      companyBundle: companyPoll.data,
+      companyError: companyPoll.error,
+    }),
+    [company, recent, select, period, boardPoll.data, boardPoll.error, companyPoll.data, companyPoll.error],
   );
   return <FinContext.Provider value={value}>{children}</FinContext.Provider>;
 }

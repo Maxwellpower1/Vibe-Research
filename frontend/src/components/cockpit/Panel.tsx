@@ -11,6 +11,7 @@ export interface PanelZoomProps {
 interface PanelProps extends PanelZoomProps {
   title: string;
   icon?: ReactNode;
+  accent?: string;
   right?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -21,6 +22,7 @@ interface PanelProps extends PanelZoomProps {
 export function Panel({
   title,
   icon,
+  accent,
   right,
   children,
   className = "",
@@ -40,9 +42,14 @@ export function Panel({
       )}
     >
       <header className="flex h-8 shrink-0 items-center gap-2 border-b border-slate-700/40 px-2.5">
-        <span className="inline-block h-3.5 w-1 shrink-0 rounded-sm bg-cyan-400" />
+        <span
+          className="inline-block h-3.5 w-1 shrink-0 rounded-sm bg-cyan-400"
+          style={accent ? { background: accent } : undefined}
+        />
         {icon && (
-          <span className="inline-flex shrink-0 items-center text-cyan-400">{icon}</span>
+          <span className="inline-flex shrink-0 items-center text-cyan-400" style={accent ? { color: accent } : undefined}>
+            {icon}
+          </span>
         )}
         <h2 className="min-w-0 flex-1 truncate text-[12px] font-semibold tracking-wide text-slate-200">
           {title}

@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { useFin } from "@/components/fin/FinContext";
 import { fmtYiYuan, quarterLabel } from "@/components/fin/utils";
 import { pctColor } from "@/components/review/format";
-import { usePolling } from "@/hooks/usePolling";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -20,8 +19,7 @@ function Card({ label, value, yoy }: { label: string; value: string; yoy?: numbe
 }
 
 export function FinCompanyPanel() {
-  const { company, recent, select } = useFin();
-  const { data, error } = usePolling(() => api.finCompany(company.code), 1800_000, [company.code]);
+  const { company, recent, select, companyBundle: data, companyError: error } = useFin();
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Array<{ code: string; name: string }>>([]);
   const [open, setOpen] = useState(false);
@@ -101,7 +99,12 @@ export function FinCompanyPanel() {
           ))}
         </div>
       )}
-      {!data && <p className="py-6 text-center text-[11px] text-slate-600">{error ? "公司财报未接通" : "加载中…"}</p>}
+      {!company.code && (
+        <p className="py-6 text-center text-[11px] text-slate-600">搜索或点日历 / 榜单选公司</p>
+      )}
+      {company.code && !data && (
+        <p className="py-6 text-center text-[11px] text-slate-600">{error ? "公司财报未接通" : "加载中…"}</p>
+      )}
       {r0 && (
         <div className="grid shrink-0 grid-cols-2 gap-1">
           <Card label="营收" value={fmtYiYuan(r0.revenue)} yoy={r0.revenue_yoy} />
@@ -147,12 +150,14 @@ export function FinCompanyPanel() {
             {(r.publishDate || "").slice(5, 10)} {r.orgSName} {r.title}
           </a>
         ))}
-        <Link
-          to={`/a-share?tab=detail&code=${company.code}`}
-          className="mt-1 inline-block text-[10px] text-cyan-400/80 hover:text-cyan-300"
-        >
-          打开个股详情 →
-        </Link>
+        {company.code ? (
+          <Link
+            to={`/a-share?tab=detail&code=${company.code}`}
+            className="mt-1 inline-block text-[10px] text-cyan-400/80 hover:text-cyan-300"
+          >
+            打开个股详情 →
+          </Link>
+        ) : null}
       </div>
     </div>
   );
