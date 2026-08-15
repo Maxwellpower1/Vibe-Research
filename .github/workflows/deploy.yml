@@ -163,13 +163,23 @@ jobs:
       - name: Deploy meta
         if: success()
         id: meta
+        env:
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
         run: |
           set -euo pipefail
           echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           echo "ver=$(node -p "require('./frontend/package.json').version")" >> "$GITHUB_OUTPUT"
+          if [ -n "${NOTIFY_EMAIL}" ] && [ -n "${SMTP_USER}" ] && [ -n "${SMTP_PASS}" ]; then
+            echo "mail=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mail=false" >> "$GITHUB_OUTPUT"
+            echo "skip email: set NOTIFY_EMAIL, SMTP_USER, SMTP_PASS"
+          fi
 
       - name: Email after successful deploy
-        if: ${{ success() && secrets.NOTIFY_EMAIL != '' && secrets.SMTP_USER != '' && secrets.SMTP_PASS != '' }}
+        if: success() && steps.meta.outputs.mail == 'true'
         continue-on-error: true
         uses: dawidd6/action-send-mail@v4
         with:
