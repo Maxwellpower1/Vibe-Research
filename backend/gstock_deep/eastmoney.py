@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import astock
 import gstock
+from gstock_deep.common import _UA
 from gstock_deep.yahoo import _resolve_yahoo
 
 def _match_stmt_item(name: str, keys: list[str]) -> str | None:
@@ -91,12 +92,9 @@ def fund_flow_daily(query: str, limit: int = 60) -> dict:
         "fields2": "f51,f52,f53,f54,f55,f56,f57",
         "lmt": max(5, min(int(limit or 60), 200)),
     }
-    try:
-        r = astock.em_get(url, params=params, headers={"User-Agent": _UA}, timeout=15)
-        data = (r.json() or {}).get("data") or {}
-        klines = data.get("klines") or []
-    except Exception:
-        return {}
+    r = astock.em_get(url, params=params, headers={"User-Agent": _UA}, timeout=15)
+    data = (r.json() or {}).get("data") or {}
+    klines = data.get("klines") or []
     rows = []
     for line in klines:
         parts = str(line).split(",")

@@ -4,26 +4,19 @@ import { cn } from "@/lib/utils";
 interface Props {
   children: ReactNode;
   className?: string;
-  /** Soft accent edge wash. Does not enable backdrop blur. */
   glow?: boolean;
-  /**
-   * Opt into frosted glass (sidebar / overlay language).
-   * Dense data panels should stay on the default solid surface.
-   */
   frosted?: boolean;
   onClick?: () => void;
 }
 
-/** Panel container: solid by default; frosted glass only when explicitly requested. */
-export function GlassCard({ children, className, glow, frosted, onClick }: Props) {
+/** Cockpit surface. glow / frosted kept as no-op flags so old call sites still typecheck. */
+export function GlassCard({ children, className, onClick }: Props) {
   return (
     <div
       onClick={onClick}
       className={cn(
-        "p-5",
-        frosted ? "glass" : "surface-panel",
-        glow && (frosted ? "glass-glow" : "surface-glow"),
-        onClick && "btn-press cursor-pointer hover:-translate-y-0.5",
+        "rounded-md border border-slate-700/40 bg-[#0c1320]/90 p-3",
+        onClick && "cursor-pointer transition-colors hover:border-cyan-500/40",
         className,
       )}
     >

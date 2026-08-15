@@ -13,10 +13,10 @@ interface Props {
 /** A股复盘等长页的区块标题: 左侧标题 + 弱提示, 右侧 meta / 操作 */
 export function SectionHeader({ icon, title, hint, meta, actions, className }: Props) {
   return (
-    <div className={cn("mb-3 flex flex-wrap items-center gap-x-2 gap-y-1.5", className)}>
+    <div className={cn("mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1", className)}>
       <div className="flex min-w-0 items-center gap-2">
-        <span className="inline-flex h-6 w-1 shrink-0 rounded-full bg-primary/70" aria-hidden />
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        <span className="inline-flex h-3.5 w-0.5 shrink-0 rounded-sm bg-cyan-400" aria-hidden />
+        <h3 className="flex items-center gap-1.5 text-[12px] font-semibold tracking-wide text-slate-200">
           {icon}
           {title}
         </h3>
@@ -39,7 +39,7 @@ interface ChipGroupProps {
 
 export function ChipGroup({ children, className }: ChipGroupProps) {
   return (
-    <div className={cn("inline-flex flex-wrap items-center gap-1 rounded-lg border border-border/50 bg-muted/20 p-0.5", className)}>
+    <div className={cn("inline-flex flex-wrap items-center gap-0.5 rounded border border-slate-700/50 bg-slate-900/40 p-0.5", className)}>
       {children}
     </div>
   );
@@ -57,10 +57,10 @@ export function Chip({ active, onClick, children }: ChipProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "btn-press rounded-md px-2.5 py-1 text-[11px]",
+        "rounded px-2 py-0.5 text-[10px]",
         active
-          ? "bg-primary/15 font-medium text-primary ring-1 ring-primary/25"
-          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+          ? "bg-cyan-500/15 font-medium text-cyan-300"
+          : "text-slate-500 hover:text-slate-200",
       )}
     >
       {children}

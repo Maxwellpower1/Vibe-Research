@@ -42,7 +42,7 @@ export function SegmentNav({ items, value, onChange, sticky = true, className, s
   return (
     <div
       className={cn(
-        "mb-4 rounded-xl border border-border/60 bg-background/85 p-1 backdrop-blur-md",
+        "mb-3 rounded-md border border-slate-700/50 bg-[#0c1320]/90 p-0.5",
         sticky && "sticky top-0 z-20",
         className,
       )}
@@ -59,10 +59,10 @@ export function SegmentNav({ items, value, onChange, sticky = true, className, s
                 writeSeg(storageKey, it.key);
               }}
               className={cn(
-                "btn-press inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs sm:text-sm",
+                "inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 text-[11px]",
                 active
-                  ? "bg-primary/15 font-medium text-primary ring-1 ring-primary/25"
-                  : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                  ? "bg-cyan-500/15 font-medium text-cyan-300"
+                  : "text-slate-500 hover:text-slate-200",
               )}
             >
               {it.icon}

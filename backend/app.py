@@ -50,8 +50,10 @@ import review_warmup
 from api_common import _warm_review_dc
 from routers import (
     ai,
+    ai_watch_routes,
     ashare,
     core,
+    fin_routes,
     fino_routes,
     global_routes,
     market_routes,
@@ -108,6 +110,8 @@ app.include_router(global_routes.router)
 app.include_router(ashare.router)
 app.include_router(ovlab_routes.router)
 app.include_router(fino_routes.router)
+app.include_router(ai_watch_routes.router)
+app.include_router(fin_routes.router)
 
 # Background: keep Daily Review caches warm (session-aware interval).
 review_warmup.start_scheduler(extra=_warm_review_dc)

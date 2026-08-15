@@ -1,0 +1,68 @@
+import { useEffect, useState } from "react";
+import { BoardFlowChart } from "@/components/cockpit/BoardFlowChart";
+import { usePolling } from "@/hooks/usePolling";
+import { api } from "@/lib/api";
+
+const POLL_MS = 30_000;
+const DURATION_MS = 12_000;
+const STEP_MS = 100;
+
+export function BoardFlowLivePanel({
+  selected,
+  onSelect,
+}: {
+  selected?: { code: string; name: string } | null;
+  onSelect?: (sel: { code: string; name: string } | null) => void;
+}) {
+  const { data, error } = usePolling(() => api.boardFlowIntraday(16), POLL_MS, []);
+  const [progress, setProgress] = useState(1);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    if (!playing) return;
+    const id = window.setInterval(() => {
+      setProgress((p) => {
+        const next = p + STEP_MS / DURATION_MS;
+        if (next >= 1) {
+          setPlaying(false);
+          return 1;
+        }
+        return next;
+      });
+    }, STEP_MS);
+    return () => window.clearInterval(id);
+  }, [playing]);
+
+  const label = playing ? "暂停" : progress < 1 ? "继续" : "重放";
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center justify-end gap-2 px-1.5 py-0.5">
+        <button
+          type="button"
+          onClick={() => {
+            if (progress >= 1) setProgress(0);
+            setPlaying((v) => !v);
+          }}
+          className="rounded border border-slate-700/60 px-1.5 py-0.5 text-[10px] text-slate-400 hover:border-cyan-500/50 hover:text-cyan-300"
+        >
+          {label}
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">
+        {data && data.length ? (
+          <BoardFlowChart
+            flows={data}
+            progress={progress}
+            selected={selected?.code ?? null}
+            onSelect={onSelect}
+          />
+        ) : (
+          <p className="py-8 text-center text-[11px] text-slate-600">
+            {error ? "分钟资金流未接通, 自动重试中" : "加载中…"}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}

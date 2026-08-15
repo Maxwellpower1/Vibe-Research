@@ -1,7 +1,5 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Flame } from "lucide-react";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { ShortTermEmotion } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -16,13 +14,8 @@ interface Props {
 /** Short-term limit-up ladder + lianban list. */
 export function ReviewShortPanel({ emotion, emoDone, updatedLabel, pending }: Props) {
   return (
-    <GlassCard className="!mb-0 !p-0 overflow-hidden lg:col-span-2 xl:col-span-1">
-      <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
-        <p className="inline-flex items-center gap-1.5 text-sm font-semibold">
-          <Flame className="h-3.5 w-3.5 text-primary/80" /> 短线
-        </p>
-        <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{updatedLabel}</p>
-      </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <p className="shrink-0 px-2 py-1 font-mono text-[10px] tabular-nums text-slate-500">{updatedLabel}</p>
       {!emotion || emotion.zt_count === undefined ? (
         emoDone ? (
           <EmptyState title="暂无短线数据" description="非交易时段或数据源暂时不可用，可点刷新重试" />
@@ -30,7 +23,7 @@ export function ReviewShortPanel({ emotion, emoDone, updatedLabel, pending }: Pr
           pending
         )
       ) : (
-        <div className="grid max-h-[22rem] grid-cols-[9.5rem_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-[7.5rem_minmax(0,1fr)] overflow-hidden">
           <div className="space-y-0.5 overflow-auto border-r border-border/40 p-2">
             {[
               { k: "涨停", v: `${emotion.zt_count}`, cls: "text-danger" },
@@ -96,6 +89,6 @@ export function ReviewShortPanel({ emotion, emoDone, updatedLabel, pending }: Pr
           </div>
         </div>
       )}
-    </GlassCard>
+    </div>
   );
 }

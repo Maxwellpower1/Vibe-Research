@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { PctChip } from "@/components/review/PctChip";
@@ -11,6 +10,8 @@ import type { AShareLightKline, GlobalIndex, IndexQuote, Quote } from "@/lib/api
 import { cn } from "@/lib/utils";
 
 interface Props {
+  /** indices = 国内/全球; watch = 自选分时; full = 三者切换 */
+  variant?: "full" | "indices" | "watch";
   idxPanel: IdxPanel;
   onIdxPanel: (p: IdxPanel) => void;
   updatedLabel: string;
@@ -28,6 +29,7 @@ interface Props {
 
 /** Domestic / global / watchlist index panel with optional minute sparks. */
 export function ReviewIndexPanel({
+  variant = "full",
   idxPanel,
   onIdxPanel,
   updatedLabel,
@@ -42,23 +44,31 @@ export function ReviewIndexPanel({
   watchMinute,
   watchDone,
 }: Props) {
-  return (
-    <GlassCard className="!mb-0 !p-0 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-3 py-1.5">
-        <ChipGroup>
-          {([
-            ["cn", "国内"],
-            ["global", "全球"],
-            ["watch", `自选${watchCodes.length ? ` ${watchCodes.length}` : ""}`],
-          ] as const).map(([k, label]) => (
-            <Chip key={k} active={idxPanel === k} onClick={() => onIdxPanel(k)}>{label}</Chip>
-          ))}
-        </ChipGroup>
-        <p className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">{updatedLabel}</p>
-      </div>
+  const showChips = variant === "full" || variant === "indices";
+  const panel = variant === "watch" ? "watch" : idxPanel === "watch" && variant === "indices" ? "cn" : idxPanel;
 
-      <div className="max-h-[28rem] overflow-auto p-3">
-        {idxPanel === "cn" && (
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {showChips && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/40 px-2 py-1">
+          <ChipGroup>
+            {(variant === "indices"
+              ? ([["cn", "国内"], ["global", "全球"]] as const)
+              : ([
+                  ["cn", "国内"],
+                  ["global", "全球"],
+                  ["watch", `自选${watchCodes.length ? ` ${watchCodes.length}` : ""}`],
+                ] as const)
+            ).map(([k, label]) => (
+              <Chip key={k} active={panel === k} onClick={() => onIdxPanel(k)}>{label}</Chip>
+            ))}
+          </ChipGroup>
+          <p className="shrink-0 font-mono text-[11px] tabular-nums text-slate-500">{updatedLabel}</p>
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-auto p-2">
+        {panel === "cn" && (
           indices.length === 0 ? (
             idxErr ? (
               <EmptyState title="A股指数未接通" description="可点顶部刷新重试；非交易时段或源限流时属正常。" />
@@ -66,35 +76,29 @@ export function ReviewIndexPanel({
               <p className="py-6 text-center text-sm text-muted-foreground/65">加载中…</p>
             )
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-0.5">
               {indices.map((ix) => {
                 const sym = ix.symbol || "";
                 const kl = sym ? idxMinute[sym] : null;
                 const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
                 return (
-                  <div key={sym || ix.name} className="rounded-xl border border-border/40 bg-card/40 px-2.5 py-2">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-xs font-semibold">{ix.name}</span>
-                      <PctChip pct={ix.change_pct} />
-                    </div>
-                    <p className={cn("mt-0.5 font-mono text-sm font-bold tabular-nums", pctColor(ix.change_pct))}>
-                      {fmt(ix.price)}
-                    </p>
-                    <div className="mt-1">
+                  <div key={sym || ix.name} className="grid grid-cols-[4.5rem_1fr_4.25rem_3.25rem] items-center gap-2 rounded px-1.5 py-1 hover:bg-slate-800/40">
+                    <span className="truncate text-[11px] font-semibold text-slate-200">{ix.name}</span>
+                    <div className="min-w-0">
                       {!idxMinuteDone && !kl ? (
-                        <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">分时加载中…</div>
+                        <div className="h-7 text-[10px] leading-7 text-slate-600">分时…</div>
                       ) : closes.length < 2 ? (
-                        <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">
-                          {sym.startsWith("hk")
-                            ? "暂无分时"
-                            : session.kind !== "open"
-                              ? "非交易时段暂无分时"
-                              : "暂无分时"}
+                        <div className="h-7 text-[10px] leading-7 text-slate-600">
+                          {sym.startsWith("hk") ? "暂无分时" : session.kind !== "open" ? "非交易时段" : "暂无分时"}
                         </div>
                       ) : (
                         <MinuteSpark closes={closes} prevClose={kl?.prev_close} pct={ix.change_pct} />
                       )}
                     </div>
+                    <span className={cn("text-right font-mono text-[12px] font-bold tabular-nums", pctColor(ix.change_pct))}>
+                      {fmt(ix.price)}
+                    </span>
+                    <span className="text-right"><PctChip pct={ix.change_pct} /></span>
                   </div>
                 );
               })}
@@ -102,7 +106,7 @@ export function ReviewIndexPanel({
           )
         )}
 
-        {idxPanel === "global" && (
+        {panel === "global" && (
           globalIdx.length === 0 ? (
             <EmptyState title="全球指数暂无" description="可点刷新重试；非交易时段或源限流时属正常。" />
           ) : (
@@ -130,7 +134,7 @@ export function ReviewIndexPanel({
           )
         )}
 
-        {idxPanel === "watch" && (
+        {panel === "watch" && (
           watchCodes.length === 0 ? (
             <EmptyState
               title="还没有自选股"
@@ -146,7 +150,7 @@ export function ReviewIndexPanel({
             />
           ) : (
             <>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-0.5">
                 {watchCodes.slice(0, WATCH_MINUTE_MAX).map((c) => {
                   const q = watchQuotes[c];
                   const kl = watchMinute[c];
@@ -156,29 +160,26 @@ export function ReviewIndexPanel({
                     <Link
                       key={c}
                       to={`/a-share?tab=kline&code=${c}`}
-                      className="block rounded-xl border border-border/40 bg-card/40 px-2.5 py-2 transition-colors hover:border-primary/35 hover:bg-primary/5"
+                      className="grid grid-cols-[5.5rem_1fr_4.25rem_3.25rem] items-center gap-2 rounded px-1.5 py-1 hover:bg-slate-800/40"
                     >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="min-w-0 truncate text-xs font-semibold">
-                          <span className="font-mono tabular-nums">{c}</span>
-                          {q?.name ? <span className="ml-1 font-normal text-muted-foreground">{q.name}</span> : null}
-                        </span>
-                        <PctChip pct={q?.change_pct} />
-                      </div>
-                      <p className={cn("mt-0.5 font-mono text-sm font-bold tabular-nums", pctColor(pct))}>
-                        {q?.price != null ? fmt(q.price) : "—"}
-                      </p>
-                      <div className="mt-1">
+                      <span className="min-w-0 truncate text-[11px] font-semibold text-slate-200">
+                        {q?.name || c}
+                      </span>
+                      <div className="min-w-0">
                         {!watchDone && !kl ? (
-                          <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">分时加载中…</div>
+                          <div className="h-7 text-[10px] leading-7 text-slate-600">分时…</div>
                         ) : closes.length < 2 ? (
-                          <div className="flex h-9 items-center justify-center text-[10px] text-muted-foreground/50">
-                            {session.kind !== "open" ? "非交易时段暂无分时" : "暂无分时"}
+                          <div className="h-7 text-[10px] leading-7 text-slate-600">
+                            {session.kind !== "open" ? "非交易时段" : "暂无分时"}
                           </div>
                         ) : (
                           <MinuteSpark closes={closes} prevClose={kl?.prev_close ?? q?.last_close} pct={pct} />
                         )}
                       </div>
+                      <span className={cn("text-right font-mono text-[12px] font-bold tabular-nums", pctColor(pct))}>
+                        {q?.price != null ? fmt(q.price) : "—"}
+                      </span>
+                      <span className="text-right"><PctChip pct={q?.change_pct} /></span>
                     </Link>
                   );
                 })}
@@ -192,6 +193,6 @@ export function ReviewIndexPanel({
           )
         )}
       </div>
-    </GlassCard>
+    </div>
   );
 }

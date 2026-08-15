@@ -10,6 +10,8 @@ const Ovlab = lazy(() => import("@/pages/Ovlab").then((m) => ({ default: m.Ovlab
 const UsMarket = lazy(() => import("@/pages/UsMarket").then((m) => ({ default: m.UsMarket })));
 const Weather = lazy(() => import("@/pages/Weather").then((m) => ({ default: m.Weather })));
 const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
+const AiWatch = lazy(() => import("@/pages/AiWatch").then((m) => ({ default: m.AiWatch })));
+const FinWindow = lazy(() => import("@/pages/FinWindow").then((m) => ({ default: m.FinWindow })));
 
 export const router = createBrowserRouter([
   {
@@ -30,6 +32,8 @@ export const router = createBrowserRouter([
       { path: "/watchlist", element: <Navigate to="/a-share?tab=kline" replace /> },
       { path: "/ovlab", element: <Ovlab /> },
       { path: "/us-market", element: <UsMarket /> },
+      { path: "/ai-watch", element: <AiWatch /> },
+      { path: "/fin", element: <FinWindow /> },
       { path: "/notes", element: <Navigate to="/a-share" replace /> },
       { path: "/settings", element: <Settings /> },
     ],

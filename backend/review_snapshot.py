@@ -33,6 +33,7 @@ def _grab(name: str, fn: Callable[[], Any], bucket: dict[str, Any], errors: list
 
 def _fill_tencent(bucket: dict[str, Any], errors: list[dict]) -> None:
     _grab("indices", lambda: _cached("indices", "live", 60, astock.index_quote), bucket, errors)
+    _grab("hsgt", lambda: _cached("hsgt", "live", 120, astock_boards.hsgt_realtime), bucket, errors)
 
 
 def _fill_overview(bucket: dict[str, Any], errors: list[dict]) -> None:
@@ -193,6 +194,7 @@ def build_review_snapshot(
         "limit_pool": extra.get("limit_pool"),
         "ths_limit_up": extra.get("ths_limit_up"),
         "board_flow": extra.get("board_flow"),
+        "hsgt": top.get("hsgt"),
         "errors": errors,
         "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M:%S"),
     }

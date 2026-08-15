@@ -111,6 +111,26 @@ def market_board_flow(
         raise HTTPException(502, f"板块资金流异常：{e}") from e
 
 
+@router.get("/api/market/stock-flow")
+def market_stock_flow(
+    top: int = Query(15, ge=5, le=40),
+    board: str | None = Query(None, description="BK#### industry/concept board"),
+):
+    """个股主力净流入排行(东财 clist). 可按板块成分过滤. 缓存 2 分钟."""
+    import astock_boards
+    try:
+        key = f"{(board or 'all').strip().upper()}:{top}"
+        data = _cached(
+            "stock_flow",
+            key,
+            120,
+            lambda: astock_boards.stock_moneyflow(top, board),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"个股资金流异常：{e}") from e
+
+
 @router.get("/api/market/hsgt")
 def market_hsgt():
     """北向资金分钟流向（同花顺；深股通仅供参考）。缓存 2 分钟。"""
@@ -311,6 +331,136 @@ def market_lpr(days: int = Query(365, ge=30, le=2000)):
         }
     except Exception as e:
         raise HTTPException(502, f"LPR 异常：{e}") from e
+
+
+@router.get("/api/market/world-indices")
+def market_world_indices():
+    """全球关键指数 (A/HK/US/FX). 缓存 20 秒."""
+    import cockpit_live
+    try:
+        data = _cached("world_indices", "live", 20, cockpit_live.world_indices)
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"全球指数异常：{e}") from e
+
+
+@router.get("/api/market/boards")
+def market_boards(
+    kind: str = Query("01", description="01 industry / 02 concept"),
+    direction: str = Query("0", description="0 down(leaders) / 1 up(laggards)"),
+    n: int = Query(40, ge=5, le=200),
+):
+    """市场板块实时热点. 缓存 20 秒."""
+    import cockpit_live
+    k = "02" if kind == "02" else "01"
+    d = "1" if direction == "1" else "0"
+    try:
+        data = _cached(
+            "sector_boards",
+            f"{k}:{d}:{n}",
+            20,
+            lambda: cockpit_live.sector_boards(k, d, n),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"板块热点异常：{e}") from e
+
+
+@router.get("/api/market/board-stocks")
+def market_board_stocks(
+    code: str = Query(..., description="BK####"),
+    n: int = Query(12, ge=5, le=80),
+):
+    """板块成分股. 缓存 20 秒."""
+    import cockpit_live
+    bk = cockpit_live.normalize_board_code(code)
+    try:
+        data = _cached(
+            "board_stocks",
+            f"{bk}:{n}",
+            20,
+            lambda: cockpit_live.board_stocks(bk, n),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"板块成分异常：{e}") from e
+
+
+@router.get("/api/market/rank")
+def market_rank(
+    sort: str = Query("amount", description="amount|changepercent"),
+    asc: int = Query(0, ge=0, le=1),
+    n: int = Query(30, ge=5, le=50),
+):
+    """个股榜单 (成交额/涨跌幅), 含成交额. 缓存 20 秒."""
+    import cockpit_live
+    key = sort if sort in ("amount", "changepercent", "turnoverratio") else "amount"
+    try:
+        data = _cached(
+            "stock_rank",
+            f"{key}:{asc}:{n}",
+            20,
+            lambda: cockpit_live.stock_rank(key, asc, n),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"个股榜单异常：{e}") from e
+
+
+@router.get("/api/market/board-flow-intraday")
+def market_board_flow_intraday(
+    n: int = Query(16, ge=6, le=24),
+):
+    """板块资金流向 (分钟累计主力净流入蝴蝶图). 缓存 120 秒."""
+    import cockpit_live
+    try:
+        data = _cached(
+            "board_flow_intraday",
+            str(n),
+            120,
+            lambda: cockpit_live.board_flow_intraday(n),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"板块分钟资金流异常：{e}") from e
+
+
+@router.get("/api/market/commodities")
+def market_commodities(
+    codes: str = Query("", description="hf_GC,nf_AU0,BTCUSDT"),
+):
+    """大宗商品快照. 缓存 20 秒."""
+    import cockpit_live
+    raw = (codes or "").strip() or cockpit_live.DEFAULT_FUTURES
+    try:
+        data = _cached(
+            "commodities",
+            raw,
+            20,
+            lambda: cockpit_live.futures_quotes(raw),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"大宗商品异常：{e}") from e
+
+
+@router.get("/api/market/commodity-minutes")
+def market_commodity_minutes(
+    codes: str = Query("", description="comma-separated hf_/nf_/BTCUSDT"),
+):
+    """大宗商品分钟线. 缓存 60 秒."""
+    import cockpit_live
+    raw = (codes or "").strip() or cockpit_live.DEFAULT_FUTURES
+    try:
+        data = _cached(
+            "commodity_minutes",
+            raw,
+            60,
+            lambda: cockpit_live.future_minutes([c.strip() for c in raw.split(",") if c.strip()]),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"商品分钟线异常：{e}") from e
 
 
 @router.get("/api/market/bond-yield")

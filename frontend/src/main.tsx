@@ -3,14 +3,13 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
-import { applyAccent, readAccent } from "./lib/accent";
 import { router } from "./router";
 import "@fontsource-variable/jetbrains-mono/wght.css";
 import "./fonts.css";
 import "./index.css";
 
-// Apply saved accent before first paint to avoid a flash of the default orange.
-applyAccent(readAccent());
+document.documentElement.classList.add("dark");
+document.documentElement.classList.remove("light");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -26,7 +26,7 @@
 
 Vibe-Research 是一个开源的「个人 AI 投研看板」，**主推 A 股、兼看美股 / 港股**（A 股常要看隔夜外围脸色，数据配上更全）。它不替你做决定——把行情、研报、估值、财务、公告、资金面、资讯都配齐，放进一个干净的看板，再留一个能接入**你自己的 AI** 的接口。方向和结论，交给你自己配置的模型 / agent。
 
-**看板读法**：各页统一「首屏摘要 + 明细默认折叠」——先一眼看完关键指标，再按需展开榜单与长表（折叠状态本地记忆）。
+**看板读法**：复盘页是一屏驾驶舱（桌面无需滚动，点面板放大）；K 线 / 详情 / 公告 / 美股 / 期权 / 持仓走同一套深蓝青顶栏，不再切主题、不再套玻璃卡片。
 
 > *Vibe-Research: Your Personal Trading Research Agent. An open dashboard for China A-share (plus US / HK): it wires up all the data and plugs into **your own AI / agent** — it never recommends a stock. You bring the model, it brings the data.*
 
@@ -36,15 +36,17 @@ Vibe-Research 是一个开源的「个人 AI 投研看板」，**主推 A 股、
 
 | 页面 | 包含的模块 / 能力 |
 |---|---|
-| 🇨🇳&nbsp;**A&#8288;股** | Tab：**每日复盘** / **K线** / **详情** / **公告**（复盘左栏指数卡：国内分时含科创50/中证1000/恒生/恒生科技 · 全球 · 自选分时；资金含板块流·ETF·LPR/国债·增减持） |
-| 📡&nbsp;**资&#8288;讯&#8288;雷&#8288;达** | **财联社电报**（全市场实时快讯）|
+| 🇨🇳&nbsp;**A&#8288;股** | 顶栏：**复盘** / **K线** / **详情** / **公告**。整站顶栏下方横向滚动行情条（A 股指数 / 全球指数 / 美债 10Y·2Y，约 30s 刷新）。复盘是一屏驾驶舱（可放大面板）：**全球关键指数**（A/港/美/汇率）/ **市场板块实时热点** / 情绪+北向 / **板块资金流向**（分钟累计蝴蝶图，点击筛主力净流入）/ **主力净流入排行** / **个股榜单（含成交额）** / **大宗商品** / 涨跌停池 / 自选 / 龙虎·资金·8 条产业链。**实时热点 · 7×24 快讯**仍是右下角悬浮球（财联社 / 东财） |
+| 🪟&nbsp;**财&#8288;报&#8288;窗&#8288;口** | 顶栏进入 `/fin`：披露日历（A 股柱带 + **美股财报日历**）/ 业绩预告 / 行业·个股盈利榜 / 公司近 12 期趋势。点榜单选公司后，叠上本仓库已有的**财务摘要、前向估值/PEG、公告、研报**，并可跳转个股详情 |
+| 📡&nbsp;**资&#8288;讯&#8288;雷&#8288;达** | 右下角**悬浮球**：财联社电报 + 东财 7×24（新电报角标 / 顶部 toast） |
 | ⭐&nbsp;**自&#8288;选&#8288;股** | **批量粘贴一串代码即加**（逗号 / 空格 / 换行都行）· 一屏表格总览（现价 / 涨跌 / PE / PB / 换手）· **实时行情开关**（右上角，默认关；开了在交易时段每 3 秒自动刷新，非交易时段与页面切走时自动暂停）· 一键交给 AI 读。只存本地 |
 | 💼&nbsp;**我&#8288;的&#8288;持&#8288;仓** | **A股**：录入即实时盈亏 · 已清仓记录（只存本地）。**期货账户**：CTP 只读 · 区间结算单本地缓存 · 净值/累计收益/盈亏日历/统计（账号在本机 `~/.vibe-research/ctp.json`）|
 | 📄&nbsp;**我&#8288;的&#8288;研&#8288;报** | **拖拽 / 多选上传**自己的研报（PDF / Word / txt / 表格 / 图片）· 按文件名**自动分行业**归档 · 下载 / 删除。**只存本地部署目录、不上传、不进仓库** |
 | 📝&nbsp;**研&#8288;究&#8288;记&#8288;录** | 复盘 / 今日要点 / 问 AI 本地沉淀，随时回看 · **反思审计**：让 AI 回头审这段推理——哪些结论有数据撑着、哪些是脑补、最脆弱的一环在哪、要验证得看什么 |
 | 🌊&nbsp;**期&#8288;权&#8288;/&#8288;期&#8288;货** | **OpenVlab** 公开数据：市场概览（全部品种现价 / 涨跌 / 平值隐波 / 隐波百分位 / 22 日实波 / VolAlphaT / Carry / 偏度及百分位 / 主力合约 / 到期日 / 夜盘 / 境外）· 单品种详情（dto）· 波动率期限结构汇总。只客观呈现，不推荐不预测 |
 | 🇺🇸&nbsp;**美&#8288;股** | 本地观察列表（ticker）· 东财快照行情 · **日 K + 成交量**（默认前复权 Yahoo）· **财报日历** · **SEC 当日申报流**（需 `VR_SEC_CONTACT`）。点列表即切图；只客观呈现，不推荐不预测 |
-| 🌤️&nbsp;**天&#8288;气** | 左侧导航独立页：当前气温 / 体感 / 湿度 / 风力 · **7/10/14 天预报** · 逐时/日高低温折线图 · 城市快捷切换（默认上海，本地记忆）。`GET /api/weather?city=&days=`；主源 Open-Meteo（最长 16 天），wttr.in 补充实况字段，**无需 API Key** |
+| 🤖&nbsp;**AI&#8288;观&#8288;察** | 顶栏进入：公有云 Token 消耗（OpenRouter 日榜）· LLM 价格趋势 / 降价事件（TrakToken TTSI）· 大模型价格表与智能×成本散点（Artificial Analysis，可选 key）· AI 基建 CapEx/ROI（SEC + 模型外推）。只客观呈现，预测段标「模型假设」 |
+| 🌤️&nbsp;**天&#8288;气** | 顶栏天气图标进入：当前气温 / 体感 / 湿度 / 风力 · **7/10/14 天预报** · 逐时/日高低温折线图 · 城市快捷切换（默认上海，本地记忆）。`GET /api/weather?city=&days=`；主源 Open-Meteo（最长 16 天），wttr.in 补充实况字段，**无需 API Key** |
 | 🔌&nbsp;**接&#8288;入&nbsp;AI** | 订阅接入（本机 CLI，免 key）· API 多模型（自动填 baseURL）· MCP（挂进 Claude Code 等 agent）|
 
 > **投研分析框架**：让 AI 分析个股时，自动按 估值 / 资金面 / 财报质量 / 行业景气 / 事件催化与风险 五维组织结论——框架只规定「怎么读数据」、不规定买卖，方向仍由你自己的 AI 决定。
@@ -68,9 +70,10 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 ### 美股 / 港股数据 · global-stock-data
 
 - **就在本仓库的 [`global-stock-data/`](global-stock-data/) 文件夹里**（v2.0.3）。13 层数据架构、30+ 个端点、11 个数据源、零鉴权，覆盖美港股行情 / K线 / 技术指标 / 三表财报 / 资金流 / 期权（CBOE 官方期权链含完整希腊字母与 0DTE 流）/ FINRA 空头成交量 / SEC EDGAR 申报流与全市场筛选。每个数据源都标注了合规级别。
-- 后端 `backend/gstock.py` + `gstock_deep.py`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo）** + **三表关键科目/资金流（东财）** + **FINRA 空头成交量/全市场空头榜** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo stock_news）**。个股页输 `AAPL` / `00700` 即可。
+- 后端 `backend/gstock.py` + `gstock_deep.py`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo）** + **三表关键科目/资金流（东财）** + **FINRA 空头成交量/全市场空头榜** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo search，crumb 被拦时走 RSS）**。个股页输 `AAPL` / `00700` 即可。
 - **美股日 K**：`GET /api/global/us/kline?symbol=AAPL&num=180`；**港股日 K**：`GET /api/global/hk/kline?symbol=00700`（Yahoo 前复权）。
 - **美股页**：观察列表 + K 线 + **EDGAR Screener（S 级）** + 涨跌/空头榜 + 选中标的期权/资金流 + 财报日历 + SEC 日报 + 美债曲线。
+- **AI 观察**：`GET /api/ai-watch/openrouter-usage`（需 `OPENROUTER_API_KEY`，无 key 读本地缓存）· `spend-index`（TrakToken RSS）· `aa-models`（可选 `ARTIFICIAL_ANALYSIS_API_KEY`）· `ai-infra`（SEC CapEx + 模型外推）。快照落在 `~/.vibe-research/ai-watch/`。
 - **SEC**：设置 `VR_SEC_CONTACT="Name you@example.com"`，否则 SEC 端点返回 503。
 - **CBOE 期权**：合规 C 级，仅个人研究；商用须先取得 Cboe 授权。延时数据，不用于实盘下单。
 - **韩股**：加 `.KS`（如 `005930.KS`）；仅行情。台股走 ADR（如 `TSM`）。
@@ -113,6 +116,7 @@ Vibe-Research/
 │   ├── astock.py        A 股数据（移植自 a-stock-data）
 │   ├── gstock.py        美股 / 港股行情与关键财务
 │   ├── gstock_deep.py   估值/三表/资金流/SEC/空头/财报日历
+│   ├── ai_watch/        AI 观察：OpenRouter / TTSI / AA / 基建 ROI
 │   ├── newsradar.py     资讯雷达（移植自 investment-news）
 │   ├── market.py        市场情绪 + 板块资金流 + 全球指数
 │   ├── ovlab.py         期权 / 期货波动率（移植自 openvlab.cn 爬虫）
@@ -122,7 +126,7 @@ Vibe-Research/
 │   ├── chat.py          系统 AI（OpenAI 兼容 function-calling）
 │   ├── reflection.py    反思审计（对已有分析做推理审计）
 │   └── mcp_server.py    MCP server（给 Claude Code 等 agent）
-└── frontend/          Vite + React 19 + TS + Tailwind（玻璃暖橙主题）:5899
+└── frontend/          Vite + React 19 + TS + Tailwind（深蓝青驾驶舱）:5899
 ```
 
 **分级依赖**：行情（腾讯）+ 研报 / 公告（东财）**秒装可用**；akshare / mootdx 惰性导入，缺失时对应端点返回 501 + 安装提示，不拖垮服务。

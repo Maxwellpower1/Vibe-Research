@@ -216,6 +216,89 @@ export interface HsgtLive {
   latest: { time?: string; hgt_yi?: number | null; sgt_yi?: number | null } | null;
   points: Array<{ time: string; hgt_yi?: number | null; sgt_yi?: number | null }>;
 }
+export interface StockFlowRow {
+  code: string; name: string; price: number; change_pct: number;
+  main_net: number; main_pct: number; super_large_net?: number;
+  amount?: number; turnover?: number;
+}
+export interface StockFlow {
+  board?: string | null; total: number; note?: string; rows: StockFlowRow[];
+}
+
+export interface WorldIndex {
+  symbol: string; name: string; label: string; region: "CN" | "HK" | "US" | "FX" | string;
+  price: number; change: number; change_pct: number; amount?: number;
+}
+export interface SectorBoard {
+  code: string; raw_code?: string; name: string;
+  price: number; change: number; pct: number;
+  lead_code?: string; lead_name?: string; lead_pct?: number;
+}
+export interface BoardStock {
+  code: string; name: string; price: number; pct: number;
+  amount?: number; turnover?: number;
+}
+export interface StockRankRow {
+  symbol: string; code: string; name: string;
+  price: number; pct: number; amount: number; turnover?: number;
+}
+export interface BoardFlowPoint { t: string; v: number }
+export interface BoardFlowIntraday {
+  code: string; name: string; net_in: number; points: BoardFlowPoint[];
+}
+export interface CommodityQuote {
+  symbol: string; name: string; price: number; prev?: number;
+  change: number; pct: number; high?: number; low?: number; time?: string;
+}
+export interface CommodityMinute {
+  code: string; prec: number; points: Array<{ t: string; p: number }>;
+}
+
+export interface FinStockProfit {
+  code: string; name: string; industry: string;
+  net_profit: number; profit_yoy: number; revenue_yoy: number; roe: number; eps: number;
+}
+export interface FinIndustryProfit {
+  name: string; net_profit: number; count: number; yoy: number;
+}
+export interface FinCalendarItem {
+  date: string; code: string; name: string; period: string;
+}
+export interface FinBoard {
+  period: string; disclosed: number;
+  stocks: FinStockProfit[];
+  industries: FinIndustryProfit[];
+  calendar: FinCalendarItem[];
+  sector_tape?: { top: Array<{ name: string; change_pct: number }>; bottom?: Array<{ name: string; change_pct: number }>; total?: number };
+  note?: string;
+}
+export interface FinForecastItem {
+  date: string; code: string; name: string; type: string;
+  profit_low: number; profit_high: number; yoy_low: number; yoy_high: number;
+}
+export interface FinForecast {
+  period: string;
+  stats: { good: number; bad: number; neutral: number };
+  items: FinForecastItem[];
+}
+export interface FinReportRow {
+  label: string; date: string;
+  revenue: number; net_profit: number;
+  revenue_yoy: number; profit_yoy: number;
+  roe: number; gross_margin: number; net_margin: number;
+  debt_ratio?: number; eps?: number; ocf_ps?: number;
+}
+export interface FinMain {
+  code: string; name: string; industry: string; reports: FinReportRow[];
+}
+export interface FinCompanyBundle {
+  main: FinMain;
+  snapshot: Financials | null;
+  valuation: Valuation | null;
+  percentile: ValPercentile | null;
+  announcements: Announcement[];
+  reports: Report[];
+}
 export interface HotListRow {
   rank?: number; code?: string; name?: string;
   heat?: string | number; pct?: number | null; rank_chg?: number | null;
@@ -718,6 +801,7 @@ export interface ReviewSnapshot {
   limit_pool: LimitPool | null;
   ths_limit_up: ThsLimitUpPool | null;
   board_flow: BoardFlow | null;
+  hsgt?: HsgtLive | null;
   errors: ReviewSnapshotError[];
   updated: string;
 }
@@ -1144,6 +1228,29 @@ export const api = {
   },
   boardFlow: (boardType = "industry", period = "today", top = 20) =>
     get<BoardFlow>(`/market/board-flow?board_type=${boardType}&period=${period}&top=${top}`),
+  stockFlow: (top = 15, board?: string | null) =>
+    get<StockFlow>(`/market/stock-flow?top=${top}${board ? `&board=${encodeURIComponent(board)}` : ""}`),
+  worldIndices: () => get<WorldIndex[]>("/market/world-indices"),
+  sectorBoards: (kind: "01" | "02" = "01", direction: "0" | "1" = "0", n = 40) =>
+    get<SectorBoard[]>(`/market/boards?kind=${kind}&direction=${direction}&n=${n}`),
+  boardStocks: (code: string, n = 12) =>
+    get<BoardStock[]>(`/market/board-stocks?code=${encodeURIComponent(code)}&n=${n}`),
+  stockRank: (sort: "amount" | "changepercent" = "amount", asc: 0 | 1 = 0, n = 30) =>
+    get<StockRankRow[]>(`/market/rank?sort=${sort}&asc=${asc}&n=${n}`),
+  boardFlowIntraday: (n = 16) =>
+    get<BoardFlowIntraday[]>(`/market/board-flow-intraday?n=${n}`),
+  commodities: (codes?: string) =>
+    get<Record<string, CommodityQuote>>(`/market/commodities${codes ? `?codes=${encodeURIComponent(codes)}` : ""}`),
+  commodityMinutes: (codes: string) =>
+    get<Record<string, CommodityMinute | null>>(`/market/commodity-minutes?codes=${encodeURIComponent(codes)}`),
+  finBoard: (period = "") =>
+    get<FinBoard>(`/fin/board${period ? `?period=${encodeURIComponent(period)}` : ""}`),
+  finForecast: (period = "") =>
+    get<FinForecast>(`/fin/forecast${period ? `?period=${encodeURIComponent(period)}` : ""}`),
+  finCompany: (code: string) =>
+    get<FinCompanyBundle>(`/fin/company?code=${encodeURIComponent(code)}`),
+  finSuggest: (q: string, n = 8) =>
+    get<Array<{ code: string; name: string }>>(`/fin/suggest?q=${encodeURIComponent(q)}&n=${n}`),
   etfFlow: (sortBy: "net_inflow" | "change_pct" = "net_inflow", limit = 40) =>
     get<EtfFlow>(`/market/etf-flow?sort_by=${sortBy}&limit=${limit}`),
   shareholderChanges: (opts?: { code?: string; changeType?: "all" | "增持" | "减持"; limit?: number }) => {
@@ -1364,6 +1471,10 @@ export const api = {
   },
   weather: (city = "上海", days = 7) =>
     get<WeatherPayload>(`/weather?city=${encodeURIComponent(city)}&days=${days}`),
+  openRouterUsage: () => get<OrUsageDay[]>("/ai-watch/openrouter-usage"),
+  spendIndex: () => get<SpendIndexResp>("/ai-watch/spend-index"),
+  aaModels: () => get<AaModelsResp>("/ai-watch/aa-models"),
+  aiInfra: () => get<AiInfraResp>("/ai-watch/ai-infra"),
 };
 
 export interface WeatherCurrent {
@@ -1404,4 +1515,73 @@ export interface WeatherPayload {
   forecast: WeatherDay[];
   hourly?: WeatherHourly[];
   fallback_note?: string;
+}
+
+export interface OrShareRow {
+  name: string;
+  tokens: number;
+  pct: number;
+  date?: string;
+}
+
+export interface OrUsageDay {
+  date: string;
+  total: number;
+  providers: OrShareRow[];
+  countries: OrShareRow[];
+}
+
+export interface AaModel {
+  slug: string;
+  name: string;
+  vendor: string;
+  release: string;
+  intel: number | null;
+  input: number | null;
+  output: number | null;
+  cacheHit: number | null;
+  taskCost: number | null;
+}
+
+export interface AaModelsResp {
+  models: AaModel[];
+  history: Record<string, { name: string; vendor: string; points: { t: string; i: number | null; o: number | null; task: number | null }[] }>;
+  source: string;
+}
+
+export interface SpendIndexResp {
+  points: {
+    date: string;
+    ttsi: number | null;
+    pct: number | null;
+    indexPoint: number | null;
+    closed: number | null;
+    open: number | null;
+    premium: number | null;
+  }[];
+  events: { date: string; text: string }[];
+  source: string;
+}
+
+export interface AiInfraPoint {
+  year: number;
+  capexB: number;
+  depB: number;
+  pricePerM: number;
+  costPerM: number;
+  grid: number;
+  revenueB: number;
+  roiPct: number;
+  actual: boolean;
+}
+
+export interface AiInfraResp {
+  generatedAt: string;
+  series: AiInfraPoint[];
+  sources: {
+    sec: { ok: boolean; byCompany?: { name: string; capex: Record<string, number> }[]; err?: string };
+    token: { ok: boolean; marketInputPerM?: number | null; frontierInputPerM?: number | null; vendorCount?: number; err?: string };
+    ppi: { ok: boolean; trend?: string; yoy12m?: number; err?: string };
+  };
+  notes: string[];
 }

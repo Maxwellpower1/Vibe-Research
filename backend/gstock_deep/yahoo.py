@@ -1,8 +1,12 @@
 """Yahoo Finance helpers: news / valuation / analyst / holders."""
 from __future__ import annotations
 
+import re
 import threading
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
+from xml.etree import ElementTree as ET
 
 import requests
 
@@ -82,9 +86,80 @@ def _yahoo_query_fallback(query: str) -> tuple[str, str, str, str] | None:
     return None
 
 
-def stock_news(keyword: str, count: int = 10) -> dict:
-    """Yahoo Finance news search by ticker/keyword (compliance C).
+def _items_from_yahoo_search(news: list) -> list[dict]:
+    items: list[dict] = []
+    for row in news:
+        if not isinstance(row, dict):
+            continue
+        thumb = None
+        th = row.get("thumbnail") or {}
+        res = th.get("resolutions") if isinstance(th, dict) else None
+        if isinstance(res, list) and res:
+            thumb = res[0].get("url")
+        ts = row.get("providerPublishTime")
+        pub = None
+        if isinstance(ts, (int, float)) and ts > 0:
+            try:
+                pub = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+            except (OSError, OverflowError, ValueError):
+                pub = None
+        items.append({
+            "title": row.get("title"),
+            "publisher": row.get("publisher"),
+            "link": row.get("link"),
+            "publish_time": pub,
+            "publish_ts": int(ts) if isinstance(ts, (int, float)) else None,
+            "thumbnail": thumb,
+        })
+    return items
 
+
+def _news_from_rss(ysym: str, n: int) -> list[dict]:
+    """Headline RSS does not need a Yahoo crumb (search API often 403s)."""
+    r = requests.get(
+        "https://feeds.finance.yahoo.com/rss/2.0/headline",
+        params={"s": ysym, "region": "US", "lang": "en-US"},
+        headers={"User-Agent": _YAHOO_UA},
+        timeout=12,
+    )
+    r.raise_for_status()
+    root = ET.fromstring(r.content)
+    items: list[dict] = []
+    for it in root.findall(".//item"):
+        title = (it.findtext("title") or "").strip()
+        if not title:
+            continue
+        pub_raw = (it.findtext("pubDate") or "").strip()
+        src = it.find("source")
+        publisher = ((src.text if src is not None else None) or it.findtext("author") or "").strip() or None
+        pub = None
+        ts = None
+        if pub_raw:
+            try:
+                dt = parsedate_to_datetime(pub_raw)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                pub = dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
+                ts = int(dt.timestamp())
+            except (TypeError, ValueError, OverflowError, OSError):
+                pub = pub_raw
+        items.append({
+            "title": title,
+            "publisher": publisher,
+            "link": (it.findtext("link") or "").strip() or None,
+            "publish_time": pub,
+            "publish_ts": ts,
+            "thumbnail": None,
+        })
+        if len(items) >= n:
+            break
+    return items
+
+
+def stock_news(keyword: str, count: int = 10) -> dict:
+    """Yahoo Finance news by ticker/keyword (compliance C).
+
+    Search API needs a crumb and is often 403; RSS headline is the fallback.
     Returns {code, name, market, yahoo_symbol, compliance, items:[...]}.
     """
     q = (keyword or "").strip()
@@ -118,51 +193,41 @@ def stock_news(keyword: str, count: int = 10) -> dict:
         r.raise_for_status()
         return r.json().get("news") or []
 
+    raw: list = []
+    search_err: Exception | None = None
     try:
-        s = _get_yahoo_session()
-        news = _fetch(s)
-    except Exception:
-        # Cookie/crumb stale: reset and retry once
+        raw = _fetch(_get_yahoo_session())
+    except Exception as e:
+        search_err = e
         global _yahoo_session
         with _yahoo_lock:
             _yahoo_session = None
         try:
-            s = _get_yahoo_session()
-            news = _fetch(s)
-        except Exception:
-            return {}
+            raw = _fetch(_get_yahoo_session())
+            search_err = None
+        except Exception as e2:
+            search_err = e2
+            raw = []
 
-    items: list[dict] = []
-    for row in news:
-        if not isinstance(row, dict):
-            continue
-        thumb = None
-        th = row.get("thumbnail") or {}
-        res = th.get("resolutions") if isinstance(th, dict) else None
-        if isinstance(res, list) and res:
-            thumb = res[0].get("url")
-        ts = row.get("providerPublishTime")
-        pub = None
-        if isinstance(ts, (int, float)) and ts > 0:
-            try:
-                pub = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
-            except (OSError, OverflowError, ValueError):
-                pub = None
-        items.append({
-            "title": row.get("title"),
-            "publisher": row.get("publisher"),
-            "link": row.get("link"),
-            "publish_time": pub,
-            "publish_ts": int(ts) if isinstance(ts, (int, float)) else None,
-            "thumbnail": thumb,
-        })
+    items = _items_from_yahoo_search(raw)
+    source = "Yahoo Finance search"
+    if not items:
+        try:
+            items = _news_from_rss(ysym, n)
+            if items:
+                source = "Yahoo Finance RSS"
+        except Exception as e:
+            if search_err is not None:
+                raise search_err from e
+            raise
+
     return {
         "code": code,
         "name": name,
         "market": market,
         "yahoo_symbol": ysym,
         "compliance": "C",
-        "source": "Yahoo Finance search",
+        "source": source,
         "items": items,
     }
 

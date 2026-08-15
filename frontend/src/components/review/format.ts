@@ -12,3 +12,13 @@ export const fmt = (v: number) =>
 /** Yuan -> yi (亿). */
 export const yi = (v: number | null) =>
   v == null ? "—" : `${fmt(v / 1e8)} 亿`;
+
+/** Yuan compact: 亿 / 万 / raw. */
+export function fmtAmt(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v) || v === 0) return "—";
+  const abs = Math.abs(v);
+  const sign = v < 0 ? "-" : "";
+  if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(2)}亿`;
+  if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(1)}万`;
+  return `${sign}${abs.toFixed(0)}`;
+}

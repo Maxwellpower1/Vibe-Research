@@ -3,13 +3,15 @@ export function MinuteSpark({
   closes,
   prevClose,
   pct,
+  className,
 }: {
   closes: number[];
   prevClose?: number | null;
   pct: number;
+  className?: string;
 }) {
   if (closes.length < 2) {
-    return <div className="h-9 w-full rounded bg-muted/25" />;
+    return <div className={`h-7 w-full rounded bg-slate-800/60 ${className ?? ""}`} />;
   }
   const base = prevClose != null && Number.isFinite(prevClose) ? prevClose : closes[0];
   const min = Math.min(...closes, base);
@@ -25,7 +27,7 @@ export function MinuteSpark({
   const y0 = h - ((base - min) / span) * (h - 4) - 2;
   const stroke = pct > 0 ? "#ef4444" : pct < 0 ? "#22c55e" : "#94a3b8";
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-9 w-full" preserveAspectRatio="none" aria-hidden>
+    <svg viewBox={`0 0 ${w} ${h}`} className={`h-7 w-full ${className ?? ""}`} preserveAspectRatio="none" aria-hidden>
       <line
         x1={0}
         y1={y0}

@@ -97,6 +97,75 @@ def board_fund_flow(
     }
 
 
+# A-share universe for clist money-flow (same fs as Eastmoney quote center).
+_STOCK_FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
+
+
+def stock_moneyflow(top_n: int = 15, board_code: str | None = None) -> dict:
+    """Eastmoney clist: main-force net inflow ranking (yuan).
+
+    board_code like BK0474 filters to that board's constituents.
+    """
+    n = max(5, min(int(top_n or 15), 40))
+    fs = _STOCK_FS
+    if board_code:
+        code = str(board_code).strip().upper()
+        if code.startswith("BK") and len(code) == 6 and code[2:].isdigit():
+            fs = f"b:{code}"
+    win = max(n * 3, 50) if board_code else n
+    fields = "f12,f14,f2,f3,f62,f184,f66,f6,f8"
+    params = {
+        "pn": "1", "pz": str(win), "po": "1", "np": "1",
+        "fltt": "2", "invt": "2", "fid": "f62",
+        "fs": fs,
+        "fields": fields,
+    }
+    data: dict = {}
+    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
+        try:
+            r = em_get(
+                f"https://{host}/api/qt/clist/get",
+                params=params,
+                headers={"User-Agent": UA},
+                timeout=15,
+            )
+            data = (r.json() or {}).get("data") or {}
+            if data.get("diff"):
+                break
+        except Exception:
+            continue
+    items = data.get("diff") or []
+    if isinstance(items, dict):
+        items = list(items.values())
+    rows = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = it.get("f14") or ""
+        price = it.get("f2")
+        if not name or not isinstance(price, (int, float)) or price <= 0:
+            continue
+        rows.append({
+            "code": it.get("f12") or "",
+            "name": name,
+            "price": price,
+            "change_pct": it.get("f3") if isinstance(it.get("f3"), (int, float)) else 0,
+            "main_net": it.get("f62") if isinstance(it.get("f62"), (int, float)) else 0,
+            "main_pct": it.get("f184") if isinstance(it.get("f184"), (int, float)) else 0,
+            "super_large_net": it.get("f66") if isinstance(it.get("f66"), (int, float)) else 0,
+            "amount": it.get("f6") if isinstance(it.get("f6"), (int, float)) else 0,
+            "turnover": it.get("f8") if isinstance(it.get("f8"), (int, float)) else 0,
+        })
+        if len(rows) >= n:
+            break
+    return {
+        "board": board_code or None,
+        "total": len(rows),
+        "rows": rows,
+        "note": "公开榜单,东财主力净流入,仅客观呈现",
+    }
+
+
 # ── Northbound (HSGT) ─────────────────────────────────────────────────────
 
 def hsgt_realtime() -> dict:

@@ -1,12 +1,13 @@
 import { Link } from "react-router-dom";
-import { Loader2, Search, Trophy } from "lucide-react";
-import { GlassCard } from "@/components/ui/GlassCard";
+import { Loader2, Search } from "lucide-react";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { PctChip } from "@/components/review/PctChip";
 import { fmt, pctColor } from "@/components/review/format";
 import { reviewPending } from "@/components/review/reviewPending";
 import type { DailyDragonTiger, IwencaiItem } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+const box = "overflow-hidden rounded-md border border-slate-700/40 bg-[#0c1320]/80";
 
 interface Props {
   lhb: DailyDragonTiger | null;
@@ -32,18 +33,17 @@ export function ReviewBoardsSeg({
   onRunIwencai,
 }: Props) {
   return (
-    <div>
-      <SectionHeader
-        icon={<Trophy className="h-3.5 w-3.5 text-primary/80" />}
-        title="全市场龙虎榜"
-        hint="按席位净买额 · 非推荐"
-        meta={lhb?.date ? `${lhb.date} · ${lhb.total_records} 条` : (lhbDone ? "暂无" : "加载中…")}
-      />
-      <GlassCard className="!p-0 overflow-hidden">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between px-0.5">
+        <span className="text-[10px] text-slate-500">
+          {lhb?.date ? `${lhb.date} · ${lhb.total_records} 条 · 按席位净买额` : (lhbDone ? "暂无" : "加载中…")}
+        </span>
+      </div>
+      <div className={box}>
         {!lhb || lhb.stocks.length === 0 ? (
           <div className="p-5">{reviewPending(lhbDone)}</div>
         ) : (
-          <div className="max-h-[28rem] overflow-auto">
+          <div className="overflow-auto">
             <table className="data-table">
               <thead>
                 <tr>
@@ -57,9 +57,9 @@ export function ReviewBoardsSeg({
                   <tr key={`${s.code}-${s.reason}-${i}`}>
                     <td className="num text-muted-foreground/50">{i + 1}</td>
                     <td>
-                      <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
+                      <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-cyan-300">
                         <span className="font-medium">{s.name}</span>{" "}
-                        <span className="text-muted-foreground/50">{s.code}</span>
+                        <span className="text-slate-500">{s.code}</span>
                       </Link>
                     </td>
                     <td className="num"><PctChip pct={s.change_pct} /></td>
@@ -78,20 +78,20 @@ export function ReviewBoardsSeg({
             </table>
           </div>
         )}
-      </GlassCard>
+      </div>
 
-      <div className="mt-6">
+      <div>
         <SectionHeader
-          icon={<Search className="h-3.5 w-3.5 text-primary/80" />}
+          icon={<Search className="h-3.5 w-3.5 text-cyan-400" />}
           title="问财研报"
           hint="iwencai NL 主题检索 · 需配置 key"
           meta={iwencaiReady ? "已配置" : "未配置 key"}
         />
-        <GlassCard>
+        <div className={cn(box, "p-3")}>
           {!iwencaiReady ? (
-            <p className="text-sm text-muted-foreground">
-              在 <code className="rounded bg-muted/50 px-1">backend/.env</code> 设置{" "}
-              <code className="rounded bg-muted/50 px-1">IWENCAI_API_KEY</code> 后重启后端即可语义搜研报
+            <p className="text-xs text-slate-500">
+              在 <code className="rounded bg-slate-800/60 px-1">backend/.env</code> 设置{" "}
+              <code className="rounded bg-slate-800/60 px-1">IWENCAI_API_KEY</code> 后重启后端即可语义搜研报
               （如「人形机器人 丝杠」）。按个股搜研报请用详情页东财列表。
             </p>
           ) : (
@@ -108,7 +108,7 @@ export function ReviewBoardsSeg({
                   type="button"
                   onClick={onRunIwencai}
                   disabled={iwencaiBusy || !iwencaiQ.trim()}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded bg-cyan-500/20 px-3 py-1.5 text-xs font-medium text-cyan-300 disabled:opacity-50"
                 >
                   {iwencaiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
                   搜索
@@ -118,20 +118,20 @@ export function ReviewBoardsSeg({
                 <p className="mt-2 text-xs text-destructive">{iwencaiErr}</p>
               )}
               {iwencaiItems.length > 0 && (
-                <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+                <div className="mt-3 space-y-2 overflow-y-auto">
                   {iwencaiItems.map((it, i) => (
-                    <div key={`${it.title}-${i}`} className="border-b border-border/40 pb-2 text-sm last:border-0">
+                    <div key={`${it.title}-${i}`} className="border-b border-slate-700/40 pb-2 text-sm last:border-0">
                       <div className="flex items-baseline gap-2">
-                        <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{it.publish_date || "—"}</span>
+                        <span className="shrink-0 font-mono text-[11px] text-slate-500">{it.publish_date || "—"}</span>
                         <span className="min-w-0 flex-1 font-medium leading-snug">{it.title}</span>
                       </div>
                       {(it.organization || it.url) && (
-                        <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+                        <p className="mt-0.5 text-[11px] text-slate-500">
                           {it.organization || ""}
                           {it.url ? (
                             <>
                               {" · "}
-                              <a href={it.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">原文</a>
+                              <a href={it.url} target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">原文</a>
                             </>
                           ) : null}
                         </p>
@@ -142,7 +142,7 @@ export function ReviewBoardsSeg({
               )}
             </>
           )}
-        </GlassCard>
+        </div>
       </div>
     </div>
   );

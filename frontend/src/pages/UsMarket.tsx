@@ -340,7 +340,7 @@ export function UsMarket() {
       itemStyle: { color: b.close >= b.open ? UP : DN },
     }));
 
-    const cPtr = cssHsl("--primary", "#f35d2b");
+    const cPtr = cssHsl("--primary", "#22d3ee");
     echartRef.current.setOption({
       animation: false,
       legend: { show: false },
@@ -410,8 +410,8 @@ export function UsMarket() {
           end: 100,
           textStyle: { fontSize: 9, color: cText },
           borderColor: cAxis,
-          fillerColor: "rgba(243,93,43,0.15)",
-          handleStyle: { color: cssHsl("--primary", "#f35d2b") },
+          fillerColor: "rgba(34,211,238,0.15)",
+          handleStyle: { color: cssHsl("--primary", "#22d3ee") },
         },
       ],
       series: [
@@ -446,7 +446,7 @@ export function UsMarket() {
     const cText = cssHsl("--chart-text", "#94a3b8");
     const cAxis = cssHsl("--chart-axis", "#475569");
     const cGrid = cssHsl("--chart-grid", "#334155");
-    const cPrimary = cssHsl("--primary", "#f35d2b");
+    const cPrimary = cssHsl("--primary", "#22d3ee");
     chart.setOption({
       animation: false,
       grid: { left: 48, right: 16, top: 20, bottom: 28 },
@@ -481,7 +481,7 @@ export function UsMarket() {
         symbolSize: 6,
         lineStyle: { color: cPrimary, width: 2 },
         itemStyle: { color: cPrimary },
-        areaStyle: { color: "rgba(243,93,43,0.08)" },
+        areaStyle: { color: "rgba(34,211,238,0.08)" },
       }],
     }, { notMerge: true });
 

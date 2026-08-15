@@ -241,7 +241,7 @@ export function AShareLightChart({
     const cText = cssHsl("--chart-text", "#94a3b8");
     const cAxis = cssHsl("--chart-axis", "#475569");
     const cGrid = cssHsl("--chart-grid", "#334155");
-    const cPtr = cssHsl("--primary", "#f35d2b");
+    const cPtr = cssHsl("--primary", "#22d3ee");
     const dates = bars.map((b) => b.datetime);
     const isDaily = resolution === "1D";
     // 分时: 昨收为零轴; 5日: 首笔为零轴 (对齐期货轻量图)
@@ -473,11 +473,11 @@ export function AShareLightChart({
           start: zoomStart, end: 100,
           textStyle: { fontSize: 9, color: cText },
           borderColor: cAxis,
-          fillerColor: "rgba(243,93,43,0.15)",
+          fillerColor: "rgba(34,211,238,0.15)",
           handleStyle: { color: cPtr },
           moveHandleStyle: { color: cPtr },
           dataBackground: { lineStyle: { color: cAxis }, areaStyle: { color: "rgba(148,163,184,0.15)" } },
-          selectedDataBackground: { lineStyle: { color: cPtr }, areaStyle: { color: "rgba(243,93,43,0.12)" } },
+          selectedDataBackground: { lineStyle: { color: cPtr }, areaStyle: { color: "rgba(34,211,238,0.12)" } },
         },
       ],
       series: [

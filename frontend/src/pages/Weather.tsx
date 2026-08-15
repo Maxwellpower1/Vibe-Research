@@ -330,7 +330,7 @@ function TempChart({
 
     const cText = cssHsl("--muted-foreground", "#94a3b8");
     const cAxis = cssHsl("--border", "#475569");
-    const cPrimary = cssHsl("--primary", "#f35d2b");
+    const cPrimary = cssHsl("--primary", "#22d3ee");
     const cHi = cssHsl("--danger", "#ef4444");
     const cLo = "#38bdf8";
 
@@ -407,8 +407,8 @@ function TempChart({
               itemStyle: { color: cPrimary },
               areaStyle: {
                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                  { offset: 0, color: "rgba(243,93,43,0.28)" },
-                  { offset: 1, color: "rgba(243,93,43,0.02)" },
+                  { offset: 0, color: "rgba(34,211,238,0.28)" },
+                  { offset: 1, color: "rgba(34,211,238,0.02)" },
                 ]),
               },
             },

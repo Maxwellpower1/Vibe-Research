@@ -262,7 +262,7 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI", scope
   const panel = open ? createPortal(
         <div className="fixed inset-0 z-[100] flex justify-end">
           <div className="absolute inset-0 bg-black/50" onClick={close} />
-          <aside className="glass relative m-3 flex h-[calc(100%-1.5rem)] w-full max-w-md flex-col rounded-2xl">
+          <aside className="relative m-3 flex h-[calc(100%-1.5rem)] w-full max-w-md flex-col rounded-md border border-cyan-500/30 bg-[#0c1320] shadow-[0_0_32px_rgba(34,211,238,0.12)]">
             <div className="flex items-center justify-between border-b border-border/60 p-4">
               <span className="flex items-center gap-2 font-semibold">
                 <Sparkles className="h-4 w-4 text-primary" /> 问 AI · 本页上下文

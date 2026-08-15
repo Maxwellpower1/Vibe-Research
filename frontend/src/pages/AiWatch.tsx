@@ -1,0 +1,31 @@
+import { AiGrid } from "@/components/ai-watch/AiGrid";
+import { OpenRouterPanel } from "@/components/ai-watch/OpenRouterPanel";
+import { EventPanel, ModelPricePanel, TtsiTrendPanel, ValueScatterPanel } from "@/components/ai-watch/ModelCostPanel";
+import { InfraRoiPanel } from "@/components/ai-watch/InfraRoiPanel";
+
+const CELLS = [
+  {
+    id: "openrouter",
+    component: OpenRouterPanel,
+    area: "lg:col-start-1 lg:row-start-1 lg:col-span-2 lg:row-span-2",
+    mobileH: "h-[360px]",
+  },
+  { id: "ttsi-trend", component: TtsiTrendPanel, area: "lg:col-start-3 lg:row-start-1", mobileH: "h-[380px]" },
+  { id: "price-events", component: EventPanel, area: "lg:col-start-3 lg:row-start-2", mobileH: "h-[380px]" },
+  {
+    id: "ai-infra",
+    component: InfraRoiPanel,
+    area: "lg:col-start-1 lg:row-start-3 lg:col-span-2 lg:row-span-2",
+    mobileH: "h-[340px]",
+  },
+  { id: "price-table", component: ModelPricePanel, area: "lg:col-start-3 lg:row-start-3", mobileH: "h-[380px]" },
+  { id: "value-scatter", component: ValueScatterPanel, area: "lg:col-start-3 lg:row-start-4", mobileH: "h-[380px]" },
+];
+
+export function AiWatch() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <AiGrid cells={CELLS} />
+    </div>
+  );
+}
