@@ -11,8 +11,8 @@ const VENDOR_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#
 const GRID = "#1e293b";
 const AXIS = "#64748b";
 const CROSSHAIR = "#94a3b8";
-const CHART_BG = "#0c1320";
-const TOOLTIP_BG = "#0a1220";
+const CHART_BG = "#18181B";
+const TOOLTIP_BG = "#18181B";
 
 const fmtUsd = (v: number | null) =>
   v == null ? "—" : v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : v >= 100 ? `$${v.toFixed(0)}` : v >= 10 ? `$${v.toFixed(1)}` : `$${v.toFixed(2)}`;

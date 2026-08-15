@@ -1,7 +1,11 @@
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { Sparkles, Loader2, AlertCircle, RefreshCw, X, ArrowLeftRight, ListOrdered } from "lucide-react";
+import {
+  Sparkles, Loader2, AlertCircle, RefreshCw, X,
+  ArrowLeftRight, ListOrdered, Globe, Layers, BarChart3,
+  Activity, Diamond, Star, Flame, ScrollText,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AskAiButton } from "@/components/ui/AskAiButton";
@@ -10,7 +14,6 @@ import { CockpitLayout, type CockpitRow } from "@/components/cockpit/CockpitLayo
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { WatchlistCockpitPanel } from "@/components/cockpit/WatchlistCockpitPanel";
 import { ReviewSentimentPanel } from "@/components/review/ReviewSentimentPanel";
-import { ReviewShortPanel } from "@/components/review/ReviewShortPanel";
 import { ReviewBoardsSeg } from "@/components/review/ReviewBoardsSeg";
 import { ReviewMoneySeg } from "@/components/review/ReviewMoneySeg";
 import { ReviewRiskSeg } from "@/components/review/ReviewRiskSeg";
@@ -84,46 +87,36 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         {
           id: "index",
           title: "全球关键指数",
+          icon: <Globe size={14} />,
+          accent: "#38bdf8",
           defaultW: 0.28,
           mobileH: "h-[420px]",
           body: <WorldIndexPanel />,
         },
         {
+          id: "sentiment",
+          title: "涨跌分布 / 广度",
+          icon: <BarChart3 size={14} />,
+          accent: "#818cf8",
+          defaultW: 0.36,
+          mobileH: "h-[420px]",
+          body: (
+            <ReviewSentimentPanel
+              sentiment={d.sentiment}
+              ovDone={d.ovDone}
+              pending={reviewPending(false, "lines")}
+              breadth={d.breadth}
+            />
+          ),
+        },
+        {
           id: "sectors",
           title: "市场板块实时热点",
+          icon: <Layers size={14} />,
+          accent: "#22d3ee",
           defaultW: 0.36,
           mobileH: "h-[420px]",
           body: <SectorHotPanel />,
-        },
-        {
-          id: "sentiment",
-          title: "情绪 / 短线",
-          defaultW: 0.36,
-          mobileH: "h-[480px]",
-          body: (
-            <div className="grid h-full min-h-0 grid-rows-2 overflow-hidden">
-              <div className="min-h-0 overflow-auto border-b border-slate-700/40">
-                <ReviewSentimentPanel
-                  sentiment={d.sentiment}
-                  ovDone={d.ovDone}
-                  updatedLabel={d.topUpdatedLabel}
-                  indTop={d.indTop}
-                  indBot={d.indBot}
-                  pending={reviewPending(false, "lines")}
-                  hsgt={d.hsgt}
-                  breadth={d.breadth}
-                />
-              </div>
-              <div className="min-h-0 overflow-hidden">
-                <ReviewShortPanel
-                  emotion={d.emotion}
-                  emoDone={d.emoDone}
-                  updatedLabel={d.topUpdatedLabel}
-                  pending={reviewPending(false, "lines")}
-                />
-              </div>
-            </div>
-          ),
         },
       ],
     },
@@ -133,6 +126,8 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         {
           id: "flow",
           title: "板块资金流向",
+          icon: <Activity size={14} />,
+          accent: "#f43f5e",
           defaultW: 0.28,
           mobileH: "h-[380px]",
           body: (
@@ -170,6 +165,8 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         {
           id: "goods",
           title: "大宗商品",
+          icon: <Diamond size={14} />,
+          accent: "#f5c542",
           defaultW: 0.22,
           mobileH: "h-[380px]",
           body: <CommodityPanel />,
@@ -182,30 +179,31 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
         {
           id: "watch",
           title: `自选${d.watchCodes.length ? ` ${d.watchCodes.length}` : ""}`,
+          icon: <Star size={14} />,
+          accent: "#fbbf24",
           defaultW: 0.28,
           mobileH: "h-[400px]",
           body: <WatchlistCockpitPanel />,
         },
         {
           id: "risk",
-          title: "涨跌停 / 监控",
+          title: "涨跌停",
+          icon: <Flame size={14} />,
+          accent: "#fb7185",
           defaultW: 0.36,
           mobileH: "h-[380px]",
           body: (
             <ReviewRiskSeg
-              monitor={d.monitor}
-              anomaly={d.anomaly}
-              limitPool={d.limitPool}
-              thsLimit={d.thsLimit}
-              limitKind={d.limitKind}
-              onLimitKind={d.setLimitKind}
-              extraDone={d.extraDone}
+              emotion={d.emotion}
+              emoDone={d.emoDone}
             />
           ),
         },
         {
           id: "detail",
           title: "龙虎 / 资金 / 产业链",
+          icon: <ScrollText size={14} />,
+          accent: "#a78bfa",
           defaultW: 0.36,
           mobileH: "h-[520px]",
           maxZoomW: 0.78,
@@ -226,13 +224,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                 <ReviewBoardsSeg
                   lhb={d.lhb}
                   lhbDone={d.lhbDone}
-                  iwencaiReady={d.iwencaiReady}
-                  iwencaiQ={d.iwencaiQ}
-                  onIwencaiQ={d.setIwencaiQ}
-                  iwencaiBusy={d.iwencaiBusy}
-                  iwencaiErr={d.iwencaiErr}
-                  iwencaiItems={d.iwencaiItems}
-                  onRunIwencai={() => void d.runIwencai()}
                 />
               ) : d.seg === "chain" ? (
                 <ChainPanel />
@@ -274,12 +265,12 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     </>
   );
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-[#070b12] lg:h-full lg:overflow-hidden">
+    <div className="relative flex min-h-0 flex-1 flex-col bg-background lg:h-full lg:overflow-hidden">
       {headerSlot ? createPortal(headerActions, headerSlot) : null}
       <CockpitLayout rows={rows} />
 
       {showReviewPanel && (
-        <div className="absolute inset-x-2 top-10 z-30 max-h-[70%] overflow-auto rounded-md border border-cyan-500/40 bg-[#0c1320] p-3 shadow-[0_0_32px_rgba(34,211,238,0.18)] sm:inset-x-8">
+        <div className="absolute inset-x-2 top-10 z-30 max-h-[70%] overflow-auto rounded-md border border-cyan-500/40 bg-card p-3 shadow-[0_0_32px_rgba(34,211,238,0.18)] sm:inset-x-8">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-100">
               <Sparkles className="h-4 w-4 text-cyan-400" /> AI 当日复盘

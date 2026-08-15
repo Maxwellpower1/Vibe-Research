@@ -146,18 +146,14 @@ export function QuoteStockRow({
         </span>
       </div>
       <div className="col-span-2 flex h-5 min-w-0 items-center self-center">
-        {closes.length > 1 ? (
-          <MinuteSpark
-            closes={closes}
-            times={times}
-            session="ashare"
-            prevClose={prevClose}
-            pct={livePct ?? 0}
-            className="h-5"
-          />
-        ) : (
-          <span className="text-[10px] text-slate-600">——</span>
-        )}
+        <MinuteSpark
+          closes={closes}
+          times={times}
+          session="ashare"
+          prevClose={prevClose}
+          pct={livePct ?? 0}
+          className="h-5"
+        />
       </div>
       {hasAmt ? <Stat label="额" value={fmtAmt(liveAmt)} /> : <div />}
       <Stat label="价" value={fmtPrice(livePrice)} />

@@ -129,24 +129,39 @@ def _emotion() -> dict:
 
     boards = [_num(p.get("lbc")) or 1 for p in zt]      # 每只连板数（缺省按 1 板）
     lianban = [b for b in boards if b >= 2]             # 2 板及以上（连板）
-    # 连板梯队：2/3/4/5+ 各多少家（5 代表 5 板及以上），只保留有家数的档
-    tiers = Counter(min(b, 5) for b in lianban)
+    # 连板梯队：1/2/3/4/5+ 各多少家（5 代表 5 板及以上），只保留有家数的档
+    tiers = Counter(min(b, 5) for b in boards)
     ladder = [{"boards": b, "count": tiers[b], "plus": b >= 5} for b in sorted(tiers)]
 
-    # 连板股清单（2 板+，客观公开榜单数据；按连板数、成交额降序）。
-    # 产品定位调整（2026-07-05）：从「零标的」→「展示客观榜单但不推荐/不预测/不评分」。
-    lianban_stocks = sorted(
-        ({
+    def _zt_row(p: dict) -> dict:
+        return {
             "code": str(p.get("c", "")), "name": p.get("n", ""),
             "boards": _num(p.get("lbc")) or 1,
             "price": round((astock._numf(p.get("p")) or 0) / 1000, 2),
             "pct": round(astock._numf(p.get("zdp")) or 0, 2),
-            "amount": astock._numf(p.get("amount")),      # 成交额,元（'-' 占位归一为 None，防排序对 str 取负崩溃）
-            "float_cap": astock._numf(p.get("ltsz")),     # 流通市值,元
-            "industry": p.get("hybk", ""),  # 概念/行业
-        } for p in zt if (_num(p.get("lbc")) or 1) >= 2),
-        key=lambda x: (-x["boards"], -(x["amount"] or 0)),
-    )
+            "amount": astock._numf(p.get("amount")),
+            "float_cap": astock._numf(p.get("ltsz")),
+            "industry": p.get("hybk", ""),
+        }
+
+    def _dt_row(p: dict) -> dict:
+        return {
+            "code": str(p.get("c", "")), "name": p.get("n", ""),
+            "boards": _num(p.get("days")) or 1,
+            "price": round((astock._numf(p.get("p")) or 0) / 1000, 2),
+            "pct": round(astock._numf(p.get("zdp")) or 0, 2),
+            "amount": astock._numf(p.get("amount")),
+            "float_cap": astock._numf(p.get("ltsz")),
+            "industry": p.get("hybk", ""),
+        }
+
+    # All limit-up names for the cockpit ladder (incl. 1-board). 2+ kept as lianban_stocks.
+    zt_stocks = sorted((_zt_row(p) for p in zt), key=lambda x: (-x["boards"], -(x["amount"] or 0)))
+    lianban_stocks = [s for s in zt_stocks if s["boards"] >= 2]
+    dt_days = [_num(p.get("days")) or 1 for p in dt]
+    dt_tiers = Counter(min(b, 5) for b in dt_days)
+    dt_ladder = [{"boards": b, "count": dt_tiers[b], "plus": b >= 5} for b in sorted(dt_tiers)]
+    dt_stocks = sorted((_dt_row(p) for p in dt), key=lambda x: (-x["boards"], -(x["amount"] or 0)))
 
     zt_count, zb_count, yzt_count = len(zt), len(zb), len(yzt)
     attempts = zt_count + zb_count                       # 尝试涨停 = 封住 + 炸板
@@ -163,6 +178,9 @@ def _emotion() -> dict:
         "max_boards": max(boards) if boards else 0,
         "lianban_count": len(lianban),
         "ladder": ladder,
+        "zt_stocks": zt_stocks,
+        "dt_ladder": dt_ladder,
+        "dt_stocks": dt_stocks,
         "lianban_stocks": lianban_stocks,
         "seal_rate": seal_rate,
         "break_rate": break_rate,

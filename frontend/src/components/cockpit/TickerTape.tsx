@@ -60,19 +60,19 @@ function renderChips(items: TapeItem[], suffix: string) {
 
 export function TickerTape({ items }: { items: TapeItem[] }) {
   if (!items.length) {
-    return <div className="h-7 shrink-0 border-b border-slate-700/40 bg-[#0a101c]" />;
+    return <div className="h-7 shrink-0 border-b border-border bg-background" />;
   }
 
   const unit = padUnit(items);
 
   return (
-    <div className="ticker-wrap relative h-7 shrink-0 overflow-hidden border-b border-slate-700/40 bg-[#0a101c]">
+    <div className="ticker-wrap relative h-7 shrink-0 overflow-hidden border-b border-border bg-background">
       <div className="ticker-track items-center">
         <div className="inline-flex">{renderChips(unit, "a")}</div>
         <div className="inline-flex" aria-hidden>{renderChips(unit, "b")}</div>
       </div>
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-[#070b12] to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-[#070b12] to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-background to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent" />
     </div>
   );
 }

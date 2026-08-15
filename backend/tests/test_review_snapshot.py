@@ -119,6 +119,10 @@ def test_em_fillers_skip_unused_eastmoney():
     assert "get_turnover_top" not in top_src
     assert "ths_hot_list" not in top_src
     assert "board_fund_flow" not in extra_src
+    assert "em_stock_monitor" not in extra_src
+    assert "em_price_anomaly" not in extra_src
+    assert "limit_up_pools" not in extra_src
+    assert "ths_limit_up_pool" not in extra_src
 
 
 def test_user_busy_skips_warmup():

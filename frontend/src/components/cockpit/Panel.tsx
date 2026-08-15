@@ -34,7 +34,7 @@ export function Panel({
   return (
     <section
       className={cn(
-        "flex min-h-0 flex-col rounded-md border bg-[#0c1320]/90 shadow-[0_0_24px_rgba(0,0,0,0.35)] backdrop-blur transition-all duration-300",
+        "flex min-h-0 flex-col rounded-md border bg-card/90 shadow-[0_0_24px_rgba(0,0,0,0.35)] backdrop-blur transition-all duration-300",
         isZoomed
           ? "border-cyan-500/50 shadow-[0_0_32px_rgba(34,211,238,0.18)]"
           : "border-slate-700/40",

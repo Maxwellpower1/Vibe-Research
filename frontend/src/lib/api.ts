@@ -149,13 +149,6 @@ export interface ThsLimitUpPool {
   date: string; total: number; source?: string; note?: string; rows: ThsLimitUpRow[];
 }
 
-export interface IwencaiItem {
-  title: string; publish_date?: string; score?: number;
-  organization?: string; url?: string | null; channel?: string;
-}
-export interface IwencaiSearch {
-  query: string; channel: string; count?: number; items: IwencaiItem[];
-}
 export interface IwencaiSelectRow {
   code: string; name: string;
 }
@@ -204,6 +197,9 @@ export interface ShortTermEmotion {
   zt_count: number; dt_count: number; zb_count: number;
   max_boards: number; lianban_count: number;
   ladder: EmotionTier[];
+  zt_stocks?: LianbanStock[];
+  dt_ladder?: EmotionTier[];
+  dt_stocks?: LianbanStock[];
   lianban_stocks: LianbanStock[];
   seal_rate: number | null; break_rate: number | null; promotion_rate: number | null;
   yzt_count: number;
@@ -1498,10 +1494,6 @@ export const api = {
   thsLimitUp: (date?: string) =>
     get<ThsLimitUpPool>(`/market/ths-limit-up${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   iwencaiStatus: () => get<{ configured: boolean }>("/iwencai/status"),
-  iwencaiSearch: (q: string, channel: "report" | "announcement" | "news" = "report", size = 20) =>
-    get<IwencaiSearch>(
-      `/iwencai/search?q=${encodeURIComponent(q)}&channel=${channel}&size=${size}`,
-    ),
   iwencaiSelect: (q: string, limit = 12) =>
     get<IwencaiSelect>(`/iwencai/select?q=${encodeURIComponent(q)}&limit=${limit}`),
   dragonTiger: (code: string) => get<DragonTiger>(`/dragon-tiger?code=${code}`),

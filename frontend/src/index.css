@@ -4,44 +4,43 @@
 
 @layer base {
   /* ============================================================
-     Vibe-Research · 驾驶舱深蓝青
-     默认呈现 = #070b12 底 + cyan 强调（一屏盯盘）。.light 仍可用但不进驾驶舱主路径。
+     Vibe-Research · TickFlow zinc dark
+     Page = #0A0A0B / cards = #18181B. Cyan stays on accents only.
      ============================================================ */
   :root {
-    /* ---- 深蓝青（默认, 对齐 #070b12 / #0c1320 / cyan-500） ---- */
-    --background: 220 44% 5%;
-    --foreground: 210 30% 92%;
-    --card: 219 45% 9%;
-    --card-foreground: 210 30% 92%;
+    --background: 240 5% 5%;
+    --foreground: 0 0% 98%;
+    --card: 240 7% 10%;
+    --card-foreground: 0 0% 98%;
 
     --primary: 189 94% 43%;
-    --primary-foreground: 220 44% 5%;
+    --primary-foreground: 240 5% 5%;
     --accent: 187 86% 53%;
-    --accent-foreground: 220 44% 5%;
+    --accent-foreground: 240 5% 5%;
 
-    --muted: 220 28% 14%;
-    --muted-foreground: 215 16% 62%;
+    --muted: 240 9% 14%;
+    --muted-foreground: 240 5% 58%;
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border: 215 22% 22%;
+    --border: 240 5% 22%;
     --radius: 0.375rem;
 
     /* 语义色（涨跌配色由页面按 A股红涨绿跌自行选用 success/danger） */
-    --success: 145 62% 47%;
-    --danger: 0 74% 60%;
-    --warning: 38 92% 55%;
+    --success: 152 67% 45%;
+    --danger: 4 87% 60%;
+    --warning: 32 95% 50%;
     --info: 189 94% 43%;
 
     /* 玻璃发丝边框 / 内高光（rgba，供 .glass 使用） */
     --glass-fill-top: rgba(255, 255, 255, 0.04);
     --glass-fill-bot: rgba(255, 255, 255, 0.01);
-    --glass-stroke: rgba(103, 232, 249, 0.12);
+    --glass-stroke: rgba(255, 255, 255, 0.08);
     --glass-hi: rgba(255, 255, 255, 0.05);
 
     /* Chart tokens */
-    --chart-grid: 220 20% 14%;
-    --chart-text: 215 15% 55%;
-    --chart-axis: 220 20% 24%;
+    --chart-grid: 240 5% 14%;
+    --chart-text: 240 5% 58%;
+    --chart-axis: 240 5% 22%;
   }
 
   .light {
@@ -86,12 +85,7 @@
     @apply bg-background text-foreground font-sans antialiased;
     font-feature-settings: "ss01" on, "cv11" on;
     font-variant-numeric: tabular-nums;
-    /* Ambient wash: top warm accent + bottom cool depth (not dead black) */
     background-color: hsl(var(--background));
-    background-image:
-      radial-gradient(1100px 620px at 12% -12%, hsl(189 94% 43% / 0.07), transparent 60%),
-      radial-gradient(980px 720px at 108% 112%, hsl(220 60% 45% / 0.05), transparent 55%);
-    background-attachment: fixed;
   }
 
   .light body {
@@ -132,8 +126,8 @@
 @layer components {
   /* Solid data panel: default for tables / charts (no backdrop-filter cost). */
   .surface-panel {
-    background: rgb(12 19 32 / 0.9);
-    border: 1px solid rgb(51 65 85 / 0.4);
+    background: hsl(var(--card) / 0.9);
+    border: 1px solid hsl(var(--border) / 0.6);
     border-radius: 0.375rem;
   }
   .light .surface-panel {
@@ -449,7 +443,7 @@
   display: inline-flex;
   width: max-content;
   animation-name: ticker-scroll;
-  animation-duration: 36s !important;
+  animation-duration: 60s !important;
   animation-timing-function: linear;
   animation-iteration-count: infinite !important;
   will-change: transform;

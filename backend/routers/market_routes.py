@@ -270,21 +270,6 @@ def iwencai_status():
     return {"data": {"configured": astock.iwencai_configured()}}
 
 
-@router.get("/api/iwencai/search")
-def iwencai_search(
-    q: str = Query(..., min_length=1, max_length=120),
-    channel: str = Query("report", description="report|announcement|news"),
-    size: int = Query(20, ge=5, le=50),
-):
-    """iwencai NL 语义搜索（需 IWENCAI_API_KEY）。客观结果，不附推荐。"""
-    try:
-        return {"data": astock.iwencai_search(q, channel=channel, size=size)}
-    except astock.DependencyMissing as e:
-        raise HTTPException(501, str(e)) from e
-    except Exception as e:
-        raise HTTPException(502, f"iwencai 搜索异常：{e}") from e
-
-
 @router.get("/api/iwencai/select")
 def iwencai_select(
     q: str = Query(..., min_length=1, max_length=80),

@@ -150,42 +150,6 @@ def _warm_review_dc() -> tuple[int, int, list[dict]]:
                 lambda: astock.daily_dragon_tiger(None, None, top=40),
             ),
         ),
-        (
-            "limit_zt",
-            lambda: _cached(
-                "limit_pool",
-                "zt:40",
-                180,
-                lambda: astock_boards.limit_up_pools("zt", top=40),
-            ),
-        ),
-        (
-            "ths_limit_up",
-            lambda: _cached(
-                "ths_limit_up",
-                "today",
-                180,
-                lambda: astock.ths_limit_up_pool(None),
-            ),
-        ),
-        (
-            "monitor",
-            lambda: _cached(
-                "monitor",
-                "active",
-                600,
-                lambda: astock_boards.em_stock_monitor(True),
-            ),
-        ),
-        (
-            "anomaly",
-            lambda: _cached(
-                "anomaly",
-                "40",
-                300,
-                lambda: astock_boards.em_price_anomaly(40),
-            ),
-        ),
     ]
     for name, fn in steps:
         try:

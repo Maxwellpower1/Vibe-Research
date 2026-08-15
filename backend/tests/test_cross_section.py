@@ -30,10 +30,48 @@ def test_parse_sina_pcts_accepts_string_pct():
     assert m == {"600519": 1.25, "000001": -2.0}
 
 
+def test_parse_sina_stock_count():
+    assert cross_section.parse_sina_stock_count('"5542"') == 5542
+    assert cross_section.parse_sina_stock_count(5542) == 5542
+    assert cross_section.parse_sina_stock_count("[]") == 0
+    assert cross_section.parse_sina_stock_count("bad") == 0
+
+
+def test_sina_hs_a_all_pages_until_short(monkeypatch):
+    monkeypatch.setattr(cross_section, "_sina_hs_a_count", lambda: 0)
+
+    def fake(page, num, sort="symbol", asc=1):
+        if page == 1:
+            return [{"code": f"{i:06d}", "changepercent": 1} for i in range(80)]
+        if page == 2:
+            return [{"code": f"{i:06d}", "changepercent": 1} for i in range(80, 100)]
+        raise AssertionError(f"unexpected page {page}")
+
+    monkeypatch.setattr(cross_section, "_sina_hs_a", fake)
+    rows = cross_section._sina_hs_a_all(page_size=80, max_pages=10)
+    assert len(rows) == 100
+    assert rows[-1]["code"] == "000099"
+
+
+def test_sina_hs_a_all_uses_count(monkeypatch):
+    monkeypatch.setattr(cross_section, "_sina_hs_a_count", lambda: 160)
+    seen: list[int] = []
+
+    def fake(page, num, sort="symbol", asc=1):
+        seen.append(page)
+        start = (page - 1) * num
+        return [{"code": f"{i:06d}", "changepercent": 0.5} for i in range(start, start + num)]
+
+    monkeypatch.setattr(cross_section, "_sina_hs_a", fake)
+    rows = cross_section._sina_hs_a_all(page_size=80, max_pages=10)
+    assert sorted(seen) == [1, 2]
+    assert len(rows) == 160
+
+
 def test_fetch_pcts_prefers_sina(monkeypatch, tmp_path):
     monkeypatch.setenv("VR_DATA_DIR", str(tmp_path))
     rows = [{"code": f"{i:06d}", "changepercent": 0.1} for i in range(2000)]
-    monkeypatch.setattr(cross_section, "_sina_hs_a", lambda *a, **k: rows)
+    monkeypatch.setattr(cross_section, "_sina_hs_a_all", lambda *a, **k: rows)
     monkeypatch.setattr(cross_section, "_tencent_pcts", lambda codes: (_ for _ in ()).throw(AssertionError("tencent")))
     pcts, src = cross_section.fetch_market_pcts_with_source()
     assert src == "sina"
@@ -48,7 +86,7 @@ def test_fetch_pcts_uses_tencent_universe(monkeypatch, tmp_path):
         json.dumps({"ts": 9e12, "codes": codes}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(cross_section, "_sina_hs_a", lambda *a, **k: [{"code": "600519", "changepercent": 1}])
+    monkeypatch.setattr(cross_section, "_sina_hs_a_all", lambda *a, **k: [{"code": "600519", "changepercent": 1}])
     monkeypatch.setattr(cross_section, "_tencent_pcts", lambda cs: {c: 0.5 for c in cs})
     pcts, src = cross_section.fetch_market_pcts_with_source()
     assert src == "tencent"
@@ -57,7 +95,7 @@ def test_fetch_pcts_uses_tencent_universe(monkeypatch, tmp_path):
 
 def test_fetch_pcts_keeps_thin_sina_when_tencent_misses(monkeypatch, tmp_path):
     monkeypatch.setenv("VR_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(cross_section, "_sina_hs_a", lambda *a, **k: [{"code": "600519", "changepercent": 1.2}])
+    monkeypatch.setattr(cross_section, "_sina_hs_a_all", lambda *a, **k: [{"code": "600519", "changepercent": 1.2}])
     monkeypatch.setattr(cross_section, "_tencent_pcts", lambda cs: {})
     pcts, src = cross_section.fetch_market_pcts_with_source()
     assert src == "sina"

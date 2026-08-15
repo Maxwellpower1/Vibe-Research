@@ -34,7 +34,7 @@ export function Portfolio() {
         subtitle="CTP 期货只读查询 · A股本地录入 · 不荐股不下单"
       />
 
-      <div className="mb-3 flex flex-wrap gap-0.5 rounded-md border border-slate-700/50 bg-[#0c1320]/90 p-0.5">
+      <div className="mb-3 flex flex-wrap gap-0.5 rounded-md border border-border bg-card/90 p-0.5">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}

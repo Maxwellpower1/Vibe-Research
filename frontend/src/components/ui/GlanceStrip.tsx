@@ -71,7 +71,7 @@ export function GlanceStrip({
         : "grid-cols-2 sm:grid-cols-4 xl:grid-cols-8";
 
   return (
-    <div className={cn("mb-3 rounded-md border border-slate-700/40 bg-[#0c1320]/90 p-2.5", className)}>
+    <div className={cn("mb-3 rounded-md border border-border/60 bg-card/90 p-2.5", className)}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           {title && <p className="text-[12px] font-semibold tracking-wide text-slate-200">{title}</p>}

@@ -1376,8 +1376,8 @@ def iwencai_configured() -> bool:
 
 def _iwencai_claw_headers(
     call_type: str = "normal",
-    skill_id: str = "report-search",
-    skill_ver: str = "2.0.0",
+    skill_id: str = "hithink-astock-selector",
+    skill_ver: str = "1.0.0",
 ) -> dict:
     import secrets
 
@@ -1415,84 +1415,6 @@ def parse_iwencai_select(payload: dict) -> list[dict]:
         name = str(it.get("股票简称") or it.get("name") or code)
         out.append({"code": code, "name": name})
     return out
-
-
-def iwencai_search(query: str, channel: str = "report", size: int = 20) -> dict:
-    """iwencai NL 语义搜索。需 IWENCAI_API_KEY + X-Claw headers。
-
-    channel: report / announcement / news
-    """
-    import requests
-
-    key = os.environ.get("IWENCAI_API_KEY", "").strip()
-    if not key:
-        raise DependencyMissing(
-            "未配置 IWENCAI_API_KEY。在 backend/.env 设置后重启后端；仅语义搜研报需要。"
-        )
-    base = os.environ.get("IWENCAI_BASE_URL", "https://openapi.iwencai.com").rstrip("/")
-    q = (query or "").strip()
-    if not q:
-        return {"query": "", "channel": channel, "items": []}
-    ch = channel if channel in ("report", "announcement", "news") else "report"
-    n = max(5, min(int(size or 20), 50))
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-        **_iwencai_claw_headers(),
-    }
-    payload = {
-        "channels": [ch],
-        "app_id": "AIME_SKILL",
-        "query": q,
-        "size": n,
-    }
-    r = requests.post(
-        f"{base}/v1/comprehensive/search",
-        json=payload,
-        headers=headers,
-        timeout=30,
-    )
-    if r.status_code != 200:
-        raise RuntimeError(f"iwencai HTTP {r.status_code}: {r.text[:200]}")
-    data = r.json() if r.content else {}
-    if data.get("status_code", 0) != 0:
-        raise RuntimeError(f"iwencai error: {data.get('status_msg', '')}")
-
-    raw = data.get("data") or []
-    # Dedup by uid, keep highest score
-    best: dict[str, dict] = {}
-    for a in raw:
-        if not isinstance(a, dict):
-            continue
-        uid = a.get("uid") or f"{a.get('title', '')}|{a.get('publish_date', '')}"
-        score = float(a.get("score") or 0)
-        prev = best.get(uid)
-        if prev is None or score > float(prev.get("score") or 0):
-            best[uid] = a
-    items_sorted = sorted(
-        best.values(),
-        key=lambda x: str(x.get("publish_date") or ""),
-        reverse=True,
-    )
-    items: list[dict] = []
-    for a in items_sorted:
-        extra = a.get("extra") or {}
-        if isinstance(extra, str):
-            try:
-                extra = json.loads(extra)
-            except json.JSONDecodeError:
-                extra = {}
-        if not isinstance(extra, dict):
-            extra = {}
-        items.append({
-            "title": str(a.get("title") or ""),
-            "publish_date": str(a.get("publish_date") or "")[:10],
-            "score": a.get("score"),
-            "organization": extra.get("organization") or extra.get("org") or "",
-            "url": a.get("url") or a.get("link") or None,
-            "channel": ch,
-        })
-    return {"query": q, "channel": ch, "count": len(items), "items": items}
 
 
 def iwencai_select(query: str, limit: int = 20) -> dict:

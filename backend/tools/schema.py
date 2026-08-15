@@ -55,15 +55,6 @@ TOOLS: list[dict] = [
     _t("query_global_news",
        "查东财全球财经资讯 7x24（标题/摘要/时间）。客观公开资讯，不构成投资建议。",
        {"limit": {"type": "integer", "description": "条数，默认 30"}}, []),
-    _t("query_iwencai",
-       "用问财(iwencai)自然语言搜研报/公告/新闻（需后端配置 IWENCAI_API_KEY）。适合主题检索如「人形机器人 丝杠」。",
-       {
-           "query": {"type": "string", "description": "自然语言检索词"},
-           "channel": {"type": "string", "enum": ["report", "announcement", "news"], "description": "通道，默认 report"},
-           "size": {"type": "integer", "description": "条数，默认 15"},
-       },
-       ["query"]),
-
     # —— 资金面与筹码 ——
     _t("query_fund_flow",
        "查个股资金流向：最近若干日主力/超大单/大单/中单/小单净流入，并附近 5 日、20 日累计主力净额。",

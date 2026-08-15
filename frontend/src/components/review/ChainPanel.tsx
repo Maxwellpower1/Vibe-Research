@@ -166,7 +166,7 @@ export function ChainPanel() {
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="grid gap-2 p-1 md:grid-cols-3">
           {chain.segments.map((seg, si) => (
-            <div key={seg.name} className="rounded-md border border-slate-700/40 bg-[#0c1320]/80 p-2">
+            <div key={seg.name} className="rounded-md border border-border/60 bg-card/80 p-2">
               <p className="text-[11px] font-semibold text-slate-200">
                 {seg.name}
                 {ov?.segments[si]?.stocks?.length ? (

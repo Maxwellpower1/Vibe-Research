@@ -42,7 +42,7 @@ export function SegmentNav({ items, value, onChange, sticky = true, className, s
   return (
     <div
       className={cn(
-        "mb-3 rounded-md border border-slate-700/50 bg-[#0c1320]/90 p-0.5",
+        "mb-3 rounded-md border border-border bg-card/90 p-0.5",
         sticky && "sticky top-0 z-20",
         className,
       )}

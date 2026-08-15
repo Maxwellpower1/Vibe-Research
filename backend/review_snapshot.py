@@ -1,8 +1,8 @@
 """Daily Review BFF: paint / top / full payloads share the same TTL keys.
 
 scope=paint is Tencent + overview only (no Eastmoney). top adds emotion +
-industry strength. full then fills limit pools / dragon-tiger / monitor.
-Unused keys stay in the JSON as None so the API shape does not break.
+industry strength. full then fills dragon-tiger. Unused keys stay in the
+JSON as None so the API shape does not break.
 em_get only serializes launch gaps, so sibling Eastmoney calls overlap on HTTP RTT.
 """
 from __future__ import annotations
@@ -84,6 +84,7 @@ def _fill_em_extra(
     *,
     limit_kind: str,
 ) -> None:
+    _ = limit_kind
     jobs: list[tuple[str, Callable[[], Any]]] = [
         (
             "lhb",
@@ -94,30 +95,11 @@ def _fill_em_extra(
                 lambda: astock.daily_dragon_tiger(None, None, top=40),
             ),
         ),
-        ("monitor", lambda: _cached("monitor", "active", 600, lambda: astock_boards.em_stock_monitor(True))),
-        ("anomaly", lambda: _cached("anomaly", "40", 300, lambda: astock_boards.em_price_anomaly(40))),
     ]
-    if limit_kind == "jm":
-        bucket["limit_pool"] = None
-        jobs.append(
-            (
-                "ths_limit_up",
-                lambda: _cached("ths_limit_up", "today", 180, lambda: astock.ths_limit_up_pool(None)),
-            )
-        )
-    else:
-        bucket["ths_limit_up"] = None
-        jobs.append(
-            (
-                "limit_pool",
-                lambda: _cached(
-                    "limit_pool",
-                    f"{limit_kind}:40",
-                    180,
-                    lambda: astock_boards.limit_up_pools(limit_kind, top=40),
-                ),
-            )
-        )
+    bucket["monitor"] = None
+    bucket["anomaly"] = None
+    bucket["limit_pool"] = None
+    bucket["ths_limit_up"] = None
     _run_parallel(jobs, bucket, errors)
 
 

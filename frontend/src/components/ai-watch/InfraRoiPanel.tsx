@@ -141,7 +141,7 @@ export const InfraRoiPanel = memo(function InfraRoiPanel({ className, panelId, i
             </svg>
           )}
           {hover != null && chart && (
-            <div className="pointer-events-none absolute z-10 min-w-[150px] rounded border border-slate-700/60 bg-[#0a1220]/95 p-1.5" style={{ left: Math.min(Math.max(chart.X(hover) - 75, 4), size.w - 165), top: 4 }}>
+            <div className="pointer-events-none absolute z-10 min-w-[150px] rounded border border-border bg-card/95 p-1.5" style={{ left: Math.min(Math.max(chart.X(hover) - 75, 4), size.w - 165), top: 4 }}>
               <div className="mb-1 text-[10px] font-semibold text-slate-200">
                 {chart.pts[hover].year}{!chart.pts[hover].actual && <span className="ml-1 text-[8px] text-amber-400">预测</span>}
               </div>

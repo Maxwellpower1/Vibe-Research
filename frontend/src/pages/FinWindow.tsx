@@ -32,8 +32,8 @@ function FinBody() {
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[#070b12] lg:h-full lg:overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b border-slate-700/40 bg-[#0a101c] px-2 py-0.5">
+    <div className="flex min-h-0 flex-1 flex-col bg-background lg:h-full lg:overflow-hidden">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-background px-2 py-0.5">
         <p className="hidden truncate text-[10px] text-slate-500 sm:block">
           披露日历 · 预告 · 盈利榜 · 估值/公告/研报 · 美股日历
         </p>

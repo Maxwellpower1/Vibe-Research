@@ -61,7 +61,7 @@ export function CockpitHeader({
   const week = ["日", "一", "二", "三", "四", "五", "六"][now.getDay()];
 
   return (
-    <header className="flex h-9 shrink-0 items-center gap-2 border-b border-slate-700/50 bg-gradient-to-r from-[#0a1424] via-[#0c1320] to-[#0a1424] px-2 sm:gap-3 sm:px-3">
+    <header className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-background px-2 sm:gap-3 sm:px-3">
       <Link to="/a-share" className="flex shrink-0 items-center gap-2">
         <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] bg-cyan-500/15 text-[11px] font-bold text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.35)]">
           V

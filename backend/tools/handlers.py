@@ -518,11 +518,6 @@ _HANDLERS = {
             int(a.get("limit") or 30),
         ),
     },
-    "query_iwencai": lambda a: astock.iwencai_search(
-        str(a.get("query") or ""),
-        channel=str(a.get("channel") or "report"),
-        size=int(a.get("size") or 15),
-    ),
     "query_fund_flow": _fund_flow,
     "query_fund_flow_minute": lambda a: _fund_flow_minute(a),
     "query_ths_limit_up": lambda a: astock.ths_limit_up_pool(a.get("date") or None),

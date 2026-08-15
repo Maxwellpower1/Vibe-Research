@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  api, ApiError, type IndexQuote, type MarketOverview, type ShortTermEmotion,
-  type DailyDragonTiger, type MonitorPool, type AnomalyPool, type LimitPool, type IndustryData,
-  type ThsLimitUpPool, type IwencaiItem, type EtfFlow, type ShareholderChanges,
+  api, type IndexQuote, type MarketOverview, type ShortTermEmotion,
+  type DailyDragonTiger, type IndustryData,
+  type EtfFlow, type ShareholderChanges,
   type LprData, type CnBondYield, type ReviewSnapshot, type HsgtLive,
   type MarketBreadth,
 } from "@/lib/api";
@@ -14,24 +14,13 @@ import { useWatchCodes } from "@/lib/watchlist";
 const SEG_KEYS = ["boards", "money", "chain"] as const;
 
 export type ReviewSeg = "boards" | "money" | "chain";
-export type LimitKind = "zt" | "zb" | "dt" | "yzt" | "jm";
 
 export function useReviewData() {
   const [indices, setIndices] = useState<IndexQuote[]>([]);
   const [overview, setOverview] = useState<MarketOverview | null>(null);
   const [emotion, setEmotion] = useState<ShortTermEmotion | null>(null);
   const [lhb, setLhb] = useState<DailyDragonTiger | null>(null);
-  const [monitor, setMonitor] = useState<MonitorPool | null>(null);
-  const [anomaly, setAnomaly] = useState<AnomalyPool | null>(null);
-  const [limitPool, setLimitPool] = useState<LimitPool | null>(null);
-  const [limitKind, setLimitKind] = useState<LimitKind>("zt");
-  const [thsLimit, setThsLimit] = useState<ThsLimitUpPool | null>(null);
   const [industry, setIndustry] = useState<IndustryData | null>(null);
-  const [iwencaiReady, setIwencaiReady] = useState(false);
-  const [iwencaiQ, setIwencaiQ] = useState("");
-  const [iwencaiBusy, setIwencaiBusy] = useState(false);
-  const [iwencaiErr, setIwencaiErr] = useState<string | null>(null);
-  const [iwencaiItems, setIwencaiItems] = useState<IwencaiItem[]>([]);
   const [etfFlow, setEtfFlow] = useState<EtfFlow | null>(null);
   const [etfSort, setEtfSort] = useState<"net_inflow" | "change_pct">("net_inflow");
   const [shChg, setShChg] = useState<ShareholderChanges | null>(null);
@@ -45,7 +34,6 @@ export function useReviewData() {
   const [ovDone, setOvDone] = useState(false);
   const [emoDone, setEmoDone] = useState(false);
   const [lhbDone, setLhbDone] = useState(false);
-  const [extraDone, setExtraDone] = useState(false);
   const [topRefreshing, setTopRefreshing] = useState(false);
   const [topUpdatedAt, setTopUpdatedAt] = useState<Date | null>(null);
   const topRefreshingRef = useRef(false);
@@ -76,18 +64,10 @@ export function useReviewData() {
     setEmoDone(true);
   }, [applyPaint]);
 
-  const applyFull = useCallback((s: ReviewSnapshot, kind: LimitKind) => {
+  const applyFull = useCallback((s: ReviewSnapshot) => {
     applyTop(s);
     setLhb(s.lhb ?? null);
     setLhbDone(true);
-    setMonitor(s.monitor ?? null);
-    setAnomaly(s.anomaly ?? null);
-    if (kind === "jm") {
-      setThsLimit(s.ths_limit_up ?? null);
-    } else {
-      setLimitPool(s.limit_pool ?? null);
-    }
-    setExtraDone(true);
   }, [applyTop]);
 
   const refreshTopRows = useCallback(() => {
@@ -116,10 +96,10 @@ export function useReviewData() {
 
   useEffect(() => {
     let cancelled = false;
-    setOvDone(false); setEmoDone(false); setLhbDone(false); setExtraDone(false);
+    setOvDone(false); setEmoDone(false); setLhbDone(false);
     void (async () => {
       const snap = (scope: "paint" | "top" | "full") =>
-        api.reviewSnapshot({ scope, limitKind });
+        api.reviewSnapshot({ scope });
       const paintP = snap("paint").then((s) => {
         if (!cancelled) {
           applyPaint(s);
@@ -138,33 +118,19 @@ export function useReviewData() {
       if (cancelled) return;
       try {
         const full = await snap("full");
-        if (!cancelled) applyFull(full, limitKind);
+        if (!cancelled) applyFull(full);
       } catch {
         if (!cancelled) {
           setLhbDone(true);
-          setExtraDone(true);
         }
       } finally {
         if (!cancelled) setTopUpdatedAt(new Date());
       }
     })();
     return () => { cancelled = true; };
-    // bootstrap once; limit tab changes use the effect below
+    // bootstrap once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const limitBoot = useRef(true);
-  useEffect(() => {
-    if (limitBoot.current) {
-      limitBoot.current = false;
-      return;
-    }
-    if (limitKind === "jm") {
-      api.thsLimitUp().then(setThsLimit).catch(() => setThsLimit(null));
-      return;
-    }
-    api.limitPools(limitKind, 40).then(setLimitPool).catch(() => setLimitPool(null));
-  }, [limitKind]);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,27 +152,6 @@ export function useReviewData() {
     return () => { cancelled = true; };
   }, [etfSort, shType]);
 
-  useEffect(() => {
-    api.iwencaiStatus().then((s) => setIwencaiReady(!!s.configured)).catch(() => setIwencaiReady(false));
-  }, []);
-
-  const runIwencai = useCallback(async () => {
-    const q = iwencaiQ.trim();
-    if (!q) return;
-    setIwencaiBusy(true);
-    setIwencaiErr(null);
-    try {
-      const r = await api.iwencaiSearch(q, "report", 20);
-      setIwencaiItems(r.items || []);
-      if (!(r.items || []).length) setIwencaiErr("无结果");
-    } catch (e) {
-      setIwencaiItems([]);
-      setIwencaiErr(e instanceof ApiError ? e.message : "问财搜索失败");
-    } finally {
-      setIwencaiBusy(false);
-    }
-  }, [iwencaiQ]);
-
   const p50 = breadth?.p50;
   const dataSummary = (indices.length
     ? indices.map((i) => `${i.name} ${i.price}（${i.change_pct > 0 ? "+" : ""}${i.change_pct}%）`).join("；")
@@ -217,19 +162,6 @@ export function useReviewData() {
     emotion,
     breadth,
     lhb,
-    monitor,
-    anomaly,
-    limitPool,
-    limitKind,
-    setLimitKind,
-    thsLimit,
-    iwencaiReady,
-    iwencaiQ,
-    setIwencaiQ,
-    iwencaiBusy,
-    iwencaiErr,
-    iwencaiItems,
-    runIwencai,
     etfFlow,
     etfSort,
     setEtfSort,
@@ -244,7 +176,6 @@ export function useReviewData() {
     ovDone,
     emoDone,
     lhbDone,
-    extraDone,
     topRefreshing,
     topUpdatedLabel,
     refreshTopRows,

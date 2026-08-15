@@ -155,7 +155,9 @@ def test_emotion_dirty_amount(monkeypatch):
             {"c": "600002", "n": "乙", "lbc": 2, "p": "-", "zdp": None, "amount": 5e8, "ltsz": 1e9, "hybk": "Y"},
         ],
         "getTopicZBPool": [],
-        "getTopicDTPool": [],
+        "getTopicDTPool": [
+            {"c": "600003", "n": "丙", "days": 2, "p": 8000, "zdp": -10.0, "amount": 1e8, "ltsz": 1e9, "hybk": "Z"},
+        ],
         "getYesterdayZTPool": [{}],
     }
     monkeypatch.setattr(astock, "em_zt_topic_pool", lambda ep, d, sort="": pools.get(ep, []))
@@ -163,6 +165,11 @@ def test_emotion_dirty_amount(monkeypatch):
     out = market._emotion()
     stocks = out["lianban_stocks"]
     assert [s["code"] for s in stocks] == ["600001", "600002"]  # 排序没崩、按连板数降序
+    assert [s["code"] for s in out["zt_stocks"]] == ["600001", "600002"]
+    assert [s["code"] for s in out["dt_stocks"]] == ["600003"]
+    assert out["dt_stocks"][0]["boards"] == 2
+    assert {t["boards"] for t in out["ladder"]} == {2, 3}
+    assert {t["boards"] for t in out["dt_ladder"]} == {2}
     assert stocks[0]["amount"] is None    # '-' 归一为 None
     assert stocks[1]["price"] == 0.0      # p='-' 归一后按 0 展示
     assert stocks[1]["amount"] == 5e8

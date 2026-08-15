@@ -1,8 +1,8 @@
 """A-share cross-section: change-pct percentiles + 8-band histogram.
 
-Primary: Sina hs_a. Then Tencent quotes on a cached universe.
-Does not persist the 5000-name map to API clients; callers that need it
-(ths rotation) read pct_map() from the process cache.
+Primary: Sina hs_a, paged (one page is capped at ~100). Then Tencent quotes
+on a cached universe. Does not persist the 5000-name map to API clients;
+callers that need it (ths rotation) read pct_map() from the process cache.
 """
 from __future__ import annotations
 
@@ -118,6 +118,32 @@ def parse_sina_pcts(items: Any) -> dict[str, float]:
     return out
 
 
+# Sina getHQNodeData silently caps num at ~100 even if the client asks for 4000.
+SINA_PAGE_SIZE = 100
+SINA_MAX_PAGES = 80
+SINA_FULL_MIN = 2000
+
+
+def parse_sina_stock_count(raw: Any) -> int:
+    """Sina getHQNodeStockCount body: '\"5542\"' or 5542."""
+    data = raw
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = raw.strip().strip('"')
+    if isinstance(data, str):
+        try:
+            return max(0, int(float(data.strip().strip('"'))))
+        except ValueError:
+            return 0
+    if isinstance(data, (int, float)) and not isinstance(data, bool):
+        return max(0, int(data))
+    return 0
+
+
 def _sina_hs_a(page: int, num: int, sort: str = "symbol", asc: int = 1) -> list:
     url = (
         "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
@@ -128,6 +154,55 @@ def _sina_hs_a(page: int, num: int, sort: str = "symbol", asc: int = 1) -> list:
     with urlopen(req, timeout=15) as resp:
         arr = json.loads(resp.read().decode("utf-8", errors="replace"))
     return arr if isinstance(arr, list) else []
+
+
+def _sina_hs_a_count() -> int:
+    url = (
+        "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+        "Market_Center.getHQNodeStockCount?node=hs_a"
+    )
+    req = Request(url, headers={"User-Agent": UA, "Referer": "https://finance.sina.com.cn/"})
+    with urlopen(req, timeout=10) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    return parse_sina_stock_count(raw)
+
+
+def _sina_hs_a_all(page_size: int = SINA_PAGE_SIZE, max_pages: int = SINA_MAX_PAGES) -> list:
+    """All hs_a rows. Sina caps one page at ~100; page until count or a short page."""
+    size = max(1, min(int(page_size), SINA_PAGE_SIZE))
+    limit = max(1, min(int(max_pages), SINA_MAX_PAGES))
+
+    def _page(page: int) -> list:
+        try:
+            chunk = _sina_hs_a(page, size)
+        except Exception:
+            return []
+        return chunk if isinstance(chunk, list) else []
+
+    count = 0
+    try:
+        count = _sina_hs_a_count()
+    except Exception:
+        count = 0
+
+    if count > 0:
+        pages = min(limit, max(1, (count + size - 1) // size))
+        with ThreadPoolExecutor(max_workers=min(8, pages)) as pool:
+            chunks = list(pool.map(_page, range(1, pages + 1)))
+        rows: list = []
+        for chunk in chunks:
+            rows.extend(chunk)
+        return rows
+
+    rows = []
+    for page in range(1, limit + 1):
+        chunk = _page(page)
+        if not chunk:
+            break
+        rows.extend(chunk)
+        if len(chunk) < size:
+            break
+    return rows
 
 
 def _universe_path() -> Path:
@@ -199,10 +274,10 @@ def fetch_market_pcts() -> dict[str, float]:
 
 def fetch_market_pcts_with_source() -> tuple[dict[str, float], str]:
     try:
-        sina = parse_sina_pcts(_sina_hs_a(1, 4000))
+        sina = parse_sina_pcts(_sina_hs_a_all())
     except Exception:
         sina = {}
-    if len(sina) >= 2000:
+    if len(sina) >= SINA_FULL_MIN:
         _save_universe(list(sina.keys()))
         return sina, "sina"
 

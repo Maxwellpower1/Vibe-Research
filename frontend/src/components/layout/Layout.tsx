@@ -38,7 +38,7 @@ export function Layout() {
   }, []);
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[#070b12] text-slate-200">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background text-foreground">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
@@ -47,7 +47,7 @@ export function Layout() {
       </a>
       <CockpitHeader isFullscreen={isFullscreen} onToggleFullscreen={toggle} />
       <TickerTape items={tapeItems} />
-      <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-700/40 bg-[#0a101c] px-2 py-1 md:hidden">
+      <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-background px-2 py-1 md:hidden">
         {MOBILE_NAV.map((l) => {
           const active = pathname.startsWith(l.to);
           return (

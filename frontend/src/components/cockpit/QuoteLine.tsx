@@ -50,11 +50,13 @@ export function QuoteLine({
         </span>
       </span>
       <div className="min-w-0">
-        {closes && closes.length > 1 ? (
-          <MinuteSpark closes={closes} times={times} session={session} prevClose={prevClose} pct={pct ?? 0} />
-        ) : (
-          <div className="h-7" />
-        )}
+        <MinuteSpark
+          closes={closes ?? []}
+          times={times}
+          session={session}
+          prevClose={prevClose}
+          pct={pct ?? 0}
+        />
       </div>
       <span className="text-right">
         {amount != null && amount > 0 && (

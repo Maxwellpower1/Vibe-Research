@@ -58,7 +58,7 @@ export function Ovlab() {
         subtitle="OpenVlab 公开数据 · 市场概览 / 详情 / 期权&期货期限结构 / 异动榜 / 持仓历史 · 只客观呈现, 不推荐不预测"
       />
 
-      <div className="mb-3 flex flex-wrap gap-0.5 rounded-md border border-slate-700/50 bg-[#0c1320]/90 p-0.5">
+      <div className="mb-3 flex flex-wrap gap-0.5 rounded-md border border-border bg-card/90 p-0.5">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}

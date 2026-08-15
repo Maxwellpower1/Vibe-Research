@@ -65,7 +65,7 @@ export function FinCompanyPanel() {
           className="h-6 w-full rounded bg-slate-800/60 px-2 text-[11px] text-slate-200 placeholder:text-[9px] placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
         />
         {open && hits.length > 0 && (
-          <div className="absolute left-0 right-0 top-7 z-20 overflow-hidden rounded border border-slate-700/60 bg-[#0c1320] shadow-lg">
+          <div className="absolute left-0 right-0 top-7 z-20 overflow-hidden rounded border border-border bg-card shadow-lg">
             {hits.map((s) => (
               <button
                 key={s.code}

@@ -11,7 +11,7 @@ import type {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const box = "overflow-hidden rounded-md border border-slate-700/40 bg-[#0c1320]/80";
+const box = "overflow-hidden rounded-md border border-border/60 bg-card/80";
 
 interface Props {
   sectors: SectorFlow[];

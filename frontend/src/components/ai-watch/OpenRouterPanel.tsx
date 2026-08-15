@@ -128,7 +128,7 @@ function Chart({
       </svg>
       {hover != null && chart.stacked[hover] && (
         <div
-          className="pointer-events-none absolute z-10 min-w-[150px] rounded border border-slate-700/60 bg-[#0a1220]/95 p-1.5"
+          className="pointer-events-none absolute z-10 min-w-[150px] rounded border border-border bg-card/95 p-1.5"
           style={{ left: Math.min(Math.max(chart.X(hover) - 75, 4), chart.W - 160), top: 4 }}
         >
           <div className="mb-1 flex items-baseline justify-between gap-3 text-[10px]">
