@@ -44,6 +44,40 @@ def test_review_snapshot_route_top(monkeypatch):
     assert body["indices"][0]["name"] == "上证"
 
 
+def test_review_snapshot_route_paint(monkeypatch):
+    monkeypatch.setattr(
+        rs,
+        "build_review_snapshot",
+        lambda **kw: {"scope": kw.get("scope", "full"), "indices": [], "errors": []},
+    )
+    r = client.get("/api/market/review-snapshot?scope=paint")
+    assert r.status_code == 200
+    assert r.json()["data"]["scope"] == "paint"
+
+
+def test_build_snapshot_paint_skips_em(monkeypatch):
+    em_top: list[int] = []
+    extra_calls: list[int] = []
+    monkeypatch.setattr(
+        rs,
+        "_fill_tencent",
+        lambda b, e: b.update(
+            indices=[{"name": "上证", "price": 1, "change_pct": 0, "change_amt": 0}]
+        ),
+    )
+    monkeypatch.setattr(
+        rs, "_fill_overview", lambda b, e: b.update(overview={"sentiment": {}, "sectors": [], "updated": ""})
+    )
+    monkeypatch.setattr(rs, "_fill_em_top", lambda *a, **k: em_top.append(1))
+    monkeypatch.setattr(rs, "_fill_em_extra", lambda *a, **k: extra_calls.append(1))
+    data = rs.build_review_snapshot(scope="paint")
+    assert em_top == []
+    assert extra_calls == []
+    assert data["scope"] == "paint"
+    assert data["emotion"] is None
+    assert data["indices"][0]["name"] == "上证"
+
+
 def test_build_snapshot_top_skips_extra(monkeypatch):
     extra_calls = []
     monkeypatch.setattr(

@@ -136,8 +136,8 @@ export function ReviewRiskSeg({
             <table className="data-table">
               <thead>
                 <tr>
-                  {["名称", "涨跌%", "连板/统计", "换手%", "行业"].map((h) => (
-                    <th key={h} className={h !== "名称" && h !== "行业" ? "num" : ""}>{h}</th>
+                  {["名称", "涨跌%", "封", "连板/统计", "换手%", "行业"].map((h) => (
+                    <th key={h} className={h !== "名称" && h !== "行业" && h !== "封" ? "num" : ""}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -151,6 +151,15 @@ export function ReviewRiskSeg({
                       </Link>
                     </td>
                     <td className="num"><PctChip pct={s.pct} /></td>
+                    <td className="text-[10px]">
+                      {s.sealed === true ? (
+                        <span className="text-danger">真</span>
+                      ) : s.sealed === false ? (
+                        <span className="text-warning">假</span>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
+                    </td>
                     <td className="num font-mono text-xs">
                       {s.limit_days != null ? `${s.limit_days}板` : s.zt_stat || (s.dt_days != null ? `${s.dt_days}跌停` : "—")}
                     </td>

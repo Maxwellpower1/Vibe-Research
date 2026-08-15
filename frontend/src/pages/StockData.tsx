@@ -17,7 +17,7 @@ import {
   type ShareholderChangeRow,
   type GlobalStock, type HkCashflow, type GlobalFundamentals, type GlobalStatements,
   type GlobalFundFlow, type GlobalShortVolume, type GlobalSecFilings, type GlobalOptions,
-  type UsKline, type GlobalStockNews, type StockBasicInfo, type StockBoards,
+  type UsKline, type GlobalStockNews, type StockBasicInfo, type StockBoards, type ThsProfile,
   fundamentalsSourceLabel,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -119,6 +119,7 @@ export function StockData({
   const [qa, setQa] = useState<QaRow[] | null>(null);
   const [basic, setBasic] = useState<StockBasicInfo | null>(null);
   const [boards, setBoards] = useState<StockBoards | null>(null);
+  const [ths, setThs] = useState<ThsProfile | null>(null);
   const [gstock, setGStock] = useState<GlobalStock | null>(null);  // 美股 / 港股
   const [cashflow, setCashflow] = useState<HkCashflow | null>(null);  // 港股现金流量表（仅港股）
   const [gFund, setGFund] = useState<GlobalFundamentals | null>(null);
@@ -140,7 +141,7 @@ export function StockData({
     if (!c) { setErr("请输入代码"); return; }
     const rid = ++runIdRef.current;
     setLoading(true); setErr(null); setDepNote(null); setVal(null); setReports([]); setNews([]); setPctl(null); setFin(null); setAnns([]);
-    setMargin([]); setBlockT([]); setHolders([]); setShChanges([]); setDividend([]); setFundFlow([]); setFundMin(null); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa(null); setBasic(null); setBoards(null);
+    setMargin([]); setBlockT([]); setHolders([]); setShChanges([]); setDividend([]); setFundFlow([]); setFundMin(null); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa(null); setBasic(null); setBoards(null); setThs(null);
     setGStock(null); setCashflow(null);
     setGFund(null); setGStmt(null); setGStmtTab("income"); setGFlow(null); setGShort(null); setGSec(null); setGSecNote(null);
     setGOpt(null); setGOptTab("0dte"); setGKline(null); setGNews(null);
@@ -196,6 +197,7 @@ export function StockData({
     api.investorQa(c).then(ok(setQa)).catch(() => { if (rid === runIdRef.current) setQa([]); });
     api.stockBasic(c).then(ok(setBasic)).catch(() => { if (rid === runIdRef.current) setBasic(null); });
     api.stockBoards(c).then(ok(setBoards)).catch(() => { if (rid === runIdRef.current) setBoards(null); });
+    api.thsProfile(c).then(ok(setThs)).catch(() => { if (rid === runIdRef.current) setThs(null); });
     try {
       // 行情+估值+研报+历史分位+财务+公告（新闻单独降级）
       const [v, r, p, f, a] = await Promise.all([
@@ -259,7 +261,11 @@ export function StockData({
     { k: "消化年数", v: fmt(val.digest_years, " 年") },
   ] : [];
 
-  const conceptTags = [...new Set([...(blocks?.concept_tags ?? []), ...(boards?.concepts ?? [])])].slice(0, 24);
+  const conceptTags = [...new Set([
+    ...(blocks?.concept_tags ?? []),
+    ...(boards?.concepts ?? []),
+    ...(ths?.concepts ?? []),
+  ])].slice(0, 24);
 
   const aiContext = val
     ? `个股：${val.name}（${val.code}）\n现价 ${val.price} · PE(TTM) ${val.pe_ttm} · PB ${val.pb} · 市值 ${val.mcap_yi}亿\n` +
@@ -974,6 +980,11 @@ export function StockData({
               {boards?.area && (
                 <span className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">{boards.area}</span>
               )}
+              {ths?.industry && (
+                <span className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground" title="同花顺行业">
+                  THS {ths.industry}
+                </span>
+              )}
               {val.analyst_count > 0 && (
                 <span className="ml-auto text-xs text-muted-foreground">机构覆盖 {val.analyst_count} 家</span>
               )}
@@ -1302,7 +1313,7 @@ export function StockData({
           )}
 
           {/* 板块归属 · 概念 */}
-          {((blocks && blocks.concept_tags.length > 0) || hotCon.length > 0 || boards) && (
+          {((blocks && blocks.concept_tags.length > 0) || hotCon.length > 0 || boards || (ths && (ths.concepts?.length || ths.industry))) && (
             <GlassCard className="mb-4">
               <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold"><Boxes className="h-4 w-4 text-primary" /> 板块归属 · 概念</h3>
               {boards && (boards.area || boards.industry) && (
@@ -1311,6 +1322,9 @@ export function StockData({
                   {boards.industry ? ` · ${boards.industry}` : ""}
                   {boards.area ? ` · ${boards.area}` : ""}
                 </p>
+              )}
+              {ths?.industry && (
+                <p className="mb-1.5 text-xs text-muted-foreground">同花顺行业 · {ths.industry}</p>
               )}
               {conceptTags.length > 0 && (
                 <div className="mb-3 flex flex-wrap gap-1.5">

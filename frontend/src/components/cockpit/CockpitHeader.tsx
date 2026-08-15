@@ -113,6 +113,7 @@ export function CockpitHeader({
         </nav>
       )}
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
+        <div id="cockpit-header-actions" className="flex items-center gap-1.5" />
         {extra}
         <span className="hidden items-center gap-1.5 text-[10px] text-emerald-400 sm:flex">
           <span className="relative flex h-1.5 w-1.5">

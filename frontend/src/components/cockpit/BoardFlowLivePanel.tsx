@@ -10,11 +10,20 @@ const STEP_MS = 100;
 export function BoardFlowLivePanel({
   selected,
   onSelect,
+  curvesEnabled = true,
 }: {
   selected?: { code: string; name: string } | null;
   onSelect?: (sel: { code: string; name: string } | null) => void;
+  curvesEnabled?: boolean;
 }) {
-  const { data, error } = usePolling(() => api.boardFlowIntraday(16), POLL_MS, []);
+  const { data: ranks, error } = usePolling(() => api.boardFlowIntraday(16, false), POLL_MS, []);
+  const { data: full } = usePolling(
+    () => api.boardFlowIntraday(16, true),
+    POLL_MS,
+    [],
+    curvesEnabled && !!ranks?.length,
+  );
+  const data = full?.some((f) => (f.points?.length ?? 0) > 2) ? full : ranks;
   const [progress, setProgress] = useState(1);
   const [playing, setPlaying] = useState(false);
 

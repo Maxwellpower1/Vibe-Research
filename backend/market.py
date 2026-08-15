@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 
 import astock
@@ -111,9 +112,20 @@ def _emotion() -> dict:
     if not resolved:
         return {}
 
-    zb = astock.em_zt_topic_pool("getTopicZBPool", resolved, "fbt:asc")    # 炸板池
-    dt = astock.em_zt_topic_pool("getTopicDTPool", resolved, "fund:asc")   # 跌停池
-    yzt = astock.em_zt_topic_pool("getYesterdayZTPool", resolved, "zs:desc")  # 昨涨停池
+    extra: dict[str, list] = {"zb": [], "dt": [], "yzt": []}
+
+    def _fill(kind: str, endpoint: str, sort: str) -> None:
+        extra[kind] = astock.em_zt_topic_pool(endpoint, resolved, sort)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futs = [
+            pool.submit(_fill, "zb", "getTopicZBPool", "fbt:asc"),
+            pool.submit(_fill, "dt", "getTopicDTPool", "fund:asc"),
+            pool.submit(_fill, "yzt", "getYesterdayZTPool", "zs:desc"),
+        ]
+        for fut in as_completed(futs):
+            fut.result()
+    zb, dt, yzt = extra["zb"], extra["dt"], extra["yzt"]
 
     boards = [_num(p.get("lbc")) or 1 for p in zt]      # 每只连板数（缺省按 1 板）
     lianban = [b for b in boards if b >= 2]             # 2 板及以上（连板）
@@ -143,7 +155,7 @@ def _emotion() -> dict:
     # 晋级率＝今日 2 板+（＝昨涨停今又停）÷ 昨日涨停家数
     promotion_rate = round(len(lianban) / yzt_count, 3) if yzt_count else None
 
-    return {
+    out = {
         "date": f"{resolved[:4]}-{resolved[4:6]}-{resolved[6:]}",
         "zt_count": zt_count,
         "dt_count": len(dt),
@@ -156,6 +168,47 @@ def _emotion() -> dict:
         "break_rate": break_rate,
         "promotion_rate": promotion_rate,
         "yzt_count": yzt_count,
+        "seals": _seal_counts(zt, dt),
+    }
+    return out
+
+
+def _seal_counts(zt: list, dt: list) -> dict:
+    """True/fake limit boards from Tencent bid1/ask1. Only zt + dt names."""
+    codes: list[str] = []
+    for p in list(zt) + list(dt):
+        c = str((p or {}).get("c") or "")
+        if c.isdigit() and len(c) == 6:
+            codes.append(c)
+    quotes: dict = {}
+    if codes:
+        try:
+            quotes = astock.tencent_quote(codes)
+        except Exception:
+            quotes = {}
+    sealed_up = fake_up = sealed_down = fake_down = unknown = 0
+    for p in zt:
+        flag = astock.seal_flag(quotes.get(str((p or {}).get("c") or "")), "up")
+        if flag is None:
+            unknown += 1
+        elif flag:
+            sealed_up += 1
+        else:
+            fake_up += 1
+    for p in dt:
+        flag = astock.seal_flag(quotes.get(str((p or {}).get("c") or "")), "down")
+        if flag is None:
+            unknown += 1
+        elif flag:
+            sealed_down += 1
+        else:
+            fake_down += 1
+    return {
+        "sealed_up": sealed_up,
+        "fake_up": fake_up,
+        "sealed_down": sealed_down,
+        "fake_down": fake_down,
+        "unknown": unknown,
     }
 
 
@@ -165,10 +218,18 @@ def get_short_term_emotion() -> dict:
 
 
 def get_turnover_top() -> dict:
-    """全市场成交额榜 Top20（客观公开榜单，含缓存 5 分钟）。"""
+    """全市场成交额榜 Top20. Sina primary, Eastmoney fallback. Cache 5 min."""
     def build():
+        stocks = []
+        try:
+            import cockpit_live
+            stocks = cockpit_live.sina_amount_rank(20)
+        except Exception:
+            stocks = []
+        if not stocks:
+            stocks = astock.market_turnover_rank(20)
         return {
-            "stocks": astock.market_turnover_rank(20),
+            "stocks": stocks,
             "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M"),
         }
     return _cached("turnover_top", build, valid=lambda v: bool(v.get("stocks")))

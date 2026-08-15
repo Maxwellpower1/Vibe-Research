@@ -6,7 +6,9 @@ import {
   type ThsLimitUpPool, type IwencaiItem, type EtfFlow, type ShareholderChanges,
   type LprData, type CnBondYield, type AShareLightKline, type Quote,
   type ReviewSnapshot, type HsgtLive, type StockFlow, type BoardFlowRow,
+  type MarketBreadth,
 } from "@/lib/api";
+import { usePolling } from "@/hooks/usePolling";
 import { useSegment } from "@/components/ui/SegmentNav";
 import { WATCH_MINUTE_MAX, type IdxPanel } from "@/components/review/constants";
 import { formatClock } from "@/lib/freshness";
@@ -86,21 +88,31 @@ export function useReviewData() {
 
   const topUpdatedLabel = formatClock(topUpdatedAt, { refreshing: topRefreshing });
 
-  const applyTop = useCallback((s: ReviewSnapshot) => {
+  const { data: breadth } = usePolling<MarketBreadth>(
+    () => api.marketBreadth(),
+    180_000,
+    [],
+    emoDone,
+  );
+
+  const applyPaint = useCallback((s: ReviewSnapshot) => {
     setIndices(s.indices ?? []);
     setIdxErr(!(s.indices && s.indices.length));
-    setGlobalIdx(s.global_indices ?? []);
+    setHsgt(s.hsgt ?? null);
     setOverview(s.overview ?? null);
+    setOvDone(true);
+  }, []);
+
+  const applyTop = useCallback((s: ReviewSnapshot) => {
+    applyPaint(s);
+    setGlobalIdx(s.global_indices ?? []);
     setEmotion(s.emotion ?? null);
     setTurnover(s.turnover ?? null);
     setHot(s.hot ?? null);
     setIndustry(s.industry ?? null);
-    setHsgt(s.hsgt ?? null);
-    setOvDone(true);
     setEmoDone(true);
     setToDone(true);
-    setExtraDone(true);
-  }, []);
+  }, [applyPaint]);
 
   const applyFull = useCallback((s: ReviewSnapshot, kind: LimitKind) => {
     applyTop(s);
@@ -114,6 +126,7 @@ export function useReviewData() {
       setLimitPool(s.limit_pool ?? null);
     }
     setBoardFlow(s.board_flow ?? null);
+    setExtraDone(true);
   }, [applyTop]);
 
   const refreshTopRows = useCallback(() => {
@@ -124,7 +137,6 @@ export function useReviewData() {
     setOvDone(false);
     setEmoDone(false);
     setToDone(false);
-    setExtraDone(false);
 
     void api.reviewSnapshot({ scope: "top" })
       .then(applyTop)
@@ -139,7 +151,6 @@ export function useReviewData() {
         setOvDone(true);
         setEmoDone(true);
         setToDone(true);
-        setExtraDone(true);
       })
       .finally(() => {
         setTopUpdatedAt(new Date());
@@ -156,21 +167,43 @@ export function useReviewData() {
     let cancelled = false;
     setOvDone(false); setEmoDone(false); setToDone(false); setLhbDone(false); setExtraDone(false);
     setIdxErr(false);
-    void api.reviewSnapshot({
-      scope: "full",
-      boardType,
-      period: boardPeriod,
-      limitKind,
-    }).then((s) => {
+    void (async () => {
+      const snap = (scope: "paint" | "top" | "full") =>
+        api.reviewSnapshot({ scope, boardType, period: boardPeriod, limitKind });
+      const paintP = snap("paint").then((s) => {
+        if (!cancelled) {
+          applyPaint(s);
+          setTopUpdatedAt(new Date());
+        }
+      }).catch(() => {
+        if (!cancelled) {
+          setIdxErr(true);
+          setOvDone(true);
+        }
+      });
+      const topP = snap("top").then((s) => {
+        if (!cancelled) applyTop(s);
+      }).catch(() => {
+        if (!cancelled) {
+          setEmoDone(true);
+          setToDone(true);
+        }
+      });
+      await paintP;
+      await topP;
       if (cancelled) return;
-      applyFull(s, limitKind);
-    }).catch(() => {
-      if (cancelled) return;
-      setIdxErr(true);
-      setOvDone(true); setEmoDone(true); setToDone(true); setLhbDone(true); setExtraDone(true);
-    }).finally(() => {
-      if (!cancelled) setTopUpdatedAt(new Date());
-    });
+      try {
+        const full = await snap("full");
+        if (!cancelled) applyFull(full, limitKind);
+      } catch {
+        if (!cancelled) {
+          setLhbDone(true);
+          setExtraDone(true);
+        }
+      } finally {
+        if (!cancelled) setTopUpdatedAt(new Date());
+      }
+    })();
     return () => { cancelled = true; };
     // bootstrap once; board/limit changes use the effects below
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -327,15 +360,18 @@ export function useReviewData() {
   }, [iwencaiQ]);
 
   const today = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
-  const dataSummary = indices.length
+  const p50 = breadth?.p50;
+  const dataSummary = (indices.length
     ? indices.map((i) => `${i.name} ${i.price}（${i.change_pct > 0 ? "+" : ""}${i.change_pct}%）`).join("；")
-    : "（指数数据未取到）";
+    : "（指数数据未取到）")
+    + (p50 != null ? `；全市场中位涨跌 ${p50 > 0 ? "+" : ""}${p50}%（n=${breadth?.n ?? "—"}）` : "");
 
   return {
     indices,
     idxErr,
     overview,
     emotion,
+    breadth,
     turnover,
     lhb,
     globalIdx,

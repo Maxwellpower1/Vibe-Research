@@ -498,6 +498,8 @@ def limit_up_pools(pool: str = "zt", date: str | None = None, top: int = 40) -> 
                 "speed": round(p["zs"], 2) if isinstance(p.get("zs"), (int, float)) else None,
             })
         rows.append(base)
+    if pool in ("zt", "dt") and rows:
+        _annotate_seals(rows, "up" if pool == "zt" else "down")
     nice = f"{d[:4]}-{d[4:6]}-{d[6:]}" if len(d) == 8 else d
     return {
         "pool": pool,
@@ -506,6 +508,26 @@ def limit_up_pools(pool: str = "zt", date: str | None = None, top: int = 40) -> 
         "rows": rows,
         "note": "客观公开榜单,非推荐非预测",
     }
+
+
+def _annotate_seals(rows: list[dict], side: str) -> None:
+    codes = [str(r.get("code") or "") for r in rows if str(r.get("code") or "").isdigit()]
+    if not codes:
+        return
+    try:
+        quotes = astock.tencent_quote(codes)
+    except Exception:
+        return
+    for r in rows:
+        q = quotes.get(str(r.get("code") or ""))
+        if not q:
+            r["sealed"] = None
+            continue
+        r["sealed"] = astock.seal_flag(q, side)
+        r["bid1"] = q.get("bid1")
+        r["ask1"] = q.get("ask1")
+        r["bid1_vol"] = q.get("bid1_vol")
+        r["ask1_vol"] = q.get("ask1_vol")
 
 
 # ── Stock basic info (Eastmoney push2, no akshare) ────────────────────────

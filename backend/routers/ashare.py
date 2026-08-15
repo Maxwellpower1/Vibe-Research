@@ -176,14 +176,14 @@ def kline(
 
 @router.get("/api/astock/light-kline")
 def astock_light_kline(
-    code: str = Query(..., min_length=5, max_length=8, description="6位 / sh000001 / hkHSI"),
+    code: str = Query(..., min_length=5, max_length=8, description="6位 / sh000001 / hkHSI / usIXIC"),
     resolution: str = Query("1D", description="1=分时 / 5=五日 / 1D=日K前复权"),
     num: int = Query(365, ge=20, le=1000),
 ):
     """轻量图（腾讯）：分时 / 5日 / 日K前复权。仅需标准库，不依赖 mootdx。缓存 60 秒。
 
     指数：sh000001 上证 / sz399006 创业板 / sh000688 科创50 / sh000852 中证1000 /
-    hkHSI 恒生 / hkHSTECH 恒生科技。
+    hkHSI 恒生 / hkHSTECH 恒生科技 / usIXIC 纳斯达克等美股指数 (usMinute)。
     """
     code = _validate_symbol(code)
     res = resolution.strip()

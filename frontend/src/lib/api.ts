@@ -174,6 +174,17 @@ export interface LianbanStock {
   code: string; name: string; boards: number;
   price: number; pct: number; amount: number | null; float_cap: number | null; industry: string;
 }
+export interface MarketBreadth {
+  n: number;
+  p10?: number | null; p25?: number | null; p50?: number | null;
+  p75?: number | null; p90?: number | null; avg?: number | null;
+  histogram?: Array<{ label: string; count: number; pct: number }>;
+  source?: string;
+}
+export interface EmotionSeals {
+  sealed_up: number; fake_up: number;
+  sealed_down: number; fake_down: number; unknown: number;
+}
 export interface ShortTermEmotion {
   date: string;
   zt_count: number; dt_count: number; zb_count: number;
@@ -182,6 +193,8 @@ export interface ShortTermEmotion {
   lianban_stocks: LianbanStock[];
   seal_rate: number | null; break_rate: number | null; promotion_rate: number | null;
   yzt_count: number;
+  breadth?: MarketBreadth;
+  seals?: EmotionSeals;
 }
 
 // 全市场成交额榜（客观公开榜单）
@@ -233,10 +246,12 @@ export interface SectorBoard {
   code: string; raw_code?: string; name: string;
   price: number; change: number; pct: number;
   lead_code?: string; lead_name?: string; lead_pct?: number;
+  pct5?: number; pct20?: number;
 }
 export interface BoardStock {
-  code: string; name: string; price: number; pct: number;
+  code: string; symbol?: string; name: string; price: number; pct: number;
   amount?: number; turnover?: number;
+  main_net?: number | null; main_pct?: number | null;
 }
 export interface StockRankRow {
   symbol: string; code: string; name: string;
@@ -352,6 +367,19 @@ export interface LimitPool {
     limit_days?: number; break_times?: number; seal_fund?: number;
     first_seal?: string; last_seal?: string; dt_days?: number;
     amplitude?: number | null; speed?: number | null; y_limit_days?: number;
+    sealed?: boolean | null; bid1?: number | null; ask1?: number | null;
+    bid1_vol?: number | null; ask1_vol?: number | null;
+  }>;
+}
+export interface ThsProfile {
+  code: string; name?: string; industry?: string;
+  industries?: string[]; concepts?: string[]; source?: string;
+}
+export interface ThsRotation {
+  kind: string; source?: string; n?: number;
+  rows: Array<{
+    name: string; count: number; avg_pct: number; up: number; down: number;
+    leads?: Array<{ code: string; name: string; pct: number }>;
   }>;
 }
 export interface StockBasicInfo {
@@ -813,9 +841,9 @@ export interface ReviewSnapshotError {
   name: string;
   error: string;
 }
-/** Daily Review BFF: one payload for first paint (`full`) or top-row refresh (`top`). */
+/** Daily Review BFF: paint (Tencent+overview) / top / full. */
 export interface ReviewSnapshot {
-  scope: "top" | "full";
+  scope: "paint" | "top" | "full";
   indices: IndexQuote[] | null;
   global_indices: GlobalIndex[] | null;
   overview: MarketOverview | null;
@@ -1244,7 +1272,7 @@ export const api = {
   emotion: () => get<ShortTermEmotion>("/market/emotion"),
   turnoverTop: () => get<TurnoverTop>("/market/turnover-top"),
   reviewSnapshot: (opts?: {
-    scope?: "top" | "full";
+    scope?: "paint" | "top" | "full";
     boardType?: "industry" | "concept" | "region";
     period?: "today" | "5d" | "10d";
     limitKind?: "zt" | "zb" | "dt" | "yzt" | "jm";
@@ -1274,8 +1302,8 @@ export const api = {
     get<BoardStock[]>(`/market/board-stocks?code=${encodeURIComponent(code)}&n=${n}`),
   stockRank: (sort: "amount" | "changepercent" = "amount", asc: 0 | 1 = 0, n = 30) =>
     get<StockRankRow[]>(`/market/rank?sort=${sort}&asc=${asc}&n=${n}`),
-  boardFlowIntraday: (n = 16) =>
-    get<BoardFlowIntraday[]>(`/market/board-flow-intraday?n=${n}`),
+  boardFlowIntraday: (n = 16, curves = true) =>
+    get<BoardFlowIntraday[]>(`/market/board-flow-intraday?n=${n}${curves ? "" : "&curves=0"}`),
   commodities: (codes?: string) =>
     get<Record<string, CommodityQuote>>(`/market/commodities${codes ? `?codes=${encodeURIComponent(codes)}` : ""}`),
   commodityMinutes: (codes: string) =>
@@ -1289,6 +1317,11 @@ export const api = {
     get<StockBoards>(`/market/stock-boards?code=${encodeURIComponent(code)}`),
   marketLives: (page = 1, size = 40) =>
     get<MarketLives>(`/market/lives?page=${page}&size=${size}`),
+  marketBreadth: () => get<MarketBreadth>("/market/breadth"),
+  thsProfile: (code: string) =>
+    get<ThsProfile>(`/market/ths-profile?code=${encodeURIComponent(code)}`),
+  thsRotation: (kind: "concept" | "industry" = "concept", top = 15) =>
+    get<ThsRotation>(`/market/ths-rotation?kind=${kind}&top=${top}`),
   finBoard: (period = "") =>
     get<FinBoard>(`/fin/board${period ? `?period=${encodeURIComponent(period)}` : ""}`),
   finForecast: (period = "") =>
@@ -1416,7 +1449,7 @@ export const api = {
   announcements: (code: string) => get<Announcement[]>(`/announcements?code=${code}`),
   quote: (codes: string) => get<Record<string, Quote>>(`/quote?codes=${codes}`),
   /** 轻量图：resolution 1=分时 / 5=五日 / 1D=日K前复权（腾讯） */
-  /** code: 6-digit / sh000001 / hkHSI / hkHSTECH */
+  /** code: 6-digit / sh000001 / hkHSI / hkHSTECH / usIXIC */
   ashareLightKline: (code: string, resolution = "1D", num = 365) =>
     get<AShareLightKline>(
       `/astock/light-kline?code=${encodeURIComponent(code)}&resolution=${encodeURIComponent(resolution)}&num=${num}`,

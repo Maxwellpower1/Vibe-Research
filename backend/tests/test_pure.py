@@ -22,7 +22,33 @@ def test_resolve_symbol():
     assert astock.resolve_symbol("SZ399006") == "sz399006"
     assert astock.resolve_symbol("hkHSI") == "hkHSI"           # case-sensitive on wire
     assert astock.resolve_symbol("hkhstech") == "hkHSTECH"
+    assert astock.resolve_symbol("usIXIC") == "usIXIC"
+    assert astock.resolve_symbol("usixic") == "usIXIC"
+    assert astock.resolve_symbol("usDJI") == "usDJI"
     assert astock.resolve_symbol("bad") == ""
+
+
+def test_tencent_minute_url():
+    assert "usMinute" in astock.tencent_minute_url("usIXIC")
+    assert "/minute/query" in astock.tencent_minute_url("sh000001")
+    assert "usMinute" not in astock.tencent_minute_url("hkHSI")
+
+
+def test_light_kline_us_minute(monkeypatch):
+    payload = {
+        "data": {
+            "usIXIC": {
+                "data": {"data": ["0930 100 0", "0931 101 10"], "date": "20260814"},
+                "qt": {"usIXIC": ["", "纳斯达克", "", "", "99"]},
+            }
+        }
+    }
+    monkeypatch.setattr(astock, "_tencent_json", lambda url: payload)
+    out = astock.light_kline("usIXIC", "1", num=240)
+    assert out["symbol"] == "usIXIC"
+    assert out["name"] == "纳斯达克"
+    assert out["prev_close"] == 99
+    assert [b["close"] for b in out["bars"]] == [100.0, 101.0]
 
 
 def test_calc_peg():

@@ -159,12 +159,14 @@ def test_emotion_dirty_amount(monkeypatch):
         "getYesterdayZTPool": [{}],
     }
     monkeypatch.setattr(astock, "em_zt_topic_pool", lambda ep, d, sort="": pools.get(ep, []))
+    monkeypatch.setattr(astock, "tencent_quote", lambda _codes: {})
     out = market._emotion()
     stocks = out["lianban_stocks"]
     assert [s["code"] for s in stocks] == ["600001", "600002"]  # 排序没崩、按连板数降序
     assert stocks[0]["amount"] is None    # '-' 归一为 None
     assert stocks[1]["price"] == 0.0      # p='-' 归一后按 0 展示
     assert stocks[1]["amount"] == 5e8
+    assert "breadth" not in out
 
 
 # ── 缓存：数据源故障的空结果不缓存 5 分钟 ───────────────────────────

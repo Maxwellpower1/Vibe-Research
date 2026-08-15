@@ -118,11 +118,17 @@ def warm_market() -> tuple[int, int, list[dict]]:
 
     errors: list[dict] = []
     ok = 0
+    def _breadth():
+        import cross_section
+
+        return cross_section.market_breadth()
+
     steps = (
         ("overview", market.get_overview),
         ("emotion", market.get_short_term_emotion),
         ("turnover_top", market.get_turnover_top),
         ("global_indices", market.get_global_indices),
+        ("breadth", _breadth),
     )
     for name, fn in steps:
         if _run_step(name, fn, errors):

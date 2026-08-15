@@ -137,9 +137,62 @@ export function BoardFlowChart({
             </g>
           )}
         </svg>
+      ) : flows.length ? (
+        <BoardFlowRankFallback flows={flows} selected={sel} onToggle={toggle} />
       ) : (
         <div className="flex h-full items-center justify-center text-[11px] text-slate-600">板块资金流加载中…</div>
       )}
+    </div>
+  );
+}
+
+function BoardFlowRankFallback({
+  flows,
+  selected,
+  onToggle,
+}: {
+  flows: BoardFlowIntraday[];
+  selected: string | null;
+  onToggle: (code: string, name: string) => void;
+}) {
+  const maxAbs = Math.max(...flows.map((f) => Math.abs(f.net_in || 0)), 1);
+  const rows = [...flows].sort((a, b) => (b.net_in || 0) - (a.net_in || 0));
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-auto px-2 py-1">
+      <p className="mb-1 text-center text-[10px] text-slate-600">流入/流出榜已到, 分钟曲线补拉中</p>
+      <div className="space-y-1">
+        {rows.map((f) => {
+          const pct = Math.min(100, (Math.abs(f.net_in || 0) / maxAbs) * 100);
+          const up = (f.net_in || 0) >= 0;
+          const active = selected == null || selected === f.code;
+          return (
+            <button
+              key={f.code || f.name}
+              type="button"
+              onClick={() => onToggle(f.code, f.name)}
+              className="flex w-full items-center gap-2 text-left"
+              style={{ opacity: active ? 1 : 0.35 }}
+            >
+              <span className="w-16 shrink-0 truncate text-[10px] text-slate-300">{f.name}</span>
+              <span className="relative h-1.5 min-w-0 flex-1 rounded bg-slate-800">
+                <span
+                  className="absolute inset-y-0 left-0 rounded"
+                  style={{
+                    width: `${pct}%`,
+                    background: up ? "#fb7185" : "#34d399",
+                  }}
+                />
+              </span>
+              <span
+                className="w-12 shrink-0 text-right font-mono text-[10px] tabular-nums"
+                style={{ color: up ? "#fb7185" : "#34d399" }}
+              >
+                {up ? "+" : ""}{((f.net_in || 0) / 1e8).toFixed(1)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

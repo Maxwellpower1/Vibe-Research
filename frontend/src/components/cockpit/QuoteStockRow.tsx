@@ -59,6 +59,8 @@ export function QuoteStockRow({
   mainNet,
   mainPct,
   rank,
+  symbol,
+  link = true,
 }: {
   code: string;
   name: string;
@@ -69,6 +71,8 @@ export function QuoteStockRow({
   mainNet?: number | null;
   mainPct?: number | null;
   rank?: number;
+  symbol?: string;
+  link?: boolean;
 }) {
   const { setEl, on: visible, rowW } = useRowBox();
   const compact = rowW > 0 && rowW < COMPACT_W;
@@ -80,7 +84,7 @@ export function QuoteStockRow({
     visible,
   );
   const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
-  const href = klineHref(code);
+  const href = link ? klineHref(code) : undefined;
   const hasAmt = amount != null && amount > 0;
   const hasTurn = turnover != null && turnover > 0;
   const ratioBar = mainPct != null ? Math.min(100, Math.abs(mainPct) * 2) : 0;
@@ -101,7 +105,7 @@ export function QuoteStockRow({
       )}
       <div className="row-span-2 flex min-w-0 flex-col justify-center gap-1 leading-none">
         <span className="truncate text-[11px] text-slate-200">{name}</span>
-        <span className="truncate text-[10px] text-slate-500">{code}</span>
+        <span className="truncate text-[10px] text-slate-500">{symbol || code}</span>
       </div>
       <div className="col-span-2 flex h-5 min-w-0 items-center self-center">
         {closes.length > 1 ? (

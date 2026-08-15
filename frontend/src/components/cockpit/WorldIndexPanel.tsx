@@ -8,7 +8,7 @@ import { loadLightKline } from "@/lib/lightKline";
 const POLL_MS = 20_000;
 const KLINE_MS = 60_000;
 const KLINE_SYMS = WORLD_INDEX_DEFS
-  .filter((d) => /^(sh|sz|hk)/i.test(d.code))
+  .filter((d) => /^(sh|sz|hk|us)/i.test(d.code))
   .map((d) => d.code);
 
 /** A + HK + US + FX key indices (replaces the old CN/global tabbed index cell). */

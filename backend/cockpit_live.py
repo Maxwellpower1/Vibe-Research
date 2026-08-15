@@ -10,6 +10,7 @@ import json
 import re
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 import astock
 
@@ -325,6 +326,8 @@ def _tencent_boards(kind: str, direction: str, want: int) -> list[dict]:
             "lead_code": b.get("nzg_code") or "",
             "lead_name": b.get("nzg_name") or "",
             "lead_pct": _num(b.get("nzg_zdf")),
+            "pct5": _num(b.get("bd_zdf5")),
+            "pct20": _num(b.get("bd_zdf20")),
         })
     return rows
 
@@ -374,17 +377,134 @@ def _em_boards(kind: str, direction: str, want: int) -> list[dict]:
     return rows
 
 
+def parse_qq_board_rank(items: object, n: int = 20) -> list[dict]:
+    """Tencent getBoardRankList rows -> board-stock fields."""
+    if not isinstance(items, list):
+        return []
+    want = max(1, min(int(n or 20), 80))
+    rows: list[dict] = []
+    for s in items:
+        if not isinstance(s, dict):
+            continue
+        raw = str(s.get("code") or "").strip()
+        code6 = raw[2:] if len(raw) >= 8 and raw[:2].isalpha() else raw
+        if not (code6.isdigit() and len(code6) == 6):
+            continue
+        price = _num(s.get("zxj"))
+        if price <= 0:
+            continue
+        vol = _num(s.get("volume"))
+        rows.append({
+            "code": code6,
+            "symbol": raw,
+            "name": s.get("name") or "",
+            "price": price,
+            "pct": _num(s.get("zdf")),
+            "amount": vol * 100 * price,
+            "turnover": _num(s.get("hsl")),
+            "main_net": None,
+            "main_pct": None,
+        })
+        if len(rows) >= want:
+            break
+    return rows
+
+
+def _tencent_board_stocks(raw_code: str, want: int) -> list[dict]:
+    """qq getBoardRankList. Needs Tencent bd_code like pt01801712, not BK####."""
+    key = (raw_code or "").strip().lower()
+    if not key.startswith("pt"):
+        return []
+    url = (
+        "https://proxy.finance.qq.com/cgi/cgi-bin/rank/hs/getBoardRankList"
+        f"?board_code={key}&sort_type=PriceRatio&direct=down&offset=0&count={want}"
+    )
+    payload = json.loads(
+        _fetch_text(url, referer="https://stockapp.finance.qq.com/", timeout=12)
+    )
+    items = ((payload.get("data") or {}).get("rank_list") if isinstance(payload, dict) else None) or []
+    return parse_qq_board_rank(items, want)
+
+
+def _em_ulist_flow(codes: list[str]) -> dict[str, tuple[float, float]]:
+    """One Eastmoney ulist batch: {code: (main_net, main_pct)}."""
+    uniq: list[str] = []
+    seen: set[str] = set()
+    for c in codes:
+        if not (isinstance(c, str) and c.isdigit() and len(c) == 6) or c in seen:
+            continue
+        seen.add(c)
+        uniq.append(c)
+    out: dict[str, tuple[float, float]] = {}
+    for i in range(0, len(uniq), 50):
+        chunk = uniq[i:i + 50]
+        secids = ",".join(
+            f"{'1' if c.startswith(('6', '9')) else '0'}.{c}" for c in chunk
+        )
+        params = {"secids": secids, "fields": "f12,f62,f184", "np": "1", "fltt": "2", "invt": "2"}
+        items: list = []
+        for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
+            try:
+                r = em_get(
+                    f"https://{host}/api/qt/ulist.np/get",
+                    params=params,
+                    headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
+                    timeout=12,
+                )
+                diff = ((r.json() or {}).get("data") or {}).get("diff") or []
+                if isinstance(diff, dict):
+                    diff = list(diff.values())
+                if diff:
+                    items = diff
+                    break
+            except Exception:
+                continue
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            code = str(it.get("f12") or "").strip()
+            if not code:
+                continue
+            out[code] = (_num(it.get("f62")), _num(it.get("f184")))
+    return out
+
+
+def _attach_em_flow(rows: list[dict]) -> list[dict]:
+    flow = _em_ulist_flow([str(r.get("code") or "") for r in rows])
+    for r in rows:
+        rec = flow.get(str(r.get("code") or ""))
+        if rec:
+            r["main_net"] = rec[0]
+            r["main_pct"] = rec[1]
+    return rows
+
+
 def board_stocks(code: str, n: int = 12) -> list[dict]:
-    """Board constituents by change pct (Eastmoney clist fs=b:BK####)."""
+    """Board constituents by change pct. Tencent qq rank first, Eastmoney fallback."""
+    raw = (code or "").strip()
+    want = max(5, min(int(n or 12), 80))
+    try:
+        rows = _tencent_board_stocks(raw, want)
+        if rows:
+            try:
+                _attach_em_flow(rows)
+            except Exception:
+                pass
+            return rows
+    except Exception:
+        pass
+    return _em_board_stocks(raw, want)
+
+
+def _em_board_stocks(code: str, want: int) -> list[dict]:
     bk = normalize_board_code(code)
     if not _BK_RE.fullmatch(bk):
         return []
-    want = max(5, min(int(n or 12), 80))
     params = {
         "pn": "1", "pz": str(want), "po": "1", "np": "1",
         "fltt": "2", "invt": "2", "fid": "f3",
         "fs": f"b:{bk}",
-        "fields": "f12,f14,f2,f3,f6,f8",
+        "fields": "f12,f14,f2,f3,f6,f8,f62,f184",
     }
     data: dict = {}
     for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
@@ -410,29 +530,80 @@ def board_stocks(code: str, n: int = 12) -> list[dict]:
         price = it.get("f2")
         if not isinstance(price, (int, float)) or price <= 0:
             continue
+        code6 = str(it.get("f12") or "")
         rows.append({
-            "code": it.get("f12") or "",
+            "code": code6,
+            "symbol": f"{astock.get_prefix(code6)}{code6}" if code6.isdigit() else code6,
             "name": it.get("f14") or "",
             "price": price,
             "pct": it.get("f3") if isinstance(it.get("f3"), (int, float)) else 0,
             "amount": it.get("f6") if isinstance(it.get("f6"), (int, float)) else 0,
             "turnover": it.get("f8") if isinstance(it.get("f8"), (int, float)) else 0,
+            "main_net": it.get("f62") if isinstance(it.get("f62"), (int, float)) else None,
+            "main_pct": it.get("f184") if isinstance(it.get("f184"), (int, float)) else None,
         })
     return rows
 
 
 def stock_rank(sort: str = "changepercent", asc: int = 0, n: int = 30) -> list[dict]:
-    """A-share rank: amount / changepercent. Eastmoney primary, Sina fallback."""
+    """A-share rank: amount / changepercent. Sina primary, Eastmoney fallback."""
     key = sort if sort in _SINA_RANK_SORT else "changepercent"
     desc = 0 if int(asc or 0) == 1 else 1
     want = max(5, min(int(n or 30), 50))
     try:
-        rows = _em_rank(key, desc, want)
+        rows = _sina_rank(key, 0 if desc else 1, want)
         if rows:
             return rows
     except Exception:
         pass
-    return _sina_rank(key, 0 if desc else 1, want)
+    try:
+        return _em_rank(key, desc, want)
+    except Exception:
+        return []
+
+
+def parse_sina_amount_rows(arr: object, n: int = 20) -> list[dict]:
+    """Sina getHQNodeData amount rows -> turnover-top fields (yuan)."""
+    if not isinstance(arr, list):
+        return []
+    want = max(1, min(int(n or 20), 80))
+    rows: list[dict] = []
+    for s in arr:
+        if not isinstance(s, dict):
+            continue
+        code = str(s.get("code") or "").strip()
+        if not (code.isdigit() and len(code) == 6):
+            continue
+        price = _num(s.get("trade"))
+        if price <= 0:
+            continue
+        # Sina mktcap / nmc are wan yuan; Eastmoney f20 / f21 are yuan.
+        mkt = _num(s.get("mktcap"))
+        nmc = _num(s.get("nmc"))
+        rows.append({
+            "code": code,
+            "name": s.get("name") or "",
+            "price": price,
+            "pct": _num(s.get("changepercent")),
+            "amount": _num(s.get("amount")),
+            "mcap": mkt * 10000,
+            "float_cap": nmc * 10000,
+            "industry": "",
+        })
+        if len(rows) >= want:
+            break
+    return rows
+
+
+def sina_amount_rank(n: int = 20) -> list[dict]:
+    """Sina hs_a amount rank. Field names match astock.market_turnover_rank."""
+    fetch_n = min(80, max(int(n or 20), 20))
+    url = (
+        "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+        f"Market_Center.getHQNodeData?page=1&num={fetch_n}&sort=amount&asc=0&node=hs_a"
+    )
+    arr = json.loads(_fetch_text(url, referer="https://finance.sina.com.cn/", timeout=12))
+    return parse_sina_amount_rows(arr, n)
 
 
 def _em_rank(sort: str, po: int, want: int) -> list[dict]:
@@ -513,53 +684,68 @@ def _sina_rank(sort: str, asc: int, want: int) -> list[dict]:
     return rows
 
 
-def board_flow_intraday(n: int = 20) -> list[dict]:
-    """Industry inflow/outflow TOP with minute cumulative main-net (Eastmoney)."""
+def _board_flow_pick(po: int, half: int) -> list[dict]:
+    """One Eastmoney industry fund-flow page. po=1 inflow, po=0 outflow."""
+    params = {
+        "fid": "f62", "po": str(po), "pz": str(half), "pn": "1", "np": "1",
+        "fltt": "2", "invt": "2", "fs": "m:90+t:2",
+        "fields": "f12,f14,f62",
+    }
+    data: dict = {}
+    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
+        try:
+            r = em_get(
+                f"https://{host}/api/qt/clist/get",
+                params=params,
+                headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
+                timeout=12,
+            )
+            data = (r.json() or {}).get("data") or {}
+            if data.get("diff"):
+                break
+        except Exception:
+            continue
+    items = data.get("diff") or []
+    if isinstance(items, dict):
+        items = list(items.values())
+    out = []
+    for b in items:
+        if not isinstance(b, dict):
+            continue
+        out.append({
+            "code": normalize_board_code(str(b.get("f12") or "")),
+            "name": b.get("f14") or "",
+            "net_in": _num(b.get("f62")),
+        })
+    return out
+
+
+def _peek_fflow_kline(code: str) -> list[dict]:
+    """Return cached minute curve only. Do not hit Eastmoney."""
+    from api_common import _DC_CACHE
+
+    hit = _DC_CACHE.get(("board_fflow_kline", normalize_board_code(code)))
+    return hit if isinstance(hit, list) else []
+
+
+def board_flow_intraday(n: int = 20, curves: bool = True) -> list[dict]:
+    """Industry inflow/outflow TOP, optional minute cumulative main-net.
+
+    curves=False is 2 Eastmoney pages (ranks). curves=True adds one kline
+    per board (~16 more launches). Peek cached klines on the rank path so a
+    warm process can paint the butterfly without waiting.
+    """
     half = max(3, min(10, (int(n or 20)) // 2))
-
-    def _pick(po: int) -> list[dict]:
-        params = {
-            "fid": "f62", "po": str(po), "pz": str(half), "pn": "1", "np": "1",
-            "fltt": "2", "invt": "2", "fs": "m:90+t:2",
-            "fields": "f12,f14,f62",
-        }
-        data: dict = {}
-        for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
-            try:
-                r = em_get(
-                    f"https://{host}/api/qt/clist/get",
-                    params=params,
-                    headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
-                    timeout=12,
-                )
-                data = (r.json() or {}).get("data") or {}
-                if data.get("diff"):
-                    break
-            except Exception:
-                continue
-        items = data.get("diff") or []
-        if isinstance(items, dict):
-            items = list(items.values())
-        out = []
-        for b in items:
-            if not isinstance(b, dict):
-                continue
-            out.append({
-                "code": normalize_board_code(str(b.get("f12") or "")),
-                "name": b.get("f14") or "",
-                "net_in": _num(b.get("f62")),
-            })
-        return out
-
-    ups = _pick(1)
-    downs = _pick(0)
+    ups = _board_flow_pick(1, half)
+    downs = _board_flow_pick(0, half)
     seen = {u["code"] for u in ups}
     boards = ups + [d for d in downs if d["code"] not in seen]
-    out = []
-    for b in boards:
-        points = _board_fflow_kline_cached(b["code"])
-        out.append({**b, "points": points})
-    return out
+    if not curves:
+        return [{**b, "points": _peek_fflow_kline(b["code"])} for b in boards]
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(boards)))) as pool:
+        futs = [pool.submit(_board_fflow_kline_cached, b["code"]) for b in boards]
+        pts = [fut.result() for fut in futs]
+    return [{**b, "points": p} for b, p in zip(boards, pts)]
 
 
 def _board_fflow_kline_cached(code: str) -> list[dict]:

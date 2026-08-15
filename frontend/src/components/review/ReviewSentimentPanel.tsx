@@ -2,10 +2,18 @@ import { type ReactNode } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { pctColor } from "@/components/review/format";
 import { HsgtStrip } from "@/components/review/HsgtStrip";
-import type { HsgtLive, IndustryRow, MarketSentiment } from "@/lib/api";
+import type { HsgtLive, IndustryRow, MarketBreadth, MarketSentiment } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const cell = "min-w-0 rounded-md border border-slate-700/40 bg-slate-900/40 px-2 py-1.5";
+
+function breadthSourceLabel(src?: string): string {
+  if (!src || src === "none") return "截面";
+  if (src.startsWith("sina")) return "新浪截面";
+  if (src.startsWith("tencent")) return "腾讯行情";
+  if (src.includes("eastmoney")) return "东财截面";
+  return src;
+}
 
 interface Props {
   sentiment: MarketSentiment | undefined;
@@ -15,6 +23,7 @@ interface Props {
   indBot?: IndustryRow;
   pending: ReactNode;
   hsgt?: HsgtLive | null;
+  breadth?: MarketBreadth | null;
 }
 
 /** Breadth / speculation / up-down bar + industry extremes. */
@@ -26,6 +35,7 @@ export function ReviewSentimentPanel({
   indBot,
   pending,
   hsgt,
+  breadth,
 }: Props) {
   const sentCells = sentiment ? [
     { k: "涨停", v: sentiment.zt, up: true as boolean | null },
@@ -104,6 +114,49 @@ export function ReviewSentimentPanel({
               <span>绿跌</span>
             </div>
           </div>
+          {breadth && breadth.n > 0 && (
+            <div className={cn(cell, "mt-1.5")}>
+              <p className="text-[10px] text-slate-500">
+                全市场涨跌分位 · {breadth.n} 只 · {breadthSourceLabel(breadth.source)}
+              </p>
+              <div className="mt-1 grid grid-cols-5 gap-1 font-mono text-[11px] tabular-nums">
+                {([
+                  ["p10", breadth.p10],
+                  ["p25", breadth.p25],
+                  ["中位", breadth.p50],
+                  ["p75", breadth.p75],
+                  ["p90", breadth.p90],
+                ] as const).map(([k, v]) => (
+                  <div key={k} className="text-center">
+                    <p className="text-[9px] text-slate-600">{k}</p>
+                    <p className={cn("font-semibold", pctColor(v ?? 0))}>
+                      {v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {!!breadth.histogram?.length && (
+                <div className="mt-1.5 grid h-14 grid-cols-8 items-end gap-0.5">
+                  {breadth.histogram.map((h, i) => {
+                    const max = Math.max(...breadth.histogram!.map((x) => x.count), 1);
+                    return (
+                      <div key={h.label} className="flex h-full min-w-0 flex-col items-center justify-end gap-0.5">
+                        <div
+                          className={cn(
+                            "w-full max-w-[10px] rounded-sm",
+                            i >= 4 ? "bg-danger/80" : "bg-success/80",
+                          )}
+                          style={{ height: `${Math.max(8, (h.count / max) * 100)}%` }}
+                          title={`${h.label}: ${h.count}`}
+                        />
+                        <span className="truncate text-[8px] text-slate-600">{h.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-1.5 grid grid-cols-3 gap-1 sm:grid-cols-5">
             {sentCells.map((c) => (

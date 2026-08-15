@@ -12,9 +12,10 @@ from fastapi import HTTPException
 
 _CODE_RE = r"^\d{6}$"
 _SYMBOL_RE = re.compile(
-    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|hkhsi|hkhstech)$",
+    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|hkhsi|hkhstech|usdji|usixic|usinx|usvix|ussoxx)$",
     re.IGNORECASE,
 )
+_SYMBOL_HINT = "代码须为 6 位数字、sh/sz/bj+6 位、hkHSI/hkHSTECH 或 usIXIC 等美股指数"
 
 
 def _validate(code: str) -> str:
@@ -25,14 +26,14 @@ def _validate(code: str) -> str:
 
 
 def _validate_symbol(code: str) -> str:
-    """6-digit, sh/sz/bj+6, or HK index hkHSI / hkHSTECH (canonical case)."""
+    """6-digit, sh/sz/bj+6, HK hkHSI/hkHSTECH, or US usIXIC/usDJI (canonical case)."""
     raw = (code or "").strip()
     if not _SYMBOL_RE.fullmatch(raw):
-        raise HTTPException(400, "代码须为 6 位数字、sh/sz/bj+6 位或 hkHSI/hkHSTECH")
-    # Preserve Tencent-required case for HK indices; lowercase A-share symbols
+        raise HTTPException(400, _SYMBOL_HINT)
+    # Preserve Tencent-required case for HK / US indices; lowercase A-share symbols
     resolved = astock.resolve_symbol(raw)
     if not resolved:
-        raise HTTPException(400, "代码须为 6 位数字、sh/sz/bj+6 位或 hkHSI/hkHSTECH")
+        raise HTTPException(400, _SYMBOL_HINT)
     return resolved
 
 
@@ -172,7 +173,9 @@ def _warm_review_dc() -> tuple[int, int, list[dict]]:
         if not data:
             raise RuntimeError(f"empty minute for {sym}")
 
-    minute_syms = list(getattr(astock, "A_INDICES", []) or [])
+    minute_syms = list(getattr(astock, "A_INDICES", []) or []) + list(
+        getattr(astock, "US_INDICES", []) or []
+    )
     if minute_syms:
         with ThreadPoolExecutor(max_workers=min(6, len(minute_syms))) as pool:
             futs = {pool.submit(_warm_minute, sym): sym for sym in minute_syms}
@@ -227,12 +230,22 @@ def _warm_review_dc() -> tuple[int, int, list[dict]]:
             ),
         ),
         (
+            "board_flow_ranks",
+            lambda: _cached(
+                "board_flow_ranks",
+                "16",
+                60,
+                lambda: cockpit_live.board_flow_intraday(16, curves=False),
+                valid=lambda d: isinstance(d, list) and len(d) > 0,
+            ),
+        ),
+        (
             "board_flow_intraday",
             lambda: _cached(
                 "board_flow_intraday",
                 "16",
                 120,
-                lambda: cockpit_live.board_flow_intraday(16),
+                lambda: cockpit_live.board_flow_intraday(16, curves=True),
             ),
         ),
     ]

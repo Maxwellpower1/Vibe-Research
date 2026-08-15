@@ -45,6 +45,12 @@ export function ReviewShortPanel({ emotion, emoDone, updatedLabel, pending }: Pr
                 v: emotion.promotion_rate == null ? "—" : `${(emotion.promotion_rate * 100).toFixed(1)}%`,
                 cls: "text-danger",
               },
+              ...(emotion.seals ? [
+                { k: "真封", v: `${emotion.seals.sealed_up}`, cls: "text-danger" },
+                { k: "假板", v: `${emotion.seals.fake_up}`, cls: "text-warning" },
+                { k: "真跌停", v: `${emotion.seals.sealed_down}`, cls: "text-success" },
+                { k: "假跌停", v: `${emotion.seals.fake_down}`, cls: "text-warning" },
+              ] : []),
             ].map((c) => (
               <div key={c.k} className="flex items-baseline justify-between gap-2 rounded-md px-1.5 py-1.5">
                 <p className="shrink-0 text-xs text-muted-foreground">{c.k}</p>

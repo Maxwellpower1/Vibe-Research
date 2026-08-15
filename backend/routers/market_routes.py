@@ -68,15 +68,15 @@ def market_review_warmup_status():
 
 @router.get("/api/market/review-snapshot")
 def market_review_snapshot(
-    scope: str = Query("full", description="top|full"),
+    scope: str = Query("full", description="paint|top|full"),
     board_type: str = Query("industry", description="industry|concept|region"),
     period: str = Query("today", description="today|5d|10d"),
     limit_kind: str = Query("zt", description="zt|zb|dt|yzt|jm"),
 ):
     """每日复盘首屏聚合。读同一套 TTL 缓存, 避免前端 10+ 请求撞东财串行锁。"""
     sc = (scope or "full").strip().lower()
-    if sc not in ("top", "full"):
-        raise HTTPException(400, "scope 须为 top 或 full")
+    if sc not in ("paint", "top", "full"):
+        raise HTTPException(400, "scope 须为 paint / top / full")
     try:
         return {
             "data": review_snapshot.build_review_snapshot(
@@ -209,6 +209,45 @@ def market_limit_pools(
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"打板池异常：{e}") from e
+
+
+@router.get("/api/market/breadth")
+def market_breadth():
+    """Full A-share change-pct percentiles + 8-band histogram. Cache 3 min."""
+    import cross_section
+    try:
+        return {"data": cross_section.market_breadth()}
+    except Exception as e:
+        raise HTTPException(502, f"涨跌幅分位异常：{e}") from e
+
+
+@router.get("/api/market/ths-profile")
+def market_ths_profile(code: str = Query(..., description="6-digit A-share code")):
+    """shy313 Tonghuashun industry path + concepts for one stock."""
+    import ths_ext
+    c = (code or "").strip()
+    if not c.isdigit() or len(c) != 6:
+        raise HTTPException(400, "代码必须是 6 位数字")
+    try:
+        return {"data": ths_ext.profile(c)}
+    except Exception as e:
+        raise HTTPException(502, f"同花顺归属异常：{e}") from e
+
+
+@router.get("/api/market/ths-rotation")
+def market_ths_rotation(
+    kind: str = Query("concept", description="concept|industry"),
+    top: int = Query(15, ge=5, le=40),
+):
+    """THS concept/industry today avg change-pct (shy313 members x Eastmoney clist)."""
+    import ths_ext
+    k = (kind or "concept").strip().lower()
+    if k not in ("concept", "industry"):
+        raise HTTPException(400, "kind 须为 concept 或 industry")
+    try:
+        return {"data": ths_ext.rotation(k, top)}
+    except Exception as e:
+        raise HTTPException(502, f"同花顺轮动异常：{e}") from e
 
 
 @router.get("/api/market/ths-limit-up")
@@ -368,18 +407,18 @@ def market_boards(
 
 @router.get("/api/market/board-stocks")
 def market_board_stocks(
-    code: str = Query(..., description="BK####"),
+    code: str = Query(..., description="Tencent pt* or BK####"),
     n: int = Query(12, ge=5, le=80),
 ):
-    """板块成分股. 缓存 20 秒."""
+    """板块成分股. 腾讯 pt* 优先, 东财 BK 兜底. 缓存 20 秒."""
     import cockpit_live
-    bk = cockpit_live.normalize_board_code(code)
+    raw = (code or "").strip()
     try:
         data = _cached(
             "board_stocks",
-            f"{bk}:{n}",
+            f"{raw}:{n}",
             20,
-            lambda: cockpit_live.board_stocks(bk, n),
+            lambda: cockpit_live.board_stocks(raw, n),
         )
         return {"data": data}
     except Exception as e:
@@ -410,16 +449,26 @@ def market_rank(
 @router.get("/api/market/board-flow-intraday")
 def market_board_flow_intraday(
     n: int = Query(16, ge=6, le=24),
+    curves: bool = Query(True, description="false=only ranks (2 Eastmoney pages)"),
 ):
-    """板块资金流向 (分钟累计主力净流入蝴蝶图). 缓存 120 秒."""
+    """板块资金流向. curves=0 只回流入/流出榜; curves=1 再补分钟曲线. 分键缓存."""
     import cockpit_live
     try:
-        data = _cached(
-            "board_flow_intraday",
-            str(n),
-            120,
-            lambda: cockpit_live.board_flow_intraday(n),
-        )
+        if curves:
+            data = _cached(
+                "board_flow_intraday",
+                str(n),
+                120,
+                lambda: cockpit_live.board_flow_intraday(n, curves=True),
+            )
+        else:
+            data = _cached(
+                "board_flow_ranks",
+                str(n),
+                60,
+                lambda: cockpit_live.board_flow_intraday(n, curves=False),
+                valid=lambda d: isinstance(d, list) and len(d) > 0,
+            )
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"板块分钟资金流异常：{e}") from e

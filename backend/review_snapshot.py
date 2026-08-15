@@ -1,11 +1,12 @@
-"""Daily Review BFF: one payload for the first paint / top-row refresh.
+"""Daily Review BFF: paint / top / full payloads share the same TTL keys.
 
-Frontend used to fan out 10-15 /api calls. Eastmoney is globally serialized at
-~1 req/s, so that looked concurrent and still queued. This module reads the
-same TTL keys as the individual endpoints (single-flight with warmup).
+scope=paint is Tencent + overview only (no Eastmoney). top adds emotion/hot
+rows in parallel. full then fills boards/risk. em_get only serializes launch
+gaps, so sibling Eastmoney calls overlap on HTTP RTT.
 """
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -15,6 +16,8 @@ import astock_boards
 import market
 import review_warmup
 from api_common import _cached
+
+_errors_lock = threading.Lock()
 
 BEIJING = timezone(timedelta(hours=8))
 
@@ -28,7 +31,22 @@ def _grab(name: str, fn: Callable[[], Any], bucket: dict[str, Any], errors: list
         bucket[name] = fn()
     except Exception as e:
         bucket[name] = None
-        errors.append({"name": name, "error": str(e)[:160]})
+        with _errors_lock:
+            errors.append({"name": name, "error": str(e)[:160]})
+
+
+def _run_parallel(
+    jobs: list[tuple[str, Callable[[], Any]]],
+    bucket: dict[str, Any],
+    errors: list[dict],
+    workers: int = 5,
+) -> None:
+    if not jobs:
+        return
+    with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as pool:
+        futs = [pool.submit(_grab, name, fn, bucket, errors) for name, fn in jobs]
+        for fut in futs:
+            fut.result()
 
 
 def _fill_tencent(bucket: dict[str, Any], errors: list[dict]) -> None:
@@ -41,30 +59,32 @@ def _fill_overview(bucket: dict[str, Any], errors: list[dict]) -> None:
 
 
 def _fill_em_top(bucket: dict[str, Any], errors: list[dict]) -> None:
-    """Eastmoney-backed top rows; run in one thread so they share em_get's lock."""
-    _grab("global_indices", market.get_global_indices, bucket, errors)
-    _grab("emotion", market.get_short_term_emotion, bucket, errors)
-    _grab("turnover", market.get_turnover_top, bucket, errors)
-    _grab(
-        "hot",
-        lambda: _cached(
-            "hot_ths",
-            "hour:25",
-            180,
-            lambda: astock_boards.ths_hot_list("hour", 25),
-        ),
-        bucket,
-        errors,
-    )
-    _grab(
-        "industry",
-        lambda: _cached(
-            "industry",
-            "20",
-            300,
-            lambda: astock.industry_comparison(top_n=20),
-            valid=lambda d: bool(isinstance(d, dict) and d.get("top")),
-        ),
+    """Eastmoney-backed top rows; launch in parallel (slot lock only)."""
+    _run_parallel(
+        [
+            ("global_indices", market.get_global_indices),
+            ("emotion", market.get_short_term_emotion),
+            ("turnover", market.get_turnover_top),
+            (
+                "hot",
+                lambda: _cached(
+                    "hot_ths",
+                    "hour:25",
+                    180,
+                    lambda: astock_boards.ths_hot_list("hour", 25),
+                ),
+            ),
+            (
+                "industry",
+                lambda: _cached(
+                    "industry",
+                    "20",
+                    300,
+                    lambda: astock.industry_comparison(top_n=20),
+                    valid=lambda d: bool(isinstance(d, dict) and d.get("top")),
+                ),
+            ),
+        ],
         bucket,
         errors,
     )
@@ -78,61 +98,50 @@ def _fill_em_extra(
     board_period: str,
     limit_kind: str,
 ) -> None:
-    _grab(
-        "lhb",
-        lambda: _cached(
-            "dt_daily",
-            "auto:40:all",
-            600,
-            lambda: astock.daily_dragon_tiger(None, None, top=40),
+    jobs: list[tuple[str, Callable[[], Any]]] = [
+        (
+            "lhb",
+            lambda: _cached(
+                "dt_daily",
+                "auto:40:all",
+                600,
+                lambda: astock.daily_dragon_tiger(None, None, top=40),
+            ),
         ),
-        bucket,
-        errors,
-    )
-    _grab(
-        "monitor",
-        lambda: _cached("monitor", "active", 600, lambda: astock_boards.em_stock_monitor(True)),
-        bucket,
-        errors,
-    )
-    _grab(
-        "anomaly",
-        lambda: _cached("anomaly", "40", 300, lambda: astock_boards.em_price_anomaly(40)),
-        bucket,
-        errors,
-    )
+        ("monitor", lambda: _cached("monitor", "active", 600, lambda: astock_boards.em_stock_monitor(True))),
+        ("anomaly", lambda: _cached("anomaly", "40", 300, lambda: astock_boards.em_price_anomaly(40))),
+        (
+            "board_flow",
+            lambda: _cached(
+                "board_flow",
+                f"{board_type}:{board_period}:20",
+                180,
+                lambda: astock_boards.board_fund_flow(board_type, board_period, 20),
+            ),
+        ),
+    ]
     if limit_kind == "jm":
         bucket["limit_pool"] = None
-        _grab(
-            "ths_limit_up",
-            lambda: _cached("ths_limit_up", "today", 180, lambda: astock.ths_limit_up_pool(None)),
-            bucket,
-            errors,
+        jobs.append(
+            (
+                "ths_limit_up",
+                lambda: _cached("ths_limit_up", "today", 180, lambda: astock.ths_limit_up_pool(None)),
+            )
         )
     else:
         bucket["ths_limit_up"] = None
-        _grab(
-            "limit_pool",
-            lambda: _cached(
+        jobs.append(
+            (
                 "limit_pool",
-                f"{limit_kind}:40",
-                180,
-                lambda: astock_boards.limit_up_pools(limit_kind, top=40),
-            ),
-            bucket,
-            errors,
+                lambda: _cached(
+                    "limit_pool",
+                    f"{limit_kind}:40",
+                    180,
+                    lambda: astock_boards.limit_up_pools(limit_kind, top=40),
+                ),
+            )
         )
-    _grab(
-        "board_flow",
-        lambda: _cached(
-            "board_flow",
-            f"{board_type}:{board_period}:20",
-            180,
-            lambda: astock_boards.board_fund_flow(board_type, board_period, 20),
-        ),
-        bucket,
-        errors,
-    )
+    _run_parallel(jobs, bucket, errors)
 
 
 def build_review_snapshot(
@@ -142,9 +151,9 @@ def build_review_snapshot(
     board_period: str = "today",
     limit_kind: str = "zt",
 ) -> dict[str, Any]:
-    """Assemble Daily Review payload. scope=top skips boards/risk panels."""
+    """Assemble Daily Review payload. paint < top < full."""
     scope = (scope or "full").strip().lower()
-    if scope not in ("top", "full"):
+    if scope not in ("paint", "top", "full"):
         scope = "full"
     board_type = board_type if board_type in _BOARD_TYPES else "industry"
     board_period = board_period if board_period in _BOARD_PERIODS else "today"
@@ -166,8 +175,9 @@ def build_review_snapshot(
             futs = [
                 pool.submit(_fill_tencent, top, errors),
                 pool.submit(_fill_overview, top, errors),
-                pool.submit(_fill_em_top, top, errors),
             ]
+            if scope != "paint":
+                futs.append(pool.submit(_fill_em_top, top, errors))
             for fut in futs:
                 fut.result()
         if scope == "full":

@@ -44,24 +44,36 @@ def get_prefix(code: str) -> str:
     return "sz"
 
 
-# Tencent HK index symbols are case-sensitive (hkhsi returns empty minute data).
+# Tencent HK / US index symbols are case-sensitive on the wire.
 _HK_INDEX_SYMBOLS = {
     "hkhsi": "hkHSI",
     "hkhstech": "hkHSTECH",
 }
+_US_INDEX_SYMBOLS = {
+    "usdji": "usDJI",
+    "usixic": "usIXIC",
+    "usinx": "usINX",
+    "usvix": "usVIX",
+    "ussoxx": "usSOXX",
+}
+US_INDICES = list(_US_INDEX_SYMBOLS.values())
 
 
 def resolve_symbol(code: str) -> str:
-    """Normalize to tencent symbol: sh600519 / sz000001 / sh000001 / hkHSI.
+    """Normalize to tencent symbol: sh600519 / sz000001 / sh000001 / hkHSI / usIXIC.
 
     Accepts bare 6-digit (uses get_prefix), explicit sh|sz|bj + 6 digits,
-    or HK indices hkHSI / hkHSTECH (case-insensitive input, canonical case out).
+    HK indices hkHSI / hkHSTECH, or US indices usDJI / usIXIC / usINX / usVIX / usSOXX
+    (case-insensitive input, canonical case out).
     Indices like 上证 must be passed as sh000001 (bare 000001 = 平安银行).
     """
     raw = (code or "").strip()
     hk = _HK_INDEX_SYMBOLS.get(raw.lower())
     if hk:
         return hk
+    us = _US_INDEX_SYMBOLS.get(raw.lower())
+    if us:
+        return us
     low = raw.lower()
     m = re.fullmatch(r"(sh|sz|bj)(\d{6})", low)
     if m:
@@ -69,6 +81,13 @@ def resolve_symbol(code: str) -> str:
     if re.fullmatch(r"\d{6}", low):
         return f"{get_prefix(low)}{low}"
     return ""
+
+
+def tencent_minute_url(symbol: str) -> str:
+    """Tencent minute endpoint. us* must use usMinute (minute/query returns 1 point)."""
+    if symbol.startswith("us"):
+        return f"https://web.ifzq.gtimg.cn/appstock/app/usMinute/query?code={symbol}"
+    return f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={symbol}"
 
 
 class DependencyMissing(RuntimeError):
@@ -108,6 +127,10 @@ def _parse_gtimg(data: str) -> dict[str, dict]:
             "price": num(3),
             "last_close": num(4),
             "open": num(5),
+            "bid1": num(9),
+            "bid1_vol": num(10),
+            "ask1": num(19),
+            "ask1_vol": num(20),
             "change_amt": num(31),
             "change_pct": num(32),
             "high": num(33),
@@ -151,7 +174,10 @@ def tencent_quote(codes: list[str]) -> dict[str, dict]:
         elif hit is not None:
             out[c] = hit
     if miss:
-        fetched = _parse_gtimg(_fetch_gtimg([f"{get_prefix(c)}{c}" for c in miss]))
+        fetched: dict[str, dict] = {}
+        for i in range(0, len(miss), 80):
+            chunk = miss[i:i + 80]
+            fetched.update(_parse_gtimg(_fetch_gtimg([f"{get_prefix(c)}{c}" for c in chunk])))
         for c in miss:
             q = fetched.get(c)
             if q:
@@ -160,6 +186,22 @@ def tencent_quote(codes: list[str]) -> dict[str, dict]:
             else:
                 _QUOTE_CACHE.set(c, None, ttl=2.0)
     return out
+
+
+def seal_flag(q: dict | None, side: str) -> bool | None:
+    """True = sealed (no opposite queue). None = quote missing.
+
+    Limit-up sealed when ask1 volume is 0; limit-down when bid1 volume is 0.
+    """
+    if not q:
+        return None
+    raw = q.get("ask1_vol") if side == "up" else q.get("bid1_vol")
+    if raw is None:
+        return None
+    try:
+        return float(raw) <= 0
+    except (TypeError, ValueError):
+        return None
 
 
 # A股大盘指数（前缀规则与个股不同，固定带前缀代码）+ 港股恒生系（国内复盘对照）
@@ -434,7 +476,7 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
     """轻量图数据（腾讯）：分时 / 5日 / 日K(前复权)。
 
     code: 6 位数字，或 sh/sz/bj + 6 位（指数请用 sh000001 / sz399006 等），
-          或港股指数 hkHSI / hkHSTECH。
+          或港股指数 hkHSI / hkHSTECH，或美股指数 usIXIC / usDJI 等。
     resolution: '1' 当日分时 · '5' 近5日分时 · '1D' 日K前复权
     返回: {code, symbol, name?, resolution, adjust, source, prev_close?, bars: [...]}
     bars 统一字段: datetime, open, high, low, close, volume (, amount)
@@ -453,15 +495,19 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
 
     try:
         if res == "1":
-            # Today minute timeline
-            d = _tencent_json(f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={symbol}")
+            # Today minute timeline. US indices need usMinute, not minute/query.
+            d = _tencent_json(tencent_minute_url(symbol))
             block = ((d.get("data") or {}).get(symbol) or {})
             # shape: data.data.data = ["0930 price vol amount", ...]
             inner = (block.get("data") or {})
             lines = inner.get("data") if isinstance(inner, dict) else None
             if not isinstance(lines, list):
                 lines = block.get("data") if isinstance(block.get("data"), list) else []
-            today = datetime.now().strftime("%Y%m%d")
+            today = ""
+            if isinstance(inner, dict):
+                today = str(inner.get("date") or "").replace("-", "")[:8]
+            if len(today) != 8:
+                today = datetime.now().strftime("%Y%m%d")
             for line in lines or []:
                 b = _parse_minute_line(line, today)
                 if b:
@@ -745,7 +791,7 @@ def full_valuation(code: str) -> dict:
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 _EM_MIN_INTERVAL = 1.0          # 两次东财请求最小间隔（秒），内置防封节流
 _em_last_call = [0.0]
-_em_lock = threading.Lock()     # serialize rate-limit + request (warmup uses threads)
+_em_lock = threading.Lock()     # serialize launch gap only; HTTP runs unlocked
 _EM_SESSIONS: dict = {}         # {direct(bool): requests.Session}
 
 # 数据层连接模式：国内财经站（东财/腾讯/新浪）本应「直连」——很多用户开着 Clash/V2Ray
@@ -784,38 +830,44 @@ def _em_session(direct: bool):
     return s
 
 
-def em_get(url: str, params: dict | None = None, headers: dict | None = None, timeout: int = 15):
-    """东财统一请求入口：串行限流 + **直连优先、失败降级系统代理**（避免科学上网代理挂掉国内站）。
+def _em_reserve_slot() -> None:
+    """Reserve the next Eastmoney launch slot. HTTP stays outside the lock.
 
-    第一次请求探测：先直连（短超时、不重试），成功即固定走直连；失败则降级走系统代理并固定。
-    探测结果整个进程复用，避免每次重试。`VR_DATA_PROXY=1` 可跳过探测、强制走代理。
-    全流程持锁：与 review_warmup 线程池共用同一配额，避免限流变量竞态。
+    Only the inter-request gap is serialized. Holding the lock for the full RTT
+    used to make a 200ms quote wait behind a 3s clist page.
     """
     with _em_lock:
         wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
         if wait > 0:
-            time.sleep(wait + random.uniform(0.1, 0.5))
-        try:
-            mode = _em_mode[0]
-            if mode != "auto":
-                return _em_session(mode == "direct").get(
-                    url, params=params, headers=headers, timeout=timeout
-                )
-            # auto: try direct first; on failure fall back to system proxy and latch.
-            try:
-                r = _em_session(True).get(
-                    url, params=params, headers=headers, timeout=min(timeout, 8)
-                )
-                _em_mode[0] = "direct"
-                return r
-            except Exception:
-                r = _em_session(False).get(
-                    url, params=params, headers=headers, timeout=timeout
-                )
-                _em_mode[0] = "proxy"
-                return r
-        finally:
-            _em_last_call[0] = time.time()
+            time.sleep(wait + random.uniform(0.02, 0.12))
+        _em_last_call[0] = time.time()
+
+
+def em_get(url: str, params: dict | None = None, headers: dict | None = None, timeout: int = 15):
+    """东财统一请求入口：发起间隔限流 + **直连优先、失败降级系统代理**。
+
+    第一次请求探测：先直连（短超时、不重试），成功即固定走直连；失败则降级走系统代理并固定。
+    探测结果整个进程复用，避免每次重试。`VR_DATA_PROXY=1` 可跳过探测、强制走代理。
+    锁只卡发起间隔, HTTP RTT 在锁外, 与 warmup 线程池共用同一配额。
+    """
+    _em_reserve_slot()
+    mode = _em_mode[0]
+    if mode != "auto":
+        return _em_session(mode == "direct").get(
+            url, params=params, headers=headers, timeout=timeout
+        )
+    try:
+        r = _em_session(True).get(
+            url, params=params, headers=headers, timeout=min(timeout, 8)
+        )
+        _em_mode[0] = "direct"
+        return r
+    except Exception:
+        r = _em_session(False).get(
+            url, params=params, headers=headers, timeout=timeout
+        )
+        _em_mode[0] = "proxy"
+        return r
 
 
 # ---------------------------------------------------------------------------
@@ -850,7 +902,7 @@ def _numf(v):
 def market_turnover_rank(n: int = 20) -> list[dict]:
     """全市场成交额榜（沪深京 A 股按成交额降序 TopN）。
 
-    东财行情中心 clist。**push2(实时) 不可达时降级 push2delay(延迟行情，日榜场景足够)**。
+    东财行情中心 clist, 成交额榜兜底用。**push2(实时) 不可达时降级 push2delay(延迟行情，日榜场景足够)**。
     返回每只: code / name / price / pct / amount(成交额,元) / mcap(总市值,元) /
     float_cap(流通市值,元) / industry。
     ⚠️ 这是客观公开榜单数据（东财/同花顺同款），产品侧只做客观展示——非推荐、非预测、不评分。

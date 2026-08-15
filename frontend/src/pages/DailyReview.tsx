@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { Sparkles, Loader2, AlertCircle, RefreshCw, X, ArrowLeftRight, ListOrdered } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -34,6 +35,10 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [aiOpen, setAiOpen] = useState(false);
   const [flowSector, setFlowSector] = useState<{ code: string; name: string } | null>(null);
   const [rankTab, setRankTab] = useState<RankTab>("hot");
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    setHeaderSlot(document.getElementById("cockpit-header-actions"));
+  }, []);
 
   const runReview = async () => {
     setReviewErr(null);
@@ -126,6 +131,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
                   indBot={d.indBot}
                   pending={reviewPending(false, "lines")}
                   hsgt={d.hsgt}
+                  breadth={d.breadth}
                 />
               </div>
               <div className="min-h-0 overflow-hidden">
@@ -153,6 +159,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
             <BoardFlowLivePanel
               selected={flowSector}
               onSelect={setFlowSector}
+              curvesEnabled={d.emoDone}
             />
           ),
         },
@@ -266,49 +273,47 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     },
   ];
 
+  const headerActions = (
+    <>
+      <button
+        type="button"
+        onClick={d.refreshTopRows}
+        disabled={d.topRefreshing}
+        className="inline-flex items-center gap-1 rounded border border-slate-700/60 bg-slate-800/40 px-1.5 py-0.5 text-[10px] text-slate-400 hover:border-cyan-500/50 hover:text-cyan-300 disabled:opacity-50"
+      >
+        <RefreshCw className={`h-3 w-3 ${d.topRefreshing ? "animate-spin" : ""}`} />
+        刷新
+      </button>
+      <button
+        type="button"
+        onClick={() => d.setTopAuto((v) => !v)}
+        className={`rounded border px-1.5 py-0.5 text-[10px] ${
+          d.topAuto
+            ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-300"
+            : "border-slate-700/60 text-slate-500"
+        }`}
+      >
+        自动 30s
+      </button>
+      <button
+        type="button"
+        onClick={() => { setAiOpen(true); void runReview(); }}
+        disabled={reviewLoading}
+        className="inline-flex items-center gap-1 rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50"
+      >
+        {reviewLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+        AI 复盘
+      </button>
+      <AskAiButton
+        context={`今日大盘数据：${d.dataSummary}`}
+        label="问 AI"
+        suggestions={["今天大盘怎么走", "哪些指数领涨领跌", "盘面有什么值得注意"]}
+      />
+    </>
+  );
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-[#070b12] lg:h-full lg:overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b border-slate-700/40 bg-[#0a101c] px-2 py-0.5">
-        <p className="hidden truncate text-[10px] text-slate-500 sm:block">
-          {d.today} · {d.session.hint} · {d.topUpdatedLabel}
-        </p>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-          <button
-            type="button"
-            onClick={d.refreshTopRows}
-            disabled={d.topRefreshing}
-            className="inline-flex items-center gap-1 rounded border border-slate-700/60 bg-slate-800/40 px-1.5 py-0.5 text-[10px] text-slate-400 hover:border-cyan-500/50 hover:text-cyan-300 disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3 w-3 ${d.topRefreshing ? "animate-spin" : ""}`} />
-            刷新
-          </button>
-          <button
-            type="button"
-            onClick={() => d.setTopAuto((v) => !v)}
-            className={`rounded border px-1.5 py-0.5 text-[10px] ${
-              d.topAuto
-                ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-300"
-                : "border-slate-700/60 text-slate-500"
-            }`}
-          >
-            自动 30s
-          </button>
-          <button
-            type="button"
-            onClick={() => { setAiOpen(true); void runReview(); }}
-            disabled={reviewLoading}
-            className="inline-flex items-center gap-1 rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50"
-          >
-            {reviewLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-            AI 复盘
-          </button>
-          <AskAiButton
-            context={`今日大盘数据：${d.dataSummary}`}
-            label="问 AI"
-            suggestions={["今天大盘怎么走", "哪些指数领涨领跌", "盘面有什么值得注意"]}
-          />
-        </div>
-      </div>
+      {headerSlot ? createPortal(headerActions, headerSlot) : null}
       <CockpitLayout rows={rows} />
 
       {showReviewPanel && (
