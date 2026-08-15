@@ -46,7 +46,7 @@ _FIN_CACHE = TTLCache(maxsize=256, default_ttl=1800, negative_ttl=30, name="fin"
 
 # ---------------------------------------------------------------------------
 # 资金面 / 筹码 / 信号（东财数据中心，v3.3 并入）—— 均为「用户查的那只股」的公开数据。
-# 东财有 1s 限流，这些多为日/季级静态数据，统一走 30 分钟缓存，进一步降低被封风险。
+# 这些多为日/季级静态数据, 统一走 30 分钟缓存, 降低东财重复拉取.
 # ---------------------------------------------------------------------------
 
 # Daily-review / fund-flow style endpoints. Empty upstream blips use a short
@@ -62,6 +62,13 @@ COCKPIT_WARM_KEYS = (
     "stock_flow",
     "board_flow_intraday",
 )
+# Tencent / Sina only. Safe to warm while a user snapshot holds the Eastmoney lane.
+_PAINT_SAFE_COCKPIT = frozenset({
+    "world_indices",
+    "commodities",
+    "sector_boards",
+    "stock_rank",
+})
 
 
 def _cached(endpoint: str, code: str, ttl: int, fetch, valid=is_nonempty):
@@ -123,8 +130,12 @@ def light_kline_map(codes: list[str], res: str = "1", num: int = 240) -> dict[st
     return out
 
 
-def _warm_review_dc() -> tuple[int, int, list[dict]]:
-    """Warm app-level caches used by Daily Review (indices / boards / pools / 分时)."""
+def _warm_review_dc(paint_only: bool = False) -> tuple[int, int, list[dict]]:
+    """Warm app-level caches used by Daily Review (indices / boards / pools / 分时).
+
+    paint_only=True skips Eastmoney-heavy keys so a user snapshot is not
+    competing for Eastmoney RTT; Tencent/Sina minute + quote keys still fill.
+    """
     import astock_boards
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -132,25 +143,30 @@ def _warm_review_dc() -> tuple[int, int, list[dict]]:
     ok = 0
     steps = [
         ("indices", lambda: _cached("indices", "live", 60, astock.index_quote)),
-        (
-            "industry",
-            lambda: _cached(
-                "industry",
-                "20",
-                300,
-                lambda: astock.industry_comparison(top_n=20),
-            ),
-        ),
-        (
-            "dt_daily",
-            lambda: _cached(
-                "dt_daily",
-                "auto:40:all",
-                600,
-                lambda: astock.daily_dragon_tiger(None, None, top=40),
-            ),
-        ),
     ]
+    if not paint_only:
+        steps.extend(
+            [
+                (
+                    "industry",
+                    lambda: _cached(
+                        "industry",
+                        "20",
+                        300,
+                        lambda: astock.industry_comparison(top_n=20),
+                    ),
+                ),
+                (
+                    "dt_daily",
+                    lambda: _cached(
+                        "dt_daily",
+                        "auto:40:all",
+                        600,
+                        lambda: astock.daily_dragon_tiger(None, None, top=40),
+                    ),
+                ),
+            ]
+        )
     for name, fn in steps:
         try:
             fn()
@@ -245,6 +261,10 @@ def _warm_review_dc() -> tuple[int, int, list[dict]]:
             ),
         ),
     ]
+    if paint_only:
+        cockpit_steps = [
+            step for step in cockpit_steps if step[0] in _PAINT_SAFE_COCKPIT
+        ]
     for name, fn in cockpit_steps:
         try:
             fn()

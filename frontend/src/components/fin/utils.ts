@@ -2,6 +2,12 @@ import { fmtAmt } from "@/components/review/format";
 
 export const TNUM = { fontVariantNumeric: "tabular-nums" as const };
 
+export function fmtPct(v: number, digits = 1): string {
+  if (!Number.isFinite(v)) return "—";
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(digits)}%`;
+}
+
 export function fmtYiYuan(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v) || v === 0) return "—";
   const abs = Math.abs(v);

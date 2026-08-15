@@ -21,7 +21,7 @@ export function BoardFlowLivePanel({
     () => api.boardFlowIntraday(16, true),
     POLL_MS,
     [],
-    curvesEnabled && !!ranks?.length,
+    curvesEnabled,
   );
   const data = full?.some((f) => (f.points?.length ?? 0) > 2) ? full : ranks;
   const [progress, setProgress] = useState(1);

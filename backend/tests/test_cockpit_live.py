@@ -120,6 +120,32 @@ def test_board_fflow_kline_cached_hits_same_key(monkeypatch):
     assert calls == ["BK0474"]
 
 
+def test_board_flow_picks_both_sides(monkeypatch):
+    pos: list[int] = []
+
+    def pick(po: int, half: int):
+        pos.append(po)
+        return [{"code": f"BK000{po}", "name": str(po), "net_in": 1.0}]
+
+    monkeypatch.setattr(cl, "_board_flow_pick", pick)
+    out = cl.board_flow_intraday(6, curves=False)
+    assert sorted(pos) == [0, 1]
+    assert {r["code"] for r in out} == {"BK0000", "BK0001"}
+
+
+def test_future_minutes_runs_all_codes(monkeypatch):
+    seen: list[str] = []
+
+    def fake(code: str):
+        seen.append(code)
+        return {"code": code, "prec": 1, "points": []}
+
+    monkeypatch.setattr(cl, "future_minute", fake)
+    out = cl.future_minutes(["hf_GC", "nf_AU0", "hf_CL", "hf_GC"])
+    assert set(out) == {"hf_GC", "nf_AU0", "hf_CL"}
+    assert sorted(seen) == ["hf_CL", "hf_GC", "nf_AU0"]
+
+
 def test_board_flow_ranks_skip_kline(monkeypatch):
     from api_common import _DC_CACHE
 

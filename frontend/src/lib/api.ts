@@ -384,10 +384,22 @@ export interface FinReportRow {
   revenue: number; net_profit: number;
   revenue_yoy: number; profit_yoy: number;
   roe: number; gross_margin: number; net_margin: number;
-  debt_ratio?: number; eps?: number; ocf_ps?: number;
+  debt_ratio?: number; roic?: number; eps?: number; ocf_ps?: number;
+}
+export interface FinMainOp {
+  name: string; income: number; income_ratio?: number;
+  profit: number; profit_ratio?: number; margin?: number;
+}
+export interface FinMainOpHist {
+  date: string;
+  segments: Array<{ name: string; income: number; profit: number; margin?: number }>;
 }
 export interface FinMain {
   code: string; name: string; industry: string; reports: FinReportRow[];
+  mainop?: FinMainOp[];
+  mainop_history?: FinMainOpHist[];
+  cash?: { operate: number; capex: number; free: number };
+  balance?: { total_liabilities: number; accounts_receivable: number };
 }
 export interface FinCompanyBundle {
   main: FinMain;

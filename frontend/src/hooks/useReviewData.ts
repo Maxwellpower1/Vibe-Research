@@ -108,12 +108,13 @@ export function useReviewData() {
       }).catch(() => {
         if (!cancelled) setOvDone(true);
       });
+      await paintP;
+      if (cancelled) return;
       const topP = snap("top").then((s) => {
         if (!cancelled) applyTop(s);
       }).catch(() => {
         if (!cancelled) setEmoDone(true);
       });
-      await paintP;
       await topP;
       if (cancelled) return;
       try {

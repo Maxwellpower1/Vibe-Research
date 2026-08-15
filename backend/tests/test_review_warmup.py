@@ -34,6 +34,21 @@ def test_cockpit_warm_keys_cover_first_paint():
         assert f'"{key}"' in src
 
 
+def test_user_busy_still_warms_paint_keys(monkeypatch):
+    monkeypatch.setattr(rw, "warm_market", lambda: (_ for _ in ()).throw(AssertionError("EM market")))
+    called: dict[str, bool] = {}
+
+    def extra(paint_only: bool = False):
+        called["paint_only"] = paint_only
+        return (2, 0, [])
+
+    with rw.user_fetch():
+        out = rw.warm_once(extra=extra)
+    assert called["paint_only"] is True
+    assert out.get("skipped") is True
+    assert out.get("last_ok") == 2
+
+
 def test_interval_defaults(monkeypatch):
     monkeypatch.delenv("VR_REVIEW_WARMUP_OPEN_SEC", raising=False)
     monkeypatch.delenv("VR_REVIEW_WARMUP_CLOSED_SEC", raising=False)

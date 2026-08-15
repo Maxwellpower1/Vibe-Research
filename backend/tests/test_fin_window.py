@@ -53,11 +53,34 @@ def test_finance_main_falls_back_to_dc(monkeypatch):
         return [{"BOARD_NAME_2LEVEL": "白酒"}]
 
     monkeypatch.setattr(fw, "_dc_rows", fake_dc_rows)
+    monkeypatch.setattr(fw, "_emweb_extras", lambda *a, **k: {"mainop": [], "mainop_history": [], "balance": {}, "cash": {}})
     main = fw.finance_main("600519")
     assert main["name"] == "测试股"
     assert len(main["reports"]) == 1
     assert main["industry"] == "白酒"
     assert any(c[1] == "WEB" for c in calls)
+
+
+def test_finance_board_skips_live_tape():
+    import inspect
+
+    src = inspect.getsource(fw.finance_board)
+    assert "industry_comparison" not in src
+    assert "ThreadPoolExecutor" in src
+    assert "_http_get" in inspect.getsource(fw._dc_result)
+
+
+def test_company_bundle_skips_valuation_stack(monkeypatch):
+    monkeypatch.setattr(
+        fw,
+        "finance_main",
+        lambda code: {"code": code, "name": "茅台", "industry": "白酒", "reports": []},
+    )
+    out = fw.company_bundle("600519")
+    assert out["valuation"] is None
+    assert out["announcements"] == []
+    assert out["reports"] == []
+    assert out["main"]["name"] == "茅台"
 
 
 def test_classify_forecast():

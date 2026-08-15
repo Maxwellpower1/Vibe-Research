@@ -1,54 +1,54 @@
-import { useState } from "react";
-import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
+import { useMemo } from "react";
 import { useFin } from "@/components/fin/FinContext";
-import { fmtYiYuan } from "@/components/fin/utils";
+import { fmtYiYuan, TNUM } from "@/components/fin/utils";
 import { pctColor } from "@/components/review/format";
 import { cn } from "@/lib/utils";
 
 export function FinStockRankPanel() {
-  const { select, company, board: data, boardError: error } = useFin();
-  const [mode, setMode] = useState<"amt" | "yoy">("amt");
-  const rows = [...(data?.stocks ?? [])];
-  if (mode === "yoy") {
-    rows.sort((a, b) => b.profit_yoy - a.profit_yoy);
-  }
-  const top = rows.slice(0, 30);
-  const max = Math.max(...top.map((r) => (mode === "amt" ? Math.abs(r.net_profit) : Math.abs(r.profit_yoy))), 1);
+  const { select, company, board: data, boardError: error, stockTab: tab } = useFin();
+
+  const rows = useMemo(() => {
+    const stocks = data?.stocks ?? [];
+    if (tab === "profit") return stocks.slice(0, 20);
+    const profit = stocks.filter((s) => s.net_profit > 0).sort((a, b) => b.profit_yoy - a.profit_yoy);
+    const loss = stocks.filter((s) => s.net_profit <= 0);
+    return [...profit, ...loss].slice(0, 20);
+  }, [data, tab]);
+
+  const maxV = Math.max(...rows.map((s) => (tab === "profit" ? s.net_profit : Math.max(s.profit_yoy, 0))), 1);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 justify-end border-b border-slate-700/40 px-1.5 py-1">
-        <ChipGroup>
-          <Chip active={mode === "amt"} onClick={() => setMode("amt")}>净利额</Chip>
-          <Chip active={mode === "yoy"} onClick={() => setMode("yoy")}>增速</Chip>
-        </ChipGroup>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-1">
+      <div className="min-h-0 flex-1 overflow-y-auto py-0.5">
         {!data && <p className="py-6 text-center text-[11px] text-slate-600">{error ? "盈利榜未接通" : "加载中…"}</p>}
-        {top.map((r, i) => {
-          const val = mode === "amt" ? Math.abs(r.net_profit) : Math.abs(r.profit_yoy);
-          const w = Math.min(100, (val / max) * 100);
+        {data && rows.length === 0 && <p className="py-8 text-center text-[11px] text-slate-600">当前非财报密集披露期</p>}
+        {rows.map((s, i) => {
+          const barV = tab === "profit" ? Math.max(s.net_profit, 0) : Math.max(s.profit_yoy, 0);
           return (
             <button
-              key={r.code}
+              key={s.code}
               type="button"
-              onClick={() => select(r.code, r.name)}
+              onClick={() => select(s.code, s.name)}
               className={cn(
-                "relative mb-0.5 grid w-full grid-cols-[18px_1fr_56px_48px_40px] items-center gap-1 rounded px-1 py-0.5 text-left",
-                company.code === r.code ? "ring-1 ring-cyan-500/40" : "hover:bg-slate-800/40",
+                "relative grid w-full grid-cols-[18px_1fr_56px_48px_40px] items-center gap-1 rounded px-1 py-0.5 text-left",
+                company.code === s.code ? "ring-1 ring-cyan-500/40" : "hover:bg-slate-800/40",
               )}
             >
               <span
-                className="absolute inset-y-0 left-0 rounded bg-rose-400/10"
-                style={{ width: `${w}%` }}
+                className="pointer-events-none absolute inset-y-0 left-0 bg-rose-400/10"
+                style={{ width: `${(barV / maxV) * 100}%` }}
               />
               <span className="relative font-mono text-[10px] text-slate-600">{i + 1}</span>
-              <span className="relative truncate text-[12px] text-slate-200">{r.name}</span>
-              <span className="relative text-right font-mono text-[11px] text-slate-300">{fmtYiYuan(r.net_profit)}</span>
-              <span className={cn("relative text-right font-mono text-[10px]", pctColor(r.profit_yoy))}>
-                {r.profit_yoy > 0 ? "+" : ""}{r.profit_yoy.toFixed(1)}%
+              <span className="relative truncate text-[12px] text-slate-200">{s.name}</span>
+              <span className="relative text-right font-mono text-[11px] text-slate-300" style={TNUM}>
+                {fmtYiYuan(s.net_profit)}
               </span>
-              <span className="relative text-right font-mono text-[10px] text-slate-500">{r.roe.toFixed(1)}</span>
+              <span className={cn("relative text-right font-mono text-[10px]", pctColor(s.profit_yoy))} style={TNUM}>
+                {s.profit_yoy > 0 ? "+" : ""}{s.profit_yoy.toFixed(1)}%
+              </span>
+              <span className="relative text-right font-mono text-[10px] text-slate-500" style={TNUM}>
+                {s.roe.toFixed(1)}
+              </span>
             </button>
           );
         })}

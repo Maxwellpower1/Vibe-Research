@@ -3,7 +3,7 @@
 scope=paint is Tencent + overview only (no Eastmoney). top adds emotion +
 industry strength. full then fills dragon-tiger. Unused keys stay in the
 JSON as None so the API shape does not break.
-em_get only serializes launch gaps, so sibling Eastmoney calls overlap on HTTP RTT.
+Eastmoney calls run in parallel (no em_get launch gap).
 """
 from __future__ import annotations
 

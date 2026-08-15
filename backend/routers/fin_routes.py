@@ -10,7 +10,7 @@ router = APIRouter(tags=["fin"])
 
 @router.get("/api/fin/board")
 def fin_board(period: str = Query("", description="YYYY-MM-DD report date")):
-    """盈利榜 + 行业聚合 + 披露日历 + 行业实时涨跌. 缓存 1 小时."""
+    """盈利榜 + 行业聚合 + 披露日历. 并行拉东财, 缓存 1 小时."""
     p = fin_window.valid_period(period)
     try:
         data = _cached("fin_board", p, 3600, lambda: fin_window.finance_board(p))
@@ -32,7 +32,7 @@ def fin_forecast(period: str = Query("", description="YYYY-MM-DD report date")):
 
 @router.get("/api/fin/company")
 def fin_company(code: str = Query(..., description="6-digit or sh600519")):
-    """单公司: F10 近 12 期 + 财务摘要/估值/公告/研报. 缓存 30 分钟."""
+    """单公司: F10 近 12 期 + 主营/现金流. 缓存 30 分钟."""
     raw = fin_window.bare_code(code)
     if not raw:
         raise HTTPException(400, "代码须为 6 位数字")

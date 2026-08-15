@@ -134,23 +134,28 @@ def warm_market() -> tuple[int, int, list[dict]]:
     return ok, len(steps) - ok, errors
 
 
-def warm_once(extra: Callable[[], tuple[int, int, list[dict]]] | None = None) -> dict:
-    """One warmup pass. optional extra() warms app-level _DC_CACHE entries."""
-    if user_busy():
-        log.info("skip warmup pass: user review snapshot in flight")
+def warm_once(extra: Callable[..., tuple[int, int, list[dict]]] | None = None) -> dict:
+    """One warmup pass. extra(paint_only=) warms app-level _DC_CACHE entries.
+
+    When a user snapshot is in flight, skip Eastmoney-heavy market steps but
+    still fill Tencent/Sina minute keys so the first charts are not empty.
+    """
+    busy = user_busy()
+    if busy:
+        log.info("user snapshot in flight: skip EM warmup, keep minute keys")
         _STATE["skipped"] = True
-        return dict(_STATE)
+    else:
+        _STATE.pop("skipped", None)
 
     _STATE["running"] = True
-    _STATE.pop("skipped", None)
     _STATE["last_started"] = datetime.now(BEIJING).isoformat(timespec="seconds")
     kind = session_kind()
     _STATE["session"] = kind
 
-    ok, fail, errors = warm_market()
+    ok, fail, errors = (0, 0, []) if busy else warm_market()
     if extra is not None:
         try:
-            e_ok, e_fail, e_err = extra()
+            e_ok, e_fail, e_err = extra(paint_only=busy)
             ok += e_ok
             fail += e_fail
             errors.extend(e_err)
@@ -178,7 +183,7 @@ def status() -> dict:
 
 
 def start_scheduler(
-    extra: Callable[[], tuple[int, int, list[dict]]] | None = None,
+    extra: Callable[..., tuple[int, int, list[dict]]] | None = None,
     initial_delay: float = 3.0,
 ) -> None:
     """Start daemon warmup loop. No-op when VR_REVIEW_WARMUP=0."""

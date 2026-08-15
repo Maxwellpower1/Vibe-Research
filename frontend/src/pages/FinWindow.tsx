@@ -1,5 +1,5 @@
+import { BarChart3, Building2, CalendarDays, FileText, GitCompare, TrendingUp, Zap } from "lucide-react";
 import { CockpitLayout, type CockpitRow } from "@/components/cockpit/CockpitLayout";
-import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { FinProvider, useFin } from "@/components/fin/FinContext";
 import { FinCalendarPanel } from "@/components/fin/FinCalendarPanel";
 import { FinForecastPanel } from "@/components/fin/FinForecastPanel";
@@ -8,45 +8,113 @@ import { FinStockRankPanel } from "@/components/fin/FinStockRankPanel";
 import { FinCompanyPanel } from "@/components/fin/FinCompanyPanel";
 import { FinTrendPanel } from "@/components/fin/FinTrendPanel";
 import { FinPeerPanel } from "@/components/fin/FinPeerPanel";
+import { PeriodTabs } from "@/components/fin/PeriodTabs";
+import { IndustryModeTabs, PeerModeTabs, StockRankTabs, TrendTabs } from "@/components/fin/FinTabs";
 
 function FinBody() {
-  const { period, setPeriod, periods } = useFin();
+  const { company, board } = useFin();
   const rows: CockpitRow[] = [
     {
       defaultH: 0.40,
       panels: [
-        { id: "cal", title: "财报日历", defaultW: 0.22, mobileH: "h-[300px]", body: <FinCalendarPanel /> },
-        { id: "fc", title: "业绩预告", defaultW: 0.28, mobileH: "h-[340px]", body: <FinForecastPanel /> },
-        { id: "ind", title: "行业盈利榜", defaultW: 0.25, mobileH: "h-[360px]", body: <FinIndustryPanel /> },
-        { id: "rk", title: "个股盈利榜", defaultW: 0.25, mobileH: "h-[400px]", body: <FinStockRankPanel /> },
+        {
+          id: "cal",
+          title: "财报日历",
+          icon: <CalendarDays size={14} />,
+          accent: "#38bdf8",
+          defaultW: 0.22,
+          maxZoomW: 0.3,
+          mobileH: "h-[300px]",
+          right: board ? (
+            <span className="font-mono text-[10px] text-slate-500">已披露 {board.disclosed} 家</span>
+          ) : undefined,
+          body: <FinCalendarPanel />,
+        },
+        {
+          id: "fc",
+          title: "业绩预告",
+          icon: <Zap size={14} />,
+          accent: "#fbbf24",
+          defaultW: 0.28,
+          maxZoomW: 0.3,
+          mobileH: "h-[340px]",
+          body: <FinForecastPanel />,
+        },
+        {
+          id: "ind",
+          title: "行业盈利榜",
+          icon: <Building2 size={14} />,
+          accent: "#a78bfa",
+          defaultW: 0.25,
+          maxZoomW: 0.3,
+          mobileH: "h-[360px]",
+          right: (
+            <div className="flex items-center gap-2 text-[10px]">
+              <PeriodTabs />
+              <span className="h-3 w-px bg-slate-700" />
+              <IndustryModeTabs />
+            </div>
+          ),
+          body: <FinIndustryPanel />,
+        },
+        {
+          id: "rk",
+          title: "个股盈利榜",
+          icon: <BarChart3 size={14} />,
+          accent: "#fb7185",
+          defaultW: 0.25,
+          maxZoomW: 0.3,
+          mobileH: "h-[400px]",
+          right: (
+            <div className="flex items-center gap-2 text-[10px]">
+              <PeriodTabs />
+              <span className="h-3 w-px bg-slate-700" />
+              <StockRankTabs />
+            </div>
+          ),
+          body: <FinStockRankPanel />,
+        },
       ],
     },
     {
       defaultH: 0.60,
       panels: [
-        { id: "co", title: "公司财报", defaultW: 0.28, mobileH: "h-[380px]", body: <FinCompanyPanel /> },
-        { id: "tr", title: "公司趋势", defaultW: 0.40, mobileH: "h-[360px]", body: <FinTrendPanel /> },
-        { id: "pr", title: "同业对比", defaultW: 0.32, mobileH: "h-[360px]", body: <FinPeerPanel /> },
+        {
+          id: "co",
+          title: "公司财报",
+          icon: <FileText size={14} />,
+          accent: "#22d3ee",
+          defaultW: 0.28,
+          mobileH: "h-[380px]",
+          right: <span className="max-w-[110px] truncate text-[10px] text-cyan-300">{company.name}</span>,
+          body: <FinCompanyPanel />,
+        },
+        {
+          id: "tr",
+          title: "公司趋势",
+          icon: <TrendingUp size={14} />,
+          accent: "#38bdf8",
+          defaultW: 0.40,
+          mobileH: "h-[360px]",
+          right: <TrendTabs />,
+          body: <FinTrendPanel />,
+        },
+        {
+          id: "pr",
+          title: "同业对比",
+          icon: <GitCompare size={14} />,
+          accent: "#a78bfa",
+          defaultW: 0.32,
+          mobileH: "h-[360px]",
+          right: <PeerModeTabs />,
+          body: <FinPeerPanel />,
+        },
       ],
     },
   ];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background lg:h-full lg:overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-background px-2 py-0.5">
-        <p className="hidden truncate text-[10px] text-slate-500 sm:block">
-          披露日历 · 预告 · 盈利榜 · 估值/公告/研报 · 美股日历
-        </p>
-        <div className="ml-auto">
-          <ChipGroup>
-            {periods.map((p) => (
-              <Chip key={p.value} active={period === p.value} onClick={() => setPeriod(p.value)}>
-                {p.label}
-              </Chip>
-            ))}
-          </ChipGroup>
-        </div>
-      </div>
       <CockpitLayout rows={rows} />
     </div>
   );

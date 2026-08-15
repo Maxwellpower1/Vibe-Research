@@ -8,6 +8,11 @@ export interface FinCompany {
   name: string;
 }
 
+export type FinTrendTab = "perf" | "quality" | "leverage";
+export type FinPeerMode = "radar" | "table";
+export type FinIndustryMode = "tree" | "bar";
+export type FinStockTab = "profit" | "growth";
+
 interface FinCtx {
   company: FinCompany;
   recent: FinCompany[];
@@ -16,12 +21,21 @@ interface FinCtx {
   setPeriod: (p: string) => void;
   periods: { value: string; label: string }[];
   board: FinBoard | null;
+  prevBoard: FinBoard | null;
   boardError: string | null;
   companyBundle: FinCompanyBundle | null;
   companyError: string | null;
+  trendTab: FinTrendTab;
+  setTrendTab: (t: FinTrendTab) => void;
+  peerMode: FinPeerMode;
+  setPeerMode: (m: FinPeerMode) => void;
+  industryMode: FinIndustryMode;
+  setIndustryMode: (m: FinIndustryMode) => void;
+  stockTab: FinStockTab;
+  setStockTab: (t: FinStockTab) => void;
 }
 
-const EMPTY: FinCompany = { code: "", name: "" };
+const DEFAULT_COMPANY: FinCompany = { code: "600519", name: "贵州茅台" };
 const LS_RECENT = "fin:recent";
 const LS_CURRENT = "fin:company";
 const MAX_RECENT = 6;
@@ -90,20 +104,29 @@ function loadRecent(): FinCompany[] {
 }
 
 function loadCompany(recent: FinCompany[]): FinCompany {
-  return parseCompany(storageGet(LS_CURRENT)) ?? recent[0] ?? EMPTY;
+  return parseCompany(storageGet(LS_CURRENT)) ?? recent[0] ?? DEFAULT_COMPANY;
 }
 
 const FinContext = createContext<FinCtx>({
-  company: EMPTY,
+  company: DEFAULT_COMPANY,
   recent: [],
   select: () => {},
   period: CUR,
   setPeriod: () => {},
   periods: PERIOD_OPTIONS,
   board: null,
+  prevBoard: null,
   boardError: null,
   companyBundle: null,
   companyError: null,
+  trendTab: "perf",
+  setTrendTab: () => {},
+  peerMode: "radar",
+  setPeerMode: () => {},
+  industryMode: "tree",
+  setIndustryMode: () => {},
+  stockTab: "profit",
+  setStockTab: () => {},
 });
 
 export function FinProvider({ children }: { children: ReactNode }) {
@@ -111,6 +134,10 @@ export function FinProvider({ children }: { children: ReactNode }) {
   const [company, setCompany] = useState<FinCompany>(() => loadCompany(recentInit));
   const [recent, setRecent] = useState<FinCompany[]>(recentInit);
   const [period, setPeriod] = useState(CUR);
+  const [trendTab, setTrendTab] = useState<FinTrendTab>("perf");
+  const [peerMode, setPeerMode] = useState<FinPeerMode>("radar");
+  const [industryMode, setIndustryMode] = useState<FinIndustryMode>("tree");
+  const [stockTab, setStockTab] = useState<FinStockTab>("profit");
 
   const select = useCallback((code: string, name: string) => {
     const bare = code.replace(/^(sh|sz|bj)/i, "");
@@ -125,13 +152,17 @@ export function FinProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const boardPoll = usePolling(() => api.finBoard(period), 3600_000, [period]);
+  const boardPoll = usePolling(() => api.finBoard(period), 1800_000, [period]);
+  const prevP = prevPeriod(period);
+  const prevBoardPoll = usePolling(() => api.finBoard(prevP), 1800_000, [prevP]);
   const companyPoll = usePolling(
     () => api.finCompany(company.code),
     1800_000,
     [company.code],
     Boolean(company.code),
   );
+  const bundle = companyPoll.data;
+  const bundleOk = !bundle?.main?.code || bundle.main.code === company.code;
 
   const value = useMemo(
     () => ({
@@ -142,11 +173,25 @@ export function FinProvider({ children }: { children: ReactNode }) {
       setPeriod,
       periods: PERIOD_OPTIONS,
       board: boardPoll.data,
+      prevBoard: prevBoardPoll.data,
       boardError: boardPoll.error,
-      companyBundle: companyPoll.data,
+      companyBundle: bundleOk ? bundle : null,
       companyError: companyPoll.error,
+      trendTab,
+      setTrendTab,
+      peerMode,
+      setPeerMode,
+      industryMode,
+      setIndustryMode,
+      stockTab,
+      setStockTab,
     }),
-    [company, recent, select, period, boardPoll.data, boardPoll.error, companyPoll.data, companyPoll.error],
+    [
+      company, recent, select, period,
+      boardPoll.data, boardPoll.error, prevBoardPoll.data,
+      bundle, bundleOk, companyPoll.error,
+      trendTab, peerMode, industryMode, stockTab,
+    ],
   );
   return <FinContext.Provider value={value}>{children}</FinContext.Provider>;
 }

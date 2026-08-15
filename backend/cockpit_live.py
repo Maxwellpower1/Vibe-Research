@@ -729,8 +729,10 @@ def board_flow_intraday(n: int = 20, curves: bool = True) -> list[dict]:
     warm process can paint the butterfly without waiting.
     """
     half = max(3, min(10, (int(n or 20)) // 2))
-    ups = _board_flow_pick(1, half)
-    downs = _board_flow_pick(0, half)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fu = pool.submit(_board_flow_pick, 1, half)
+        fd = pool.submit(_board_flow_pick, 0, half)
+        ups, downs = fu.result(), fd.result()
     seen = {u["code"] for u in ups}
     boards = ups + [d for d in downs if d["code"] not in seen]
     if not curves:
@@ -968,12 +970,28 @@ def _nf_minute(code: str) -> dict:
 
 
 def future_minutes(codes: list[str]) -> dict[str, dict | None]:
-    out: dict[str, dict | None] = {}
-    for c in codes[:12]:
+    """Batch future minutes. Parallel like marketingdashboard /api/batch-fmin."""
+    uniq: list[str] = []
+    seen: set[str] = set()
+    for raw in codes[:12]:
+        c = (raw or "").strip()
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        uniq.append(c)
+    if not uniq:
+        return {}
+
+    def _one(c: str) -> tuple[str, dict | None]:
         try:
-            out[c] = future_minute(c)
+            return c, future_minute(c)
         except Exception:
-            out[c] = None
+            return c, None
+
+    out: dict[str, dict | None] = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(uniq))) as pool:
+        for c, data in pool.map(_one, uniq):
+            out[c] = data
     return out
 
 

@@ -49,7 +49,7 @@ interface ChipProps {
   active: boolean;
   onClick: () => void;
   children: ReactNode;
-  accent?: "cyan" | "amber";
+  accent?: "cyan" | "amber" | "violet";
 }
 
 export function Chip({ active, onClick, children, accent = "cyan" }: ChipProps) {
@@ -62,7 +62,9 @@ export function Chip({ active, onClick, children, accent = "cyan" }: ChipProps) 
         active
           ? accent === "amber"
             ? "bg-amber-500/20 font-medium text-amber-300"
-            : "bg-cyan-500/15 font-medium text-cyan-300"
+            : accent === "violet"
+              ? "bg-violet-500/20 font-medium text-violet-300"
+              : "bg-cyan-500/15 font-medium text-cyan-300"
           : "text-slate-500 hover:text-slate-200",
       )}
     >

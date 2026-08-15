@@ -1,21 +1,22 @@
 """A-share earnings window: disclosure calendar, forecasts, profit ranks, company F10.
 
-Ported from marketingdashboard eastmoney-fin (datacenter). Combined with
-local financials / valuation / announcements / reports / live industry tape.
+Ported from marketingdashboard eastmoney-fin. Parallel HTTP.
 Objective snapshots only; no recommendation.
 """
 
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
+from typing import Any
 
 import astock
 
 UA = astock.UA
-em_get = astock.em_get
 _DC = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 _SEC = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
+_EMWEB = "https://emweb.securities.eastmoney.com"
 
 FORECAST_TYPES = ("预增", "预减", "扭亏", "首亏", "略增", "略减", "减亏", "增亏")
 FORECAST_GOOD = {"预增", "略增", "扭亏", "减亏"}
@@ -103,6 +104,26 @@ def forecast_bucket(typ: str) -> str:
     return "neutral"
 
 
+def _http_get(
+    url: str,
+    params: dict | None = None,
+    *,
+    timeout: int = 18,
+    referer: str = "https://data.eastmoney.com/",
+) -> Any:
+    """Fin-window HTTP. Own session, parallel like marketingdashboard."""
+    import requests
+
+    r = requests.get(
+        url,
+        params=params,
+        headers={"User-Agent": UA, "Referer": referer, "Accept": "application/json,text/plain,*/*"},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r
+
+
 def _dc_result(
     report_name: str,
     filter_str: str,
@@ -124,12 +145,7 @@ def _dc_result(
         "client": "WEB" if source == "WEB" else "PC",
     }
     try:
-        d = em_get(
-            url,
-            params=params,
-            headers={"User-Agent": UA, "Referer": "https://data.eastmoney.com/"},
-            timeout=18,
-        ).json()
+        d = _http_get(url, params).json()
     except Exception:
         return {}
     return (d or {}).get("result") or {}
@@ -141,12 +157,18 @@ def _dc_rows(*args, **kwargs) -> list[dict]:
 
 
 def finance_board(period: str | None = None) -> dict:
-    """Stock profit TOP + industry aggregates + disclosure calendar + live tape."""
+    """Stock profit TOP300 + industry from 500 rows + calendar 60. Four parallel GETs."""
     p = valid_period(period)
     filt = f"(REPORTDATE='{p}')"
-    stock_rows = _dc_rows("RPT_LICO_FN_CPD", filt, 200, "PARENT_NETPROFIT")
-    cal_rows = _dc_rows("RPT_LICO_FN_CPD", filt, 80, "NOTICE_DATE")
-    pages = _dc_result("RPT_LICO_FN_CPD", filt, 1, "NOTICE_DATE").get("pages") or 0
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        stock_f = pool.submit(_dc_rows, "RPT_LICO_FN_CPD", filt, 300, "PARENT_NETPROFIT")
+        ind_f = pool.submit(_dc_rows, "RPT_LICO_FN_CPD", filt, 500, "PARENT_NETPROFIT")
+        cal_f = pool.submit(_dc_rows, "RPT_LICO_FN_CPD", filt, 60, "NOTICE_DATE")
+        pages_f = pool.submit(_dc_result, "RPT_LICO_FN_CPD", filt, 1, "NOTICE_DATE")
+        stock_rows = stock_f.result()
+        ind_rows = ind_f.result()
+        cal_rows = cal_f.result()
+        pages = (pages_f.result() or {}).get("pages") or 0
 
     stocks = []
     for r in stock_rows:
@@ -164,13 +186,16 @@ def finance_board(period: str | None = None) -> dict:
         })
 
     agg: dict[str, dict] = {}
-    for s in stocks:
-        k = s["industry"] or "其他"
+    for r in ind_rows:
+        if not isinstance(r, dict):
+            continue
+        k = r.get("BOARD_NAME") or "其他"
         a = agg.setdefault(k, {"name": k, "net_profit": 0.0, "count": 0, "yoy_sum": 0.0, "yoy_n": 0})
-        a["net_profit"] += s["net_profit"]
+        a["net_profit"] += _num(r.get("PARENT_NETPROFIT"))
         a["count"] += 1
-        if s["profit_yoy"]:
-            a["yoy_sum"] += s["profit_yoy"]
+        yoy = _num(r.get("SJLTZ"))
+        if yoy:
+            a["yoy_sum"] += yoy
             a["yoy_n"] += 1
     industries = sorted(agg.values(), key=lambda x: x["net_profit"], reverse=True)[:15]
     industries = [
@@ -194,19 +219,12 @@ def finance_board(period: str | None = None) -> dict:
             "period": r.get("QDATE") or "",
         })
 
-    tape = {"top": [], "bottom": [], "total": 0}
-    try:
-        tape = astock.industry_comparison(15)
-    except Exception:
-        pass
-
     return {
         "period": p,
         "disclosed": int(pages) if pages else len(stocks),
         "stocks": stocks,
         "industries": industries,
         "calendar": calendar,
-        "sector_tape": tape,
         "note": "公开披露/盈利榜,东财口径,仅客观呈现",
     }
 
@@ -249,14 +267,102 @@ def _f10_rows(report_name: str, filt: str, page_size: int, sort_columns: str) ->
     return _dc_rows(report_name, filt, page_size, sort_columns, source="WEB", url=_DC)
 
 
+def _pick_segments(rows: list[dict], cap: int) -> list[dict]:
+    """Prefer product MAINOP_TYPE=2, else industry=1. Top cap by income."""
+    def is_type(r: dict, t: int) -> bool:
+        try:
+            return int(float(r.get("MAINOP_TYPE") or 0)) == t
+        except (TypeError, ValueError):
+            return False
+
+    typed = [r for r in rows if is_type(r, 2)] or [r for r in rows if is_type(r, 1)]
+    typed.sort(key=lambda r: _num(r.get("MAIN_BUSINESS_INCOME")), reverse=True)
+    out = []
+    for r in typed[:cap]:
+        out.append({
+            "name": r.get("ITEM_NAME") or "",
+            "income": _num(r.get("MAIN_BUSINESS_INCOME")),
+            "income_ratio": _num(r.get("MBI_RATIO")),
+            "profit": _num(r.get("MAIN_BUSINESS_RPOFIT")),
+            "profit_ratio": _num(r.get("MBR_RATIO")),
+            "margin": _num(r.get("GROSS_RPOFIT_RATIO")),
+        })
+    return out
+
+
+def _emweb_json(url: str) -> dict | None:
+    try:
+        return _http_get(url, timeout=12, referer=f"{_EMWEB}/").json()
+    except Exception:
+        return None
+
+
+def _emweb_extras(secu: str, latest_date: str) -> dict:
+    """Mainop / balance / cash from emweb F10. Failures stay empty."""
+    empty = {"mainop": [], "mainop_history": [], "balance": {}, "cash": {}}
+    if not latest_date or not secu or "." not in secu:
+        return empty
+    code, ex = secu.split(".", 1)
+    em_code = f"{ex}{code}"
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        op_f = pool.submit(
+            _emweb_json,
+            f"{_EMWEB}/PC_HSF10/BusinessAnalysis/PageAjax?code={em_code}",
+        )
+        zc_f = pool.submit(
+            _emweb_json,
+            f"{_EMWEB}/PC_HSF10/NewFinanceAnalysis/zcfzbAjaxNew"
+            f"?companyType=4&reportDateType=0&reportType=1&dates={latest_date}&code={em_code}",
+        )
+        xj_f = pool.submit(
+            _emweb_json,
+            f"{_EMWEB}/PC_HSF10/NewFinanceAnalysis/xjllbAjaxNew"
+            f"?companyType=4&reportDateType=0&reportType=1&dates={latest_date}&code={em_code}",
+        )
+        op_json = op_f.result() or {}
+        zc_json = zc_f.result() or {}
+        xj_json = xj_f.result() or {}
+    op_rows = op_json.get("zygcfx") or []
+    dates = sorted({str(r.get("REPORT_DATE") or "")[:10] for r in op_rows if isinstance(r, dict)}, reverse=True)
+    op_latest = dates[0] if dates else ""
+    mainop = _pick_segments([r for r in op_rows if str(r.get("REPORT_DATE") or "")[:10] == op_latest], 8)
+    by_period: dict[str, list[dict]] = {}
+    for r in op_rows:
+        if not isinstance(r, dict):
+            continue
+        key = str(r.get("REPORT_DATE") or "")[:10]
+        if key:
+            by_period.setdefault(key, []).append(r)
+    mainop_history = [
+        {"date": d, "segments": [{k: v for k, v in s.items() if k not in ("income_ratio", "profit_ratio")} for s in _pick_segments(rows, 6)]}
+        for d, rows in sorted(by_period.items())[-40:]
+    ]
+    zc = (zc_json.get("data") or [{}])[0] if isinstance(zc_json.get("data"), list) else {}
+    xj = (xj_json.get("data") or [{}])[0] if isinstance(xj_json.get("data"), list) else {}
+    operate = _num(xj.get("NETCASH_OPERATE"))
+    capex = _num(xj.get("CONSTRUCT_LONG_ASSET"))
+    return {
+        "mainop": mainop,
+        "mainop_history": mainop_history,
+        "balance": {
+            "total_liabilities": _num(zc.get("TOTAL_LIABILITIES")),
+            "accounts_receivable": _num(zc.get("ACCOUNTS_RECE")),
+        },
+        "cash": {"operate": operate, "capex": capex, "free": operate - capex},
+    }
+
+
 def finance_main(code: str) -> dict:
-    """Last 12 F10 periods (revenue / profit / ROE / margins)."""
+    """Last 12 F10 periods + emweb mainop/cash (MD finance-main)."""
     secu = secu_code(code)
     if not secu:
         raise ValueError(f"bad code: {code}")
     filt = f'(SECUCODE="{secu}")'
-    fin_rows = _f10_rows("RPT_F10_FINANCE_MAINFINADATA", filt, 12, "REPORT_DATE")
-    org_rows = _f10_rows("RPT_F10_ORG_BASICINFO", filt, 1, "SECUCODE")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fin_f = pool.submit(_f10_rows, "RPT_F10_FINANCE_MAINFINADATA", filt, 12, "REPORT_DATE")
+        org_f = pool.submit(_f10_rows, "RPT_F10_ORG_BASICINFO", filt, 1, "SECUCODE")
+        fin_rows = fin_f.result()
+        org_rows = org_f.result()
     org = org_rows[0] if org_rows else {}
     industry = (
         org.get("BOARD_NAME_2LEVEL")
@@ -280,27 +386,24 @@ def finance_main(code: str) -> dict:
             "gross_margin": _num(r.get("XSMLL")),
             "net_margin": _num(r.get("XSJLL")),
             "debt_ratio": _num(r.get("ZCFZL")),
+            "roic": _num(r.get("ROIC")),
             "eps": _num(r.get("EPSJB")),
             "ocf_ps": _num(r.get("MGJYXJJE")),
         })
     name = (fin_rows[0].get("SECURITY_NAME_ABBR") if fin_rows else "") or ""
+    latest = reports[0]["date"] if reports else ""
+    extra = _emweb_extras(secu, latest)
     return {
         "code": bare_code(code),
         "name": name,
         "industry": industry,
         "reports": reports,
+        **extra,
     }
 
 
-def _safe(fn, fallback):
-    try:
-        return fn()
-    except Exception:
-        return fallback
-
-
 def company_bundle(code: str) -> dict:
-    """F10 trend + local snapshot / valuation / filings / reports."""
+    """F10 + emweb extras only. No valuation / announcements / reports pile-on."""
     raw = bare_code(code)
     if not raw:
         raise ValueError(f"bad code: {code}")
@@ -308,28 +411,13 @@ def company_bundle(code: str) -> dict:
     if not main.get("name"):
         q = astock.tencent_quote([raw]).get(raw) or {}
         main["name"] = q.get("name") or raw
-    snapshot = _safe(lambda: astock.financials(raw), None)
-    valuation = _safe(lambda: astock.full_valuation(raw), None)
-    percentile = _safe(lambda: astock.valuation_percentile(raw), None)
-    anns = _safe(lambda: astock.announcements(raw, limit=6), [])
-    reports = _safe(lambda: astock.eastmoney_reports(raw, max_pages=1), [])
-    slim_reports = []
-    for r in reports[:4]:
-        if not isinstance(r, dict):
-            continue
-        slim_reports.append({
-            "title": r.get("title") or "",
-            "publishDate": r.get("publishDate") or r.get("publish_date") or "",
-            "orgSName": r.get("orgSName") or r.get("orgSname") or "",
-            "pdfUrl": astock.pdf_url(r.get("infoCode", "")) if r.get("infoCode") else None,
-        })
     return {
         "main": main,
-        "snapshot": snapshot,
-        "valuation": valuation,
-        "percentile": percentile,
-        "announcements": anns[:6] if isinstance(anns, list) else [],
-        "reports": slim_reports,
+        "snapshot": None,
+        "valuation": None,
+        "percentile": None,
+        "announcements": [],
+        "reports": [],
     }
 
 
@@ -345,11 +433,11 @@ def suggest_ashare(q: str, n: int = 8) -> list[dict]:
         "count": 10,
     }
     try:
-        r = em_get(
+        r = _http_get(
             "https://searchapi.eastmoney.com/api/suggest/get",
-            params=params,
-            headers={"User-Agent": UA},
+            params,
             timeout=8,
+            referer="https://www.eastmoney.com/",
         )
         payload = r.json() or {}
     except Exception:

@@ -15,9 +15,7 @@ import hashlib
 import json
 import math
 import os
-import random
 import re
-import threading
 import time
 import urllib.request
 from datetime import datetime, timedelta
@@ -1047,11 +1045,6 @@ def full_valuation(code: str) -> dict:
 # ===========================================================================
 
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-_EM_MIN_INTERVAL = 1.0          # 两次东财请求最小间隔（秒），内置防封节流
-_EM_FFLOW_INTERVAL = 0.2        # fflow/kline only; butterfly curves need ~16 hits
-_em_last_call = [0.0]
-_em_fflow_last = [0.0]
-_em_lock = threading.Lock()     # serialize launch gap only; HTTP runs unlocked
 _EM_SESSIONS: dict = {}         # {direct(bool): requests.Session}
 
 # 数据层连接模式：国内财经站（东财/腾讯/新浪）本应「直连」——很多用户开着 Clash/V2Ray
@@ -1090,34 +1083,12 @@ def _em_session(direct: bool):
     return s
 
 
-def _em_reserve_slot(url: str = "") -> None:
-    """Reserve the next Eastmoney launch slot. HTTP stays outside the lock.
-
-    Default lane stays ~1s. fflow/kline uses a 200ms lane so board-flow curves
-    do not sit behind clist/ulist. Sleep is outside the lock so the two lanes
-    do not block each other.
-    """
-    fast = "fflow/kline" in (url or "")
-    last = _em_fflow_last if fast else _em_last_call
-    gap = _EM_FFLOW_INTERVAL if fast else _EM_MIN_INTERVAL
-    with _em_lock:
-        now = time.time()
-        wait = gap - (now - last[0])
-        jitter = random.uniform(0.02, 0.08 if fast else 0.12) if wait > 0 else 0.0
-        last[0] = now + wait if wait > 0 else now
-    if wait > 0:
-        time.sleep(wait + jitter)
-
-
 def em_get(url: str, params: dict | None = None, headers: dict | None = None, timeout: int = 15):
-    """东财统一请求入口：发起间隔限流 + **直连优先、失败降级系统代理**。
+    """东财统一请求入口: 直连优先, 失败降级系统代理. 无发起间隔 (对齐参考看板).
 
-    第一次请求探测：先直连（短超时、不重试），成功即固定走直连；失败则降级走系统代理并固定。
-    探测结果整个进程复用，避免每次重试。`VR_DATA_PROXY=1` 可跳过探测、强制走代理。
-    锁只卡发起间隔, HTTP RTT 在锁外, 与 warmup 线程池共用同一配额。
-    fflow/kline 走 200ms 快车道, 其余仍约 1s.
+    第一次请求探测: 先直连 (短超时、不重试), 成功即固定走直连; 失败则降级走系统代理并固定.
+    探测结果整个进程复用, 避免每次重试. `VR_DATA_PROXY=1` 可跳过探测、强制走代理.
     """
-    _em_reserve_slot(url)
     mode = _em_mode[0]
     if mode != "auto":
         return _em_session(mode == "direct").get(
@@ -1138,7 +1109,7 @@ def em_get(url: str, params: dict | None = None, headers: dict | None = None, ti
 
 
 # ---------------------------------------------------------------------------
-# 打板层 · 涨停/炸板/跌停/昨涨停 原始池（东财 push2ex，走 em_get 限流）
+# 打板层 · 涨停/炸板/跌停/昨涨停 原始池 (东财 push2ex, 走 em_get)
 # ⚠️ 合规：原始池含个股 code/name —— 仅供 market.py 聚合成【不含个股名】的短线情绪指标。
 #    切勿把原始池直接接成 API/UI（会甩个股名单、破产品「零标的」红线）。
 # ---------------------------------------------------------------------------

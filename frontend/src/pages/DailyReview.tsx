@@ -134,7 +134,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
             <BoardFlowLivePanel
               selected={flowSector}
               onSelect={setFlowSector}
-              curvesEnabled={d.emoDone}
             />
           ),
         },

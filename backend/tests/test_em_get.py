@@ -1,4 +1,4 @@
-"""em_get: lock serializes launch gap only; HTTP RTT may overlap."""
+"""em_get: no launch gap; concurrent HTTP may overlap (same as marketingdashboard)."""
 from __future__ import annotations
 
 import threading
@@ -7,11 +7,8 @@ import time
 import astock
 
 
-def test_em_get_http_overlaps(monkeypatch):
-    monkeypatch.setattr(astock, "_EM_MIN_INTERVAL", 0.25)
-    old_last = astock._em_last_call[0]
+def test_em_get_no_launch_gap(monkeypatch):
     old_mode = astock._em_mode[0]
-    astock._em_last_call[0] = 0.0
     astock._em_mode[0] = "direct"
 
     started: list[float] = []
@@ -25,7 +22,7 @@ def test_em_get_http_overlaps(monkeypatch):
         t0 = time.monotonic()
         with gate:
             started.append(t0)
-        time.sleep(0.5)
+        time.sleep(0.35)
         with gate:
             finished.append(time.monotonic())
         return _Resp()
@@ -45,24 +42,19 @@ def test_em_get_http_overlaps(monkeypatch):
             t.join()
         elapsed = time.monotonic() - t0
     finally:
-        astock._em_last_call[0] = old_last
         astock._em_mode[0] = old_mode
 
     assert len(started) == 2
     first, second = sorted(started)
-    assert second - first >= 0.20
+    assert second - first < 0.15
     assert second < min(finished)
-    assert elapsed < 1.15
+    assert elapsed < 0.7
+    assert not hasattr(astock, "_em_reserve_slot")
+    assert not hasattr(astock, "_EM_MIN_INTERVAL")
 
 
-def test_em_get_fflow_kline_uses_fast_lane(monkeypatch):
-    monkeypatch.setattr(astock, "_EM_MIN_INTERVAL", 1.0)
-    monkeypatch.setattr(astock, "_EM_FFLOW_INTERVAL", 0.05)
-    old_last = astock._em_last_call[0]
-    old_fast = astock._em_fflow_last[0]
+def test_em_get_fflow_and_clist_start_together(monkeypatch):
     old_mode = astock._em_mode[0]
-    astock._em_last_call[0] = 0.0
-    astock._em_fflow_last[0] = 0.0
     astock._em_mode[0] = "direct"
 
     started: list[tuple[float, str]] = []
@@ -75,7 +67,7 @@ def test_em_get_fflow_kline_uses_fast_lane(monkeypatch):
         t0 = time.monotonic()
         with gate:
             started.append((t0, url))
-        time.sleep(0.35)
+        time.sleep(0.3)
         return _Resp()
 
     sess = type("S", (), {"get": staticmethod(fake_get)})()
@@ -96,12 +88,10 @@ def test_em_get_fflow_kline_uses_fast_lane(monkeypatch):
             t.join()
         elapsed = time.monotonic() - t0
     finally:
-        astock._em_last_call[0] = old_last
-        astock._em_fflow_last[0] = old_fast
         astock._em_mode[0] = old_mode
 
     assert len(started) == 2
     gap = abs(started[0][0] - started[1][0])
-    assert gap < 0.2
-    assert elapsed < 0.7
+    assert gap < 0.15
+    assert elapsed < 0.6
     assert any("fflow/kline" in u for _, u in started)
