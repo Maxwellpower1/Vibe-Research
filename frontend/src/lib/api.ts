@@ -71,6 +71,33 @@ async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET
 
 const get = <T>(path: string) => request<T>(path, "GET");
 
+/** Same as marketingdashboard: merge row stockFlow calls in a 60ms window. */
+const quoteFlowLoader = (() => {
+  let queue: { code: string; resolve: (v: QuoteFlow | null) => void }[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return (code: string): Promise<QuoteFlow | null> =>
+    new Promise((resolve) => {
+      queue.push({ code, resolve });
+      if (timer) return;
+      timer = setTimeout(async () => {
+        const batch = queue;
+        queue = [];
+        timer = null;
+        const codes = [...new Set(batch.map((b) => b.code))];
+        try {
+          const rows = await get<QuoteFlow[]>(`/market/stock-flows?codes=${encodeURIComponent(codes.join(","))}`);
+          const map = new Map((rows || []).map((r) => [r.code, r]));
+          for (const b of batch) {
+            const digits = b.code.replace(/^(sh|sz|bj)/i, "");
+            b.resolve(map.get(b.code) ?? map.get(digits) ?? null);
+          }
+        } catch {
+          for (const b of batch) b.resolve(null);
+        }
+      }, 60);
+    });
+})();
+
 export interface Quote {
   name: string; price: number; last_close: number; change_pct: number;
   pe_ttm: number; pb: number; mcap_yi: number; turnover_pct: number;
@@ -246,6 +273,19 @@ export interface StockFlowRow {
 }
 export interface StockFlow {
   board?: string | null; total: number; note?: string; rows: StockFlowRow[];
+}
+export interface StockFlowCell {
+  main_net: number | null;
+  main_pct: number | null;
+  netIn?: number | null;
+  netRatio?: number | null;
+}
+
+/** One quote-row fund-flow (marketingdashboard /api/stock-flows). */
+export interface QuoteFlow {
+  code: string;
+  netIn: number;
+  netRatio: number;
 }
 
 export interface WorldIndex {
@@ -1297,6 +1337,14 @@ export const api = {
   },
   stockFlow: (top = 15, board?: string | null) =>
     get<StockFlow>(`/market/stock-flow?top=${top}${board ? `&board=${encodeURIComponent(board)}` : ""}`),
+  /** Quote-row 主力净额/净占比. 60ms 合并, 对齐参考看板 api.stockFlow(code). */
+  quoteFlow: (code: string) => quoteFlowLoader(code),
+  stockFlows: (codes: string[]) =>
+    get<QuoteFlow[]>(`/market/stock-flows?codes=${encodeURIComponent(codes.slice(0, 40).join(","))}`),
+  stockFlowBatch: (codes: string[]) =>
+    get<Record<string, StockFlowCell>>(
+      `/market/stock-flow-batch?codes=${encodeURIComponent(codes.slice(0, 40).join(","))}`,
+    ),
   marketQuotes: (codes: string[]) =>
     withFallback(
       () => get<Record<string, MarketQuote>>(
@@ -1574,6 +1622,23 @@ export const api = {
   },
   weather: (city = "上海", days = 7) =>
     get<WeatherPayload>(`/weather?city=${encodeURIComponent(city)}&days=${days}`),
+  researchSources: () => get<ResearchSources>("/research/sources"),
+  researchKline: (symbol: string, source = "auto", num = 180, interval = "1D") => {
+    const p = new URLSearchParams({ symbol, source, num: String(num), interval });
+    return get<ResearchKline>(`/research/kline?${p}`);
+  },
+  researchCorrelation: (codes: string, window = 60) =>
+    get<ResearchCorrelation>(`/research/correlation?codes=${encodeURIComponent(codes)}&window=${window}`),
+  researchEtfHoldings: (symbol: string, market = "auto") =>
+    get<ResearchEtf>(`/research/etf-holdings?symbol=${encodeURIComponent(symbol)}&market=${market}`),
+  research13f: (opts: { manager?: string; cik?: string; ticker?: string; top?: number }) => {
+    const p = new URLSearchParams();
+    if (opts.manager) p.set("manager", opts.manager);
+    if (opts.cik) p.set("cik", opts.cik);
+    if (opts.ticker) p.set("ticker", opts.ticker);
+    p.set("top", String(opts.top ?? 40));
+    return get<Research13f>(`/research/13f?${p}`);
+  },
   openRouterUsage: () => get<OrUsageDay[]>("/ai-watch/openrouter-usage"),
   spendIndex: () => get<SpendIndexResp>("/ai-watch/spend-index"),
   aaModels: () => get<AaModelsResp>("/ai-watch/aa-models"),
@@ -1687,4 +1752,100 @@ export interface AiInfraResp {
     ppi: { ok: boolean; trend?: string; yoy12m?: number; err?: string };
   };
   notes: string[];
+}
+
+export type ResearchSources = Record<string, { ok: boolean; need: string | null; markets: string[] }>;
+
+export interface ResearchKlineBar {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface ResearchKline {
+  code: string;
+  name?: string;
+  market?: string;
+  source?: string;
+  adjust?: string;
+  bars: ResearchKlineBar[];
+}
+
+export interface ResearchCorrelation {
+  window: number;
+  codes: string[];
+  matrix: (number | null)[][];
+  series?: { code: string; input: string; name?: string; source?: string; returns?: number }[];
+  errors?: { code: string; error: string }[];
+  note?: string;
+}
+
+export interface ResearchEtfHolding {
+  symbol?: string;
+  name?: string;
+  ticker?: string;
+  cusip?: string;
+  pct_of_net_assets?: number;
+  shares?: number;
+  market_value_cny?: number;
+  value_usd?: number;
+  disclosure_source?: string;
+}
+
+export interface ResearchEtf {
+  market: string;
+  symbol: string;
+  fund_name?: string;
+  as_of?: string;
+  coverage?: string;
+  pct_of_net_assets_disclosed?: number;
+  fund_report_holdings?: number;
+  cross_referenced_holdings?: number;
+  net_assets_usd?: number;
+  holdings: ResearchEtfHolding[];
+  periods?: { as_of?: string; coverage?: string; fund_report_holdings?: number; pct_of_net_assets_disclosed?: number }[];
+  note?: string;
+  source?: string;
+}
+
+export interface Research13fHolding {
+  issuer?: string;
+  cusip?: string;
+  put_call?: string | null;
+  value_usd?: number;
+  shares?: number;
+}
+
+export interface Research13fChange {
+  action: "new" | "increased" | "reduced" | "closed" | string;
+  issuer?: string;
+  cusip?: string;
+  shares_before?: number;
+  shares_after?: number;
+  shares_change?: number;
+  shares_change_pct?: number | null;
+  value_usd_change?: number;
+}
+
+export interface Research13f {
+  mode: "manager" | "ticker" | string;
+  cik?: string;
+  manager?: string;
+  ticker?: string;
+  cusip?: string;
+  managers?: { cik: string; name?: string; period_end?: string; filing_date?: string }[];
+  current?: {
+    period_end?: string;
+    filing_date?: string;
+    value_units?: string;
+    positions?: number;
+    holdings?: Research13fHolding[];
+  };
+  prior?: { period_end?: string; filing_date?: string } | null;
+  changes?: Research13fChange[];
+  change_counts?: { new?: number; increased?: number; reduced?: number; closed?: number };
+  note?: string;
 }

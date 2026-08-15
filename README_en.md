@@ -39,6 +39,7 @@ It does not make decisions for you. It pulls together quotes, analyst reports, v
 | ⭐&nbsp;**Watchlist** | **Paste a whole batch of tickers at once** (commas, spaces or newlines) · one-screen table (price, change, PE, PB, turnover) · **live quotes toggle** (top right, off by default; refreshes every 3s during trading hours, auto-pauses outside them and when the tab is hidden) · hand the whole list to your AI. Stored locally |
 | 💼&nbsp;**Portfolio** | Enter cost and size, see live P&L · closed-position log (local only, never uploaded) |
 | 📄&nbsp;**My Reports** | Drag-and-drop your own research PDFs / Word / spreadsheets · auto-filed by industry from the filename · download or delete. **Stored in your local deploy directory only** |
+| 🔬&nbsp;**Research desk** | Header `/research`: correlation heatmap · ETF look-through (Eastmoney full book / SEC N-PORT) · 13F QoQ · OKX/Binance/pykrx candles. Public filings only; holdings are stale by construction |
 | 📝&nbsp;**Research Notes** | Save AI reviews, takeaways and Q&A locally · **reflection audit**: have the AI audit its own reasoning — which claims are backed by data, which are speculation, where the weakest link is, and what to check next |
 | 🔌&nbsp;**Bring Your AI** | Subscription mode (local CLI, no API key) · API mode (any OpenAI-compatible endpoint) · MCP (mount into Claude Code and other agents) |
 
@@ -65,11 +66,11 @@ Three public data toolkits are **vendored directly into this repo** — `git clo
 ### US / HK data · global-stock-data
 
 - Lives in [`global-stock-data/`](global-stock-data/) (v2.0.3). 13 data layers, 30+ endpoints, 11 sources, no auth required — quotes, candles, technicals, financial statements, fund flows, options (CBOE official chain with full Greeks and 0DTE flow), FINRA short volume / market-wide short ranking, SEC EDGAR filing stream + **EDGAR frames screener**, US/HK movers boards. Every source is labeled with its compliance tier.
-- Dashboard: US page hosts EDGAR Screener, movers, FINRA short ranking, and selected-ticker options/fund-flow; stock page shows US/HK daily candles (`/api/global/us/kline` Yahoo then Sina; `/api/global/hk/kline` Yahoo query1/query2, Tencent ifzq qfq on 403).
+- Dashboard: US page hosts EDGAR Screener, movers, FINRA short ranking, and selected-ticker options/fund-flow; stock page shows US/HK daily candles (`/api/global/us/kline` Yahoo then Sina then Stooq; `/api/global/hk/kline` Yahoo query1/query2, Tencent ifzq qfq on 403). Research desk: `/api/research/*` (correlation, ETF holdings, 13F QoQ, extra klines).
 - `backend/gstock.py` + `gstock_deep.py`: global indices, US/HK quotes & key metrics, **Yahoo valuation/analyst/holders** (quoteSummary, then v7 quote, then Eastmoney PE/PB + GMAININDICATOR margins — never map revenue onto PE), **3-statement summaries & fund flow**, **FINRA short volume**, **CBOE options 0DTE/unusual flow**, **SEC filings / earnings calendar**, **Yahoo stock news (RSS fallback when crumb is blocked)**.
 - Set `VR_SEC_CONTACT="Name you@example.com"` for SEC endpoints.
 - **CBOE options**: compliance tier C — personal research only; commercial use needs a Cboe license. Delayed data, not for live trading.
-- **Korean stocks**: append `.KS` (e.g. `005930.KS`); quotes only. Taiwan via US ADRs (e.g. `TSM`).
+- **Korean stocks**: append `.KS` (e.g. `005930.KS`); quotes plus daily bars on the research desk (`pip install pykrx`). Taiwan via US ADRs (e.g. `TSM`).
 - **Upstream**: <https://github.com/simonlin1212/global-stock-data>
 
 ### Global news · investment-news

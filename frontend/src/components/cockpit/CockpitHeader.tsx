@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 const PAGE_TITLES: { match: (p: string) => boolean; title: string; subtitle: string }[] = [
   { match: (p) => p.startsWith("/fin"), title: "财报窗口", subtitle: "EARNINGS WINDOW" },
   { match: (p) => p.startsWith("/us-market"), title: "美股观察", subtitle: "US MARKET" },
+  { match: (p) => p.startsWith("/research"), title: "研究桌", subtitle: "RESEARCH DESK" },
   { match: (p) => p.startsWith("/ai-watch"), title: "AI 观察", subtitle: "AI INDUSTRY WATCH" },
   { match: (p) => p.startsWith("/ovlab"), title: "期权期货", subtitle: "OPTIONS & FUTURES" },
   { match: (p) => p.startsWith("/portfolio"), title: "我的持仓", subtitle: "PORTFOLIO" },
@@ -19,6 +20,7 @@ const NAV = [
   { to: "/a-share", label: "A股", match: (p: string) => p.startsWith("/a-share") },
   { to: "/fin", label: "财报窗口", match: (p: string) => p.startsWith("/fin") },
   { to: "/us-market", label: "美股", match: (p: string) => p.startsWith("/us-market") },
+  { to: "/research", label: "研究", match: (p: string) => p.startsWith("/research") },
   { to: "/ai-watch", label: "AI观察", match: (p: string) => p.startsWith("/ai-watch") },
   { to: "/ovlab", label: "期权期货", match: (p: string) => p.startsWith("/ovlab") },
   { to: "/portfolio", label: "持仓", match: (p: string) => p.startsWith("/portfolio") },

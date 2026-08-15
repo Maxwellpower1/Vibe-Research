@@ -61,8 +61,25 @@ def _kline(args: dict):
             rows = astock.kline(code, category=cat, offset=n)
         except Exception:  # noqa: BLE001
             rows = []
+    if not rows and period == "day":
+        try:
+            import ext_feeds
+            bs = ext_feeds.baostock_kline(code, n)
+            rows = [
+                {
+                    "date": b.get("date"),
+                    "open": b.get("open"),
+                    "close": b.get("close"),
+                    "high": b.get("high"),
+                    "low": b.get("low"),
+                    "volume": b.get("volume"),
+                }
+                for b in (bs.get("bars") or [])
+            ]
+        except Exception:  # noqa: BLE001
+            rows = []
     if not rows:
-        return {"error": "K 线数据源当前不可达（mootdx 与备用源均无返回）"}
+        return {"error": "K 线数据源当前不可达（腾讯 / mootdx / baostock 均无返回）"}
     closes = [r.get("close") for r in rows if isinstance(r.get("close"), (int, float))]
     highs = [r.get("high") for r in rows if isinstance(r.get("high"), (int, float))]
     lows = [r.get("low") for r in rows if isinstance(r.get("low"), (int, float))]
@@ -490,6 +507,74 @@ def _ovlab_vol_surface(args: dict) -> dict:
     return ovlab.get_volatility_surface(product) or {"error": "波动率曲面暂无数据"}
 
 
+def _ext_kline(args: dict) -> dict:
+    import ext_feeds
+
+    symbol = str(args.get("symbol") or "").strip()
+    if not symbol:
+        return {"error": "symbol 必填"}
+    num = max(5, min(int(args.get("num") or 60), 250))
+    src = str(args.get("source") or "auto")
+    out = ext_feeds.fetch_kline(symbol, num=num, source=src)
+    if out.get("error"):
+        return out
+    bars = out.get("bars") or []
+    if not bars:
+        return {"error": f"未取到 {symbol} 的 K 线"}
+    return {
+        "code": out.get("code") or symbol,
+        "name": out.get("name"),
+        "market": out.get("market"),
+        "source": out.get("source"),
+        "adjust": out.get("adjust"),
+        "bars": len(bars),
+        "recent": _pick(bars[-15:], ("date", "open", "high", "low", "close", "volume"), 15),
+    }
+
+
+def _correlation(args: dict) -> dict:
+    import correlation
+
+    raw = args.get("codes")
+    if isinstance(raw, list):
+        codes = [str(c).strip() for c in raw if str(c).strip()]
+    else:
+        codes = [c.strip() for c in str(raw or "").split(",") if c.strip()]
+    window = max(20, min(int(args.get("window") or 60), 250))
+    out = correlation.correlation_matrix(codes, window=window)
+    if out.get("matrix"):
+        out.pop("series", None)
+    return out
+
+
+def _etf_holdings(args: dict) -> dict:
+    import etf_lookthrough
+
+    symbol = str(args.get("symbol") or "").strip()
+    if not symbol:
+        return {"error": "symbol 必填"}
+    out = etf_lookthrough.etf_holdings(symbol, market=str(args.get("market") or "auto"))
+    holdings = out.get("holdings") or []
+    if holdings:
+        out = {**out, "holdings": holdings[:20], "holdings_shown": 20, "holdings_total": len(holdings)}
+    return out
+
+
+def _13f(args: dict) -> dict:
+    import inst_13f
+
+    out = inst_13f.query_13f(
+        manager=args.get("manager") or None,
+        cik=args.get("cik") or None,
+        ticker=args.get("ticker") or None,
+        top=max(5, min(int(args.get("top") or 20), 40)),
+    )
+    cur = (out.get("current") or {}).get("holdings")
+    if isinstance(cur, list) and len(cur) > 20:
+        out["current"] = {**out["current"], "holdings": cur[:20]}
+    return out
+
+
 # name -> 执行函数。绝大多数是「调后端函数 + 裁剪」，复杂的抽成上面的私有函数。
 _HANDLERS = {
     "query_quote": lambda a: astock.tencent_quote([str(c) for c in a.get("codes", [])]),
@@ -581,5 +666,9 @@ _HANDLERS = {
     "query_ovlab_search": lambda a: _ovlab_search(a),
     "query_ovlab_flow_data": lambda a: _ovlab_flow_data(a),
     "query_ovlab_vol_surface": lambda a: _ovlab_vol_surface(a),
+    "query_ext_kline": _ext_kline,
+    "query_correlation": _correlation,
+    "query_etf_holdings": _etf_holdings,
+    "query_13f": _13f,
 }
 

@@ -42,7 +42,7 @@ def global_us_kline(
     symbol: str = Query(..., min_length=1, max_length=16),
     num: int = Query(180, ge=20, le=1000),
 ):
-    """美股日 K（默认前复权 Yahoo；不可达回退新浪不复权）。symbol 如 AAPL / TSLA。缓存 5 分钟。"""
+    """美股日 K（Yahoo 前复权; 回退新浪不复权, 再回退 Stooq）。symbol 如 AAPL / TSLA。缓存 5 分钟。"""
     sym = symbol.strip().upper()
     try:
         data = _cached(

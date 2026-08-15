@@ -79,6 +79,16 @@ def test_attach_em_flow(monkeypatch):
     assert rows[0]["main_pct"] == 2.4
 
 
+def test_stock_flow_map(monkeypatch):
+    monkeypatch.setattr(cl, "_em_ulist_flow", lambda codes: {"600519": (1.2e8, -3.1)})
+    out = cl.stock_flow_map(["600519", "000858"])
+    assert out["600519"]["main_net"] == 1.2e8
+    assert out["600519"]["netRatio"] == -3.1
+    assert out["000858"]["main_net"] is None
+    rows = cl.stock_flows(["600519", "000858"])
+    assert rows == [{"code": "600519", "netIn": 1.2e8, "netRatio": -3.1}]
+
+
 def test_board_stocks_prefers_tencent_pt(monkeypatch):
     monkeypatch.setattr(cl, "_tencent_board_stocks", lambda raw, n: [{
         "code": "002080", "name": "中材科技", "price": 59.93, "pct": 7.48,
@@ -174,9 +184,24 @@ def test_parse_sina_amount_rows_converts_wan_yuan():
 def test_stock_rank_prefers_sina(monkeypatch):
     sina_calls = []
     monkeypatch.setattr(cl, "_sina_rank", lambda *a, **k: sina_calls.append(a) or [{"code": "600519", "pct": 1}])
+    monkeypatch.setattr(cl, "_attach_em_flow", lambda rows: rows)
     out = cl.stock_rank("amount", 0, 10)
     assert out[0]["code"] == "600519"
     assert sina_calls
+
+
+def test_stock_rank_attaches_em_flow(monkeypatch):
+    monkeypatch.setattr(cl, "_sina_rank", lambda *a, **k: [{"code": "600519", "name": "茅台"}])
+
+    def attach(rows):
+        rows[0]["main_net"] = 9.0
+        rows[0]["main_pct"] = 1.2
+        return rows
+
+    monkeypatch.setattr(cl, "_attach_em_flow", attach)
+    out = cl.stock_rank("amount", 0, 10)
+    assert out[0]["main_net"] == 9.0
+    assert out[0]["main_pct"] == 1.2
 
 
 def test_stock_rank_empty_when_sina_misses(monkeypatch):

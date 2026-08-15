@@ -192,6 +192,32 @@ TOOLS: list[dict] = [
        "查波动率曲面(OpenVlab volatility-surface): 按到期月分组的 T 型报价/持仓数据。product 品种如 SC。缓存 2 分钟。",
        {"product": {"type": "string", "description": "品种代码, 如 SC / IO"}},
        ["product"]),
+
+    # —— 研究桌：扩展行情 / 相关 / ETF 穿透 / 13F ——
+    _t("query_ext_kline",
+       "查扩展行情日 K: Stooq 美股 / Baostock A股 / OKX·Binance 加密 / pykrx 韩股。source=auto 按代码推断。只客观呈现历史 K, 不预测。",
+       {"symbol": {"type": "string", "description": "AAPL / 600519 / BTC-USDT / 005930.KS"},
+        "source": {"type": "string", "enum": ["auto", "stooq", "baostock", "okx", "binance", "ccxt", "pykrx"],
+                   "description": "默认 auto"},
+        "num": {"type": "integer", "description": "根数, 默认 60, 最大 250"}},
+       ["symbol"]),
+    _t("query_correlation",
+       "查多标的日收益 Pearson 相关矩阵(最多 12 只)。代码用逗号: 600519,AAPL,00700.HK,BTC-USDT。客观统计, 非预测。",
+       {"codes": {"type": "string", "description": "逗号分隔代码"},
+        "window": {"type": "integer", "description": "回看交易日, 默认 60"}},
+       ["codes"]),
+    _t("query_etf_holdings",
+       "查 ETF 穿透持仓。A 股走东财中报/年报全持仓(星号交叉引用不计入覆盖率); 美股走 SEC N-PORT, as_of 用 repPdDate。持仓天生滞后, 不是实时。",
+       {"symbol": {"type": "string", "description": "510300 或 IVV"},
+        "market": {"type": "string", "enum": ["auto", "CN", "US"], "description": "默认 auto"}},
+       ["symbol"]),
+    _t("query_13f",
+       "查美国 13F-HR 机构持仓与最近两季环比。manager/cik 看持仓表+增减; ticker 只列提及该票的管理人。需 VR_SEC_CONTACT。客观披露, 非推荐。",
+       {"manager": {"type": "string", "description": "管理人名称, 如 Berkshire"},
+        "cik": {"type": "string", "description": "10 位 CIK"},
+        "ticker": {"type": "string", "description": "美股代码, 列持有人"},
+        "top": {"type": "integer", "description": "持仓条数, 默认 20"}},
+       []),
 ]
 
 TOOL_NAMES = [t["function"]["name"] for t in TOOLS]

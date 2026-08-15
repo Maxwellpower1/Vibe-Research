@@ -543,6 +543,31 @@ def _attach_em_flow(rows: list[dict]) -> list[dict]:
     return rows
 
 
+def stock_flow_map(codes: list[str]) -> dict[str, dict]:
+    """Batch main-net / main-pct. Same ulist as the reference dashboard."""
+    flow = _em_ulist_flow(codes)
+    out: dict[str, dict] = {}
+    for c in codes:
+        rec = flow.get(c)
+        if rec:
+            out[c] = {"main_net": rec[0], "main_pct": rec[1], "netIn": rec[0], "netRatio": rec[1]}
+        else:
+            out[c] = {"main_net": None, "main_pct": None, "netIn": None, "netRatio": None}
+    return out
+
+
+def stock_flows(codes: list[str]) -> list[dict]:
+    """Reference /api/stock-flows shape: [{code, netIn, netRatio}, ...]."""
+    flow = _em_ulist_flow(codes)
+    rows: list[dict] = []
+    for c in codes:
+        rec = flow.get(c)
+        if rec is None:
+            continue
+        rows.append({"code": c, "netIn": rec[0], "netRatio": rec[1]})
+    return rows
+
+
 def board_stocks(code: str, n: int = 12) -> list[dict]:
     """Board constituents by change pct (Tencent qq rank). Main-net from Eastmoney ulist."""
     raw = (code or "").strip()
@@ -561,14 +586,20 @@ def board_stocks(code: str, n: int = 12) -> list[dict]:
 
 
 def stock_rank(sort: str = "changepercent", asc: int = 0, n: int = 30) -> list[dict]:
-    """A-share rank: amount / changepercent (Sina hs_a)."""
+    """A-share rank: amount / changepercent (Sina hs_a). Main-net from Eastmoney ulist."""
     key = sort if sort in _SINA_RANK_SORT else "changepercent"
     desc = 0 if int(asc or 0) == 1 else 1
     want = max(5, min(int(n or 30), 50))
     try:
-        return _sina_rank(key, 0 if desc else 1, want) or []
+        rows = _sina_rank(key, 0 if desc else 1, want) or []
     except Exception:
         return []
+    if rows:
+        try:
+            _attach_em_flow(rows)
+        except Exception:
+            pass
+    return rows
 
 
 def parse_sina_amount_rows(arr: object, n: int = 20) -> list[dict]:

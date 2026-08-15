@@ -24,6 +24,32 @@ def test_bad_code_400(path):
     assert client.get(path).status_code == 400
 
 
+def test_stock_flow_batch_bad_codes():
+    assert client.get("/api/market/stock-flow-batch?codes=xxxxxx").status_code == 400
+
+
+def test_stock_flow_batch_ok(monkeypatch):
+    import cockpit_live
+    from api_common import _DC_CACHE
+
+    _DC_CACHE.clear()
+    monkeypatch.setattr(
+        cockpit_live,
+        "stock_flow_map",
+        lambda codes: {c: {"main_net": 1.0, "main_pct": 2.0, "netIn": 1.0, "netRatio": 2.0} for c in codes},
+    )
+    r = client.get("/api/market/stock-flow-batch?codes=sh600519,000858")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["600519"]["main_pct"] == 2.0
+    assert data["000858"]["main_net"] == 1.0
+    r2 = client.get("/api/market/stock-flows?codes=sh600519,000858")
+    assert r2.status_code == 200
+    rows = r2.json()["data"]
+    assert rows[0]["code"] == "600519"
+    assert rows[0]["netRatio"] == 2.0
+
+
 def test_industry_top_range():
     assert client.get("/api/industry?top=2").status_code == 422   # ge=5
     assert client.get("/api/industry?top=999").status_code == 422  # le=50

@@ -122,6 +122,7 @@ export function WatchlistCockpitPanel() {
               amount={hq?.amount}
               turnover={hq?.turnover}
               spark={sp ?? { closes: [] }}
+              flow
             />
           );
         })}

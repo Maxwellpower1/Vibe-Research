@@ -98,7 +98,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           title: "涨跌分布 / 广度",
           icon: <BarChart3 size={14} />,
           accent: "#818cf8",
-          defaultW: 0.36,
+          defaultW: 0.24,
           mobileH: "h-[420px]",
           body: (
             <ReviewSentimentPanel
@@ -114,7 +114,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           title: "市场板块实时热点",
           icon: <Layers size={14} />,
           accent: "#22d3ee",
-          defaultW: 0.36,
+          defaultW: 0.48,
           mobileH: "h-[420px]",
           body: <SectorHotPanel />,
         },

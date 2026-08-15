@@ -12,6 +12,7 @@ const MOBILE_NAV = [
   { to: "/a-share", label: "A股" },
   { to: "/fin", label: "财报" },
   { to: "/us-market", label: "美股" },
+  { to: "/research", label: "研究" },
   { to: "/ai-watch", label: "AI观察" },
   { to: "/ovlab", label: "期权" },
   { to: "/portfolio", label: "持仓" },

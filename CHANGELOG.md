@@ -3,6 +3,33 @@
 本项目的版本号唯一来源是 `frontend/package.json`；后端 HTTP API、`/api/health`、
 前端界面与 MCP `serverInfo` 全部从它读取（见 `backend/version.py`）。
 
+## v0.3.2 — 2026-08-16
+
+研究桌：把 Vibe-Trading 里值得进投研看板的公开源接进来，不搬回测引擎 / 券商 / Swarm。
+
+### 新增：`/research` 研究桌
+
+四块只读面板：日收益 **Pearson 相关热力图**、**ETF 穿透**、**13F 环比**、加密/韩股 K 线。
+
+- `GET /api/research/sources` · `/kline` · `/correlation` · `/etf-holdings` · `/13f`
+- AI 工具：`query_ext_kline` / `query_correlation` / `query_etf_holdings` / `query_13f`
+
+### 行情源
+
+- **Stooq**：美股日 K 第三兜底（Yahoo → 新浪 → Stooq），无 key
+- **Baostock**：A 股日 K 兜底（腾讯 / mootdx 空时）；可选 `pip install baostock`
+- **OKX / Binance** 公开 REST；**CCXT / pykrx** 可选
+
+### 修复：复盘自选「净额 / 净占比」一直是 —
+
+自选复用了个股行，但没开资金流。对齐参考看板：行上 `flow`，可见时 30s 轮询，60ms 窗口合成一次 `GET /api/market/stock-flows`（东财 ulist `f62`/`f184`，30s 缓存）。
+
+### ETF / 13F 陷阱按已验证事实处理
+
+- 东财星号行是发行人十大流通股东交叉引用，不计入基金披露覆盖率；`as_of` 从 payload 读
+- N-PORT 用 `repPdDate` 而不是 `repPdEnd`
+- 13F 信息表按根标签发现；value 单位不只按申报日切
+
 ## v0.3.1 — 2026-08-09
 
 三个用户报告的 bug + 版本号治理。感谢 [@lihaoran0412](https://github.com/lihaoran0412)

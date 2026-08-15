@@ -408,7 +408,7 @@ def us_stock_kline(symbol: str, num: int = 180) -> dict:
     symbol: 如 AAPL / TSLA；仅美股 ticker。
     num: 返回最近 N 根。
     返回: {code, name, market, source, adjust: qfq|none, bars: [...]}
-    Yahoo 不可达时回退新浪（不复权, adjust=none）。
+    Yahoo 不可达时回退新浪（不复权, adjust=none），再回退 Stooq。
     """
     sym = (symbol or "").strip().upper()
     if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,7}", sym):
@@ -430,6 +430,15 @@ def us_stock_kline(symbol: str, num: int = 180) -> dict:
         try:
             bars = _us_kline_sina(code, n)
             source, adjust = "sina", "none"
+        except Exception:
+            bars = []
+    if not bars:
+        try:
+            import ext_feeds
+            st = ext_feeds.stooq_kline(code, n)
+            bars = list(st.get("bars") or [])
+            if bars:
+                source, adjust = "stooq", "none"
         except Exception:
             bars = []
     if not bars:

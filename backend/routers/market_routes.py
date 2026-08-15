@@ -7,7 +7,7 @@ import market
 import newsradar
 import review_snapshot
 import review_warmup
-from api_common import _cached
+from api_common import _cached, _DC_CACHE
 
 router = APIRouter(tags=["market"])
 
@@ -109,6 +109,74 @@ def market_board_flow(
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"板块资金流异常：{e}") from e
+
+
+def _parse_flow_codes(codes: str, cap: int = 40) -> list[str]:
+    raw: list[str] = []
+    seen: set[str] = set()
+    for part in codes.split(","):
+        k = part.strip()
+        if len(k) >= 8 and k[:2].isalpha():
+            k = k[2:]
+        if not (k.isdigit() and len(k) == 6) or k in seen:
+            continue
+        seen.add(k)
+        raw.append(k)
+        if len(raw) >= cap:
+            break
+    return raw
+
+
+def _flow_cached(raw: list[str]) -> dict[str, dict]:
+    import cockpit_live
+    out: dict[str, dict] = {}
+    miss: list[str] = []
+    for c in raw:
+        key = ("stock_flow_ulist", c)
+        if key in _DC_CACHE:
+            out[c] = _DC_CACHE.get(key)
+        else:
+            miss.append(c)
+    if miss:
+        fetched = cockpit_live.stock_flow_map(miss)
+        for c in miss:
+            val = fetched.get(c) or {"main_net": None, "main_pct": None, "netIn": None, "netRatio": None}
+            _DC_CACHE.set(("stock_flow_ulist", c), val, ttl=30)
+            out[c] = val
+    return out
+
+
+@router.get("/api/market/stock-flows")
+def market_stock_flows(codes: str = Query(..., min_length=6, max_length=400)):
+    """Quote-row fund flow. Same as marketingdashboard /api/stock-flows: ulist, 30s, max 40."""
+    raw = _parse_flow_codes(codes)
+    if not raw:
+        raise HTTPException(400, "codes 须为逗号分隔的 6 位 A 股代码")
+    try:
+        cached = _flow_cached(raw)
+    except Exception as e:
+        raise HTTPException(502, f"自选资金流异常: {e}") from e
+    rows = []
+    for c in raw:
+        rec = cached.get(c) or {}
+        if rec.get("netIn") is None and rec.get("main_net") is None:
+            continue
+        net = rec.get("netIn") if rec.get("netIn") is not None else rec.get("main_net")
+        ratio = rec.get("netRatio") if rec.get("netRatio") is not None else rec.get("main_pct")
+        rows.append({"code": c, "netIn": net, "netRatio": ratio})
+    return {"data": rows}
+
+
+@router.get("/api/market/stock-flow-batch")
+def market_stock_flow_batch(codes: str = Query(..., min_length=6, max_length=400)):
+    """Map form of stock-flows (code -> main_net / main_pct)."""
+    raw = _parse_flow_codes(codes)
+    if not raw:
+        raise HTTPException(400, "codes 须为逗号分隔的 6 位 A 股代码")
+    try:
+        return {"data": _flow_cached(raw)}
+    except Exception as e:
+        raise HTTPException(502, f"自选资金流异常: {e}") from e
 
 
 @router.get("/api/market/stock-flow")

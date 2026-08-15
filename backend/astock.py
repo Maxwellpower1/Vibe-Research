@@ -649,6 +649,21 @@ def _em_fx_minute(symbol: str, n: int) -> dict:
     }
 
 
+def _baostock_eligible(symbol: str) -> bool:
+    """Daily A-share stocks only. Skip indices (sh000 / sz399) and HK/US/FX."""
+    s = (symbol or "").lower()
+    if len(s) < 8 or not s[2:].isdigit():
+        return False
+    prefix, digits = s[:2], s[2:]
+    if prefix not in ("sh", "sz", "bj"):
+        return False
+    if prefix == "sh" and digits.startswith("000"):
+        return False
+    if prefix == "sz" and digits.startswith("399"):
+        return False
+    return True
+
+
 def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
     """轻量图数据（腾讯）：分时 / 5日 / 日K(前复权)。
 
@@ -753,7 +768,36 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
             if isinstance(qt, list) and len(qt) > 1:
                 name = qt[1] if isinstance(qt[1], str) else name
     except Exception:
-        return {}
+        bars = []
+
+    if not bars and res not in ("1", "5") and _baostock_eligible(symbol):
+        try:
+            import ext_feeds
+            bs = ext_feeds.baostock_kline(code6, n)
+            for b in bs.get("bars") or []:
+                bars.append({
+                    "datetime": str(b.get("date") or "")[:10],
+                    "open": float(b["open"]),
+                    "close": float(b["close"]),
+                    "high": float(b["high"]),
+                    "low": float(b["low"]),
+                    "volume": int(float(b.get("volume") or 0)),
+                })
+            if bars:
+                adjust = bs.get("adjust") or "qfq"
+                name = name or bs.get("name") or code6
+                return {
+                    "code": code6,
+                    "symbol": symbol,
+                    "name": name,
+                    "resolution": "1D",
+                    "adjust": adjust,
+                    "source": "baostock",
+                    "prev_close": prev_close,
+                    "bars": bars[-n:],
+                }
+        except Exception:
+            bars = []
 
     if not bars:
         return {}
@@ -807,10 +851,43 @@ def _mootdx_client():
 
 
 def kline(code: str, category: int = 4, offset: int = 60) -> list[dict]:
-    """K线：category 4=日 5=周 6=月 11=60分钟。"""
-    client = _mootdx_client()
-    df = client.bars(symbol=code, category=category, offset=offset)
-    return df.to_dict("records") if df is not None and not df.empty else []
+    """K线：category 4=日 5=周 6=月 11=60分钟。日线在 mootdx 空时回退 Baostock。"""
+    rows: list[dict] = []
+    missing = None
+    try:
+        client = _mootdx_client()
+        df = client.bars(symbol=code, category=category, offset=offset)
+        rows = df.to_dict("records") if df is not None and not df.empty else []
+    except DependencyMissing as e:
+        missing = e
+        if int(category) != 4:
+            raise
+    except Exception:
+        rows = []
+    if rows:
+        return rows
+    if int(category) == 4:
+        try:
+            import ext_feeds
+            out = ext_feeds.baostock_kline(code, offset)
+            bars = out.get("bars") or []
+            if bars:
+                return [
+                    {
+                        "datetime": b.get("date"),
+                        "open": b.get("open"),
+                        "high": b.get("high"),
+                        "low": b.get("low"),
+                        "close": b.get("close"),
+                        "volume": b.get("volume"),
+                    }
+                    for b in bars
+                ]
+        except Exception:
+            pass
+    if missing is not None:
+        raise missing
+    return []
 
 
 def finance(code: str) -> dict:

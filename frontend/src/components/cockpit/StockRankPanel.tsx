@@ -65,6 +65,7 @@ export function StockRankPanel({ tab }: { tab: RankTab }) {
               mainPct={s.main_pct}
               rank={i + 1}
               spark={sp ?? { closes: [] }}
+              flow
             />
           );
         })}

@@ -5,6 +5,7 @@ import { MinuteSpark } from "@/components/review/MinuteSpark";
 import { bgChg, fmtAmt, fmtPrice, pctColor } from "@/components/review/format";
 import { usePolling } from "@/hooks/usePolling";
 import { loadLightKline, sparkFromKline } from "@/lib/lightKline";
+import { api } from "@/lib/api";
 import { useQuote } from "@/lib/quoteHub";
 import { useStockBoards } from "@/lib/stockBoardsHub";
 import { cn } from "@/lib/utils";
@@ -74,6 +75,7 @@ export function QuoteStockRow({
   spark,
   watchable = true,
   boards: wantBoards = true,
+  flow = false,
 }: {
   code: string;
   name: string;
@@ -91,6 +93,8 @@ export function QuoteStockRow({
   watchable?: boolean;
   /** Industry/concept tag. Off for rotating sector rows to spare em_get. */
   boards?: boolean;
+  /** Fetch 主力净额/净占比 (Eastmoney ulist, 30s). Same as marketingdashboard QuoteRow flow. */
+  flow?: boolean;
 }) {
   const { setEl, on: visible, rowW } = useRowBox();
   const compact = rowW > 0 && rowW < COMPACT_W;
@@ -101,6 +105,15 @@ export function QuoteStockRow({
   const livePct = hub ? hub.pct : pct;
   const liveAmt = amount ?? hub?.amount;
   const liveTurn = turnover ?? hub?.turnover;
+  const needFetch = flow && mainNet == null && mainPct == null;
+  const { data: fl } = usePolling(
+    () => api.quoteFlow(code),
+    30_000,
+    [code],
+    visible && needFetch,
+  );
+  const liveNet = mainNet ?? fl?.netIn ?? null;
+  const liveMainPct = mainPct ?? fl?.netRatio ?? null;
   const boards = useStockBoards(code, visible && wantBoards);
   const tag = boards?.industry || boards?.concepts?.[0] || "";
   const showStar = watchable && !!watchDigits(code);
@@ -118,7 +131,7 @@ export function QuoteStockRow({
   const href = link ? klineHref(code) : undefined;
   const hasAmt = liveAmt != null && liveAmt > 0;
   const hasTurn = liveTurn != null && liveTurn > 0;
-  const ratioBar = mainPct != null ? Math.min(100, Math.abs(mainPct) * 2) : 0;
+  const ratioBar = liveMainPct != null ? Math.min(100, Math.abs(liveMainPct) * 2) : 0;
   const rankCls = rank != null && rank <= 3 ? "text-amber-400" : "text-slate-600";
 
   const inner = (
@@ -159,19 +172,19 @@ export function QuoteStockRow({
       <Stat label="价" value={fmtPrice(livePrice)} />
       <Stat
         label={compact ? "净" : "主力净额"}
-        value={fmtAmt(mainNet)}
-        valueCls={cn("font-semibold", mainNet != null ? pctColor(mainNet) : "text-slate-600")}
+        value={fmtAmt(liveNet)}
+        valueCls={cn("font-semibold", liveNet != null ? pctColor(liveNet) : "text-slate-600")}
       />
       <div className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap leading-none">
         <span className="shrink-0 text-[9px] text-slate-600">{compact ? "占" : "净占比"}</span>
         <span className="h-1 min-w-0 flex-1 self-center rounded-full bg-slate-800">
           <span
-            className={cn("block h-1 rounded-full", (mainPct ?? 0) < 0 ? "bg-emerald-400/80" : "bg-rose-400/80")}
+            className={cn("block h-1 rounded-full", (liveMainPct ?? 0) < 0 ? "bg-emerald-400/80" : "bg-rose-400/80")}
             style={{ width: `${ratioBar}%` }}
           />
         </span>
-        <span className={cn("truncate text-[11px] tabular-nums", mainPct != null ? pctColor(mainPct) : "text-slate-600")}>
-          {mainPct != null && Number.isFinite(mainPct) ? `${mainPct.toFixed(1)}%` : "—"}
+        <span className={cn("truncate text-[11px] tabular-nums", liveMainPct != null ? pctColor(liveMainPct) : "text-slate-600")}>
+          {liveMainPct != null && Number.isFinite(liveMainPct) ? `${liveMainPct.toFixed(1)}%` : "—"}
         </span>
       </div>
       {hasTurn ? <Stat label="换" value={`${liveTurn!.toFixed(1)}%`} /> : <div />}

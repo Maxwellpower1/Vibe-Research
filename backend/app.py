@@ -59,6 +59,7 @@ from routers import (
     market_routes,
     ovlab_routes,
     portfolio,
+    research_routes,
 )
 from version import read_version
 
@@ -112,6 +113,7 @@ app.include_router(ovlab_routes.router)
 app.include_router(fino_routes.router)
 app.include_router(ai_watch_routes.router)
 app.include_router(fin_routes.router)
+app.include_router(research_routes.router)
 
 # Background: keep Daily Review caches warm (session-aware interval).
 review_warmup.start_scheduler(extra=_warm_review_dc)

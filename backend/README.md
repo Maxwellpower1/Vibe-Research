@@ -39,7 +39,7 @@ python3 -m venv .venv
 | `GET /api/market/review-snapshot` | 每日复盘聚合（`scope=paint|top|full`）：腾讯指数/总览 → 情绪+行业强弱 → 打板/龙虎/监控 | 缓存命中秒回 |
 | `GET /api/market/board-flow` · `/hsgt` · `/hot-list` · `/stock-monitor` · `/price-anomaly` · `/limit-pools` | 板块资金流 / 北向 / 同花顺热榜 / 监控池 / 异动 / 打板池 | requests |
 | `GET /api/market/world-indices` · `/quotes` · `/boards` · `/board-stocks` · `/rank` · `/board-flow-intraday` · `/commodities` · `/commodity-minutes` | 全球关键指数 / 批量报价(股票指数按代码 5s, 期货走 commodities 并行) / 板块热点 / 成分股(腾讯pt*) / 个股榜单(含成交额, 新浪) / 分钟板块资金 / 大宗商品 | 腾讯/新浪/东财(仅独有资金流) |
-| `GET /api/market/spot-table` · `/chem-spot` · `/future-daily` · `/stock-boards` · `/stock-boards-batch` · `/lives` | 生意社现期/基差 · 化工现货 · 新浪期货日K · 个股行业/概念(单票/批量) · 新浪7x24(华尔街见闻兜底) | requests |
+| `GET /api/market/spot-table` · `/chem-spot` · `/future-daily` · `/stock-boards` · `/stock-boards-batch` · `/stock-flows` · `/lives` | 生意社现期/基差 · 化工现货 · 新浪期货日K · 个股行业/概念(单票/批量) · 自选主力净额/净占比(对齐参考看板 ulist) · 新浪7x24(华尔街见闻兜底) | requests |
 | `GET /api/iwencai/status` · `/select` | 问财是否已配置 · 选股名单(产业链刷新) | IWENCAI_API_KEY |
 | `GET /api/market/breadth` · `/ths-profile` · `/ths-rotation` | 全A涨跌分位+直方图(新浪hs_a分页/腾讯) · shy313同花顺归属 · 概念/行业当日均涨 | requests |
 | `GET /api/fin/board` · `/forecast` · `/company` · `/suggest` | 财报窗口：盈利榜+日历+行业实时涨跌 / 业绩预告 / F10+估值+公告+研报 / 代码联想 | 东财 + 本仓库财务/估值 |
@@ -62,7 +62,13 @@ python3 -m venv .venv
 | `GET /api/global/sec/daily` | 全市场 SEC 当日流 Form4/8-K/13F（需 `VR_SEC_CONTACT`） | requests |
 | `GET /api/global/earnings-calendar` | Nasdaq 财报日历 | requests |
 | `GET /api/global/treasury-curve` | 美债收益率曲线 1M~30Y + 关键利差（Treasury，S 级） | requests |
+| `GET /api/global/us/kline?symbol=` | 美股日 K（Yahoo → 新浪 → Stooq） | requests |
 | `GET /api/global/hk/kline?symbol=` | 港股日 K（Yahoo 前复权） | requests |
+| `GET /api/research/sources` | 研究桌可选包是否已装 | — |
+| `GET /api/research/kline?symbol=&source=` | Stooq / Baostock / OKX / Binance / CCXT / pykrx | 可选包 |
+| `GET /api/research/correlation?codes=` | 日收益 Pearson 矩阵, 最多 12 只 | 各市场 K 线 |
+| `GET /api/research/etf-holdings?symbol=` | ETF 穿透（东财 / N-PORT） | requests；美股需 VR_SEC_CONTACT |
+| `GET /api/research/13f?manager=` | 13F 持仓 + 两季环比；`ticker=` 列持有人 | VR_SEC_CONTACT |
 | `GET /api/global/edgar/screener` | SEC EDGAR frames 全市场 screener（S 级，需 VR_SEC_CONTACT） | requests |
 | `GET /api/global/movers?board=` | 美/港涨跌与成交额榜（东财 market_stock_list，C 级） | requests |
 | `GET /api/global/short-ranking` | FINRA 全市场空头占比榜 | requests |

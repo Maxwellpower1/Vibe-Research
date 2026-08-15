@@ -12,3 +12,8 @@ pandas
 # 期货 CTP 持仓只读查询（可选）——「我的持仓 → 期货账户」
 # 未安装时 /api/portfolio/ctp 返回配置提示，不影响其余功能
 # openctp-ctp
+
+# 研究桌可选源（未装时对应端点 501 + 安装提示）
+# baostock          # A 股日 K 兜底
+# pykrx             # 韩股日 K
+# ccxt              # 加密所统一适配（OKX/Binance 公开 REST 已内置, 不必装）
