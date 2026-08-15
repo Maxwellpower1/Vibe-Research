@@ -5,16 +5,17 @@ import json
 import os
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from ctp.config import load_config
 from ctp.constants import (
     BEIJING,
+    CACHE_DIR,
     SETTLEMENT_CACHE_FILE,
-    _MAX_RANGE_DAYS,
     _SETTLEMENT_CACHE_LOCK,
 )
+from ctp.errors import CtpError
 from ctp.state import _now, add_log
 
 def _normalize_trading_day(day: str) -> str:
@@ -102,8 +103,6 @@ def _iter_range_days(start: str, end: str) -> list[str]:
     b = _ymd_to_date(end)
     if a > b:
         raise CtpError("开始日期不能晚于结束日期")
-    if (b - a).days + 1 > _MAX_RANGE_DAYS:
-        raise CtpError(f"日期跨度最多 {_MAX_RANGE_DAYS} 个自然日")
     out: list[str] = []
     cur = a
     while cur <= b:

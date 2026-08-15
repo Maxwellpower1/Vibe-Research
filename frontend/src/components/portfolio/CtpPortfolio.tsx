@@ -13,11 +13,21 @@ import {
   api, ApiError, type CtpPortfolioData, type CtpStatus, type CtpLogEntry, type CtpSettlementRangeData,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { fmt, fmtPx, pctInt, pnlColor, signed, wanInt, ymdInput } from "@/components/portfolio/format";
+import { storageGet, storageSet } from "@/lib/storage";
+import { fmt, fmtPx, pctInt, pnlColor, signed, wanInt, ymdInput, ymdSpanDays } from "@/components/portfolio/format";
 import {
   CAL_METRICS, SETTLE_CHARTS, WEEK_LABELS, buildCalDays, ctpTh, td,
   type CalMetric, type SettleChartKey,
 } from "@/components/portfolio/ctpUtils";
+
+const SETTLE_RANGE_START_KEY = "ctp.settle.rangeStart.v2";
+const SETTLE_RANGE_END_KEY = "ctp.settle.rangeEnd.v2";
+const DEFAULT_SETTLE_START = "2026-04-08";
+
+function loadSavedYmd(key: string, fallback: string): string {
+  const s = storageGet(key);
+  return s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : fallback;
+}
 
 export function CtpPortfolio() {
   const [status, setStatus] = useState<CtpStatus | null>(null);
@@ -28,8 +38,8 @@ export function CtpPortfolio() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [logs, setLogs] = useState<CtpLogEntry[]>([]);
   const [logsOpen, setLogsOpen] = useState(true);
-  const [rangeStart, setRangeStart] = useState("2026-04-08");
-  const [rangeEnd, setRangeEnd] = useState(() => ymdInput(new Date()));
+  const [rangeStart, setRangeStart] = useState(() => loadSavedYmd(SETTLE_RANGE_START_KEY, DEFAULT_SETTLE_START));
+  const [rangeEnd, setRangeEnd] = useState(() => loadSavedYmd(SETTLE_RANGE_END_KEY, ymdInput(new Date())));
   const [rangeForce, setRangeForce] = useState(false);
   const [rangeData, setRangeData] = useState<CtpSettlementRangeData | null>(null);
   const [rangeLoading, setRangeLoading] = useState(false);
@@ -75,6 +85,13 @@ export function CtpPortfolio() {
       }
     } catch { /* ignore poll errors */ }
   }, [status?.logged_in]);
+
+  useEffect(() => {
+    storageSet(SETTLE_RANGE_START_KEY, rangeStart);
+  }, [rangeStart]);
+  useEffect(() => {
+    storageSet(SETTLE_RANGE_END_KEY, rangeEnd);
+  }, [rangeEnd]);
 
   // Hydrate status + portfolio if session still open
   useEffect(() => {
@@ -230,6 +247,11 @@ export function CtpPortfolio() {
     const end = rangeEnd.replace(/-/g, "");
     if (!/^\d{8}$/.test(start) || !/^\d{8}$/.test(end)) {
       setErr("请选择有效的开始/结束日期");
+      return;
+    }
+    const span = ymdSpanDays(rangeStart, rangeEnd);
+    if (!Number.isFinite(span) || span < 1) {
+      setErr("开始日期不能晚于结束日期");
       return;
     }
     if (refresh && !loggedIn) {
@@ -884,6 +906,9 @@ export function CtpPortfolio() {
                   <span>有效 {rangeData.analytics?.summary.days ?? rangeData.chart.length}</span>
                   <span>缓存 {rangeData.stats.cached}</span>
                   {rangeData.stats.missing > 0 && <span>缺失 {rangeData.stats.missing}</span>}
+                  {(rangeData.stats.deferred ?? 0) > 0 && (
+                    <span className="text-warning">未拉完 {rangeData.stats.deferred} 天, 再点一次拉取</span>
+                  )}
                 </div>
               )}
             </div>
@@ -945,6 +970,9 @@ export function CtpPortfolio() {
                   {rangeLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                   {rangeLoading ? "拉取中…" : "拉取区间"}
                 </button>
+                <p className="basis-full text-[11px] text-muted-foreground/70">
+                  柜台每次最多补拉 90 个交易日, 已缓存的会跳过; 没拉完再点一次即可.
+                </p>
               </div>
 
               {rangeData?.analytics?.summary && rangeData.analytics.summary.days > 0 && (() => {

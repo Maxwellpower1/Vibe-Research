@@ -19,8 +19,9 @@ SETTLEMENT_CACHE_FILE = os.path.join(CACHE_DIR, "ctp_settlements.json")
 _QRY_GAP = 1.05
 _DEFAULT_TIMEOUT = 45.0
 _LOG_MAX = 300
-# Calendar-day cap for range pull (CTP rate-limits ~1 qry/s)
-_MAX_RANGE_DAYS = 120
+# Live CTP settlement qry per request (~1/s). Calendar window has no cap;
+# leftover uncached days stay missing until the user clicks again.
+_MAX_FETCH_DAYS = 90
 _SETTLEMENT_CACHE_LOCK = threading.Lock()
 
 _DIR_MAP = {"1": "净", "2": "多", "3": "空"}

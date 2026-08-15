@@ -23,3 +23,18 @@ export function ymdInput(d: Date): string {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
+/** Local date minus `days` calendar days (for settlement range default). */
+export function ymdDaysAgo(days: number, from = new Date()): string {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  d.setDate(d.getDate() - days);
+  return ymdInput(d);
+}
+
+/** Inclusive calendar-day span between two `YYYY-MM-DD` inputs. */
+export function ymdSpanDays(start: string, end: string): number {
+  const a = Date.parse(`${start}T00:00:00`);
+  const b = Date.parse(`${end}T00:00:00`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return NaN;
+  return Math.floor((b - a) / 86_400_000) + 1;
+}

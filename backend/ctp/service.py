@@ -13,6 +13,7 @@ from ctp.constants import (
     CTP_CFG_FILE,
     SETTLEMENT_CACHE_FILE,
     _DEFAULT_TIMEOUT,
+    _MAX_FETCH_DAYS,
 )
 from ctp.errors import CtpError
 from ctp.formatters import compute_market_equity
@@ -53,7 +54,7 @@ def login(timeout: float = _DEFAULT_TIMEOUT) -> dict[str, Any]:
         with state._lock:
             if state._logging_in:
                 raise CtpError("正在登录中, 请稍候")
-            if _is_logged_in_unlocked():
+            if state._is_logged_in_unlocked():
                 add_log("Already logged in, auto query ...", "warn")
                 td_exist = state._session
                 # fall through to auto query below (still hold state._op_lock)
@@ -373,6 +374,19 @@ def fetch_settlement_range(
         else:
             series.append(_series_point(day, None, from_cache=False))
             stats["missing"] += 1
+
+    deferred = 0
+    if len(need_fetch) > _MAX_FETCH_DAYS:
+        deferred = len(need_fetch) - _MAX_FETCH_DAYS
+        for day in need_fetch[_MAX_FETCH_DAYS:]:
+            series.append(_series_point(day, None, from_cache=False))
+            stats["missing"] += 1
+        need_fetch = need_fetch[:_MAX_FETCH_DAYS]
+        add_log(
+            f"Settlement range fetch capped at {_MAX_FETCH_DAYS} days, "
+            f"defer {deferred} (click again after cache fills)"
+        )
+    stats["deferred"] = deferred
 
     if need_fetch:
         # Hold op lock for the whole batch (CTP qry gap already serializes)

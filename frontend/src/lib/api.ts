@@ -643,6 +643,7 @@ export interface CtpSettlementRangeData {
     empty: number;
     errors: number;
     missing: number;
+    deferred?: number;
   };
   cache_file: string;
   updated: string;
