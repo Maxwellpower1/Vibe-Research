@@ -1632,8 +1632,6 @@ export const api = {
     const p = new URLSearchParams({ report_type, start_date, end_date, codes });
     return get<FinoDetailRow[]>(`/fino/detail?${p}`);
   },
-  weather: (city = "上海", days = 7) =>
-    get<WeatherPayload>(`/weather?city=${encodeURIComponent(city)}&days=${days}`),
   researchSources: () => get<ResearchSources>("/research/sources"),
   researchKline: (symbol: string, source = "auto", num = 180, interval = "1D") => {
     const p = new URLSearchParams({ symbol, source, num: String(num), interval });
@@ -1656,46 +1654,6 @@ export const api = {
   aaModels: () => get<AaModelsResp>("/ai-watch/aa-models"),
   aiInfra: () => get<AiInfraResp>("/ai-watch/ai-infra"),
 };
-
-export interface WeatherCurrent {
-  temp_c: number | null;
-  feels_like_c: number | null;
-  humidity: number | null;
-  condition: string;
-  wind_kmh: number | null;
-  wind_dir: string;
-  visibility_km: number | null;
-  pressure_mb: number | null;
-  uv: number | null;
-  precip_mm: number | null;
-}
-
-export interface WeatherDay {
-  date: string;
-  max_c: number | null;
-  min_c: number | null;
-  avg_c: number | null;
-  condition: string;
-  chance_of_rain: number | null;
-  uv: number | null;
-}
-
-export interface WeatherHourly {
-  time: string;
-  temp_c: number;
-  feels_like_c: number | null;
-  condition: string;
-}
-
-export interface WeatherPayload {
-  source: string;
-  query: string;
-  location: string;
-  current: WeatherCurrent;
-  forecast: WeatherDay[];
-  hourly?: WeatherHourly[];
-  fallback_note?: string;
-}
 
 export interface OrShareRow {
   name: string;

@@ -8,7 +8,6 @@ const AShare = lazy(() => import("@/pages/AShare").then((m) => ({ default: m.ASh
 const Portfolio = lazy(() => import("@/pages/Portfolio").then((m) => ({ default: m.Portfolio })));
 const Ovlab = lazy(() => import("@/pages/Ovlab").then((m) => ({ default: m.Ovlab })));
 const UsMarket = lazy(() => import("@/pages/UsMarket").then((m) => ({ default: m.UsMarket })));
-const Weather = lazy(() => import("@/pages/Weather").then((m) => ({ default: m.Weather })));
 const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
 const AiWatch = lazy(() => import("@/pages/AiWatch").then((m) => ({ default: m.AiWatch })));
 const FinWindow = lazy(() => import("@/pages/FinWindow").then((m) => ({ default: m.FinWindow })));
@@ -20,8 +19,8 @@ export const router = createBrowserRouter([
     children: [
       { path: "/", element: <Navigate to="/a-share" replace /> },
       { path: "/a-share", element: <AShare /> },
-      { path: "/weather", element: <Weather /> },
       // legacy bookmarks
+      { path: "/weather", element: <Navigate to="/a-share" replace /> },
       { path: "/daily-review", element: <Navigate to="/a-share" replace /> },
       { path: "/sectors", element: <Navigate to="/a-share" replace /> },
       { path: "/sectors/:key", element: <Navigate to="/a-share" replace /> },

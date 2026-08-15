@@ -103,7 +103,7 @@ export function Layout() {
           <div
             className={cn(
               "mx-auto w-full pb-6 pt-3 px-3 sm:px-4",
-              pathname.startsWith("/settings") || pathname.startsWith("/weather")
+              pathname.startsWith("/settings")
                 ? "max-w-3xl"
                 : "max-w-[1680px]",
             )}

@@ -47,7 +47,6 @@ Vibe-Research 是一个开源的「个人 AI 投研看板」，**主推 A 股、
 | 🇺🇸&nbsp;**美&#8288;股** | 本地观察列表（ticker）· 东财快照行情 · **日 K + 成交量**（Yahoo → 新浪 → **Stooq**）· **财报日历** · **SEC 当日申报流**（需 `VR_SEC_CONTACT`）。点列表即切图；只客观呈现，不推荐不预测 |
 | 🔬&nbsp;**研&#8288;究&#8288;桌** | 顶栏 `/research`：多标的 **相关性热力图** · **ETF 穿透**（A 股东财中报/年报全持仓，美股 N-PORT）· **13F 环比** · OKX/Binance/pykrx K 线。只呈现公开披露，持仓天生滞后 |
 | 🤖&nbsp;**AI&#8288;观&#8288;察** | 顶栏进入：公有云 Token 消耗（OpenRouter 日榜）· LLM 价格趋势 / 降价事件（TrakToken TTSI）· 大模型价格表与智能×成本散点（Artificial Analysis，可选 key）· AI 基建 CapEx/ROI（SEC + 模型外推）。只客观呈现，预测段标「模型假设」 |
-| 🌤️&nbsp;**天&#8288;气** | 顶栏天气图标进入：当前气温 / 体感 / 湿度 / 风力 · **7/10/14 天预报** · 逐时/日高低温折线图 · 城市快捷切换（默认上海，本地记忆）。`GET /api/weather?city=&days=`；主源 Open-Meteo（最长 16 天），wttr.in 补充实况字段，**无需 API Key** |
 | 🔌&nbsp;**接&#8288;入&nbsp;AI** | 订阅接入（本机 CLI，免 key）· API 多模型（自动填 baseURL）· MCP（挂进 Claude Code 等 agent）|
 
 > **投研分析框架**：让 AI 分析个股时，自动按 估值 / 资金面 / 财报质量 / 行业景气 / 事件催化与风险 五维组织结论——框架只规定「怎么读数据」、不规定买卖，方向仍由你自己的 AI 决定。

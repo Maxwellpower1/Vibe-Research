@@ -1,5 +1,5 @@
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { CloudSun, Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import { useClock } from "@/hooks/useClock";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +11,6 @@ const PAGE_TITLES: { match: (p: string) => boolean; title: string; subtitle: str
   { match: (p) => p.startsWith("/ovlab"), title: "期权期货", subtitle: "OPTIONS & FUTURES" },
   { match: (p) => p.startsWith("/portfolio"), title: "我的持仓", subtitle: "PORTFOLIO" },
   { match: (p) => p.startsWith("/settings"), title: "接入 AI", subtitle: "YOUR MODEL" },
-  { match: (p) => p.startsWith("/weather"), title: "天气", subtitle: "WEATHER" },
 ];
 
 const DEFAULT_TITLE = { title: "市场研究驾驶舱", subtitle: "MARKET RESEARCH COCKPIT" };
@@ -131,13 +130,6 @@ export function CockpitHeader({
           {hh}:{mm}
           <span className="text-cyan-600">:{ss}</span>
         </span>
-        <Link
-          to="/weather"
-          title="天气"
-          className="flex h-[22px] w-[22px] items-center justify-center rounded border border-slate-700/60 bg-slate-800/40 text-slate-400 hover:border-cyan-500/60 hover:text-cyan-300"
-        >
-          <CloudSun size={12} />
-        </Link>
         <button
           type="button"
           onClick={onToggleFullscreen}
