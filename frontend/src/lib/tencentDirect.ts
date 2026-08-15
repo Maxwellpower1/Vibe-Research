@@ -49,14 +49,8 @@ function throttleDirect(key: string): boolean {
   return false;
 }
 
-function isAshareStock(symbol: string): boolean {
-  const m = /^(sh|sz|bj)(\d{6})$/i.exec(symbol);
-  if (!m) return false;
-  const pfx = m[1].toLowerCase();
-  const d = m[2];
-  if (pfx === "sh") return "569".includes(d[0]);
-  if (pfx === "sz") return "0123".includes(d[0]);
-  return true;
+function hasTurnoverAmount(symbol: string): boolean {
+  return /^(?:sh|sz|bj)\d{6}$/i.test(symbol) || /^hk[A-Za-z0-9]+$/i.test(symbol);
 }
 
 async function decodeGbk(buf: ArrayBuffer): Promise<string> {
@@ -95,7 +89,7 @@ export function parseTencentQuotes(text: string): Record<string, DirectQuote> {
       prev: num(f[4]),
       change: num(f[31]),
       pct: num(f[32]),
-      amount: isAshareStock(symbol) && rawAmt ? rawAmt * 10000 : 0,
+      amount: hasTurnoverAmount(symbol) && rawAmt ? rawAmt * 10000 : 0,
       turnover: f.length > 38 ? num(f[38]) : 0,
     };
   }

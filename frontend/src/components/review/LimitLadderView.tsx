@@ -117,7 +117,7 @@ export function LimitLadderView({
       </div>
       <div className="space-y-1.5 px-1.5 py-1.5">
         {tiers.map((t) => (
-          <TierBlock key={t.boards} tier={t} side={side} defaultOpen={t.boards >= 2 || t.stocks.length <= 10} />
+          <TierBlock key={t.boards} tier={t} side={side} defaultOpen />
         ))}
       </div>
     </div>

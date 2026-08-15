@@ -170,11 +170,18 @@ def parse_sina_nf(text: str) -> dict[str, dict]:
 
 
 def normalize_board_code(raw: str) -> str:
-    """Tencent bd_code / Eastmoney f12 -> BK####."""
-    s = str(raw or "").strip().upper()
-    if _BK_RE.fullmatch(s):
+    """Eastmoney f12 / BK#### -> BK####. Keep Tencent pt* bd_code as-is.
+
+    pt01801712 and pt01801764 both contain 018017; slicing to BK8017
+    would collide ~80 industry boards into a handful of codes.
+    """
+    s = str(raw or "").strip()
+    if s.lower().startswith("pt"):
         return s
-    m = re.search(r"(?:BK)?(\d{3,6})", s)
+    up = s.upper()
+    if _BK_RE.fullmatch(up):
+        return up
+    m = re.search(r"(?:BK)?(\d{3,6})", up)
     if not m:
         return s
     digits = m.group(1)
@@ -220,8 +227,17 @@ def _is_future_code(symbol: str) -> bool:
     return s == "BTCUSDT" or bool(_HF_RE.fullmatch(s))
 
 
-def _is_ashare_stock(symbol: str) -> bool:
-    return astock.is_ashare_stock(symbol)
+_ASHARE_MKT_RE = re.compile(r"^(?:sh|sz|bj)\d{6}$", re.I)
+_HK_QUOTE_RE = re.compile(r"^hk[A-Za-z0-9]+$", re.I)
+
+
+def _quote_amount_yuan(canon: str, raw_amt: float) -> float:
+    """Tencent qt field 37 is wan. Convert A-share (stock+index) and HK; US/FX stay 0."""
+    if not raw_amt:
+        return 0.0
+    if _ASHARE_MKT_RE.fullmatch(canon) or _HK_QUOTE_RE.fullmatch(canon):
+        return float(raw_amt) * 10000.0
+    return 0.0
 
 
 def _canon_quote_code(raw: str) -> str:
@@ -282,7 +298,7 @@ def quotes_map(codes: list[str]) -> dict[str, dict]:
             item = _quote_item(
                 q,
                 canon,
-                amount=(raw_amt * 10000.0) if _is_ashare_stock(canon) and raw_amt else 0.0,
+                amount=_quote_amount_yuan(canon, raw_amt),
                 turnover=q.get("turnover") or 0.0,
             )
             out[raw] = item
@@ -410,7 +426,7 @@ def _tencent_boards(kind: str, direction: str, want: int) -> list[dict]:
             continue
         raw = str(b.get("bd_code") or "")
         rows.append({
-            "code": normalize_board_code(raw) or raw,
+            "code": raw or normalize_board_code(raw),
             "raw_code": raw,
             "name": b.get("bd_name") or "",
             "price": _num(b.get("bd_zxj")),

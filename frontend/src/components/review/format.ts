@@ -33,3 +33,13 @@ export function fmtAmt(v: number | null | undefined): string {
   if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(0)}万`;
   return `${sign}${abs.toFixed(0)}`;
 }
+
+/** Yuan -> integer 亿/万 (index turnover, e.g. 9904亿). */
+export function fmtAmtInt(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v) || v === 0) return "—";
+  const abs = Math.abs(v);
+  const sign = v < 0 ? "-" : "";
+  if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(0)}亿`;
+  if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(0)}万`;
+  return `${sign}${abs.toFixed(0)}`;
+}

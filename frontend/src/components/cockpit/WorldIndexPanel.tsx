@@ -36,9 +36,11 @@ export function WorldIndexPanel() {
             return (
               <QuoteLine
                 key={d.code}
+                variant="index"
                 name={h?.name || d.label}
                 price={h?.price}
                 pct={h?.pct}
+                amount={d.region !== "US" ? h?.amount : undefined}
                 closes={closes}
                 times={times}
                 session={d.region === "CN" ? "ashare" : "h24"}

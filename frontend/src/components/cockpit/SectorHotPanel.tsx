@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { QuoteLine } from "@/components/cockpit/QuoteLine";
 import { QuoteStockRow } from "@/components/cockpit/QuoteStockRow";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { pctColor } from "@/components/review/format";
@@ -18,14 +17,19 @@ function fmtPct(v?: number | null): string {
   return `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
 }
 
+function boardId(b: { code?: string; raw_code?: string; name?: string } | null): string {
+  if (!b) return "";
+  return (b.raw_code || b.code || b.name || "").trim();
+}
+
 function BoardRow({
-  b, maxAbs, active, onClick,
-}: { b: SectorBoard; maxAbs: number; active: boolean; onClick: () => void }) {
+  b, maxAbs, active, scroll, onClick,
+}: { b: SectorBoard; maxAbs: number; active: boolean; scroll?: boolean; onClick: () => void }) {
   const w = maxAbs > 0 ? Math.min(100, (Math.abs(b.pct) / maxAbs) * 100) : 0;
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (active) ref.current?.scrollIntoView({ block: "nearest" });
-  }, [active]);
+    if (active && scroll) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [active, scroll]);
   return (
     <button
       ref={ref}
@@ -61,24 +65,18 @@ function BoardRow({
 }
 
 /** Industry / concept realtime hot boards + constituent sidebar (default first board). */
-type HotView = "em01" | "em02" | "ths-c" | "ths-i";
-
 export function SectorHotPanel() {
-  const [view, setView] = useState<HotView>("em01");
+  const [kind, setKind] = useState<"01" | "02">("01");
   const [dir, setDir] = useState<"0" | "1">("0");
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<SectorBoard | null>(null);
-  const [thsPick, setThsPick] = useState<string | null>(null);
   const [auto, setAuto] = useState(true);
   const [idx, setIdx] = useState(0);
-  const kind = view === "em02" ? "02" : "01";
-  const ths = view.startsWith("ths");
 
   const { data, error } = usePolling(
     () => api.sectorBoards(kind, dir, kind === "01" ? 80 : 120),
     POLL_MS,
     [kind, dir],
-    !ths,
   );
 
   const filtered = useMemo(
@@ -86,7 +84,7 @@ export function SectorHotPanel() {
     [data, q],
   );
 
-  const filterKey = `${view}|${dir}|${q}`;
+  const filterKey = `${kind}|${dir}|${q}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (prevFilterKey !== filterKey) {
     setPrevFilterKey(filterKey);
@@ -94,17 +92,16 @@ export function SectorHotPanel() {
   }
 
   useEffect(() => {
-    if (!auto || ths || !filtered.length) return;
+    if (!auto || !filtered.length) return;
     const t = window.setInterval(() => setIdx((i) => i + 1), ROTATE_MS);
     return () => window.clearInterval(t);
-  }, [auto, ths, filtered.length]);
+  }, [auto, filtered.length]);
 
-  // Same as marketingdashboard: rotate or keep the clicked board; default first.
   const activeBoard = useMemo(() => {
     if (!filtered.length) return null;
     if (auto) return filtered[idx % filtered.length];
     if (selected) {
-      const cur = filtered.find((b) => b.code === selected.code);
+      const cur = filtered.find((b) => boardId(b) === boardId(selected));
       if (cur) return cur;
     }
     return filtered[0];
@@ -115,67 +112,46 @@ export function SectorHotPanel() {
     () => (stockCode ? api.boardStocks(stockCode, MAX_STOCK_ROWS) : Promise.resolve([])),
     POLL_MS,
     [stockCode],
-    !ths && !!stockCode,
+    !!stockCode,
   );
   const stockCodes = (stocks ?? []).map((s) => s.code);
-  const minutes = useMinutes(!ths ? stockCodes : []);
-
-  const { data: thsData, error: thsErr } = usePolling(
-    () => api.thsRotation(view === "ths-i" ? "industry" : "concept", 30),
-    180_000,
-    [view],
-    ths,
-  );
-  const thsRows = useMemo(() => {
-    const rows = [...(thsData?.rows ?? [])];
-    if (dir === "1") rows.reverse();
-    return rows.filter((r) => !q || r.name.includes(q));
-  }, [thsData, dir, q]);
+  const minutes = useMinutes(stockCodes);
   const maxAbs = Math.max(...filtered.map((b) => Math.abs(b.pct)), 0.01);
-  const thsMax = Math.max(...thsRows.map((r) => Math.abs(r.avg_pct)), 0.01);
-  const thsSel = thsRows.find((r) => r.name === thsPick) ?? thsRows[0] ?? null;
 
-  const switchView = (next: HotView) => {
-    setView(next);
+  const switchKind = (next: "01" | "02") => {
+    setKind(next);
     setSelected(null);
-    setThsPick(null);
-    setAuto(!next.startsWith("ths"));
+    setAuto(true);
     setIdx(0);
   };
 
   const pickBoard = (b: SectorBoard) => {
     setAuto(false);
-    setSelected(selected?.code === b.code && !auto ? null : b);
+    setSelected(boardId(selected) === boardId(b) && !auto ? null : b);
   };
-
-  const showRight = ths ? Boolean(thsSel) : Boolean(activeBoard);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-slate-700/40 px-1.5 py-1">
         <ChipGroup>
-          <Chip active={view === "em01"} onClick={() => switchView("em01")}>行业</Chip>
-          <Chip active={view === "em02"} onClick={() => switchView("em02")}>概念</Chip>
-          <Chip active={view === "ths-c"} onClick={() => switchView("ths-c")}>THS概念</Chip>
-          <Chip active={view === "ths-i"} onClick={() => switchView("ths-i")}>THS行业</Chip>
+          <Chip active={kind === "01"} onClick={() => switchKind("01")}>行业</Chip>
+          <Chip active={kind === "02"} onClick={() => switchKind("02")}>概念</Chip>
         </ChipGroup>
         <ChipGroup>
           <Chip active={dir === "0"} onClick={() => setDir("0")}>领涨</Chip>
           <Chip active={dir === "1"} onClick={() => setDir("1")}>领跌</Chip>
         </ChipGroup>
-        {!ths && (
-          <button
-            type="button"
-            onClick={() => setAuto((a) => !a)}
-            title={auto ? `轮播中(${ROTATE_MS / 1000}s),点击暂停` : "已暂停,点击恢复轮播"}
-            className={cn(
-              "rounded px-1.5 py-0.5 text-[10px]",
-              auto ? "bg-cyan-500/20 text-cyan-300" : "text-slate-500 hover:text-slate-300",
-            )}
-          >
-            轮播
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setAuto((a) => !a)}
+          title={auto ? `轮播中(${ROTATE_MS / 1000}s),点击暂停` : "已暂停,点击恢复轮播"}
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[10px]",
+            auto ? "bg-cyan-500/20 text-cyan-300" : "text-slate-500 hover:text-slate-300",
+          )}
+        >
+          轮播
+        </button>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -183,79 +159,25 @@ export function SectorHotPanel() {
           className="ml-auto h-6 w-20 rounded border border-slate-700/60 bg-slate-900/50 px-1.5 text-[10px] text-slate-300 outline-none focus:border-cyan-500/50"
         />
       </div>
-      <div className={cn("min-h-0 flex-1", showRight ? "flex" : "")}>
+      <div className={cn("min-h-0 flex-1", activeBoard ? "flex" : "")}>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1">
-          {ths ? (
-            <>
-              {!thsData && (
-                <p className="py-6 text-center text-[11px] text-slate-600">
-                  {thsErr ? "shy313/截面未接通, 自动重试中" : "加载中…"}
-                </p>
-              )}
-              {thsData && (
-                <p className="px-1.5 pb-1 text-[9px] text-slate-600">
-                  shy313 同花顺成份 × 东财涨跌 · {thsData.n ?? 0} 只截面
-                </p>
-              )}
-              {thsRows.map((r) => (
-                <BoardRow
-                  key={r.name}
-                  b={{
-                    code: r.name,
-                    name: r.name,
-                    pct: r.avg_pct,
-                    lead_name: `${r.count}只`,
-                    lead_pct: r.avg_pct,
-                    price: 0,
-                    change: 0,
-                  }}
-                  maxAbs={thsMax}
-                  active={thsSel?.name === r.name}
-                  onClick={() => setThsPick(thsPick === r.name ? null : r.name)}
-                />
-              ))}
-            </>
-          ) : (
-            <>
-              {!data && (
-                <p className="py-6 text-center text-[11px] text-slate-600">
-                  {error ? "板块源未接通, 自动重试中" : "加载中…"}
-                </p>
-              )}
-              {filtered.slice(0, 80).map((b) => (
-                <BoardRow
-                  key={b.code + b.name}
-                  b={b}
-                  maxAbs={maxAbs}
-                  active={activeBoard?.code === b.code}
-                  onClick={() => pickBoard(b)}
-                />
-              ))}
-            </>
-          )}
-        </div>
-        {ths && thsSel && (
-          <div className="min-h-0 w-[min(440px,50%)] shrink-0 overflow-y-auto border-l border-slate-700/40 p-1">
-            <div className="mb-1 flex items-baseline justify-between px-1.5 pt-1">
-              <span className="truncate text-[12px] font-semibold text-cyan-300">{thsSel.name}</span>
-              <span className={cn("font-mono text-[12px] font-semibold tabular-nums", pctColor(thsSel.avg_pct))}>
-                {fmtPct(thsSel.avg_pct)}
-              </span>
-            </div>
-            <p className="px-1.5 pb-1 text-[10px] text-slate-500">
-              涨{thsSel.up}/跌{thsSel.down}
+          {!data && (
+            <p className="py-6 text-center text-[11px] text-slate-600">
+              {error ? "板块源未接通, 自动重试中" : "加载中…"}
             </p>
-            {(thsSel.leads ?? []).map((s) => (
-              <QuoteLine
-                key={s.code}
-                name={s.name}
-                price={null}
-                pct={s.pct}
-              />
-            ))}
-          </div>
-        )}
-        {!ths && activeBoard && (
+          )}
+          {filtered.slice(0, 80).map((b) => (
+            <BoardRow
+              key={boardId(b) || b.name}
+              b={b}
+              maxAbs={maxAbs}
+              active={boardId(activeBoard) === boardId(b)}
+              scroll={auto}
+              onClick={() => pickBoard(b)}
+            />
+          ))}
+        </div>
+        {activeBoard && (
           <div className="min-h-0 w-[min(440px,50%)] shrink-0 overflow-y-auto border-l border-slate-700/40 p-1">
             <div className="mb-1 flex items-baseline justify-between px-1.5 pt-1">
               <span className="truncate text-[12px] font-semibold text-cyan-300">{activeBoard.name}</span>

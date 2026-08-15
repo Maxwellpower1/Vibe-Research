@@ -46,6 +46,9 @@ def test_normalize_board_code():
     assert cl.normalize_board_code("BK0474") == "BK0474"
     assert cl.normalize_board_code("0474") == "BK0474"
     assert cl.normalize_board_code("bk474") == "BK0474"
+    assert cl.normalize_board_code("pt01801712") == "pt01801712"
+    assert cl.normalize_board_code("pt01801764") == "pt01801764"
+    assert cl.normalize_board_code("pt02GN2422") == "pt02GN2422"
 
 
 def test_parse_qq_board_rank():
@@ -199,6 +202,27 @@ def test_quotes_map_aliases_and_filters(monkeypatch):
     assert out["usIXIC"]["name"] == "纳斯达克"
     assert out["usIXIC"]["amount"] == 0
     assert "bad!!" not in out
+
+
+def test_quotes_map_index_and_hk_amount_yuan(monkeypatch):
+    monkeypatch.setattr(cl, "_tencent_quotes", lambda codes: {
+        "sh000001": {
+            "symbol": "sh000001", "name": "上证指数", "price": 3089.12,
+            "pct": 0.3, "change": 9.12, "prev": 3080.0, "amount": 99040000.0, "turnover": 0,
+        },
+        "hkHSI": {
+            "symbol": "hkHSI", "name": "恒生指数", "price": 18000.0,
+            "pct": 0.1, "change": 20.0, "prev": 17980.0, "amount": 1200000.0, "turnover": 0,
+        },
+        "usIXIC": {
+            "symbol": "usIXIC", "name": "纳斯达克", "price": 21000.0,
+            "pct": 0.4, "change": 80.0, "prev": 20920.0, "amount": 99.0, "turnover": 0,
+        },
+    })
+    out = cl.quotes_map(["sh000001", "hkHSI", "usIXIC"])
+    assert out["sh000001"]["amount"] == 99040000.0 * 10000
+    assert out["hkHSI"]["amount"] == 1200000.0 * 10000
+    assert out["usIXIC"]["amount"] == 0
 
 
 def test_quotes_map_skips_empty_price(monkeypatch):
