@@ -64,11 +64,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const showReviewPanel = Boolean(aiOpen && (review || reviewLoading || needConfig || reviewErr));
 
   const moneyProps = {
-    boardFlow: d.boardFlow,
-    boardType: d.boardType,
-    onBoardType: d.setBoardType,
-    boardPeriod: d.boardPeriod,
-    onBoardPeriod: d.setBoardPeriod,
     sectors: d.sectors,
     etfFlow: d.etfFlow,
     etfSort: d.etfSort,
@@ -78,7 +73,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
     shChg: d.shChg,
     shType: d.shType,
     onShType: d.setShType,
-    extraDone: d.extraDone,
     ovDone: d.ovDone,
     moneyDone: d.moneyDone,
   };
@@ -243,7 +237,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
               ) : d.seg === "chain" ? (
                 <ChainPanel />
               ) : (
-                <ReviewMoneySeg {...moneyProps} section="rest" />
+                <ReviewMoneySeg {...moneyProps} />
               )}
             </div>
           ),
@@ -262,17 +256,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
       >
         <RefreshCw className={`h-3 w-3 ${d.topRefreshing ? "animate-spin" : ""}`} />
         刷新
-      </button>
-      <button
-        type="button"
-        onClick={() => d.setTopAuto((v) => !v)}
-        className={`rounded border px-1.5 py-0.5 text-[10px] ${
-          d.topAuto
-            ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-300"
-            : "border-slate-700/60 text-slate-500"
-        }`}
-      >
-        自动 30s
       </button>
       <button
         type="button"

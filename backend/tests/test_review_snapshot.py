@@ -93,9 +93,7 @@ def test_build_snapshot_top_skips_extra(monkeypatch):
     monkeypatch.setattr(
         rs,
         "_fill_em_top",
-        lambda b, e: b.update(
-            global_indices=[], emotion=None, turnover=None, hot=None, industry=None
-        ),
+        lambda b, e: b.update(emotion=None, industry=None),
     )
     monkeypatch.setattr(rs, "_fill_em_extra", lambda *a, **k: extra_calls.append(1))
     data = rs.build_review_snapshot(scope="top")
@@ -103,7 +101,24 @@ def test_build_snapshot_top_skips_extra(monkeypatch):
     assert data["scope"] == "top"
     assert data["lhb"] is None
     assert data["indices"][0]["name"] == "上证"
+    assert data["global_indices"] is None
+    assert data["turnover"] is None
+    assert data["hot"] is None
+    assert data["board_flow"] is None
     assert "updated" in data
+
+
+def test_em_fillers_skip_unused_eastmoney():
+    import inspect
+
+    top_src = inspect.getsource(rs._fill_em_top)
+    extra_src = inspect.getsource(rs._fill_em_extra)
+    assert "get_short_term_emotion" in top_src
+    assert "industry_comparison" in top_src
+    assert "get_global_indices" not in top_src
+    assert "get_turnover_top" not in top_src
+    assert "ths_hot_list" not in top_src
+    assert "board_fund_flow" not in extra_src
 
 
 def test_user_busy_skips_warmup():

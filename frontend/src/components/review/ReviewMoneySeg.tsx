@@ -6,23 +6,14 @@ import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { PctChip } from "@/components/review/PctChip";
 import { fmt, pctColor } from "@/components/review/format";
 import { reviewPending } from "@/components/review/reviewPending";
-import { BoardFlowBars, StockFlowList } from "@/components/review/BoardFlowBars";
 import type {
-  BoardFlow, BoardFlowRow, CnBondYield, EtfFlow, LprData, SectorFlow,
-  ShareholderChanges, StockFlow,
+  CnBondYield, EtfFlow, LprData, SectorFlow, ShareholderChanges,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const box = "overflow-hidden rounded-md border border-slate-700/40 bg-[#0c1320]/80";
 
 interface Props {
-  /** flow = 板块资金表; rest = ETF/利率/增减持; all = 全部 */
-  section?: "flow" | "rest" | "all";
-  boardFlow: BoardFlow | null;
-  boardType: "industry" | "concept" | "region";
-  onBoardType: (v: "industry" | "concept" | "region") => void;
-  boardPeriod: "today" | "5d" | "10d";
-  onBoardPeriod: (v: "today" | "5d" | "10d") => void;
   sectors: SectorFlow[];
   etfFlow: EtfFlow | null;
   etfSort: "net_inflow" | "change_pct";
@@ -32,22 +23,11 @@ interface Props {
   shChg: ShareholderChanges | null;
   shType: "all" | "增持" | "减持";
   onShType: (v: "all" | "增持" | "减持") => void;
-  extraDone: boolean;
   ovDone: boolean;
   moneyDone: boolean;
-  stockFlow?: StockFlow | null;
-  boardStockFlow?: StockFlow | null;
-  flowBoard?: BoardFlowRow | null;
-  onFlowBoard?: (row: BoardFlowRow | null) => void;
 }
 
 export function ReviewMoneySeg({
-  section = "all",
-  boardFlow,
-  boardType,
-  onBoardType,
-  boardPeriod,
-  onBoardPeriod,
   sectors,
   etfFlow,
   etfSort,
@@ -57,21 +37,13 @@ export function ReviewMoneySeg({
   shChg,
   shType,
   onShType,
-  extraDone,
   ovDone,
   moneyDone,
-  stockFlow,
-  boardStockFlow,
-  flowBoard,
-  onFlowBoard,
 }: Props) {
-  const showFlow = section !== "rest";
-  const showRest = section !== "flow";
   const bondChartRef = useRef<HTMLDivElement>(null);
   const bondEchartRef = useRef<echarts.ECharts | null>(null);
 
   useEffect(() => {
-    if (!showRest) return;
     const el = bondChartRef.current;
     const pts = bondY?.curve_points ?? [];
     if (!el || pts.length < 2) return;
@@ -136,72 +108,10 @@ export function ReviewMoneySeg({
     return () => {
       ro.disconnect();
     };
-  }, [showRest, bondY]);
+  }, [bondY]);
 
   return (
-    <div className={cn(showFlow && !showRest ? "flex h-full min-h-0 flex-col" : "space-y-3 p-1")}>
-      {showFlow && (
-      <div className={cn(!showRest && "flex min-h-0 flex-1 flex-col")}>
-        {showRest && (
-          <SectionHeader
-            icon={<TrendingUp className="h-3.5 w-3.5 text-cyan-400" />}
-            title="板块资金流"
-            hint="东财 · 主力净流入"
-            meta={boardFlow?.rows?.length ? `${boardFlow.rows.length} 条` : (extraDone ? "暂无" : "加载中…")}
-          />
-        )}
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-1 py-1">
-          <ChipGroup>
-            {([["industry", "行业"], ["concept", "概念"], ["region", "地域"]] as const).map(([k, label]) => (
-              <Chip key={k} active={boardType === k} onClick={() => onBoardType(k)}>{label}</Chip>
-            ))}
-          </ChipGroup>
-          <ChipGroup>
-            {([["today", "今日"], ["5d", "5日"], ["10d", "10日"]] as const).map(([k, label]) => (
-              <Chip key={k} active={boardPeriod === k} onClick={() => onBoardPeriod(k)}>{label}</Chip>
-            ))}
-          </ChipGroup>
-          <span className="ml-auto text-[10px] text-slate-500">
-            {boardFlow?.rows?.length ? `${boardFlow.rows.length} 条` : (extraDone ? "暂无" : "加载中…")}
-          </span>
-        </div>
-        <div className={cn(box, !showRest && "min-h-0 flex-1")}>
-          {!boardFlow?.rows?.length ? (
-            <div className="p-5">{reviewPending(extraDone)}</div>
-          ) : (
-            <BoardFlowBars
-              rows={boardFlow.rows}
-              selected={flowBoard?.code}
-              onSelect={onFlowBoard}
-            />
-          )}
-        </div>
-        {flowBoard && boardStockFlow?.rows?.length ? (
-          <div className="mt-1 px-1">
-            <StockFlowList
-              rows={boardStockFlow.rows}
-              title={`${flowBoard.name} 成分 · 主力净流入`}
-            />
-          </div>
-        ) : null}
-      </div>
-      )}
-
-      {showRest && (
-      <>
-      {stockFlow?.rows?.length ? (
-        <div>
-          <SectionHeader
-            icon={<TrendingUp className="h-3.5 w-3.5 text-cyan-400" />}
-            title="个股主力净流入"
-            hint="东财 clist · 全市场 TOP"
-            meta={`${stockFlow.rows.length} 只`}
-          />
-          <div className={cn(box, "p-1.5")}>
-            <StockFlowList rows={stockFlow.rows} />
-          </div>
-        </div>
-      ) : null}
+    <div className="space-y-3 p-1">
       <div>
         <SectionHeader
           icon={<ArrowDownUp className="h-3.5 w-3.5 text-cyan-400" />}
@@ -427,8 +337,6 @@ export function ReviewMoneySeg({
         </div>
         <p className="mt-1 text-[10px] text-slate-500">公开披露数据，仅供了解变动事实，不构成买卖建议。</p>
       </div>
-      </>
-      )}
     </div>
   );
 }

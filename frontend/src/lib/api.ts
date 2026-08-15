@@ -1299,8 +1299,6 @@ export const api = {
     if (opts?.limitKind) p.set("limit_kind", opts.limitKind);
     return get<ReviewSnapshot>(`/market/review-snapshot?${p}`);
   },
-  boardFlow: (boardType = "industry", period = "today", top = 20) =>
-    get<BoardFlow>(`/market/board-flow?board_type=${boardType}&period=${period}&top=${top}`),
   stockFlow: (top = 15, board?: string | null) =>
     get<StockFlow>(`/market/stock-flow?top=${top}${board ? `&board=${encodeURIComponent(board)}` : ""}`),
   marketQuotes: (codes: string[]) =>
@@ -1348,8 +1346,6 @@ export const api = {
     get<ChemSpot>(`/market/chem-spot?id=${encodeURIComponent(id)}${name ? `&name=${encodeURIComponent(name)}` : ""}`),
   futureDaily: (code: string, n = 400) =>
     get<FutureDaily>(`/market/future-daily?code=${encodeURIComponent(code)}&n=${n}`),
-  stockBoards: (code: string) =>
-    get<StockBoards>(`/market/stock-boards?code=${encodeURIComponent(code)}`),
   stockBoardsBatch: (codes: string[]) =>
     get<Record<string, StockBoards>>(`/market/stock-boards-batch?codes=${encodeURIComponent(codes.slice(0, 12).join(","))}`),
   marketLives: (page = 1, size = 40) =>
@@ -1442,8 +1438,6 @@ export const api = {
     get<GlobalOptions>(
       `/global/stock/options?symbol=${encodeURIComponent(symbol)}&unusual_top=${unusualTop}`,
     ),
-  radar: () => get<RadarData>("/radar"),
-  radarRefresh: () => request<RadarData>("/radar/refresh", "POST"),
   portfolio: () => get<PortfolioData>("/portfolio"),
   addHolding: (code: string, shares: number, cost: number) => request<PortfolioData>("/portfolio/holding", "POST", { code, shares, cost }),
   removeHolding: (code: string) => request<PortfolioData>(`/portfolio/holding?code=${code}`, "DELETE"),

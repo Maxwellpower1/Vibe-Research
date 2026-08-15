@@ -133,24 +133,6 @@ def _warm_review_dc() -> tuple[int, int, list[dict]]:
     steps = [
         ("indices", lambda: _cached("indices", "live", 60, astock.index_quote)),
         (
-            "board_flow",
-            lambda: _cached(
-                "board_flow",
-                "industry:today:20",
-                180,
-                lambda: astock_boards.board_fund_flow("industry", "today", 20),
-            ),
-        ),
-        (
-            "hot_ths",
-            lambda: _cached(
-                "hot_ths",
-                "hour:25",
-                180,
-                lambda: astock_boards.ths_hot_list("hour", 25),
-            ),
-        ),
-        (
             "industry",
             lambda: _cached(
                 "industry",

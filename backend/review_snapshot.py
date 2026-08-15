@@ -1,8 +1,9 @@
 """Daily Review BFF: paint / top / full payloads share the same TTL keys.
 
-scope=paint is Tencent + overview only (no Eastmoney). top adds emotion/hot
-rows in parallel. full then fills boards/risk. em_get only serializes launch
-gaps, so sibling Eastmoney calls overlap on HTTP RTT.
+scope=paint is Tencent + overview only (no Eastmoney). top adds emotion +
+industry strength. full then fills limit pools / dragon-tiger / monitor.
+Unused keys stay in the JSON as None so the API shape does not break.
+em_get only serializes launch gaps, so sibling Eastmoney calls overlap on HTTP RTT.
 """
 from __future__ import annotations
 
@@ -22,8 +23,6 @@ _errors_lock = threading.Lock()
 BEIJING = timezone(timedelta(hours=8))
 
 _LIMIT_KINDS = ("zt", "zb", "dt", "yzt", "jm")
-_BOARD_TYPES = ("industry", "concept", "region")
-_BOARD_PERIODS = ("today", "5d", "10d")
 
 
 def _grab(name: str, fn: Callable[[], Any], bucket: dict[str, Any], errors: list[dict]) -> None:
@@ -59,21 +58,10 @@ def _fill_overview(bucket: dict[str, Any], errors: list[dict]) -> None:
 
 
 def _fill_em_top(bucket: dict[str, Any], errors: list[dict]) -> None:
-    """Eastmoney-backed top rows; launch in parallel (slot lock only)."""
+    """Eastmoney-backed top rows used by the emotion panel."""
     _run_parallel(
         [
-            ("global_indices", market.get_global_indices),
             ("emotion", market.get_short_term_emotion),
-            ("turnover", market.get_turnover_top),
-            (
-                "hot",
-                lambda: _cached(
-                    "hot_ths",
-                    "hour:25",
-                    180,
-                    lambda: astock_boards.ths_hot_list("hour", 25),
-                ),
-            ),
             (
                 "industry",
                 lambda: _cached(
@@ -94,8 +82,6 @@ def _fill_em_extra(
     bucket: dict[str, Any],
     errors: list[dict],
     *,
-    board_type: str,
-    board_period: str,
     limit_kind: str,
 ) -> None:
     jobs: list[tuple[str, Callable[[], Any]]] = [
@@ -110,15 +96,6 @@ def _fill_em_extra(
         ),
         ("monitor", lambda: _cached("monitor", "active", 600, lambda: astock_boards.em_stock_monitor(True))),
         ("anomaly", lambda: _cached("anomaly", "40", 300, lambda: astock_boards.em_price_anomaly(40))),
-        (
-            "board_flow",
-            lambda: _cached(
-                "board_flow",
-                f"{board_type}:{board_period}:20",
-                180,
-                lambda: astock_boards.board_fund_flow(board_type, board_period, 20),
-            ),
-        ),
     ]
     if limit_kind == "jm":
         bucket["limit_pool"] = None
@@ -155,8 +132,8 @@ def build_review_snapshot(
     scope = (scope or "full").strip().lower()
     if scope not in ("paint", "top", "full"):
         scope = "full"
-    board_type = board_type if board_type in _BOARD_TYPES else "industry"
-    board_period = board_period if board_period in _BOARD_PERIODS else "today"
+    # board_type / board_period stay in the signature for older clients.
+    _ = (board_type, board_period)
     limit_kind = limit_kind if limit_kind in _LIMIT_KINDS else "zt"
 
     top: dict[str, Any] = {}
@@ -181,13 +158,7 @@ def build_review_snapshot(
             for fut in futs:
                 fut.result()
         if scope == "full":
-            _fill_em_extra(
-                extra,
-                errors,
-                board_type=board_type,
-                board_period=board_period,
-                limit_kind=limit_kind,
-            )
+            _fill_em_extra(extra, errors, limit_kind=limit_kind)
 
     return {
         "scope": scope,
