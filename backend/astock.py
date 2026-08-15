@@ -27,9 +27,24 @@ from cache import TTLCache
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
-# Watchlist / portfolio / tools share this; 4s is enough to collapse bursts.
-_QUOTE_CACHE = TTLCache(maxsize=2048, default_ttl=4.0, name="quote")
+# Shared by /api/quote, /api/market/quotes, index_quote, seal flags. 5s matches quoteHub.
+_QUOTE_CACHE = TTLCache(maxsize=2048, default_ttl=5.0, name="quote")
 _QUOTE_MISS = object()
+_ZT_POOL_CACHE = TTLCache(maxsize=32, default_ttl=180.0, name="zt_pool")
+_GTIMG_LINE_RE = re.compile(r'v_([A-Za-z0-9_]+)="([^"]*)"')
+
+
+def is_ashare_stock(symbol: str) -> bool:
+    """True for A-share stocks (not indices). sh600519 yes, sh000001 no."""
+    m = re.fullmatch(r"(sh|sz|bj)(\d{6})", (symbol or "").strip(), re.I)
+    if not m:
+        return False
+    pfx, digits = m.group(1).lower(), m.group(2)
+    if pfx == "sh":
+        return digits[0] in "569"
+    if pfx == "sz":
+        return digits[0] in "0123"
+    return True
 
 
 def get_prefix(code: str) -> str:
@@ -112,56 +127,205 @@ def _fetch_gtimg(prefixed_codes: list[str]) -> str:
         return resp.read().decode("gbk")
 
 
-def _parse_gtimg(data: str) -> dict[str, dict]:
-    result: dict[str, dict] = {}
-    for line in data.strip().split(";"):
-        if not line.strip() or "=" not in line or '"' not in line:
-            continue
-        key = line.split("=")[0].split("_")[-1]
-        vals = line.split('"')[1].split("~")
-        if len(vals) < 53:
-            continue
-        code = key[2:]
+def _gtimg_num(vals: list[str], i: int) -> float:
+    try:
+        return float(vals[i]) if i < len(vals) and vals[i] else 0.0
+    except (ValueError, IndexError):
+        return 0.0
 
-        def num(i: int) -> float:
-            try:
-                return float(vals[i]) if vals[i] else 0.0
-            except (ValueError, IndexError):
-                return 0.0
 
-        result[code] = {
-            "name": vals[1],
-            "price": num(3),
-            "last_close": num(4),
-            "open": num(5),
-            "bid1": num(9),
-            "bid1_vol": num(10),
-            "ask1": num(19),
-            "ask1_vol": num(20),
-            "change_amt": num(31),
-            "change_pct": num(32),
-            "high": num(33),
-            "low": num(34),
-            "amount_wan": num(37),
-            "turnover_pct": num(38),
-            "pe_ttm": num(39),
-            "amplitude_pct": num(43),
-            "mcap_yi": num(44),
-            "float_mcap_yi": num(45),
-            "pb": num(46),
-            "limit_up": num(47),
-            "limit_down": num(48),
-            "vol_ratio": num(49),
-            "pe_static": num(52),
+def parse_gtimg_line(line: str) -> dict | None:
+    """Parse one `v_symbol="f0~f1~..."` line. FX (wh*) uses a shorter layout."""
+    m = _GTIMG_LINE_RE.search(line or "")
+    if not m:
+        return None
+    symbol = m.group(1)
+    vals = m.group(2).split("~")
+    if symbol.startswith("wh") and len(vals) > 13:
+        price = _gtimg_num(vals, 3)
+        chg = _gtimg_num(vals, 12)
+        prev = price - chg if price else 0.0
+        pct = _gtimg_num(vals, 13)
+        return {
+            "symbol": symbol,
+            "name": vals[1] or symbol,
+            "price": price,
+            "last_close": prev,
+            "prev": prev,
+            "open": 0.0,
+            "bid1": 0.0,
+            "bid1_vol": 0.0,
+            "ask1": 0.0,
+            "ask1_vol": 0.0,
+            "change_amt": chg,
+            "change": chg,
+            "change_pct": pct,
+            "pct": pct,
+            "high": 0.0,
+            "low": 0.0,
+            "amount_wan": 0.0,
+            "amount": 0.0,
+            "turnover_pct": 0.0,
+            "turnover": 0.0,
+            "pe_ttm": 0.0,
+            "amplitude_pct": 0.0,
+            "mcap_yi": 0.0,
+            "float_mcap_yi": 0.0,
+            "pb": 0.0,
+            "limit_up": 0.0,
+            "limit_down": 0.0,
+            "vol_ratio": 0.0,
+            "pe_static": 0.0,
         }
+    if len(vals) < 33:
+        return None
+    n = _gtimg_num
+    amt = n(vals, 37) if len(vals) > 37 else 0.0
+    turn = n(vals, 38) if len(vals) > 38 else 0.0
+    return {
+        "symbol": symbol,
+        "name": vals[1],
+        "price": n(vals, 3),
+        "last_close": n(vals, 4),
+        "prev": n(vals, 4),
+        "open": n(vals, 5) if len(vals) > 5 else 0.0,
+        "bid1": n(vals, 9) if len(vals) > 9 else 0.0,
+        "bid1_vol": n(vals, 10) if len(vals) > 10 else 0.0,
+        "ask1": n(vals, 19) if len(vals) > 19 else 0.0,
+        "ask1_vol": n(vals, 20) if len(vals) > 20 else 0.0,
+        "change_amt": n(vals, 31),
+        "change": n(vals, 31),
+        "change_pct": n(vals, 32),
+        "pct": n(vals, 32),
+        "high": n(vals, 33) if len(vals) > 33 else 0.0,
+        "low": n(vals, 34) if len(vals) > 34 else 0.0,
+        "amount_wan": amt,
+        "amount": amt,
+        "turnover_pct": turn,
+        "turnover": turn,
+        "pe_ttm": n(vals, 39) if len(vals) > 39 else 0.0,
+        "amplitude_pct": n(vals, 43) if len(vals) > 43 else 0.0,
+        "mcap_yi": n(vals, 44) if len(vals) > 44 else 0.0,
+        "float_mcap_yi": n(vals, 45) if len(vals) > 45 else 0.0,
+        "pb": n(vals, 46) if len(vals) > 46 else 0.0,
+        "limit_up": n(vals, 47) if len(vals) > 47 else 0.0,
+        "limit_down": n(vals, 48) if len(vals) > 48 else 0.0,
+        "vol_ratio": n(vals, 49) if len(vals) > 49 else 0.0,
+        "pe_static": n(vals, 52) if len(vals) > 52 else 0.0,
+    }
+
+
+def parse_gtimg_quotes(data: str) -> dict[str, dict]:
+    """Full-symbol keyed parse (`sh600519`, `usIXIC`, `whUSDCNY`)."""
+    out: dict[str, dict] = {}
+    for line in (data or "").strip().split(";"):
+        q = parse_gtimg_line(line.strip())
+        if q:
+            out[q["symbol"]] = q
+    return out
+
+
+def _parse_gtimg(data: str) -> dict[str, dict]:
+    """Legacy: prefix-stripped keys (`600519`, `HSI`) for existing callers."""
+    result: dict[str, dict] = {}
+    for sym, q in parse_gtimg_quotes(data).items():
+        result[sym[2:] if len(sym) > 2 else sym] = q
     return result
+
+
+def _quote_cache_keys(symbol: str) -> list[str]:
+    """Aliases for the shared quote cache. Indices are never stored as bare 6-digit."""
+    s = (symbol or "").strip()
+    if not s:
+        return []
+    keys = [s]
+    low = s.lower()
+    if low != s:
+        keys.append(low)
+    if is_ashare_stock(s) and not re.fullmatch(r"sz399\d{3}", s, re.I):
+        keys.append(s[2:])
+    elif re.fullmatch(r"\d{6}", s):
+        keys.append(f"{get_prefix(s)}{s}")
+    return list(dict.fromkeys(keys))
+
+
+def _quote_cache_get(symbol: str):
+    for k in _quote_cache_keys(symbol):
+        hit = _QUOTE_CACHE.get(k, _QUOTE_MISS)
+        if hit is not _QUOTE_MISS:
+            return hit
+    return _QUOTE_MISS
+
+
+def _quote_cache_set(symbol: str, q: dict | None, ttl: float | None = None) -> None:
+    keys = _quote_cache_keys(symbol)
+    if q and q.get("symbol"):
+        for k in _quote_cache_keys(str(q["symbol"])):
+            if k not in keys:
+                keys.append(k)
+    neg_ttl = 2.0 if ttl is None else ttl
+    for k in keys:
+        if q is None:
+            _QUOTE_CACHE.set(k, None, ttl=neg_ttl)
+        else:
+            _QUOTE_CACHE.set(k, q, ttl=ttl)
+
+
+def _put_quote_aliases(out: dict[str, dict], requested: str, q: dict) -> None:
+    out[requested] = q
+    sym = str(q.get("symbol") or requested)
+    out[sym] = q
+    if is_ashare_stock(sym):
+        out[sym[2:]] = q
+
+
+def gtimg_quotes(prefixed_codes: list[str]) -> dict[str, dict]:
+    """Batch Tencent quotes with a shared 5s cache.
+
+    Keys include the requested symbol and, for A-share stocks only, the 6-digit
+    alias. Indices like sh000001 are never stored as bare 000001.
+    """
+    uniq: list[str] = []
+    seen: set[str] = set()
+    for raw in prefixed_codes:
+        s = (raw or "").strip()
+        if not s:
+            continue
+        resolved = resolve_symbol(s) or s
+        low = resolved.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        uniq.append(resolved)
+
+    out: dict[str, dict] = {}
+    miss: list[str] = []
+    for s in uniq:
+        hit = _quote_cache_get(s)
+        if hit is _QUOTE_MISS:
+            miss.append(s)
+        elif hit is not None:
+            _put_quote_aliases(out, s, hit)
+    if not miss:
+        return out
+    parsed: dict[str, dict] = {}
+    for i in range(0, len(miss), 80):
+        parsed.update(parse_gtimg_quotes(_fetch_gtimg(miss[i:i + 80])))
+    parsed_l = {k.lower(): v for k, v in parsed.items()}
+    for s in miss:
+        q = parsed.get(s) or parsed_l.get(s.lower())
+        if q:
+            _quote_cache_set(s, q)
+            _put_quote_aliases(out, s, q)
+        else:
+            _quote_cache_set(s, None, ttl=2.0)
+    return out
 
 
 def tencent_quote(codes: list[str]) -> dict[str, dict]:
     """批量个股实时行情：现价 / 涨跌 / PE / PB / 市值 / 换手 / 涨跌停。
 
-    Per-code TTL 4s so watchlist + portfolio + tools hitting the same names
-    share one Tencent round-trip. Misses (no row) get a 2s negative cache.
+    Per-code TTL 5s, shared with /api/market/quotes. Misses get a 2s negative cache.
     """
     uniq: list[str] = []
     seen: set[str] = set()
@@ -171,27 +335,14 @@ def tencent_quote(codes: list[str]) -> dict[str, dict]:
             continue
         seen.add(c)
         uniq.append(c)
-
+    if not uniq:
+        return {}
+    fetched = gtimg_quotes([f"{get_prefix(c)}{c}" if re.fullmatch(r"\d{6}", c) else c for c in uniq])
     out: dict[str, dict] = {}
-    miss: list[str] = []
     for c in uniq:
-        hit = _QUOTE_CACHE.get(c, _QUOTE_MISS)
-        if hit is _QUOTE_MISS:
-            miss.append(c)
-        elif hit is not None:
-            out[c] = hit
-    if miss:
-        fetched: dict[str, dict] = {}
-        for i in range(0, len(miss), 80):
-            chunk = miss[i:i + 80]
-            fetched.update(_parse_gtimg(_fetch_gtimg([f"{get_prefix(c)}{c}" for c in chunk])))
-        for c in miss:
-            q = fetched.get(c)
-            if q:
-                _QUOTE_CACHE.set(c, q)
-                out[c] = q
-            else:
-                _QUOTE_CACHE.set(c, None, ttl=2.0)
+        q = fetched.get(c) or fetched.get(f"{get_prefix(c)}{c}" if re.fullmatch(r"\d{6}", c) else c)
+        if q:
+            out[c] = q
     return out
 
 
@@ -229,11 +380,10 @@ def index_quote() -> list[dict]:
 
     返回含 symbol（如 sh000001 / hkHSI）供分时/K线直连，避免 000001 歧义。
     """
-    parsed = _parse_gtimg(_fetch_gtimg(A_INDICES))
+    parsed = gtimg_quotes(A_INDICES)
     out = []
     for full in A_INDICES:
-        # sh000001 -> 000001; hkHSI -> HSI (gtimg key strips 2-char prefix)
-        q = parsed.get(full[2:])
+        q = parsed.get(full) or parsed.get(full[2:])
         if q:
             out.append({
                 "code": full[2:],
@@ -287,39 +437,12 @@ def eastmoney_reports(code: str, max_pages: int = 3) -> list[dict]:
     return out
 
 
-def eastmoney_industry_reports(keywords: list[str] | None = None, days: int = 90, max_pages: int = 3) -> list[dict]:
-    """按行业拉研报（qType=1）——适合产业链 / 主题级检索。keywords 在标题上过滤。"""
-    from datetime import date, timedelta
-
-    session = _report_session()
-    end = date.today()
-    begin = end - timedelta(days=days)
-    out: list[dict] = []
-    for page in range(1, max_pages + 1):
-        params = {
-            "industryCode": "*", "pageSize": "100", "industry": "*",
-            "rating": "*", "ratingChange": "*",
-            "beginTime": begin.isoformat(), "endTime": end.isoformat(),
-            "pageNo": str(page), "fields": "", "qType": "1",
-            "orgCode": "", "code": "", "rcode": "",
-        }
-        r = session.get(_REPORT_API, params=params, timeout=30)
-        rows = r.json().get("data") or []
-        if not rows:
-            break
-        out.extend(rows)
-        time.sleep(0.3)
-    if keywords:
-        out = [r for r in out if any(k in r.get("title", "") for k in keywords)]
-    return out
-
-
 def pdf_url(info_code: str) -> str:
     return _PDF_TPL.format(info_code=info_code)
 
 
 # ---------------------------------------------------------------------------
-# Layer 3/4/5 · akshare 惰性封装（一致预期 / 新闻 / 公告 / 基本面）
+# Layer 3/4/5 · akshare 惰性封装（一致预期 / 新闻 / 巨潮公告备用）
 # ---------------------------------------------------------------------------
 
 def _akshare():
@@ -403,15 +526,6 @@ def cls_telegraph(page_size: int = 50) -> list[dict]:
             "share_url": share or None,
         })
     return rows
-
-
-def individual_info(code: str) -> dict:
-    """个股基本面（东财）：行业 / 总股本 / 上市时间等。"""
-    ak = _akshare()
-    df = ak.stock_individual_info_em(symbol=code)
-    if df is None or df.empty:
-        return {}
-    return {str(row["item"]): row["value"] for _, row in df.iterrows()}
 
 
 def disclosure(code: str) -> list[dict]:
@@ -660,7 +774,8 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
     # Fallback name from quote batch (use explicit symbol so indices stay correct)
     if not name:
         try:
-            q = _parse_gtimg(_fetch_gtimg([symbol])).get(code6) or {}
+            got = gtimg_quotes([symbol])
+            q = got.get(symbol) or got.get(code6) or {}
             name = q.get("name") or code6
             if prev_close is None and isinstance(q.get("last_close"), (int, float)):
                 prev_close = float(q["last_close"])
@@ -957,50 +1072,30 @@ def em_zt_topic_pool(endpoint: str, date: str, sort: str = "fbt:asc") -> list[di
     """东财涨停板行情中心原始池（push2ex）。
     endpoint: getTopicZTPool(涨停) / getTopicZBPool(炸板) / getTopicDTPool(跌停) / getYesterdayZTPool(昨涨停)
     date: YYYYMMDD 交易日。非交易日 / 参数错 → []。
-    池内每项字段含 lbc(连板数) / zbc(炸板次数) / hybk(行业) 等。"""
+    池内每项字段含 lbc(连板数) / zbc(炸板次数) / hybk(行业) 等。
+
+    Raw JSON is cached 180s (empty 20s) so emotion + limit_up_pools share one fetch.
+    """
+    key = (endpoint, str(date), sort)
+    hit = _ZT_POOL_CACHE.get(key, _QUOTE_MISS)
+    if hit is not _QUOTE_MISS:
+        return hit
     url = f"https://push2ex.eastmoney.com/{endpoint}"
     params = {"ut": _ZTB_UT, "dpt": "wz.ztzt", "Pageindex": 0,
               "pagesize": 10000, "sort": sort, "date": date}
     headers = {"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"}
     try:
         r = em_get(url, params=params, headers=headers, timeout=10)
-        return (r.json().get("data") or {}).get("pool") or []
+        pool = (r.json().get("data") or {}).get("pool") or []
     except Exception:
-        return []
+        pool = []
+    _ZT_POOL_CACHE.set(key, pool, ttl=180.0 if pool else 20.0)
+    return pool
 
 
 def _numf(v):
     """东财数值字段可能是 '-'（停牌/无数据）→ 归一成 float 或 None。"""
     return v if isinstance(v, (int, float)) else None
-
-
-def market_turnover_rank(n: int = 20) -> list[dict]:
-    """全市场成交额榜（沪深京 A 股按成交额降序 TopN）。
-
-    东财行情中心 clist, 成交额榜兜底用。**push2(实时) 不可达时降级 push2delay(延迟行情，日榜场景足够)**。
-    返回每只: code / name / price / pct / amount(成交额,元) / mcap(总市值,元) /
-    float_cap(流通市值,元) / industry。
-    ⚠️ 这是客观公开榜单数据（东财/同花顺同款），产品侧只做客观展示——非推荐、非预测、不评分。
-    """
-    params = {"pn": 1, "pz": n, "po": 1, "np": 1, "fltt": 2, "invt": 2, "fid": "f6",
-              "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
-              "fields": "f12,f14,f2,f3,f6,f20,f21,f100"}
-    diff: list[dict] = []
-    for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
-        try:
-            r = em_get(f"https://{host}/api/qt/clist/get", params=params,
-                       headers={"User-Agent": UA}, timeout=12)
-            diff = (r.json().get("data") or {}).get("diff") or []
-            if diff:
-                break
-        except Exception:
-            continue
-    return [{
-        "code": str(d.get("f12", "")), "name": d.get("f14", ""),
-        "price": _numf(d.get("f2")), "pct": _numf(d.get("f3")),
-        "amount": _numf(d.get("f6")), "mcap": _numf(d.get("f20")),
-        "float_cap": _numf(d.get("f21")), "industry": d.get("f100", "") or "",
-    } for d in diff]
 
 
 def eastmoney_datacenter(report_name: str, columns: str = "ALL", filter_str: str = "",
@@ -1695,7 +1790,7 @@ def investor_qa(code: str, page_size: int = 40) -> list[dict]:
 def industry_comparison(top_n: int = 20) -> dict:
     """全行业涨跌幅排名（东财行业板块，~100 个行业）：板块级涨跌 / 涨跌家数 / 领涨。
 
-    push2(实时) 不可达时降级 push2delay(延迟行情)，与 market_turnover_rank 同策略。
+    push2(实时) 不可达时降级 push2delay(延迟行情)。
     """
     params = {"pn": "1", "pz": "100", "po": "1", "np": "1", "fltt": "2", "invt": "2",
               "fid": "f3",  # fid=f3 + po=1：按涨跌幅降序，否则 top/bottom 切片非涨幅序（a-stock-data §3.7）

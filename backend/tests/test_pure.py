@@ -130,3 +130,64 @@ def test_tencent_quote_short_ttl(monkeypatch):
     assert a["600519"]["name"] == "贵州茅台"
     assert b["600519"]["price"] == 1194.45
 
+
+def test_is_ashare_stock():
+    assert astock.is_ashare_stock("sh600519") is True
+    assert astock.is_ashare_stock("sz000001") is True
+    assert astock.is_ashare_stock("sh000001") is False
+    # sz 3xxxxx includes ChiNext stocks; 399001 is an index but keeps the old amount rule
+    assert astock.is_ashare_stock("sz399001") is True
+    assert astock.is_ashare_stock("bj430047") is True
+
+
+def test_quote_cache_shared_with_cockpit(monkeypatch):
+    astock._QUOTE_CACHE.clear()
+    calls: list[list[str]] = []
+
+    def fake_fetch(prefixed):
+        calls.append(list(prefixed))
+        return _gtimg_line()
+
+    monkeypatch.setattr(astock, "_fetch_gtimg", fake_fetch)
+    astock.tencent_quote(["600519"])
+    import cockpit_live as cl
+    out = cl._tencent_quotes(["sh600519"])
+    assert len(calls) == 1
+    assert out["sh600519"]["price"] == 1194.45
+    assert out["sh600519"]["name"] == "贵州茅台"
+
+
+def test_quote_cache_index_not_aliased_to_bare(monkeypatch):
+    astock._QUOTE_CACHE.clear()
+    parts = ["0"] * 40
+    parts[1] = "上证指数"
+    parts[3] = "3089.12"
+    parts[4] = "3080.00"
+    parts[31] = "9.12"
+    parts[32] = "0.30"
+    line = 'v_sh000001="' + "~".join(parts) + '";'
+
+    monkeypatch.setattr(astock, "_fetch_gtimg", lambda _c: line)
+    astock.gtimg_quotes(["sh000001"])
+    assert astock._quote_cache_get("sh000001")["name"] == "上证指数"
+    assert astock._quote_cache_get("000001") is astock._QUOTE_MISS
+
+
+def test_em_zt_topic_pool_caches(monkeypatch):
+    astock._ZT_POOL_CACHE.clear()
+    calls: list[tuple] = []
+
+    class R:
+        def json(self):
+            return {"data": {"pool": [{"c": "600519"}]}}
+
+    def fake_get(url, params=None, headers=None, timeout=10):
+        calls.append((url, params.get("date") if params else None))
+        return R()
+
+    monkeypatch.setattr(astock, "em_get", fake_get)
+    a = astock.em_zt_topic_pool("getTopicZTPool", "20260815", "fbt:asc")
+    b = astock.em_zt_topic_pool("getTopicZTPool", "20260815", "fbt:asc")
+    assert a == b == [{"c": "600519"}]
+    assert len(calls) == 1
+

@@ -62,15 +62,16 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - **就在本仓库的 [`a-stock-data/`](a-stock-data/) 文件夹里**（v3.6.0）。十层数据架构、47 个端点、15 个数据源，`a-stock-data/SKILL.md` **内嵌全部调用代码**，自包含、零第三方数据封装依赖，东财接口已内置限流防封，主源被封还能降级到备用源。
 - **覆盖**：行情 / K线 / 研报 / 一致预期 / 估值 / 历史分位 / 财务三表 / 公告 / 龙虎榜 / 融资融券 / 大宗交易 / 股东户数 / 分红 / 资金流 / 解禁 / 概念板块 / 打板情绪 / ETF 期权 / 互动易 / 全市场行业排名 …
 - **轻量图表 API**：`GET /api/astock/light-kline?code=600519&resolution=1D`（`1` 分时 / `5` 五日 / `1D` 日K前复权，腾讯 ifzq，标准库即可，缓存 60 秒；美股指数如 `usIXIC` 走 `usMinute`；`whUSDCNY` 走东财离岸 `USDCNH` 1 分钟 K）· `GET /api/astock/light-kline-batch?codes=sh000001,usIXIC,whUSDCNY` 一次拉多只（驾驶舱指数/板块成分股/个股榜用）
-- **统一报价中心**：`GET /api/market/quotes?codes=` 只拉腾讯股票/指数（按代码 5 秒缓存，VIX 空了走新浪）。期货走 `/commodities`，和指数并行，互不拖死。驾驶舱指数/商品/榜单/自选/产业链/顶栏跑马灯共用同一快照；后端慢或挂了时浏览器直连 `qt.gtimg.cn` / `ifzq` 兜底。板块热点可 10 秒轮播右侧成分股。`em_get` 对 `fflow/kline` 单独 200ms 间隔，蝴蝶图冷启动更快。
-- **分时中心**：驾驶舱迷你图合并成 20 秒一批。指数/汇率 1 分钟 K 后端 TTL 20 秒，个股仍 120 秒。轮询换榜或轮播成分时保留上一帧，不先清空。
+- **统一报价中心**：`GET /api/market/quotes?codes=` 与 `GET /api/quote` 共用腾讯解析和按代码 5 秒缓存（指数不写成裸 6 位，避免 `sh000001` 撞 `000001`）。VIX 空了走新浪。期货走 `/commodities`，和指数并行，互不拖死。驾驶舱指数/商品/榜单/自选/产业链/顶栏跑马灯共用同一快照；后端慢或挂了时浏览器直连 `qt.gtimg.cn` / `ifzq` 兜底。板块热点可 10 秒轮播右侧成分股。`em_get` 对 `fflow/kline` 单独 200ms 间隔，蝴蝶图冷启动更快。
+- **分时中心**：驾驶舱迷你图合并成 20 秒一批。K 线页分时走同一 `loadLightKline` 缓存（240 根，与驾驶舱对齐）；五日/日 K 仍独立。指数/汇率 1 分钟 K 后端 TTL 20 秒，个股仍 120 秒。轮询换榜或轮播成分时保留上一帧，不先清空。
 - **自选 / 个股行 / 分时轴**：驾驶舱自选格可搜名称/代码/拼音（`GET /api/fin/suggest`）当场加减；榜单/成分/产业链点星加入自选。可见行批量补行业/概念（`GET /api/market/stock-boards-batch`，前端 5 分钟缓存）。分时迷你图按交易时段画 X 轴（A 股午休压缩，商品/美股/汇率 24h）。
 - **产业链**：按关键词匹配相关板块涨跌；「问财刷新」走 `GET /api/iwencai/select`（`/v1/query2data`，需 `IWENCAI_API_KEY`），名单存本地，客观呈现不附推荐。
 - **复盘预热**：后端启动后后台定时预拉复盘常用接口 + **指数分时**（A股/恒生/美股 `usIXIC` 等，美股走腾讯 `usMinute`）+ **驾驶舱热路径**（全球指数 / 板块热点 / 个股榜 / 主力净流入 / 分钟资金流 / 商品），交易时段约 90 秒一次；分钟资金流先回流入/流出榜（`curves=0`，2 次东财），蝴蝶图曲线后补；按板块分键缓存，二次访问不再串行 16 次东财 kline。首屏走 `GET /api/market/review-snapshot`（`scope=paint|top|full`：先腾讯指数/总览，再情绪榜，再打板/资金）；东财 `em_get` 只卡发起间隔（约 1s；`fflow/kline` 单独 200ms），HTTP 等待不占锁。顶栏行情条与全球指数格共用 5 秒报价中心。全 A 分位走独立 `/market/breadth`，不挡情绪格。`GET /api/market/review-warmup` 看预热状态；`VR_REVIEW_WARMUP=0` 可关
 - **生意社现货（参考看板补齐）**：`GET /api/market/spot-table` 现货/期货/基差对照（8h 缓存，历史落在 `~/.vibe-research/spot-history.json`）· `GET /api/market/chem-spot?id=` 化工现货中位数。驾驶舱商品格「现期」tab 读现期表。
 - **期货日 K / 个股板块 / 直播快讯**：`GET /api/market/future-daily?code=nf_AU0`（新浪内盘/外盘日 K）· `GET /api/market/stock-boards?code=600519` · `GET /api/market/stock-boards-batch?codes=`（东财行业/地域/概念）· `GET /api/market/lives`（新浪 7×24，失败回退华尔街见闻；不进驾驶舱格子，快讯仍是右下角球）
-- **涨跌幅分位 / 成交额榜 / 真假板 / 同花顺成份**：`GET /api/market/breadth`（全 A p10–p90 + 8 档直方图，挂情绪格；优先新浪整页，不足则腾讯批量，东财 clist 兜底）· 成交额榜 / 个股榜优先新浪 `hs_a`，东财兜底 · 涨跌停池用腾讯买一/卖一标真假封（只扫池内标的）· `GET /api/market/ths-profile` / `ths-rotation`（shy313 同花顺概念/行业，24h 缓存 `~/.vibe-research/ths-ext.json`；板块热点有 THS 轮动 tab）
-- **板块热点右侧成分股**：默认展示领涨第一档个股（点其他板块切换）。成分股优先腾讯 `getBoardRankList`（`pt*` 代码），东财 `BK` 兜底
+- **涨跌幅分位 / 成交额榜 / 真假板 / 同花顺成份**：`GET /api/market/breadth`（全 A p10–p90 + 8 档直方图，挂情绪格；新浪整页，不足则腾讯批量）· 成交额榜 / 个股榜走新浪 `hs_a` · 涨跌停池与短线情绪共用东财四池原始缓存（180 秒）· 腾讯买一/卖一标真假封（只扫池内标的）· `GET /api/market/ths-profile` / `ths-rotation`（shy313 同花顺概念/行业，24h 缓存 `~/.vibe-research/ths-ext.json`；板块热点有 THS 轮动 tab）
+- **板块热点右侧成分股**：默认展示领涨第一档个股（点其他板块切换）。成分股走腾讯 `getBoardRankList`（`pt*` 代码）；主力净流仍补东财 `ulist`（独有字段）
+- **已去掉的闲置/兜底东财封装**：人气榜、akshare 个股概况、行业研报；板块排名/成分/个股榜/成交额/涨跌家数/全球指数不再用东财兜底。资金流、打板四池、公告研报等独有数据仍走东财。
 - **给 agent 用**：用 Claude Code 等 agent 跑本仓库时，要调 A 股数据就看 [`a-stock-data/SKILL.md`](a-stock-data/SKILL.md)——每个接口都有 copy-paste 即用的代码。Vibe-Research 后端的数据层（`backend/astock.py`）也是从它移植的。
 - **运行依赖**：`pip install mootdx requests pandas stockstats`（自包含，v3.0 起已移除 akshare 依赖）。
 - **更新 / 上游**：<https://github.com/simonlin1212/a-stock-data> —— 想跟进最新端点、扩数据源，去这里看；**但即便你不更新，仓库自带的这份也是固定可用的快照，可以一直用。**

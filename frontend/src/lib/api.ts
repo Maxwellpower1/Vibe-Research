@@ -2,7 +2,6 @@
 // 后端未启动或数据源异常时抛 ApiError，页面据此优雅降级。
 // 腾讯系行情在后端慢/挂时由浏览器直连 qt.gtimg.cn / ifzq 兜底。
 
-import { WORLD_INDEX_DEFS } from "@/config/cockpit";
 import {
   fetchDirectBoards,
   fetchDirectQuotes,
@@ -403,7 +402,8 @@ export interface ThsRotation {
   }>;
 }
 export interface StockBasicInfo {
-  code: string; name?: string; industry?: string;
+  code: string; name?: string; industry?: string; area?: string;
+  concepts?: string[];
   total_shares?: number | null; float_shares?: number | null;
   mcap?: number | null; float_mcap?: number | null;
   pe_ttm?: number | null; pb?: number | null; roe?: number | null;
@@ -1287,10 +1287,6 @@ export interface FinoDetailRow {
 
 export const api = {
   health: () => get<{ ok: boolean }>("/health"),
-  indices: () => get<IndexQuote[]>("/indices"),
-  marketOverview: () => get<MarketOverview>("/market/overview"),
-  emotion: () => get<ShortTermEmotion>("/market/emotion"),
-  turnoverTop: () => get<TurnoverTop>("/market/turnover-top"),
   reviewSnapshot: (opts?: {
     scope?: "paint" | "top" | "full";
     boardType?: "industry" | "concept" | "region";
@@ -1303,34 +1299,10 @@ export const api = {
     if (opts?.limitKind) p.set("limit_kind", opts.limitKind);
     return get<ReviewSnapshot>(`/market/review-snapshot?${p}`);
   },
-  dailyDragonTiger: (opts?: { date?: string; top?: number; minNetBuy?: number }) => {
-    const p = new URLSearchParams();
-    if (opts?.date) p.set("date", opts.date);
-    if (opts?.top != null) p.set("top", String(opts.top));
-    if (opts?.minNetBuy != null) p.set("min_net_buy", String(opts.minNetBuy));
-    const q = p.toString();
-    return get<DailyDragonTiger>(`/dragon-tiger/daily${q ? `?${q}` : ""}`);
-  },
   boardFlow: (boardType = "industry", period = "today", top = 20) =>
     get<BoardFlow>(`/market/board-flow?board_type=${boardType}&period=${period}&top=${top}`),
   stockFlow: (top = 15, board?: string | null) =>
     get<StockFlow>(`/market/stock-flow?top=${top}${board ? `&board=${encodeURIComponent(board)}` : ""}`),
-  worldIndices: () =>
-    withFallback(
-      () => get<WorldIndex[]>("/market/world-indices"),
-      async () => {
-        const map = await fetchDirectQuotes(WORLD_INDEX_DEFS.map((d) => d.code));
-        return WORLD_INDEX_DEFS.flatMap((d) => {
-          const q = map[d.code];
-          if (!q || !q.price) return [];
-          return [{
-            symbol: d.code, name: q.name || d.label, label: d.label, region: d.region,
-            price: q.price, change: q.change, change_pct: q.pct, amount: q.amount,
-          }];
-        });
-      },
-      6000,
-    ),
   marketQuotes: (codes: string[]) =>
     withFallback(
       () => get<Record<string, MarketQuote>>(
@@ -1408,15 +1380,9 @@ export const api = {
   lpr: (days = 365) => get<LprData>(`/market/lpr?days=${days}`),
   cnBondYield: (curveType: "treasury" | "policy" = "treasury") =>
     get<CnBondYield>(`/market/bond-yield?curve_type=${curveType}`),
-  hsgt: () => get<HsgtLive>("/market/hsgt"),
-  hotList: (source: "ths" | "em" = "ths", period = "hour", top = 30) =>
-    get<HotList>(`/market/hot-list?source=${source}&period=${period}&top=${top}`),
-  stockMonitor: () => get<MonitorPool>("/market/stock-monitor"),
-  priceAnomaly: (top = 40) => get<AnomalyPool>(`/market/price-anomaly?top=${top}`),
   limitPools: (pool: "zt" | "zb" | "dt" | "yzt" = "zt", top = 40) =>
     get<LimitPool>(`/market/limit-pools?pool=${pool}&top=${top}`),
   stockBasic: (code: string) => get<StockBasicInfo>(`/stock-basic?code=${code}`),
-  globalIndices: () => get<GlobalIndex[]>("/global/indices"),
   globalStock: (symbol: string, opts?: { withMetrics?: boolean }) => {
     const p = new URLSearchParams({ symbol });
     if (opts?.withMetrics === false) p.set("with_metrics", "false");
@@ -1549,7 +1515,6 @@ export const api = {
   blocks: (code: string) => get<Blocks>(`/blocks?code=${code}`),
   hotConcepts: (code: string) => get<HotConcept[]>(`/hot-concepts?code=${code}`),
   investorQa: (code: string) => get<QaRow[]>(`/investor-qa?code=${code}`),
-  industry: (top = 20) => get<IndustryData>(`/industry?top=${top}`),
   // OpenVlab 期权 / 期货波动率
   ovlabMarket: () => get<OvlabMarketRow[]>("/ovlab/market"),
   ovlabDetail: (prodUnd: string, exps?: string) =>

@@ -1,6 +1,6 @@
 """Cockpit live feeds: world indices, sector boards, stock rank, commodities.
 
-Ported from marketingdashboard public endpoints (Tencent / Sina / Eastmoney).
+Ported from marketingdashboard public endpoints (Tencent / Sina; Eastmoney for unique flows).
 Objective snapshots only; no recommendation / scoring / prediction.
 """
 
@@ -39,14 +39,6 @@ WORLD_INDICES: tuple[tuple[str, str, str], ...] = (
 )
 
 DEFAULT_FUTURES = "hf_GC,hf_XAU,nf_AU0,hf_SI,hf_CAD,hf_CL,BTCUSDT"
-
-_EM_TO_WORLD = {
-    "dji": "usDJI",
-    "spx": "usINX",
-    "ndx": "usIXIC",
-    "hsi": "hkHSI",
-    "hstech": "hkHSTECH",
-}
 
 
 def _num(v) -> float:
@@ -99,34 +91,18 @@ def parse_jsonp(text: str):
 
 def parse_tencent_quote_line(line: str) -> dict | None:
     """Parse one `v_symbol="f0~f1~..."` gtimg line. Keeps full symbol as key."""
-    m = re.search(r'v_([A-Za-z0-9_]+)="([^"]*)"', line or "")
-    if not m:
-        return None
-    symbol = m.group(1)
-    f = m.group(2).split("~")
-    if symbol.startswith("wh") and len(f) > 13:
-        price = _num(f[3])
-        chg = _num(f[12])
-        return {
-            "symbol": symbol,
-            "name": f[1] or symbol,
-            "price": price,
-            "change": chg,
-            "pct": _num(f[13]),
-            "prev": price - chg if price else 0.0,
-            "amount": 0.0,
-        }
-    if len(f) < 33:
+    q = astock.parse_gtimg_line(line)
+    if not q:
         return None
     return {
-        "symbol": symbol,
-        "name": f[1] or symbol,
-        "price": _num(f[3]),
-        "prev": _num(f[4]),
-        "change": _num(f[31]),
-        "pct": _num(f[32]),
-        "amount": _num(f[37]) if len(f) > 37 else 0.0,
-        "turnover": _num(f[38]) if len(f) > 38 else 0.0,
+        "symbol": q["symbol"],
+        "name": q.get("name") or q["symbol"],
+        "price": q.get("price") or 0.0,
+        "prev": q.get("last_close") or q.get("prev") or 0.0,
+        "change": q.get("change_amt") or q.get("change") or 0.0,
+        "pct": q.get("change_pct") or q.get("pct") or 0.0,
+        "amount": q.get("amount_wan") or q.get("amount") or 0.0,
+        "turnover": q.get("turnover_pct") or q.get("turnover") or 0.0,
     }
 
 
@@ -210,10 +186,27 @@ def normalize_board_code(raw: str) -> str:
 
 
 def _tencent_quotes(codes: list[str]) -> dict[str, dict]:
+    """Tencent batch via the shared 5s gtimg cache (same as /api/quote)."""
     if not codes:
         return {}
-    url = "https://qt.gtimg.cn/q=" + ",".join(codes)
-    return parse_tencent_quotes(_fetch_text(url, encoding="gbk", timeout=10))
+    rich = astock.gtimg_quotes(codes)
+    out: dict[str, dict] = {}
+    for key, q in rich.items():
+        item = {
+            "symbol": q.get("symbol") or key,
+            "name": q.get("name") or key,
+            "price": q.get("price") or 0.0,
+            "prev": q.get("last_close") or q.get("prev") or 0.0,
+            "change": q.get("change_amt") or q.get("change") or 0.0,
+            "pct": q.get("change_pct") or q.get("pct") or 0.0,
+            "amount": q.get("amount_wan") or q.get("amount") or 0.0,
+            "turnover": q.get("turnover_pct") or q.get("turnover") or 0.0,
+        }
+        out[key] = item
+        sym = item["symbol"]
+        if sym and sym not in out:
+            out[sym] = item
+    return out
 
 
 _QUOTE_CODE_RE = re.compile(
@@ -228,15 +221,7 @@ def _is_future_code(symbol: str) -> bool:
 
 
 def _is_ashare_stock(symbol: str) -> bool:
-    m = re.fullmatch(r"(sh|sz|bj)(\d{6})", symbol or "")
-    if not m:
-        return False
-    pfx, digits = m.group(1), m.group(2)
-    if pfx == "sh":
-        return digits[0] in "569"
-    if pfx == "sz":
-        return digits[0] in "0123"
-    return True
+    return astock.is_ashare_stock(symbol)
 
 
 def _canon_quote_code(raw: str) -> str:
@@ -370,7 +355,7 @@ def _vix_from_sina() -> dict | None:
 
 
 def world_indices() -> list[dict]:
-    """A / HK / US / FX key indices in one list (Tencent, EM / Sina fallback)."""
+    """A / HK / US / FX key indices in one list (Tencent; VIX falls back to Sina)."""
     codes = [c for c, _n, _r in WORLD_INDICES]
     quotes: dict[str, dict] = {}
     try:
@@ -382,24 +367,6 @@ def world_indices() -> list[dict]:
         vix = _vix_from_sina()
         if vix:
             quotes["usVIX"] = vix
-
-    missing_us = [c for c, _n, r in WORLD_INDICES if r in ("US", "HK") and not quotes.get(c, {}).get("price")]
-    if missing_us:
-        try:
-            import gstock
-            for row in gstock.global_indices():
-                mapped = _EM_TO_WORLD.get(row.get("key") or "")
-                if mapped and not quotes.get(mapped, {}).get("price"):
-                    quotes[mapped] = {
-                        "symbol": mapped,
-                        "name": row.get("name") or mapped,
-                        "price": row.get("price") or 0,
-                        "change": 0.0,
-                        "pct": row.get("change_pct") or 0,
-                        "amount": 0.0,
-                    }
-        except Exception:
-            pass
 
     out = []
     for code, label, region in WORLD_INDICES:
@@ -421,17 +388,14 @@ def world_indices() -> list[dict]:
 
 
 def sector_boards(kind: str = "01", direction: str = "0", n: int = 30) -> list[dict]:
-    """Industry (01) / concept (02) realtime board rank (Tencent, EM fallback)."""
+    """Industry (01) / concept (02) realtime board rank (Tencent)."""
     k = "02" if str(kind) == "02" else "01"
     d = "1" if str(direction) == "1" else "0"
     want = max(5, min(int(n or 30), 200))
     try:
-        rows = _tencent_boards(k, d, want)
-        if rows:
-            return rows
+        return _tencent_boards(k, d, want)
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, KeyError):
-        pass
-    return _em_boards(k, d, want)
+        return []
 
 
 def _tencent_boards(kind: str, direction: str, want: int) -> list[dict]:
@@ -457,51 +421,6 @@ def _tencent_boards(kind: str, direction: str, want: int) -> list[dict]:
             "lead_pct": _num(b.get("nzg_zdf")),
             "pct5": _num(b.get("bd_zdf5")),
             "pct20": _num(b.get("bd_zdf20")),
-        })
-    return rows
-
-
-def _em_boards(kind: str, direction: str, want: int) -> list[dict]:
-    fs = "m:90+t:3" if kind == "02" else "m:90+t:2"
-    po = "0" if direction == "1" else "1"
-    params = {
-        "pn": "1", "pz": str(want), "po": po, "np": "1",
-        "fltt": "2", "invt": "2", "fid": "f3",
-        "fs": fs,
-        "fields": "f12,f14,f2,f3,f204,f205",
-    }
-    data: dict = {}
-    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
-        try:
-            r = em_get(
-                f"https://{host}/api/qt/clist/get",
-                params=params,
-                headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
-                timeout=12,
-            )
-            data = (r.json() or {}).get("data") or {}
-            if data.get("diff"):
-                break
-        except Exception:
-            continue
-    items = data.get("diff") or []
-    if isinstance(items, dict):
-        items = list(items.values())
-    rows = []
-    for it in items[:want]:
-        if not isinstance(it, dict):
-            continue
-        code = normalize_board_code(str(it.get("f12") or ""))
-        rows.append({
-            "code": code,
-            "raw_code": it.get("f12") or "",
-            "name": it.get("f14") or "",
-            "price": _num(it.get("f2")),
-            "change": 0.0,
-            "pct": _num(it.get("f3")),
-            "lead_code": str(it.get("f205") or ""),
-            "lead_name": str(it.get("f204") or ""),
-            "lead_pct": 0.0,
         })
     return rows
 
@@ -609,7 +528,7 @@ def _attach_em_flow(rows: list[dict]) -> list[dict]:
 
 
 def board_stocks(code: str, n: int = 12) -> list[dict]:
-    """Board constituents by change pct. Tencent qq rank first, Eastmoney fallback."""
+    """Board constituents by change pct (Tencent qq rank). Main-net from Eastmoney ulist."""
     raw = (code or "").strip()
     want = max(5, min(int(n or 12), 80))
     try:
@@ -622,71 +541,16 @@ def board_stocks(code: str, n: int = 12) -> list[dict]:
             return rows
     except Exception:
         pass
-    return _em_board_stocks(raw, want)
-
-
-def _em_board_stocks(code: str, want: int) -> list[dict]:
-    bk = normalize_board_code(code)
-    if not _BK_RE.fullmatch(bk):
-        return []
-    params = {
-        "pn": "1", "pz": str(want), "po": "1", "np": "1",
-        "fltt": "2", "invt": "2", "fid": "f3",
-        "fs": f"b:{bk}",
-        "fields": "f12,f14,f2,f3,f6,f8,f62,f184",
-    }
-    data: dict = {}
-    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
-        try:
-            r = em_get(
-                f"https://{host}/api/qt/clist/get",
-                params=params,
-                headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
-                timeout=12,
-            )
-            data = (r.json() or {}).get("data") or {}
-            if data.get("diff"):
-                break
-        except Exception:
-            continue
-    items = data.get("diff") or []
-    if isinstance(items, dict):
-        items = list(items.values())
-    rows = []
-    for it in items[:want]:
-        if not isinstance(it, dict):
-            continue
-        price = it.get("f2")
-        if not isinstance(price, (int, float)) or price <= 0:
-            continue
-        code6 = str(it.get("f12") or "")
-        rows.append({
-            "code": code6,
-            "symbol": f"{astock.get_prefix(code6)}{code6}" if code6.isdigit() else code6,
-            "name": it.get("f14") or "",
-            "price": price,
-            "pct": it.get("f3") if isinstance(it.get("f3"), (int, float)) else 0,
-            "amount": it.get("f6") if isinstance(it.get("f6"), (int, float)) else 0,
-            "turnover": it.get("f8") if isinstance(it.get("f8"), (int, float)) else 0,
-            "main_net": it.get("f62") if isinstance(it.get("f62"), (int, float)) else None,
-            "main_pct": it.get("f184") if isinstance(it.get("f184"), (int, float)) else None,
-        })
-    return rows
+    return []
 
 
 def stock_rank(sort: str = "changepercent", asc: int = 0, n: int = 30) -> list[dict]:
-    """A-share rank: amount / changepercent. Sina primary, Eastmoney fallback."""
+    """A-share rank: amount / changepercent (Sina hs_a)."""
     key = sort if sort in _SINA_RANK_SORT else "changepercent"
     desc = 0 if int(asc or 0) == 1 else 1
     want = max(5, min(int(n or 30), 50))
     try:
-        rows = _sina_rank(key, 0 if desc else 1, want)
-        if rows:
-            return rows
-    except Exception:
-        pass
-    try:
-        return _em_rank(key, desc, want)
+        return _sina_rank(key, 0 if desc else 1, want) or []
     except Exception:
         return []
 
@@ -725,7 +589,7 @@ def parse_sina_amount_rows(arr: object, n: int = 20) -> list[dict]:
 
 
 def sina_amount_rank(n: int = 20) -> list[dict]:
-    """Sina hs_a amount rank. Field names match astock.market_turnover_rank."""
+    """Sina hs_a amount rank (yuan / yi-ready fields for turnover-top)."""
     fetch_n = min(80, max(int(n or 20), 20))
     url = (
         "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
@@ -733,53 +597,6 @@ def sina_amount_rank(n: int = 20) -> list[dict]:
     )
     arr = json.loads(_fetch_text(url, referer="https://finance.sina.com.cn/", timeout=12))
     return parse_sina_amount_rows(arr, n)
-
-
-def _em_rank(sort: str, po: int, want: int) -> list[dict]:
-    fid = "f6" if sort == "amount" else "f8" if sort == "turnoverratio" else "f3"
-    params = {
-        "pn": "1", "pz": str(want), "po": str(po), "np": "1",
-        "fltt": "2", "invt": "2", "fid": fid,
-        "fs": "m:0+t:6,m:0+t:80",
-        "fields": "f12,f14,f2,f3,f6,f8,f62,f184",
-    }
-    data: dict = {}
-    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
-        try:
-            r = em_get(
-                f"https://{host}/api/qt/clist/get",
-                params=params,
-                headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
-                timeout=12,
-            )
-            data = (r.json() or {}).get("data") or {}
-            if data.get("diff"):
-                break
-        except Exception:
-            continue
-    items = data.get("diff") or []
-    if isinstance(items, dict):
-        items = list(items.values())
-    rows = []
-    for it in items[:want]:
-        if not isinstance(it, dict):
-            continue
-        price = it.get("f2")
-        if not isinstance(price, (int, float)) or price <= 0:
-            continue
-        code = str(it.get("f12") or "")
-        rows.append({
-            "symbol": f"{astock.get_prefix(code)}{code}" if code.isdigit() else code,
-            "code": code,
-            "name": it.get("f14") or "",
-            "price": price,
-            "pct": it.get("f3") if isinstance(it.get("f3"), (int, float)) else 0,
-            "amount": it.get("f6") if isinstance(it.get("f6"), (int, float)) else 0,
-            "turnover": it.get("f8") if isinstance(it.get("f8"), (int, float)) else 0,
-            "main_net": it.get("f62") if isinstance(it.get("f62"), (int, float)) else 0,
-            "main_pct": it.get("f184") if isinstance(it.get("f184"), (int, float)) else 0,
-        })
-    return rows
 
 
 def _sina_rank(sort: str, asc: int, want: int) -> list[dict]:
@@ -1193,8 +1010,9 @@ def stock_boards(code: str) -> dict:
     }
 
 
-def stock_boards_map(codes: list[str]) -> dict[str, dict]:
+def stock_boards_map(codes: list[str], fetch=None) -> dict[str, dict]:
     """Industry / concept tags for up to 12 A-share codes. Failures are skipped."""
+    get_one = fetch or stock_boards
     out: dict[str, dict] = {}
     seen: set[str] = set()
     n = 0
@@ -1206,7 +1024,7 @@ def stock_boards_map(codes: list[str]) -> dict[str, dict]:
         if n >= 12:
             break
         try:
-            row = stock_boards(key)
+            row = get_one(key)
         except (ValueError, RuntimeError, OSError, TypeError):
             continue
         n += 1

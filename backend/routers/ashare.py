@@ -18,7 +18,7 @@ router = APIRouter(tags=["ashare"])
 
 @router.get("/api/stock-basic")
 def stock_basic(code: str = Query(...)):
-    """个股基本资料（行业/股本/上市日，东财 push2）。缓存 30 分钟。"""
+    """个股基本资料（行业/地域/概念/股本/上市日，东财 push2）。缓存 30 分钟。"""
     import astock_boards
     code = _validate(code)
     try:
@@ -134,18 +134,6 @@ def news(code: str = Query(...), limit: int = Query(20, ge=1, le=50)):
         raise HTTPException(501, str(e)) from e
     except Exception as e:
         raise HTTPException(502, f"新闻源异常：{e}") from e
-
-
-@router.get("/api/info")
-def info(code: str = Query(...)):
-    """个股基本面：行业/股本/上市时间（需 akshare）。"""
-    code = _validate(code)
-    try:
-        return {"data": astock.individual_info(code)}
-    except astock.DependencyMissing as e:
-        raise HTTPException(501, str(e)) from e
-    except Exception as e:
-        raise HTTPException(502, f"基本面源异常：{e}") from e
 
 
 @router.get("/api/disclosure")

@@ -77,23 +77,18 @@ def test_attach_em_flow(monkeypatch):
 
 
 def test_board_stocks_prefers_tencent_pt(monkeypatch):
-    em_calls = []
     monkeypatch.setattr(cl, "_tencent_board_stocks", lambda raw, n: [{
         "code": "002080", "name": "中材科技", "price": 59.93, "pct": 7.48,
         "amount": 1e8, "turnover": 3.6,
     }])
     monkeypatch.setattr(cl, "_attach_em_flow", lambda rows: rows)
-    monkeypatch.setattr(cl, "_em_board_stocks", lambda raw, n: em_calls.append(raw) or [])
     out = cl.board_stocks("pt01801712", 20)
     assert out[0]["code"] == "002080"
-    assert em_calls == []
 
 
-def test_board_stocks_falls_back_to_eastmoney(monkeypatch):
+def test_board_stocks_empty_when_tencent_misses(monkeypatch):
     monkeypatch.setattr(cl, "_tencent_board_stocks", lambda raw, n: [])
-    monkeypatch.setattr(cl, "_em_board_stocks", lambda raw, n: [{"code": "600000", "name": "浦发", "price": 10, "pct": 1}])
-    out = cl.board_stocks("BK0474", 12)
-    assert out[0]["code"] == "600000"
+    assert cl.board_stocks("BK0474", 12) == []
 
 
 def test_parse_jsonp():
@@ -175,20 +170,15 @@ def test_parse_sina_amount_rows_converts_wan_yuan():
 
 def test_stock_rank_prefers_sina(monkeypatch):
     sina_calls = []
-    em_calls = []
     monkeypatch.setattr(cl, "_sina_rank", lambda *a, **k: sina_calls.append(a) or [{"code": "600519", "pct": 1}])
-    monkeypatch.setattr(cl, "_em_rank", lambda *a, **k: em_calls.append(a) or [{"code": "000001", "pct": 2}])
     out = cl.stock_rank("amount", 0, 10)
     assert out[0]["code"] == "600519"
     assert sina_calls
-    assert em_calls == []
 
 
-def test_stock_rank_falls_back_to_eastmoney(monkeypatch):
+def test_stock_rank_empty_when_sina_misses(monkeypatch):
     monkeypatch.setattr(cl, "_sina_rank", lambda *a, **k: [])
-    monkeypatch.setattr(cl, "_em_rank", lambda *a, **k: [{"code": "000001", "pct": 2}])
-    out = cl.stock_rank("changepercent", 0, 10)
-    assert out[0]["code"] == "000001"
+    assert cl.stock_rank("changepercent", 0, 10) == []
 
 
 def test_quotes_map_aliases_and_filters(monkeypatch):
@@ -280,16 +270,12 @@ def test_stock_boards_map_aliases_and_skips(monkeypatch):
 
 
 def test_turnover_top_prefers_sina(monkeypatch):
-    import astock
     import market
 
     market._CACHE.clear()
-    em_calls = []
     monkeypatch.setattr(cl, "sina_amount_rank", lambda n: [{
         "code": "600519", "name": "茅台", "price": 1400.0, "pct": 1.2,
         "amount": 1e9, "mcap": 2e12, "float_cap": 2e12, "industry": "",
     }])
-    monkeypatch.setattr(astock, "market_turnover_rank", lambda n: em_calls.append(n) or [])
     out = market.get_turnover_top()
     assert out["stocks"][0]["code"] == "600519"
-    assert em_calls == []

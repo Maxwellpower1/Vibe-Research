@@ -218,7 +218,7 @@ def get_short_term_emotion() -> dict:
 
 
 def get_turnover_top() -> dict:
-    """全市场成交额榜 Top20. Sina primary, Eastmoney fallback. Cache 5 min."""
+    """全市场成交额榜 Top20 (Sina hs_a). Cache 5 min."""
     def build():
         stocks = []
         try:
@@ -226,8 +226,6 @@ def get_turnover_top() -> dict:
             stocks = cockpit_live.sina_amount_rank(20)
         except Exception:
             stocks = []
-        if not stocks:
-            stocks = astock.market_turnover_rank(20)
         return {
             "stocks": stocks,
             "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M"),

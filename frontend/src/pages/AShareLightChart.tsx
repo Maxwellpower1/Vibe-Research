@@ -7,6 +7,7 @@ import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { PageFallback } from "@/components/ui/PageFallback";
 import { WatchlistFeed } from "@/components/WatchlistFeed";
 import { api, ApiError, type AShareLightBar, type Quote } from "@/lib/api";
+import { loadLightKline } from "@/lib/lightKline";
 import { getAShareSession } from "@/lib/ashareSession";
 import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
@@ -145,7 +146,8 @@ export function AShareLightChart({
     setChartLoading(true);
     setChartErr(null);
     try {
-      const data = await api.ashareLightKline(sym, res, KLINE_NUM);
+      const num = res === "1" ? 240 : KLINE_NUM;
+      const data = await loadLightKline(sym, res, num);
       setBars(data.bars ?? []);
       setMeta({
         code: data.code,

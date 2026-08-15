@@ -69,6 +69,26 @@ def test_future_daily_parses_jsonp(monkeypatch):
     assert out["points"][0]["t"] == "2026-08-14"
 
 
+def test_stock_basic_info_area_concepts(monkeypatch):
+    import astock_boards
+
+    class R:
+        def json(self):
+            return {"data": {
+                "f57": "600519", "f58": "贵州茅台", "f127": "白酒", "f128": "贵州",
+                "f129": "消费,茅台", "f84": 1, "f85": 1, "f116": 1, "f117": 1,
+                "f162": 1805, "f167": 641, "f173": 20.0, "f189": 20010827,
+            }}
+
+    monkeypatch.setattr(astock_boards, "em_get", lambda *a, **k: R())
+    out = astock_boards.stock_basic_info("600519")
+    assert out["industry"] == "白酒"
+    assert out["area"] == "贵州"
+    assert out["concepts"] == ["消费", "茅台"]
+    assert out["list_date"] == "2001-08-27"
+    assert out["pe_ttm"] == 18.05
+
+
 def test_stock_boards_parses(monkeypatch):
     class R:
         def json(self):

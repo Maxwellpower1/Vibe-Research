@@ -238,7 +238,7 @@ def _warm_review_dc() -> tuple[int, int, list[dict]]:
                 except Exception as e:
                     errors.append({"name": name, "error": str(e)[:160]})
 
-    # Cockpit first-paint keys (Tencent/Sina first, Eastmoney last).
+    # Cockpit first-paint keys (Tencent/Sina quotes; Eastmoney only for unique flows).
     import cockpit_live
 
     cockpit_steps = [

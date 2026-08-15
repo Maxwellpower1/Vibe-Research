@@ -1,7 +1,6 @@
 """A-share cross-section: change-pct percentiles + 8-band histogram.
 
-Primary: Sina hs_a (no Eastmoney lock). Then Tencent quotes on a cached
-universe. Eastmoney clist is last resort and also seeds the universe file.
+Primary: Sina hs_a. Then Tencent quotes on a cached universe.
 Does not persist the 5000-name map to API clients; callers that need it
 (ths rotation) read pct_map() from the process cache.
 """
@@ -16,16 +15,14 @@ from typing import Any
 from urllib.request import Request, urlopen
 
 import astock
-from astock_boards import _STOCK_FS
 from cache import TTLCache, is_nonempty
 
 UA = astock.UA
-em_get = astock.em_get
 _UNIVERSE_TTL = 24 * 3600
 
 _CACHE = TTLCache(maxsize=8, default_ttl=180, negative_ttl=15, name="breadth")
 
-# Histogram edges in percent (Eastmoney f3 with fltt=2).
+# Histogram edges in percent.
 BANDS: tuple[tuple[str, float | None, float | None], ...] = (
     ("<-5%", None, -5.0),
     ("-5~-3%", -5.0, -3.0),
@@ -121,58 +118,6 @@ def parse_sina_pcts(items: Any) -> dict[str, float]:
     return out
 
 
-def parse_clist_pcts(items: Any) -> dict[str, float]:
-    """Eastmoney clist diff -> {code: change_pct}."""
-    if isinstance(items, dict):
-        items = list(items.values())
-    if not isinstance(items, list):
-        return {}
-    out: dict[str, float] = {}
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        code = str(it.get("f12") or "").strip()
-        if not (code.isdigit() and len(code) == 6):
-            continue
-        pct = _finite(it.get("f3"))
-        if pct is None:
-            continue
-        out[code] = pct
-    return out
-
-
-def _clist_page(pn: int, pz: int) -> list:
-    params = {
-        "pn": str(pn),
-        "pz": str(pz),
-        "po": "1",
-        "np": "1",
-        "fltt": "2",
-        "invt": "2",
-        "fid": "f12",
-        "fs": _STOCK_FS,
-        "fields": "f12,f3",
-    }
-    data: dict = {}
-    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
-        try:
-            r = em_get(
-                f"https://{host}/api/qt/clist/get",
-                params=params,
-                headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
-                timeout=18,
-            )
-            data = (r.json() or {}).get("data") or {}
-            if data.get("diff"):
-                break
-        except Exception:
-            continue
-    items = data.get("diff") or []
-    if isinstance(items, dict):
-        items = list(items.values())
-    return items if isinstance(items, list) else []
-
-
 def _sina_hs_a(page: int, num: int, sort: str = "symbol", asc: int = 1) -> list:
     url = (
         "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
@@ -223,7 +168,7 @@ def _save_universe(codes: list[str]) -> None:
 
 
 def _tencent_pcts(codes: list[str]) -> dict[str, float]:
-    """Batch Tencent quotes. Does not write the 4s per-code quote cache."""
+    """Batch Tencent quotes. Does not write the 5s per-code quote cache."""
     chunks = [codes[i:i + 400] for i in range(0, len(codes), 400)]
     if not chunks:
         return {}
@@ -246,24 +191,8 @@ def _tencent_pcts(codes: list[str]) -> dict[str, float]:
     return merged
 
 
-def _em_market_pcts() -> dict[str, float]:
-    """Eastmoney clist. Last resort; also seeds the daily universe file."""
-    out = parse_clist_pcts(_clist_page(1, 6000))
-    if len(out) >= 2000:
-        return out
-    out = {}
-    for pn in range(1, 5):
-        items = _clist_page(pn, 2000)
-        if not items:
-            break
-        out.update(parse_clist_pcts(items))
-        if len(items) < 2000:
-            break
-    return out
-
-
 def fetch_market_pcts() -> dict[str, float]:
-    """Full A-share change-pct map. Sina / Tencent first, Eastmoney last."""
+    """Full A-share change-pct map. Sina first, then Tencent universe."""
     pcts, _src = fetch_market_pcts_with_source()
     return pcts
 
@@ -286,11 +215,6 @@ def fetch_market_pcts_with_source() -> tuple[dict[str, float], str]:
         if len(tencent) >= 1500:
             return tencent, "tencent"
 
-    em = _em_market_pcts()
-    if em:
-        if len(em) >= 2000:
-            _save_universe(list(em.keys()))
-        return em, "eastmoney clist"
     if sina:
         return sina, "sina"
     return {}, "none"

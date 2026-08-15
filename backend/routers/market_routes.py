@@ -144,22 +144,18 @@ def market_hsgt():
 
 @router.get("/api/market/hot-list")
 def market_hot_list(
-    source: str = Query("ths", description="ths|em"),
-    period: str = Query("hour", description="ths: hour|day"),
+    period: str = Query("hour", description="hour|day"),
     top: int = Query(30, ge=5, le=50),
 ):
-    """同花顺热榜 / 东财人气榜。客观公开榜单。缓存 3 分钟。"""
+    """同花顺热榜。客观公开榜单。缓存 3 分钟。"""
     import astock_boards
     try:
-        if source == "em":
-            data = _cached("hot_em", str(top), 180, lambda: astock_boards.em_hot_rank(top))
-        else:
-            data = _cached(
-                "hot_ths",
-                f"{period}:{top}",
-                180,
-                lambda: astock_boards.ths_hot_list(period, top),
-            )
+        data = _cached(
+            "hot_ths",
+            f"{period}:{top}",
+            180,
+            lambda: astock_boards.ths_hot_list(period, top),
+        )
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"热榜异常：{e}") from e
@@ -646,18 +642,15 @@ def market_stock_boards_batch(codes: str = Query(..., min_length=6, max_length=2
         raw.append(k)
         if len(raw) >= 12:
             break
-    out: dict = {}
-    for c in raw:
-        try:
-            out[c] = _cached(
-                "stock_boards",
-                c.lower(),
-                24 * 3600,
-                lambda c=c: cockpit_live.stock_boards(c),
-            )
-        except Exception:
-            continue
-    return {"data": out}
+    def _one(c: str) -> dict:
+        return _cached(
+            "stock_boards",
+            c.lower(),
+            24 * 3600,
+            lambda: cockpit_live.stock_boards(c),
+        )
+
+    return {"data": cockpit_live.stock_boards_map(raw, fetch=_one)}
 
 
 @router.get("/api/market/lives")

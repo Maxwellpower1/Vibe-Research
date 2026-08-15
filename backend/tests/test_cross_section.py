@@ -20,15 +20,6 @@ def test_quantile_and_histogram():
     assert hist[-1]["count"] == 1
 
 
-def test_parse_clist_pcts():
-    m = cross_section.parse_clist_pcts([
-        {"f12": "600519", "f3": 1.25},
-        {"f12": "bad", "f3": 9},
-        {"f12": "000001", "f3": -2.0},
-    ])
-    assert m == {"600519": 1.25, "000001": -2.0}
-
-
 def test_parse_sina_pcts_accepts_string_pct():
     m = cross_section.parse_sina_pcts([
         {"code": "600519", "changepercent": "1.25"},
@@ -42,14 +33,11 @@ def test_parse_sina_pcts_accepts_string_pct():
 def test_fetch_pcts_prefers_sina(monkeypatch, tmp_path):
     monkeypatch.setenv("VR_DATA_DIR", str(tmp_path))
     rows = [{"code": f"{i:06d}", "changepercent": 0.1} for i in range(2000)]
-    em_calls = []
     monkeypatch.setattr(cross_section, "_sina_hs_a", lambda *a, **k: rows)
-    monkeypatch.setattr(cross_section, "_em_market_pcts", lambda: em_calls.append(1) or {"600519": 1.0})
     monkeypatch.setattr(cross_section, "_tencent_pcts", lambda codes: (_ for _ in ()).throw(AssertionError("tencent")))
     pcts, src = cross_section.fetch_market_pcts_with_source()
     assert src == "sina"
     assert len(pcts) == 2000
-    assert em_calls == []
     assert (tmp_path / "a-share-codes.json").exists()
 
 
@@ -60,23 +48,19 @@ def test_fetch_pcts_uses_tencent_universe(monkeypatch, tmp_path):
         json.dumps({"ts": 9e12, "codes": codes}),
         encoding="utf-8",
     )
-    em_calls = []
     monkeypatch.setattr(cross_section, "_sina_hs_a", lambda *a, **k: [{"code": "600519", "changepercent": 1}])
     monkeypatch.setattr(cross_section, "_tencent_pcts", lambda cs: {c: 0.5 for c in cs})
-    monkeypatch.setattr(cross_section, "_em_market_pcts", lambda: em_calls.append(1) or {"600519": 1.0})
     pcts, src = cross_section.fetch_market_pcts_with_source()
     assert src == "tencent"
     assert len(pcts) == 2000
-    assert em_calls == []
 
 
-def test_fetch_pcts_falls_back_to_eastmoney(monkeypatch, tmp_path):
+def test_fetch_pcts_keeps_thin_sina_when_tencent_misses(monkeypatch, tmp_path):
     monkeypatch.setenv("VR_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(cross_section, "_sina_hs_a", lambda *a, **k: [])
+    monkeypatch.setattr(cross_section, "_sina_hs_a", lambda *a, **k: [{"code": "600519", "changepercent": 1.2}])
     monkeypatch.setattr(cross_section, "_tencent_pcts", lambda cs: {})
-    monkeypatch.setattr(cross_section, "_em_market_pcts", lambda: {"600519": 1.2, "000001": -0.5})
     pcts, src = cross_section.fetch_market_pcts_with_source()
-    assert src == "eastmoney clist"
+    assert src == "sina"
     assert pcts["600519"] == 1.2
 
 

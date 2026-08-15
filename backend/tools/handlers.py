@@ -173,11 +173,13 @@ def _concepts(args: dict):
 
 
 def _company_info(args: dict):
-    """公司概况。akshare 的东财概况接口时好时坏，挂了就用腾讯行情 + 板块归属拼一份降级版，
-    保证这个工具任何时候都能给出「这家公司是干什么的、多大体量」，而不是一个报错。"""
+    """公司概况。主源东财 push2 stock/get（与 /api/stock-basic 同源），
+    挂了就用腾讯行情 + 板块归属拼一份降级版。"""
+    import astock_boards
+
     code = str(args["code"])
     try:
-        info = astock.individual_info(code)
+        info = astock_boards.stock_basic_info(code)
         if info:
             return info
     except Exception:  # noqa: BLE001 — 上游接口不稳，转降级源
@@ -221,10 +223,15 @@ def _market(args: dict):
         return market.get_global_indices()
     if scope == "emotion":
         d = market.get_short_term_emotion() or {}
-        return {k: d.get(k) for k in ("tiers", "limitUp", "limitDown", "brokenRate", "promoteRate", "updated") if k in d} or d
+        keys = (
+            "date", "zt_count", "dt_count", "zb_count", "yzt_count",
+            "max_boards", "lianban_count", "ladder",
+            "seal_rate", "break_rate", "promotion_rate", "seals",
+        )
+        return {k: d.get(k) for k in keys if k in d} or d
     if scope == "turnover":
         d = market.get_turnover_top() or {}
-        # Field names must match sina_amount_rank / market_turnover_rank (#28).
+        # Field names must match sina_amount_rank (#28).
         # Old keys turnover/changePct do not exist → AI tools saw nulls.
         return {
             "stocks": _pick(
@@ -559,9 +566,6 @@ _HANDLERS = {
     "query_investor_qa": _investor_qa,
     "query_concepts": _concepts,
     "query_industry_comparison": lambda a: astock.industry_comparison(top_n=max(5, min(int(a.get("top_n") or 20), 50))),
-    "query_industry_reports": lambda a: _pick(
-        astock.eastmoney_industry_reports(keywords=a.get("keywords"), days=int(a.get("days") or 90), max_pages=1),
-        ("title", "publishDate", "orgSName", "industryName"), 20),
     "query_market": _market,
     "query_news_radar": _radar,
     "query_global_stock": lambda a: gstock.us_hk_stock(str(a.get("symbol", ""))) or {"error": "未找到该美股/港股/韩股代码"},

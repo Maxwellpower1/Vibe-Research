@@ -231,9 +231,6 @@ def _save_hsgt_snap(hgt: float, sgt: float | None) -> None:
 
 # ── Hot lists ─────────────────────────────────────────────────────────────
 
-_EM_HOT_BODY = {"appId": "appId01", "globalId": "786e4c21-70dc-435a-93bb-38"}
-
-
 def ths_hot_list(period: str = "hour", top: int = 30) -> dict:
     """10jqka hot list. period: hour | day."""
     if period not in ("hour", "day"):
@@ -263,58 +260,6 @@ def ths_hot_list(period: str = "hour", top: int = 30) -> dict:
             "tag": tag.get("popularity_tag") or "",
         })
     return {"period": period, "source": "同花顺热榜", "rows": rows}
-
-
-def em_hot_rank(top: int = 30) -> dict:
-    """Eastmoney popularity rank + quote patch."""
-    n = max(5, min(int(top or 30), 50))
-    try:
-        r = requests.post(
-            "https://emappdata.eastmoney.com/stockrank/getAllCurrentList",
-            json={**_EM_HOT_BODY, "marketType": "", "pageNo": 1, "pageSize": n},
-            headers={"User-Agent": UA},
-            timeout=12,
-        )
-        data = (r.json() or {}).get("data") or []
-        if not data:
-            return {"source": "东财人气榜", "rows": []}
-        secids = [
-            ("0." if it["sc"].startswith("SZ") else "1.") + it["sc"][2:]
-            for it in data if isinstance(it, dict) and it.get("sc")
-        ]
-        u = em_get(
-            "https://push2.eastmoney.com/api/qt/ulist.np/get",
-            params={
-                "ut": "f057cbcbce2a86e2866ab8877db1d059",
-                "fltt": 2, "invt": 2,
-                "fields": "f14,f3,f12,f2",
-                "secids": ",".join(secids),
-            },
-            headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
-            timeout=12,
-        )
-        diff = ((u.json() or {}).get("data") or {}).get("diff") or []
-        if isinstance(diff, dict):
-            diff = list(diff.values())
-        nm = {
-            x["f12"]: (x.get("f14"), x.get("f2"), x.get("f3"))
-            for x in diff if isinstance(x, dict) and x.get("f12")
-        }
-    except Exception:
-        return {"source": "东财人气榜", "rows": []}
-    rows = []
-    for it in data:
-        code = (it.get("sc") or "")[2:]
-        name, price, pct = nm.get(code, ("", None, None))
-        rows.append({
-            "rank": it.get("rk"),
-            "code": code,
-            "name": name,
-            "price": price,
-            "pct": pct,
-            "rank_chg": it.get("hisRc"),
-        })
-    return {"source": "东财人气榜", "rows": rows}
 
 
 # ── Monitor + anomaly ─────────────────────────────────────────────────────
@@ -533,7 +478,7 @@ def _annotate_seals(rows: list[dict], side: str) -> None:
 # ── Stock basic info (Eastmoney push2, no akshare) ────────────────────────
 
 def stock_basic_info(code: str) -> dict:
-    """Industry / shares / list date via Eastmoney push2 stock/get."""
+    """Industry / area / concepts / shares / list date via Eastmoney push2 stock/get."""
     code = (code or "").strip()
     if not code.isdigit() or len(code) != 6:
         return {}
@@ -541,7 +486,7 @@ def stock_basic_info(code: str) -> dict:
     secid = f"{market}.{code}"
     params = {
         "secid": secid,
-        "fields": "f57,f58,f84,f85,f116,f117,f127,f162,f167,f173,f189",
+        "fields": "f57,f58,f84,f85,f116,f117,f127,f128,f129,f162,f167,f173,f189",
     }
     d: dict = {}
     for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
@@ -565,10 +510,13 @@ def stock_basic_info(code: str) -> dict:
         s = str(int(list_raw))
         if len(s) == 8:
             list_date = f"{s[:4]}-{s[4:6]}-{s[6:]}"
+    concepts = [x for x in str(d.get("f129") or "").split(",") if x]
     return {
         "code": d.get("f57") or code,
         "name": d.get("f58") or "",
         "industry": d.get("f127") or "",
+        "area": d.get("f128") or "",
+        "concepts": concepts,
         "total_shares": d.get("f84"),
         "float_shares": d.get("f85"),
         "mcap": d.get("f116"),

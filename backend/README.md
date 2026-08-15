@@ -23,7 +23,7 @@ python3 -m venv .venv
 |---|---|---|
 | `GET /api/health` | 健康检查 | — |
 | `GET /api/indices` | 大盘指数实时行情 | stdlib |
-| `GET /api/quote?codes=600519,000858` | 实时行情（PE/PB/市值/涨跌停…） | stdlib |
+| `GET /api/quote?codes=600519,000858` | 实时行情（PE/PB/市值/涨跌停…，与 `/market/quotes` 共用 5s 腾讯缓存） | stdlib |
 | `GET /api/valuation?code=600519` | 完整估值（前向PE/PEG/消化年数） | requests+akshare |
 | `GET /api/valuation/percentile?code=600519` | 估值历史分位（近5年·百度股市通） | akshare |
 | `GET /api/financials?code=600519` | 财务关键指标（同花顺摘要，最新报告期，前端个股页用） | akshare |
@@ -37,13 +37,13 @@ python3 -m venv .venv
 | **资金面·筹码·信号（v3.3）** | `/api/margin` · `/block-trade` · `/holders` · `/dividend` · `/fund-flow` · `/dragon-tiger` · `/dragon-tiger/daily`（全市场龙虎榜） · `/lockup` · `/blocks` · `/hot-concepts` · `/investor-qa` · `/industry` | requests |
 | `GET /api/market/overview` · `/api/radar` | 市场情绪+板块资金 · 资讯雷达 | akshare / stdlib |
 | `GET /api/market/review-snapshot` | 每日复盘聚合（`scope=paint|top|full`），paint 只含腾讯指数/总览 | 缓存命中秒回 |
-| `GET /api/market/board-flow` · `/hsgt` · `/hot-list` · `/stock-monitor` · `/price-anomaly` · `/limit-pools` | 板块资金流 / 北向 / 热榜 / 监控池 / 异动 / 打板池 | requests |
-| `GET /api/market/world-indices` · `/quotes` · `/boards` · `/board-stocks` · `/rank` · `/board-flow-intraday` · `/commodities` · `/commodity-minutes` | 全球关键指数 / 批量报价(股票指数按代码 5s, 期货走 commodities 并行) / 板块热点 / 成分股(腾讯pt*优先) / 个股榜单(含成交额, 新浪优先) / 分钟板块资金 / 大宗商品 | 腾讯/新浪/东财 |
+| `GET /api/market/board-flow` · `/hsgt` · `/hot-list` · `/stock-monitor` · `/price-anomaly` · `/limit-pools` | 板块资金流 / 北向 / 同花顺热榜 / 监控池 / 异动 / 打板池 | requests |
+| `GET /api/market/world-indices` · `/quotes` · `/boards` · `/board-stocks` · `/rank` · `/board-flow-intraday` · `/commodities` · `/commodity-minutes` | 全球关键指数 / 批量报价(股票指数按代码 5s, 期货走 commodities 并行) / 板块热点 / 成分股(腾讯pt*) / 个股榜单(含成交额, 新浪) / 分钟板块资金 / 大宗商品 | 腾讯/新浪/东财(仅独有资金流) |
 | `GET /api/market/spot-table` · `/chem-spot` · `/future-daily` · `/stock-boards` · `/stock-boards-batch` · `/lives` | 生意社现期/基差 · 化工现货 · 新浪期货日K · 个股行业/概念(单票/批量) · 新浪7x24(华尔街见闻兜底) | requests |
 | `GET /api/iwencai/status` · `/search` · `/select` | 问财是否已配置 · 研报/公告/新闻语义搜 · 选股名单(产业链刷新) | IWENCAI_API_KEY |
-| `GET /api/market/breadth` · `/ths-profile` · `/ths-rotation` | 全A涨跌分位+直方图(新浪/腾讯优先, 东财兜底) · shy313同花顺归属 · 概念/行业当日均涨 | requests |
+| `GET /api/market/breadth` · `/ths-profile` · `/ths-rotation` | 全A涨跌分位+直方图(新浪/腾讯) · shy313同花顺归属 · 概念/行业当日均涨 | requests |
 | `GET /api/fin/board` · `/forecast` · `/company` · `/suggest` | 财报窗口：盈利榜+日历+行业实时涨跌 / 业绩预告 / F10+估值+公告+研报 / 代码联想 | 东财 + 本仓库财务/估值 |
-| `GET /api/stock-basic?code=` | 个股基本资料（行业/股本/上市日） | requests |
+| `GET /api/stock-basic?code=` | 个股基本资料（行业/地域/概念/股本/上市日） | requests |
 | `POST /api/chat` | 系统 AI 对话（function calling，AI 自己调数据工具） | requests |
 | `POST /api/reflect` | **反思审计**（流式 NDJSON）：对一段已写好的分析做推理审计 | requests |
 | `GET /api/portfolio/ctp/status` | CTP 配置/依赖/登录状态（不主动连前置） | — |

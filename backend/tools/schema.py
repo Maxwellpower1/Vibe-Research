@@ -115,9 +115,6 @@ TOOLS: list[dict] = [
     _t("query_concepts", "查个股所属板块与概念归属，以及当下被市场归到哪些热门概念在炒。", _CODE, ["code"]),
     _t("query_industry_comparison", "查全市场行业板块横向对比：各行业涨跌幅、成交额、领涨股。看板块强弱用。",
        {"top_n": {"type": "integer", "description": "返回前 N 个行业，默认 20"}}),
-    _t("query_industry_reports", "按关键词查行业研报（非个股），了解卖方对某赛道的最新覆盖。",
-       {"keywords": {"type": "array", "items": {"type": "string"}, "description": "行业关键词，如 ['光模块','算力']"},
-        "days": {"type": "integer", "description": "回溯天数，默认 90"}}),
 
     # —— 市场层 ——
     _t("query_market",
