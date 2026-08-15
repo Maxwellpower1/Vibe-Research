@@ -8,7 +8,7 @@ import { Disclaimer } from "@/components/ui/Disclaimer";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import {
-  api, ApiError, type GlobalStock, type UsKlineBar,
+  api, ApiError, fundamentalsSourceLabel, type GlobalStock, type UsKlineBar,
   type GlobalEarningsCalendar, type GlobalSecDaily, type GlobalFundamentals,
   type GlobalShortVolume, type GlobalTreasuryCurve,
   type GlobalEdgarScreener, type GlobalMovers, type GlobalShortRanking,
@@ -707,14 +707,16 @@ export function UsMarket() {
         <CollapsibleSection
           storageKey="us.fundamentals"
           title={`基本面 · ${selected}`}
-          summary={fund ? "Yahoo" : "无数据"}
+          summary={fund ? fundamentalsSourceLabel(fund.source ?? fund.valuation?.source) : "无数据"}
           className="mt-4"
         >
           <GlassCard className="p-3 sm:p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold">
                 基本面 · {selected}
-                <span className="ml-2 text-[11px] font-normal text-muted-foreground/60">Yahoo · 客观数据</span>
+                <span className="ml-2 text-[11px] font-normal text-muted-foreground/60">
+                  {fundamentalsSourceLabel(fund?.source ?? fund?.valuation?.source)} · 客观数据
+                </span>
               </h3>
               <div className="flex gap-1">
                 {([

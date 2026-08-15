@@ -24,8 +24,11 @@ export function usePolling<T>(
       setError(null);
     }
     let cancelled = false;
+    let inflight = false;
     const run = () => {
       if (typeof document !== "undefined" && document.hidden) return;
+      if (inflight) return;
+      inflight = true;
       fnRef.current()
         .then((d) => {
           if (cancelled) return;
@@ -36,6 +39,9 @@ export function usePolling<T>(
         .catch((e: unknown) => {
           if (cancelled) return;
           setError(e instanceof Error ? e.message : "load failed");
+        })
+        .finally(() => {
+          inflight = false;
         });
     };
     const onVis = () => {

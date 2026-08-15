@@ -3,6 +3,7 @@ import { QuoteLine } from "@/components/cockpit/QuoteLine";
 import { WORLD_INDEX_DEFS } from "@/config/cockpit";
 import { usePolling } from "@/hooks/usePolling";
 import { api, type AShareLightKline } from "@/lib/api";
+import { loadLightKline } from "@/lib/lightKline";
 
 const POLL_MS = 20_000;
 const KLINE_MS = 60_000;
@@ -22,13 +23,20 @@ export function WorldIndexPanel() {
       void Promise.all(
         KLINE_SYMS.map(async (sym) => {
           try {
-            const d = await api.ashareLightKline(sym, "1", 240);
-            if (!cancelled) setMinutes((prev) => ({ ...prev, [sym]: d }));
+            const d = await loadLightKline(sym, "1", 240);
+            return [sym, d] as const;
           } catch {
-            if (!cancelled) setMinutes((prev) => (sym in prev ? prev : { ...prev, [sym]: null }));
+            return [sym, null] as const;
           }
         }),
-      );
+      ).then((rows) => {
+        if (cancelled) return;
+        setMinutes((prev) => {
+          const next = { ...prev };
+          for (const [sym, d] of rows) next[sym] = d;
+          return next;
+        });
+      });
     };
     const onVis = () => {
       if (!document.hidden) load();

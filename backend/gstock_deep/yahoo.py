@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import threading
+import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -10,11 +11,38 @@ from xml.etree import ElementTree as ET
 
 import requests
 
+import astock
 import gstock
 from gstock_deep.common import DataNotAvailable, _YAHOO_UA
 
 _yahoo_session: requests.Session | None = None
 _yahoo_lock = threading.Lock()
+# After a 401/403, skip Yahoo crumb APIs for a while (RSS / Eastmoney still work).
+_YAHOO_DOWN_SEC = 15 * 60
+_yahoo_down_until = 0.0
+
+
+def _yahoo_marked_down() -> bool:
+    return time.monotonic() < _yahoo_down_until
+
+
+def _mark_yahoo_down() -> None:
+    global _yahoo_down_until
+    _yahoo_down_until = time.monotonic() + _YAHOO_DOWN_SEC
+
+
+def _clear_yahoo_down() -> None:
+    global _yahoo_down_until
+    _yahoo_down_until = 0.0
+
+
+def _is_yahoo_block(exc: BaseException) -> bool:
+    resp = getattr(exc, "response", None)
+    status = getattr(resp, "status_code", None)
+    if status in (401, 403):
+        return True
+    s = str(exc).lower()
+    return "401" in s or "403" in s or "unauthorized" in s
 
 
 def _get_yahoo_session() -> requests.Session:
@@ -32,16 +60,46 @@ def _get_yahoo_session() -> requests.Session:
         return s
 
 
+def _reset_yahoo_session() -> None:
+    global _yahoo_session
+    with _yahoo_lock:
+        _yahoo_session = None
+
+
 def _yahoo_quote_summary(symbol: str, modules: list[str]) -> dict:
-    s = _get_yahoo_session()
-    r = s.get(
-        f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{symbol}",
-        params={"modules": ",".join(modules), "crumb": s._crumb},  # type: ignore[attr-defined]
-        timeout=15,
-    )
-    r.raise_for_status()
-    results = (r.json().get("quoteSummary") or {}).get("result") or [{}]
-    return results[0] if results else {}
+    """quoteSummary: query2 then query1. Latch process-wide after 401/403."""
+    if _yahoo_marked_down():
+        raise RuntimeError("403 latched")
+    try:
+        s = _get_yahoo_session()
+        crumb = getattr(s, "_crumb", "")
+    except Exception as e:
+        if _is_yahoo_block(e):
+            _mark_yahoo_down()
+        _reset_yahoo_session()
+        raise
+    last_err: Exception | None = None
+    params = {"modules": ",".join(modules), "crumb": crumb}
+    for host in ("query2", "query1"):
+        try:
+            r = s.get(
+                f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{symbol}",
+                params=params,
+                timeout=15,
+            )
+            r.raise_for_status()
+            results = (r.json().get("quoteSummary") or {}).get("result") or [{}]
+            return results[0] if results else {}
+        except Exception as e:
+            last_err = e
+            continue
+    if last_err and _is_yahoo_block(last_err):
+        _mark_yahoo_down()
+        _reset_yahoo_session()
+        raise last_err
+    if last_err:
+        raise last_err
+    return {}
 
 
 def _raw(d: dict, key: str):
@@ -195,19 +253,27 @@ def stock_news(keyword: str, count: int = 10) -> dict:
 
     raw: list = []
     search_err: Exception | None = None
-    try:
-        raw = _fetch(_get_yahoo_session())
-    except Exception as e:
-        search_err = e
-        global _yahoo_session
-        with _yahoo_lock:
-            _yahoo_session = None
+    if _yahoo_marked_down():
+        raw = []
+    else:
         try:
             raw = _fetch(_get_yahoo_session())
-            search_err = None
-        except Exception as e2:
-            search_err = e2
-            raw = []
+        except Exception as e:
+            search_err = e
+            if _is_yahoo_block(e):
+                _mark_yahoo_down()
+            _reset_yahoo_session()
+            try:
+                if not _yahoo_marked_down():
+                    raw = _fetch(_get_yahoo_session())
+                    search_err = None
+                else:
+                    raw = []
+            except Exception as e2:
+                search_err = e2
+                if _is_yahoo_block(e2):
+                    _mark_yahoo_down()
+                raw = []
 
     items = _items_from_yahoo_search(raw)
     source = "Yahoo Finance search"
@@ -232,26 +298,85 @@ def stock_news(keyword: str, count: int = 10) -> dict:
     }
 
 
-# ── Valuation / analyst / holders (Yahoo) ─────────────────────────────────
+# ── Valuation / analyst / holders (Yahoo, Eastmoney PE/PB fallback) ───────
 
-def key_statistics(query: str) -> dict:
-    """Yahoo PE/PB/PEG/target/beta etc. Empty dict if unavailable."""
-    hit = _resolve_yahoo(query)
-    if not hit:
-        return {}
-    info, ysym = hit
-    try:
-        data = _yahoo_quote_summary(
-            ysym, ["financialData", "defaultKeyStatistics", "summaryDetail"]
-        )
-    except Exception:
-        return {}
-    fd, ks, sd = data.get("financialData") or {}, data.get("defaultKeyStatistics") or {}, data.get("summaryDetail") or {}
+_VAL_CORE = (
+    "trailing_pe", "forward_pe", "peg_ratio", "price_to_book",
+    "market_cap", "current_price", "return_on_equity", "gross_margin",
+    "target_mean", "beta",
+)
+
+
+def _valuation_has_core(d: dict) -> bool:
+    return any(d.get(k) is not None for k in _VAL_CORE)
+
+
+def _num(v: Any) -> float | None:
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    x = float(v)
+    if x != x:  # NaN
+        return None
+    return x
+
+
+def _sane_mult(v: Any, hi: float = 5000.0) -> float | None:
+    x = _num(v)
+    if x is None or x <= 0 or x > hi:
+        return None
+    return x
+
+
+def _pct_to_ratio(v: Any) -> float | None:
+    """Eastmoney GMAININDICATOR stores 46.2 for 46.2%. Yahoo uses 0.462."""
+    x = _num(v)
+    if x is None:
+        return None
+    return x / 100.0
+
+
+def _empty_valuation(info: dict, ysym: str) -> dict:
     return {
         "code": info["code"],
         "name": info["name"],
         "market": info["market"],
         "yahoo_symbol": ysym,
+        "current_price": None,
+        "target_high": None,
+        "target_low": None,
+        "target_mean": None,
+        "recommendation": None,
+        "trailing_pe": None,
+        "forward_pe": None,
+        "peg_ratio": None,
+        "price_to_book": None,
+        "enterprise_value": None,
+        "ev_to_ebitda": None,
+        "ev_to_revenue": None,
+        "profit_margin": None,
+        "operating_margin": None,
+        "gross_margin": None,
+        "return_on_equity": None,
+        "return_on_assets": None,
+        "earnings_growth": None,
+        "revenue_growth": None,
+        "beta": None,
+        "short_ratio": None,
+        "dividend_yield": None,
+        "payout_ratio": None,
+        "market_cap": None,
+        "total_revenue": None,
+        "total_cash": None,
+        "total_debt": None,
+    }
+
+
+def _map_quote_summary(info: dict, ysym: str, data: dict) -> dict:
+    fd = data.get("financialData") or {}
+    ks = data.get("defaultKeyStatistics") or {}
+    sd = data.get("summaryDetail") or {}
+    out = _empty_valuation(info, ysym)
+    out.update({
         "current_price": _raw(fd, "currentPrice"),
         "target_high": _raw(fd, "targetHighPrice"),
         "target_low": _raw(fd, "targetLowPrice"),
@@ -279,20 +404,176 @@ def key_statistics(query: str) -> dict:
         "total_revenue": _raw(fd, "totalRevenue"),
         "total_cash": _raw(fd, "totalCash"),
         "total_debt": _raw(fd, "totalDebt"),
+        "source": "yahoo",
+    })
+    return out
+
+
+def _yahoo_v7_quote_row(ysym: str) -> dict:
+    """v7 quote often survives when quoteSummary crumb is 403."""
+    last_err: Exception | None = None
+    try:
+        s = _get_yahoo_session()
+        r = s.get(
+            "https://query1.finance.yahoo.com/v7/finance/quote",
+            params={"symbols": ysym, "crumb": getattr(s, "_crumb", "")},
+            timeout=12,
+        )
+        r.raise_for_status()
+        rows = ((r.json().get("quoteResponse") or {}).get("result") or [])
+        if rows:
+            return rows[0]
+    except Exception as e:
+        last_err = e
+        _reset_yahoo_session()
+    for host in ("query1", "query2"):
+        try:
+            r = requests.get(
+                f"https://{host}.finance.yahoo.com/v7/finance/quote",
+                params={"symbols": ysym},
+                headers={"User-Agent": _YAHOO_UA},
+                timeout=12,
+            )
+            r.raise_for_status()
+            rows = ((r.json().get("quoteResponse") or {}).get("result") or [])
+            if rows:
+                return rows[0]
+        except Exception as e:
+            last_err = e
+            continue
+    if last_err:
+        raise last_err
+    return {}
+
+
+def _map_v7_quote(info: dict, ysym: str, row: dict) -> dict:
+    out = _empty_valuation(info, ysym)
+    out.update({
+        "current_price": _num(row.get("regularMarketPrice")),
+        "target_mean": _num(row.get("targetMeanPrice")),
+        "trailing_pe": _sane_mult(row.get("trailingPE")),
+        "forward_pe": _sane_mult(row.get("forwardPE")),
+        "price_to_book": _sane_mult(row.get("priceToBook")),
+        "market_cap": _num(row.get("marketCap")),
+        "dividend_yield": _num(row.get("dividendYield") or row.get("trailingAnnualDividendYield")),
+        "beta": _num(row.get("beta")),
+        "profit_margin": _num(row.get("profitMargins")),
+        "source": "yahoo_quote",
+    })
+    return out
+
+
+def _em_push2_val(info: dict) -> dict:
+    prefix = info.get("secid_prefix")
+    code = info.get("code")
+    if prefix is None or not code:
+        return {}
+    params = {
+        "secid": f"{prefix}.{code}",
+        "fields": "f9,f23,f43,f57,f58,f59,f115,f116",
+        "fltt": "2",
     }
+    for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
+        try:
+            r = astock.em_get(
+                f"https://{host}/api/qt/stock/get",
+                params=params,
+                headers={"User-Agent": astock.UA},
+                timeout=10,
+            )
+            d = (r.json() or {}).get("data")
+            if isinstance(d, dict) and d:
+                return d
+        except Exception:
+            continue
+    return {}
 
 
-def analyst_estimates(query: str) -> dict:
+def _em_gmain_row(info: dict) -> dict:
+    secucode = info.get("secucode")
+    if not secucode:
+        return {}
+    market = "HK" if str(secucode).endswith(".HK") else "US"
+    rows = astock.eastmoney_datacenter(
+        f"RPT_{market}F10_FN_GMAININDICATOR",
+        filter_str=f'(SECUCODE="{secucode}")',
+        page_size=1,
+        sort_columns="REPORT_DATE",
+        sort_types="-1",
+    )
+    return rows[0] if rows else {}
+
+
+def _em_valuation_fallback(info: dict, ysym: str) -> dict:
+    """PE/PB from Eastmoney quote; margins/ROE from GMAININDICATOR.
+
+    Do not map revenue / net profit onto trailing_pe -- those are statement lines.
+    """
+    out = _empty_valuation(info, ysym)
+    snap = _em_push2_val(info)
+    row = _em_gmain_row(info)
+    price = _num(snap.get("f43"))
+    pe_ttm = _sane_mult(snap.get("f115"))
+    pe_dyn = _sane_mult(snap.get("f9"))
+    pb = _sane_mult(snap.get("f23"), hi=1000.0)
+    if pe_ttm is None and pe_dyn is not None:
+        pe_ttm = pe_dyn
+        pe_dyn = None
+    eps = _num(row.get("BASIC_EPS") or row.get("DILUTED_EPS"))
+    if pe_ttm is None and price and eps and eps > 0:
+        pe_ttm = round(price / eps, 4)
+    bps = _num(row.get("BPS") or row.get("BPS_HKD"))
+    if pb is None and price and bps and bps > 0:
+        pb = round(price / bps, 4)
+    out.update({
+        "current_price": price,
+        "trailing_pe": pe_ttm,
+        "forward_pe": pe_dyn,
+        "price_to_book": pb,
+        "market_cap": _num(snap.get("f116")),
+        "gross_margin": _pct_to_ratio(row.get("GROSS_PROFIT_RATIO")),
+        "profit_margin": _pct_to_ratio(row.get("NET_PROFIT_RATIO")),
+        "return_on_equity": _pct_to_ratio(row.get("ROE_AVG")),
+        "return_on_assets": _pct_to_ratio(row.get("ROA")),
+        "revenue_growth": _pct_to_ratio(row.get("OPERATE_INCOME_YOY")),
+        "earnings_growth": _pct_to_ratio(row.get("BASIC_EPS_YOY")),
+        "dividend_yield": _pct_to_ratio(row.get("DIVI_RATIO")),
+        "source": "eastmoney",
+    })
+    return out
+
+
+def key_statistics(query: str) -> dict:
+    """PE/PB/PEG/target/beta. Yahoo quoteSummary, then v7 quote, then Eastmoney."""
     hit = _resolve_yahoo(query)
     if not hit:
         return {}
     info, ysym = hit
-    try:
-        data = _yahoo_quote_summary(ysym, [
-            "earningsTrend", "recommendationTrend", "upgradeDowngradeHistory",
-        ])
-    except Exception:
-        return {}
+    if not _yahoo_marked_down():
+        try:
+            data = _yahoo_quote_summary(
+                ysym, ["financialData", "defaultKeyStatistics", "summaryDetail"]
+            )
+            out = _map_quote_summary(info, ysym, data)
+            if _valuation_has_core(out):
+                return out
+        except Exception:
+            pass
+        try:
+            row = _yahoo_v7_quote_row(ysym)
+            out = _map_v7_quote(info, ysym, row)
+            if _valuation_has_core(out):
+                return out
+        except Exception as e:
+            if _is_yahoo_block(e):
+                _mark_yahoo_down()
+    out = _em_valuation_fallback(info, ysym)
+    if _valuation_has_core(out):
+        return out
+    return {}
+
+
+def _map_analyst(info: dict, data: dict) -> dict:
     eps_trend = []
     for t in (data.get("earningsTrend") or {}).get("trend") or []:
         eps_trend.append({
@@ -329,15 +610,7 @@ def analyst_estimates(query: str) -> dict:
     }
 
 
-def institutional_holders(query: str) -> dict:
-    hit = _resolve_yahoo(query)
-    if not hit:
-        return {}
-    info, ysym = hit
-    try:
-        data = _yahoo_quote_summary(ysym, ["institutionOwnership", "majorHoldersBreakdown"])
-    except Exception:
-        return {}
+def _map_holders(info: dict, data: dict) -> dict:
     mhb = data.get("majorHoldersBreakdown") or {}
     overview = {
         "insiders_pct": _raw(mhb, "insidersPercentHeld"),
@@ -361,8 +634,41 @@ def institutional_holders(query: str) -> dict:
     }
 
 
+def analyst_estimates(query: str) -> dict:
+    hit = _resolve_yahoo(query)
+    if not hit or _yahoo_marked_down():
+        return {}
+    info, ysym = hit
+    try:
+        data = _yahoo_quote_summary(ysym, [
+            "earningsTrend", "recommendationTrend", "upgradeDowngradeHistory",
+        ])
+    except Exception:
+        return {}
+    return _map_analyst(info, data)
+
+
+def institutional_holders(query: str) -> dict:
+    hit = _resolve_yahoo(query)
+    if not hit or _yahoo_marked_down():
+        return {}
+    info, ysym = hit
+    try:
+        data = _yahoo_quote_summary(ysym, ["institutionOwnership", "majorHoldersBreakdown"])
+    except Exception:
+        return {}
+    return _map_holders(info, data)
+
+
+_FUND_MODULES = [
+    "financialData", "defaultKeyStatistics", "summaryDetail",
+    "earningsTrend", "recommendationTrend", "upgradeDowngradeHistory",
+    "institutionOwnership", "majorHoldersBreakdown",
+]
+
+
 def stock_fundamentals(query: str) -> dict:
-    """Bundle valuation + analyst + holders for one stock page fetch."""
+    """Bundle valuation + analyst + holders. One quoteSummary when Yahoo is up."""
     info = gstock.resolve_symbol(query)
     if not info:
         return {}
@@ -370,13 +676,40 @@ def stock_fundamentals(query: str) -> dict:
         return {"code": info["code"], "name": info["name"], "market": "KR",
                 "valuation": None, "analyst": None, "holders": None,
                 "note": "韩股暂无 Yahoo 基本面"}
-    val = key_statistics(query)
-    ana = analyst_estimates(query)
-    hold = institutional_holders(query)
+    ysym = to_yahoo_symbol(info) or str(info.get("code") or "")
+    val: dict = {}
+    ana: dict = {}
+    hold: dict = {}
+    src: str | None = None
+    if ysym and not _yahoo_marked_down():
+        try:
+            data = _yahoo_quote_summary(ysym, _FUND_MODULES)
+            val = _map_quote_summary(info, ysym, data)
+            ana = _map_analyst(info, data)
+            hold = _map_holders(info, data)
+            if _valuation_has_core(val):
+                src = "yahoo"
+        except Exception:
+            val, ana, hold = {}, {}, {}
+        if not _valuation_has_core(val) and not _yahoo_marked_down():
+            try:
+                row = _yahoo_v7_quote_row(ysym)
+                val = _map_v7_quote(info, ysym, row)
+                if _valuation_has_core(val):
+                    src = "yahoo_quote"
+                    ana, hold = {}, {}
+            except Exception as e:
+                if _is_yahoo_block(e):
+                    _mark_yahoo_down()
+    if not _valuation_has_core(val):
+        val = _em_valuation_fallback(info, ysym)
+        src = "eastmoney" if _valuation_has_core(val) else None
+        ana, hold = {}, {}
     return {
         "code": info["code"],
         "name": info["name"],
         "market": info["market"],
+        "source": src,
         "valuation": val or None,
         "analyst": ana if ana.get("eps_trend") or ana.get("rating_trend") else None,
         "holders": hold if hold.get("top_holders") or any((hold.get("overview") or {}).values()) else None,

@@ -1,9 +1,18 @@
 """gstock_deep: fund-flow UA + Yahoo news RSS fallback (no live Yahoo crumb)."""
 from __future__ import annotations
 
+import pytest
+
 import gstock
 from gstock_deep import eastmoney as em
 from gstock_deep import yahoo as y
+
+
+@pytest.fixture(autouse=True)
+def _reset_yahoo_latch():
+    y._clear_yahoo_down()
+    yield
+    y._clear_yahoo_down()
 
 
 class FakeResp:
@@ -79,3 +88,135 @@ def test_stock_news_falls_back_to_rss_when_crumb_403(monkeypatch):
     assert out["source"] == "Yahoo Finance RSS"
     assert out["items"][0]["title"] == "Apple headline"
     assert out["items"][0]["publish_ts"]
+
+
+AAPL_INFO = {
+    "code": "AAPL", "name": "苹果", "market": "NASDAQ",
+    "secid_prefix": 105, "secucode": "AAPL.O",
+}
+
+
+def _yahoo_down(monkeypatch):
+    monkeypatch.setattr(y, "_resolve_yahoo", lambda q: (AAPL_INFO, "AAPL"))
+    monkeypatch.setattr(y, "_yahoo_quote_summary", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("403")))
+    monkeypatch.setattr(y, "_yahoo_v7_quote_row", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("401")))
+
+
+def test_key_statistics_falls_back_to_v7_quote(monkeypatch):
+    monkeypatch.setattr(y, "_resolve_yahoo", lambda q: (AAPL_INFO, "AAPL"))
+    monkeypatch.setattr(y, "_yahoo_quote_summary", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("403")))
+    monkeypatch.setattr(y, "_yahoo_v7_quote_row", lambda *_a, **_k: {
+        "regularMarketPrice": 220.5,
+        "trailingPE": 32.1,
+        "forwardPE": 28.4,
+        "priceToBook": 45.0,
+        "marketCap": 3.3e12,
+    })
+    out = y.key_statistics("AAPL")
+    assert out["source"] == "yahoo_quote"
+    assert out["trailing_pe"] == 32.1
+    assert out["forward_pe"] == 28.4
+    assert out["current_price"] == 220.5
+
+
+def test_key_statistics_falls_back_to_eastmoney_pe_not_revenue(monkeypatch):
+    _yahoo_down(monkeypatch)
+    monkeypatch.setattr(y, "_em_push2_val", lambda info: {
+        "f9": 29.5, "f23": 12.2, "f43": 220.0, "f115": 31.0, "f116": 3.2e12,
+    })
+    monkeypatch.setattr(y, "_em_gmain_row", lambda info: {
+        "OPERATE_INCOME": 394_328_000_000,
+        "PARENT_HOLDER_NETPROFIT": 93_736_000_000,
+        "BASIC_EPS": 6.5,
+        "ROE_AVG": 18.5,
+        "GROSS_PROFIT_RATIO": 46.2,
+        "NET_PROFIT_RATIO": 24.1,
+        "OPERATE_INCOME_YOY": 6.0,
+    })
+    out = y.key_statistics("AAPL")
+    assert out["source"] == "eastmoney"
+    assert out["trailing_pe"] == 31.0
+    assert out["forward_pe"] == 29.5
+    assert out["price_to_book"] == 12.2
+    assert abs(out["return_on_equity"] - 0.185) < 1e-9
+    assert abs(out["gross_margin"] - 0.462) < 1e-9
+    assert out["trailing_pe"] != out.get("total_revenue")
+    assert out["trailing_pe"] != 394_328_000_000
+
+
+def test_em_valuation_computes_pe_from_price_over_eps(monkeypatch):
+    _yahoo_down(monkeypatch)
+    monkeypatch.setattr(y, "_em_push2_val", lambda info: {"f43": 100.0})
+    monkeypatch.setattr(y, "_em_gmain_row", lambda info: {"BASIC_EPS": 5.0, "BPS": 20.0})
+    out = y.key_statistics("AAPL")
+    assert out["source"] == "eastmoney"
+    assert out["trailing_pe"] == 20.0
+    assert out["price_to_book"] == 5.0
+
+
+def test_em_valuation_does_not_use_revenue_as_pe(monkeypatch):
+    _yahoo_down(monkeypatch)
+    monkeypatch.setattr(y, "_em_push2_val", lambda info: {"f43": 100.0})
+    monkeypatch.setattr(y, "_em_gmain_row", lambda info: {
+        "OPERATE_INCOME": 9_999_999,
+        "PARENT_HOLDER_NETPROFIT": 1_000_000,
+        "ROE_AVG": 10.0,
+    })
+    out = y.key_statistics("AAPL")
+    assert out["trailing_pe"] is None
+    assert out["forward_pe"] is None
+    assert abs(out["return_on_equity"] - 0.10) < 1e-9
+
+
+def test_fundamentals_one_quotesummary_when_yahoo_up(monkeypatch):
+    monkeypatch.setattr(gstock, "resolve_symbol", lambda q: AAPL_INFO)
+    calls: list[list[str]] = []
+
+    def fake_qs(sym, modules):
+        calls.append(list(modules))
+        return {
+            "financialData": {"currentPrice": {"raw": 220}},
+            "summaryDetail": {"trailingPE": {"raw": 32.0}},
+            "earningsTrend": {"trend": [{"period": "0q"}]},
+            "majorHoldersBreakdown": {"insidersPercentHeld": {"raw": 0.01}},
+        }
+
+    monkeypatch.setattr(y, "_yahoo_quote_summary", fake_qs)
+    out = y.stock_fundamentals("AAPL")
+    assert len(calls) == 1
+    assert "financialData" in calls[0]
+    assert "earningsTrend" in calls[0]
+    assert out["source"] == "yahoo"
+    assert out["valuation"]["trailing_pe"] == 32.0
+    assert out["analyst"]["eps_trend"][0]["period"] == "0q"
+    assert out["holders"]["overview"]["insiders_pct"] == 0.01
+
+
+def test_fundamentals_skips_analyst_when_yahoo_modules_down(monkeypatch):
+    monkeypatch.setattr(gstock, "resolve_symbol", lambda q: AAPL_INFO)
+    monkeypatch.setattr(y, "_yahoo_quote_summary", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("403")))
+    monkeypatch.setattr(y, "_yahoo_v7_quote_row", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("401")))
+    monkeypatch.setattr(y, "_em_push2_val", lambda info: {"f115": 31.0, "f43": 220.0})
+    monkeypatch.setattr(y, "_em_gmain_row", lambda info: {})
+    called = []
+    monkeypatch.setattr(y, "analyst_estimates", lambda q: called.append("ana") or {})
+    monkeypatch.setattr(y, "institutional_holders", lambda q: called.append("hold") or {})
+    out = y.stock_fundamentals("AAPL")
+    assert out["source"] == "eastmoney"
+    assert out["valuation"]["trailing_pe"] == 31.0
+    assert out["analyst"] is None
+    assert called == []
+
+
+def test_latched_skips_yahoo_and_uses_eastmoney(monkeypatch):
+    y._mark_yahoo_down()
+    monkeypatch.setattr(y, "_resolve_yahoo", lambda q: (AAPL_INFO, "AAPL"))
+    qs_calls = []
+    monkeypatch.setattr(y, "_yahoo_quote_summary", lambda *_a, **_k: qs_calls.append("qs") or {})
+    monkeypatch.setattr(y, "_yahoo_v7_quote_row", lambda *_a, **_k: qs_calls.append("v7") or {})
+    monkeypatch.setattr(y, "_em_push2_val", lambda info: {"f115": 30.0, "f43": 1.0})
+    monkeypatch.setattr(y, "_em_gmain_row", lambda info: {})
+    out = y.key_statistics("AAPL")
+    assert qs_calls == []
+    assert out["source"] == "eastmoney"
+    assert out["trailing_pe"] == 30.0

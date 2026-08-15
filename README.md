@@ -70,7 +70,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 ### 美股 / 港股数据 · global-stock-data
 
 - **就在本仓库的 [`global-stock-data/`](global-stock-data/) 文件夹里**（v2.0.3）。13 层数据架构、30+ 个端点、11 个数据源、零鉴权，覆盖美港股行情 / K线 / 技术指标 / 三表财报 / 资金流 / 期权（CBOE 官方期权链含完整希腊字母与 0DTE 流）/ FINRA 空头成交量 / SEC EDGAR 申报流与全市场筛选。每个数据源都标注了合规级别。
-- 后端 `backend/gstock.py` + `gstock_deep.py`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo）** + **三表关键科目/资金流（东财）** + **FINRA 空头成交量/全市场空头榜** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo search，crumb 被拦时走 RSS）**。个股页输 `AAPL` / `00700` 即可。
+- 后端 `backend/gstock.py` + `gstock_deep.py`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo quoteSummary，403 回退 v7 quote，再回退东财 PE/PB + GMAININDICATOR 利润率；不把营收/净利当成 PE）** + **三表关键科目/资金流（东财）** + **FINRA 空头成交量/全市场空头榜** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo search，crumb 被拦时走 RSS）**。个股页输 `AAPL` / `00700` 即可。
 - **美股日 K**：`GET /api/global/us/kline?symbol=AAPL&num=180`（Yahoo，失败回退新浪）；**港股日 K**：`GET /api/global/hk/kline?symbol=00700`（Yahoo query1/query2，403 回退腾讯 ifzq 前复权）。
 - **美股页**：观察列表 + K 线 + **EDGAR Screener（S 级）** + 涨跌/空头榜 + 选中标的期权/资金流 + 财报日历 + SEC 日报 + 美债曲线。
 - **AI 观察**：`GET /api/ai-watch/openrouter-usage`（需 `OPENROUTER_API_KEY`，无 key 读本地缓存）· `spend-index`（TrakToken RSS）· `aa-models`（可选 `ARTIFICIAL_ANALYSIS_API_KEY`）· `ai-infra`（SEC CapEx + 模型外推）。快照落在 `~/.vibe-research/ai-watch/`。

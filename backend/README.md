@@ -51,7 +51,7 @@ python3 -m venv .venv
 | `GET /api/portfolio/ctp/market-equity` | 轮询后台市值权益（`客户权益+多头期权市值-空头期权市值`，流控不阻塞主查询） | openctp-ctp |
 | `GET /api/portfolio/ctp/settlement?day=` | 查单日结算单（本地 `~/.vibe-research/ctp_settlements.json` 有则复用） | openctp-ctp |
 | `GET /api/portfolio/ctp/settlement/range?start=&end=` | 区间结算单 + 市值权益 / 净值 / 累计收益 / 盈亏日历 / 统计；缓存优先。日历：盈亏=`Δequity-出入金`，收益=`盈亏-手续费` | openctp-ctp |
-| `GET /api/global/stock/fundamentals?symbol=` | 美/港估值+分析师+机构持仓（Yahoo） | requests |
+| `GET /api/global/stock/fundamentals?symbol=` | 美/港估值+分析师+机构持仓（Yahoo，403 回退 v7 / 东财 PE·PB） | requests |
 | `GET /api/global/stock/statements?symbol=&statement=` | 三表关键科目（income/balance/cashflow，东财） | requests |
 | `GET /api/global/stock/fund-flow?symbol=` | 日级资金流 | requests |
 | `GET /api/global/stock/short-volume?symbol=` | FINRA 空头成交量时序（仅美股） | requests |

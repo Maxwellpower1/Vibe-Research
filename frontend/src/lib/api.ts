@@ -851,6 +851,8 @@ export interface UsKline {
 /** Yahoo valuation / analyst / holders bundle */
 export interface GlobalValuation {
   code?: string; name?: string; market?: string; yahoo_symbol?: string;
+  /** yahoo | yahoo_quote | eastmoney */
+  source?: string;
   current_price?: number | null; target_mean?: number | null;
   target_high?: number | null; target_low?: number | null;
   recommendation?: string | null;
@@ -891,9 +893,16 @@ export interface GlobalHolders {
 }
 export interface GlobalFundamentals {
   code: string; name: string; market: string; note?: string;
+  source?: string | null;
   valuation: GlobalValuation | null;
   analyst: GlobalAnalyst | null;
   holders: GlobalHolders | null;
+}
+
+export function fundamentalsSourceLabel(src?: string | null) {
+  if (src === "eastmoney") return "东财 (Yahoo 不可达)";
+  if (src === "yahoo_quote") return "Yahoo quote";
+  return "Yahoo";
 }
 export interface GlobalStmtItem { amount: number | null; yoy: number | null }
 export interface GlobalStatements {

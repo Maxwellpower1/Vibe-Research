@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { MinuteSpark } from "@/components/review/MinuteSpark";
 import { bgChg, fmtAmt, fmtPrice, pctColor } from "@/components/review/format";
 import { usePolling } from "@/hooks/usePolling";
-import { api } from "@/lib/api";
+import { loadLightKline } from "@/lib/lightKline";
 import { cn } from "@/lib/utils";
 import { klineHref } from "@/components/cockpit/QuoteLine";
 
@@ -74,7 +74,7 @@ export function QuoteStockRow({
   const compact = rowW > 0 && rowW < COMPACT_W;
 
   const { data: kl } = usePolling(
-    () => api.ashareLightKline(code, "1", 240),
+    () => loadLightKline(code, "1", 240),
     KLINE_MS,
     [code],
     visible,

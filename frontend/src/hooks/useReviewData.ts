@@ -13,6 +13,7 @@ import { formatClock } from "@/lib/freshness";
 import { storageGet, storageSet } from "@/lib/storage";
 import { getAShareSession } from "@/lib/ashareSession";
 import { loadWatch } from "@/lib/watchlist";
+import { loadLightKline } from "@/lib/lightKline";
 
 const TOP_AUTO_MS = 30_000;
 const TOP_AUTO_KEY = "ashare.review.topAuto";
@@ -292,7 +293,7 @@ export function useReviewData() {
       const rows = await Promise.all(
         slice.map(async (c) => {
           try {
-            const d = await api.ashareLightKline(c, "1", 240);
+            const d = await loadLightKline(c, "1", 240);
             return [c, d] as const;
           } catch {
             return [c, null] as const;

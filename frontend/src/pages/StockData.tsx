@@ -18,6 +18,7 @@ import {
   type GlobalStock, type HkCashflow, type GlobalFundamentals, type GlobalStatements,
   type GlobalFundFlow, type GlobalShortVolume, type GlobalSecFilings, type GlobalOptions,
   type UsKline, type GlobalStockNews, type StockBasicInfo,
+  fundamentalsSourceLabel,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -446,7 +447,9 @@ export function StockData({
               <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
                 <LineChart className="h-4 w-4 text-primary" /> 估值与盈利能力
               </h3>
-              <p className="mb-3 text-[11px] text-muted-foreground/60">Yahoo quoteSummary · 仅客观指标，不含买卖建议。</p>
+              <p className="mb-3 text-[11px] text-muted-foreground/60">
+                {fundamentalsSourceLabel(gFund.source ?? gFund.valuation.source)} · 仅客观指标，不含买卖建议。
+              </p>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
                   { k: "PE(TTM)", v: round2(gFund.valuation.trailing_pe) },
