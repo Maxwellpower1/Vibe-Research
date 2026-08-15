@@ -39,6 +39,7 @@ python3 -m venv .venv
 | `GET /api/market/review-snapshot` | 每日复盘首屏聚合（`scope=top|full`），一次返回指数/情绪/榜单 | 缓存命中秒回 |
 | `GET /api/market/board-flow` · `/hsgt` · `/hot-list` · `/stock-monitor` · `/price-anomaly` · `/limit-pools` | 板块资金流 / 北向 / 热榜 / 监控池 / 异动 / 打板池 | requests |
 | `GET /api/market/world-indices` · `/boards` · `/board-stocks` · `/rank` · `/board-flow-intraday` · `/commodities` · `/commodity-minutes` | 全球关键指数 / 板块热点 / 成分股 / 个股榜单(含成交额) / 分钟板块资金 / 大宗商品 | 腾讯/东财/新浪 |
+| `GET /api/market/spot-table` · `/chem-spot` · `/future-daily` · `/stock-boards` · `/lives` | 生意社现期/基差 · 化工现货 · 新浪期货日K · 个股行业/概念 · 新浪7x24(华尔街见闻兜底) | requests |
 | `GET /api/fin/board` · `/forecast` · `/company` · `/suggest` | 财报窗口：盈利榜+日历+行业实时涨跌 / 业绩预告 / F10+估值+公告+研报 / 代码联想 | 东财 + 本仓库财务/估值 |
 | `GET /api/stock-basic?code=` | 个股基本资料（行业/股本/上市日） | requests |
 | `POST /api/chat` | 系统 AI 对话（function calling，AI 自己调数据工具） | requests |

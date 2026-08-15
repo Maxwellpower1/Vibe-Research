@@ -254,6 +254,33 @@ export interface CommodityQuote {
 export interface CommodityMinute {
   code: string; prec: number; points: Array<{ t: string; p: number }>;
 }
+export interface SpotBasisRow {
+  exchange: string; name: string; spot: number; contract: string;
+  futures: number; basis: number; basis_pct: number;
+}
+export interface SpotTable {
+  date: string; source?: string;
+  rows: SpotBasisRow[];
+  history: Record<string, Array<{ t: string; p: number }>>;
+}
+export interface ChemSpot {
+  id: string; name: string; price: number; quotes: number;
+  date: string; source?: string; history: Array<{ t: string; p: number }>;
+}
+export interface FutureDaily {
+  code: string; source?: string;
+  points: Array<{ t: string; o: number; h: number; l: number; c: number; v: number }>;
+}
+export interface StockBoards {
+  code: string; name: string; industry: string; area: string;
+  concepts: string[]; source?: string;
+}
+export interface MarketLiveItem {
+  id: string | number; title: string; content: string; time: string;
+}
+export interface MarketLives {
+  source: string; count: number; items: MarketLiveItem[];
+}
 
 export interface FinStockProfit {
   code: string; name: string; industry: string;
@@ -1253,6 +1280,15 @@ export const api = {
     get<Record<string, CommodityQuote>>(`/market/commodities${codes ? `?codes=${encodeURIComponent(codes)}` : ""}`),
   commodityMinutes: (codes: string) =>
     get<Record<string, CommodityMinute | null>>(`/market/commodity-minutes?codes=${encodeURIComponent(codes)}`),
+  spotTable: () => get<SpotTable>("/market/spot-table"),
+  chemSpot: (id: string, name = "") =>
+    get<ChemSpot>(`/market/chem-spot?id=${encodeURIComponent(id)}${name ? `&name=${encodeURIComponent(name)}` : ""}`),
+  futureDaily: (code: string, n = 400) =>
+    get<FutureDaily>(`/market/future-daily?code=${encodeURIComponent(code)}&n=${n}`),
+  stockBoards: (code: string) =>
+    get<StockBoards>(`/market/stock-boards?code=${encodeURIComponent(code)}`),
+  marketLives: (page = 1, size = 40) =>
+    get<MarketLives>(`/market/lives?page=${page}&size=${size}`),
   finBoard: (period = "") =>
     get<FinBoard>(`/fin/board${period ? `?period=${encodeURIComponent(period)}` : ""}`),
   finForecast: (period = "") =>

@@ -479,3 +479,93 @@ def market_bond_yield(
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"国债收益率异常：{e}") from e
+
+
+@router.get("/api/market/spot-table")
+def market_spot_table():
+    """生意社现货/期货基差对照表. 缓存 8 小时."""
+    import sunsirs
+    try:
+        data = _cached("spot_table", "sf", 8 * 3600, sunsirs.spot_table)
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"生意社现期表异常：{e}") from e
+
+
+@router.get("/api/market/chem-spot")
+def market_chem_spot(
+    cid: str = Query(..., min_length=1, max_length=10, alias="id"),
+    name: str = Query("", max_length=40),
+):
+    """生意社化工现货中位数. 缓存 8 小时."""
+    import sunsirs
+    try:
+        data = _cached(
+            "chem_spot",
+            f"{cid}:{name}",
+            8 * 3600,
+            lambda: sunsirs.chem_spot(cid, name),
+        )
+        return {"data": data}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"生意社化工现货异常：{e}") from e
+
+
+@router.get("/api/market/future-daily")
+def market_future_daily(
+    code: str = Query(..., min_length=4, max_length=16),
+    n: int = Query(400, ge=20, le=2000),
+):
+    """新浪期货日 K (hf_ 外盘 / nf_ 内盘). 缓存 1 小时."""
+    import cockpit_live
+    try:
+        data = _cached(
+            "future_daily",
+            f"{code}:{n}",
+            3600,
+            lambda: cockpit_live.future_daily(code, n),
+        )
+        return {"data": data}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"期货日K异常：{e}") from e
+
+
+@router.get("/api/market/stock-boards")
+def market_stock_boards(code: str = Query(..., min_length=6, max_length=8)):
+    """个股所属行业/地域/概念 (东财 f127/f128/f129). 缓存 24 小时."""
+    import cockpit_live
+    try:
+        data = _cached(
+            "stock_boards",
+            code.strip().lower(),
+            24 * 3600,
+            lambda: cockpit_live.stock_boards(code),
+        )
+        return {"data": data}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"个股板块异常：{e}") from e
+
+
+@router.get("/api/market/lives")
+def market_lives(
+    page: int = Query(1, ge=1, le=20),
+    size: int = Query(40, ge=10, le=50),
+):
+    """新浪7x24直播, 失败回退华尔街见闻快讯. 缓存 8 秒. 不进驾驶舱格子."""
+    import lives_feed
+    try:
+        data = _cached(
+            "market_lives",
+            f"{page}:{size}",
+            8,
+            lambda: lives_feed.market_lives(page, size),
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"直播快讯异常：{e}") from e

@@ -796,3 +796,83 @@ def future_minutes(codes: list[str]) -> dict[str, dict | None]:
         except Exception:
             out[c] = None
     return out
+
+
+def future_daily(code: str, n: int = 400) -> dict:
+    """Sina daily OHLC for hf_ (global) / nf_ (domestic)."""
+    from urllib.parse import quote
+
+    c = (code or "").strip()
+    if not _HF_RE.fullmatch(c):
+        raise ValueError(f"bad future code: {c}")
+    is_global = c.startswith("hf_")
+    symbol = c[3:]
+    api = (
+        f"GlobalFuturesService.getGlobalFuturesDailyKLine?symbol={quote(symbol)}"
+        if is_global
+        else f"InnerFuturesNewService.getDailyKLine?symbol={quote(symbol)}"
+    )
+    text = _fetch_text(
+        f"https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20t=/{api}",
+        referer=f"https://finance.sina.com.cn/futures/quotes/{symbol}.shtml",
+        timeout=15,
+    )
+    arr = parse_jsonp(text) or []
+    if not isinstance(arr, list):
+        arr = []
+    pts = []
+    for k in arr:
+        if not isinstance(k, dict):
+            continue
+        t = k.get("d") or k.get("date")
+        close = _num(k.get("c") if k.get("c") is not None else k.get("close"))
+        if not t or not close:
+            continue
+        pts.append({
+            "t": str(t)[:10],
+            "o": _num(k.get("o") if k.get("o") is not None else k.get("open")),
+            "h": _num(k.get("h") if k.get("h") is not None else k.get("high")),
+            "l": _num(k.get("l") if k.get("l") is not None else k.get("low")),
+            "c": close,
+            "v": _num(k.get("v") if k.get("v") is not None else k.get("volume")),
+        })
+    want = max(20, min(int(n or 400), 2000))
+    return {"code": c, "source": "sina", "points": pts[-want:]}
+
+
+def stock_boards(code: str) -> dict:
+    """Eastmoney industry / area / concepts for one A-share (f127/f128/f129)."""
+    raw = (code or "").strip().lower()
+    m = re.fullmatch(r"(?:(sh|sz|bj))?(\d{6})", raw)
+    if not m:
+        raise ValueError("code must be 6 digits or sh/sz/bj+6")
+    prefix, digits = m.group(1), m.group(2)
+    if not prefix:
+        prefix = "sh" if digits.startswith(("5", "6", "9")) else "sz"
+    market = 1 if prefix == "sh" else 0
+    params = {"secid": f"{market}.{digits}", "fields": "f57,f58,f127,f128,f129"}
+    d: dict = {}
+    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
+        try:
+            r = em_get(
+                f"https://{host}/api/qt/stock/get",
+                params=params,
+                headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
+                timeout=10,
+            )
+            d = (r.json() or {}).get("data") or {}
+            if d:
+                break
+        except Exception:
+            continue
+    if not d:
+        raise RuntimeError("empty stock boards")
+    concepts = [x for x in str(d.get("f129") or "").split(",") if x]
+    return {
+        "code": f"{prefix}{digits}",
+        "name": d.get("f58") or "",
+        "industry": d.get("f127") or "",
+        "area": d.get("f128") or "",
+        "concepts": concepts,
+        "source": "eastmoney",
+    }
