@@ -32,6 +32,7 @@ def test_resolve_symbol():
 
 def test_tencent_minute_url():
     assert "usMinute" in astock.tencent_minute_url("usIXIC")
+    assert "usMinute" in astock.tencent_minute_url("usDJI")
     assert "/minute/query" in astock.tencent_minute_url("sh000001")
     assert "usMinute" not in astock.tencent_minute_url("hkHSI")
 
@@ -51,6 +52,27 @@ def test_light_kline_us_minute(monkeypatch):
     assert out["name"] == "纳斯达克"
     assert out["prev_close"] == 99
     assert [b["close"] for b in out["bars"]] == [100.0, 101.0]
+
+
+def test_light_kline_us_falls_back_to_eastmoney(monkeypatch):
+    class _Resp:
+        def json(self):
+            return {
+                "data": {
+                    "preKPrice": 53700.0,
+                    "klines": [
+                        "2026-08-14 09:30,53700,53710,53720,53690,0",
+                        "2026-08-14 09:31,53710,53720,53730,53700,0",
+                    ],
+                }
+            }
+
+    monkeypatch.setattr(astock, "_tencent_json", lambda url: {"data": {}})
+    monkeypatch.setattr(astock, "em_get", lambda *_a, **_k: _Resp())
+    out = astock.light_kline("usDJI", "1", num=240)
+    assert out["symbol"] == "usDJI"
+    assert out["source"] == "eastmoney 100.DJIA"
+    assert [b["close"] for b in out["bars"]] == [53710.0, 53720.0]
 
 
 def test_light_kline_fx_usdcnh(monkeypatch):

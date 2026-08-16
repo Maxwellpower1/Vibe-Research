@@ -69,6 +69,14 @@ _US_INDEX_SYMBOLS = {
     "usvix": "usVIX",
     "ussoxx": "usSOXX",
 }
+# Eastmoney 1-min fallback when Tencent usMinute is empty (common on cloud IPs).
+_US_EM_MINUTE = {
+    "usDJI": ("100.DJIA", "道琼斯"),
+    "usIXIC": ("100.IXIC", "纳斯达克"),
+    "usINX": ("100.SPX", "标普500"),
+    "usVIX": ("100.VIX", "恐慌指数"),
+    "usSOXX": ("100.SOXX", "费城半导体"),
+}
 _FX_SYMBOLS = {
     "whusdcny": "whUSDCNY",
 }
@@ -591,13 +599,13 @@ def _parse_minute_line(line: str, day: str = "") -> dict | None:
     }
 
 
-def _em_fx_minute(symbol: str, n: int) -> dict:
-    """Offshore USD/CNH 1-minute K. Tencent wh* minute returns a single point."""
+def _em_kline_minute(symbol: str, secid: str, name: str, n: int, source: str) -> dict:
+    """Eastmoney 1-minute K (FX / US index fallback)."""
     try:
         r = em_get(
             "https://push2his.eastmoney.com/api/qt/stock/kline/get",
             params={
-                "secid": "133.USDCNH",
+                "secid": secid,
                 "fields1": "f1,f2,f3,f4,f5,f6",
                 "fields2": "f51,f52,f53,f54,f55,f56",
                 "klt": "1",
@@ -607,7 +615,7 @@ def _em_fx_minute(symbol: str, n: int) -> dict:
                 "lmt": str(n),
             },
             headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
-            timeout=12,
+            timeout=8,
         )
         data = (r.json() or {}).get("data") or {}
     except Exception:
@@ -636,15 +644,29 @@ def _em_fx_minute(symbol: str, n: int) -> dict:
     except (TypeError, ValueError):
         prev_close = bars[0]["open"]
     return {
-        "code": "USDCNH",
+        "code": secid.split(".")[-1],
         "symbol": symbol,
-        "name": "美元/人民币",
+        "name": name,
         "resolution": "1",
         "adjust": "none",
-        "source": "eastmoney USDCNH",
+        "source": source,
         "prev_close": prev_close,
         "bars": bars,
     }
+
+
+def _em_fx_minute(symbol: str, n: int) -> dict:
+    """Offshore USD/CNH 1-minute K. Tencent wh* minute returns a single point."""
+    return _em_kline_minute(symbol, "133.USDCNH", "美元/人民币", n, "eastmoney USDCNH")
+
+
+def _em_us_minute(symbol: str, n: int) -> dict:
+    """US index 1-minute K when Tencent usMinute is empty."""
+    hit = _US_EM_MINUTE.get(symbol)
+    if not hit:
+        return {}
+    secid, name = hit
+    return _em_kline_minute(symbol, secid, name, n, f"eastmoney {secid}")
 
 
 def _baostock_eligible(symbol: str) -> bool:
@@ -767,6 +789,11 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
                 name = qt[1] if isinstance(qt[1], str) else name
     except Exception:
         bars = []
+
+    if not bars and res == "1" and symbol in _US_EM_MINUTE:
+        em = _em_us_minute(symbol, n)
+        if em:
+            return em
 
     if not bars and res not in ("1", "5") and _baostock_eligible(symbol):
         try:

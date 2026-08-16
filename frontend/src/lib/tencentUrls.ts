@@ -5,6 +5,10 @@ export function quoteUrl(codes: string[]): string {
 }
 
 export function tencentMinuteUrl(code: string): string {
+  // us* minute/query returns 1 point; usMinute has the session.
+  if (/^us/i.test(code)) {
+    return `https://web.ifzq.gtimg.cn/appstock/app/usMinute/query?code=${code}`;
+  }
   return `https://ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`;
 }
 

@@ -11,7 +11,11 @@ function toTencentSym(code: string): string {
 }
 
 function canDirectMinute(code: string): boolean {
-  return /^(sh|sz|bj|hk)/i.test(code) || /^\d{6}$/.test(code);
+  return /^(sh|sz|bj|hk|us)/i.test(code) || /^\d{6}$/.test(code);
+}
+
+function hasBars(kl: AShareLightKline | null | undefined): boolean {
+  return (kl?.bars?.length ?? 0) >= 2;
 }
 
 function minuteToKline(code: string, prec: number, points: Array<{ t: string; p: number }>): AShareLightKline | null {
@@ -142,7 +146,14 @@ export async function loadLightKlineBatch(
       : undefined,
     8000,
   );
-  for (const [code, data] of Object.entries(map || {})) {
+  const merged: Record<string, AShareLightKline | null> = { ...(map || {}) };
+  if (resolution === "1") {
+    const holes = need.filter((c) => !hasBars(merged[c]) && canDirectMinute(c));
+    await Promise.all(holes.map(async (code) => {
+      try { merged[code] = await directKline(code); } catch { merged[code] = merged[code] ?? null; }
+    }));
+  }
+  for (const [code, data] of Object.entries(merged)) {
     seedLightKline(code, data, resolution, num);
     out[code] = data;
   }
