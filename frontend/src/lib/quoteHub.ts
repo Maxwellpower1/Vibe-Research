@@ -13,6 +13,9 @@ export interface HubQuote {
   amount?: number;
   turnover?: number;
   prev?: number;
+  pe_ttm?: number;
+  pb?: number;
+  mcap_yi?: number;
   updated: number;
 }
 
@@ -53,7 +56,10 @@ function chunks(codes: string[]): string[][] {
 
 function applyQuote(
   code: string,
-  q: { name?: string; price: number; pct: number; amount?: number; turnover?: number; prev?: number },
+  q: {
+    name?: string; price: number; pct: number; amount?: number; turnover?: number;
+    prev?: number; pe_ttm?: number; pb?: number; mcap_yi?: number;
+  },
   now: number,
 ): boolean {
   if (!q || !Number.isFinite(q.price) || q.price <= 0) return false;
@@ -64,11 +70,15 @@ function applyQuote(
     amount: q.amount,
     turnover: q.turnover,
     prev: q.prev,
+    pe_ttm: q.pe_ttm,
+    pb: q.pb,
+    mcap_yi: q.mcap_yi,
     updated: now,
   };
   const old = entries.get(code);
   if (!old || old.price !== next.price || old.pct !== next.pct
-    || old.amount !== next.amount || old.turnover !== next.turnover) {
+    || old.amount !== next.amount || old.turnover !== next.turnover
+    || old.pe_ttm !== next.pe_ttm || old.pb !== next.pb || old.mcap_yi !== next.mcap_yi) {
     entries.set(code, next);
     return true;
   }

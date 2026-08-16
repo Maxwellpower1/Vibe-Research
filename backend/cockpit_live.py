@@ -13,6 +13,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 import astock
+from index_catalog import INDEX_CATALOG
 
 UA = astock.UA
 em_get = astock.em_get
@@ -21,22 +22,7 @@ _HF_RE = re.compile(r"^(hf|nf)_[A-Za-z0-9]{1,12}$")
 _BK_RE = re.compile(r"^BK\d{4}$", re.I)
 _SINA_RANK_SORT = {"changepercent", "amount", "turnoverratio"}
 
-WORLD_INDICES: tuple[tuple[str, str, str], ...] = (
-    ("sh000001", "上证指数", "CN"),
-    ("sz399001", "深证成指", "CN"),
-    ("sz399006", "创业板指", "CN"),
-    ("sh000688", "科创50", "CN"),
-    ("sh000300", "沪深300", "CN"),
-    ("sh000905", "中证500", "CN"),
-    ("hkHSI", "恒生指数", "HK"),
-    ("hkHSTECH", "恒生科技", "HK"),
-    ("usDJI", "道琼斯", "US"),
-    ("usIXIC", "纳斯达克", "US"),
-    ("usINX", "标普500", "US"),
-    ("usVIX", "恐慌指数", "US"),
-    ("usSOXX", "费城半导体", "US"),
-    ("whUSDCNY", "美元/人民币", "FX"),
-)
+WORLD_INDICES: tuple[tuple[str, str, str], ...] = INDEX_CATALOG
 
 DEFAULT_FUTURES = "hf_GC,hf_XAU,nf_AU0,hf_SI,hf_CAD,hf_CL,BTCUSDT"
 
@@ -253,15 +239,19 @@ def _canon_quote_code(raw: str) -> str:
 
 
 def _quote_item(q: dict, canon: str, *, amount: float = 0.0, turnover: float = 0.0) -> dict:
+    turn = turnover or q.get("turnover") or q.get("turnover_pct") or 0.0
     return {
         "symbol": canon,
         "name": q.get("name") or canon,
         "price": q.get("price") or 0.0,
         "pct": q.get("pct") or 0.0,
         "change": q.get("change") or 0.0,
-        "prev": q.get("prev") or 0.0,
+        "prev": q.get("prev") or q.get("last_close") or 0.0,
         "amount": amount,
-        "turnover": turnover,
+        "turnover": turn,
+        "pe_ttm": q.get("pe_ttm") or 0.0,
+        "pb": q.get("pb") or 0.0,
+        "mcap_yi": q.get("mcap_yi") or 0.0,
     }
 
 

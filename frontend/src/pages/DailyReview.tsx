@@ -27,8 +27,8 @@ import { NewsFeedBar, NewsCockpitPanel } from "@/components/cockpit/NewsCockpitP
 import type { FeedSource } from "@/lib/telegraphHub";
 import { reviewPending } from "@/components/review/reviewPending";
 import { useReviewData } from "@/hooks/useReviewData";
-import { ApiError } from "@/lib/api";
-import { collectReviewContext, REVIEW_PROMPT_TASK } from "@/lib/reviewContext";
+import { api, ApiError } from "@/lib/api";
+import { collectReviewContext } from "@/lib/reviewContext";
 import { hasLlm, chatStream } from "@/lib/llm";
 
 export function DailyReview() {
@@ -58,12 +58,13 @@ export function DailyReview() {
     setReviewLoading(true);
     setReview("");
     try {
-      const snap = await collectReviewContext({
-        ...d.contextInput,
-        sectorKind,
-        newsSource,
+      const packed = await api.reviewContext({
+        watch_codes: d.watchCodes,
+        sector_kind: sectorKind,
+        news_source: newsSource,
       });
-      const prompt = `以下是今天复盘驾驶舱的客观快照(与当前看板同源):\n${snap}\n\n${REVIEW_PROMPT_TASK}`;
+      const snap = packed.text;
+      const prompt = `以下是今天复盘驾驶舱的客观快照(与当前看板同源):\n${snap}\n\n${packed.prompt_task}`;
       await chatStream([{ role: "user", content: prompt }], snap, {
         onDelta: (t) => setReview((r) => r + t),
       });
@@ -314,9 +315,9 @@ export function DailyReview() {
         AI 复盘
       </button>
       <AskAiButton
-        context={d.dataSummary}
+        context=""
         getContext={() => collectReviewContext({
-          ...d.contextInput,
+          watchCodes: d.watchCodes,
           sectorKind,
           newsSource,
         })}

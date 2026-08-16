@@ -101,9 +101,10 @@ def test_build_snapshot_top_skips_extra(monkeypatch):
 
 def test_em_fillers_skip_unused_eastmoney():
     import inspect
+    import review_jobs
 
-    top_src = inspect.getsource(rs._fill_em_top)
-    extra_src = inspect.getsource(rs._fill_em_extra)
+    top_src = inspect.getsource(review_jobs.em_top_jobs)
+    extra_src = inspect.getsource(review_jobs.em_extra_jobs)
     assert "get_short_term_emotion" in top_src
     assert "industry_comparison" in top_src
     assert "get_global_indices" not in top_src
@@ -114,6 +115,46 @@ def test_em_fillers_skip_unused_eastmoney():
     assert "em_price_anomaly" not in extra_src
     assert "limit_up_pools" not in extra_src
     assert "ths_limit_up_pool" not in extra_src
+
+
+def test_collect_bundle_uses_shared_jobs(monkeypatch):
+    monkeypatch.setattr(
+        rs,
+        "build_review_snapshot",
+        lambda **kw: {
+            "indices": [{"name": "上证"}],
+            "overview": None,
+            "emotion": None,
+            "industry": None,
+            "lhb": None,
+            "hsgt": None,
+            "errors": [],
+        },
+    )
+    monkeypatch.setattr(
+        "review_jobs.live_jobs",
+        lambda **kw: [("world", lambda: [{"name": "上证指数", "price": 1, "change_pct": 1}])],
+    )
+    monkeypatch.setattr("review_jobs.watch_quotes", lambda codes: [{"name": "茅台", "price": 1, "pct": 1}])
+    data, errors = rs.collect_review_bundle(watch_codes=["600519"])
+    assert data["indices"][0]["name"] == "上证"
+    assert data["world"][0]["name"] == "上证指数"
+    assert data["watch"][0]["name"] == "茅台"
+    assert errors == []
+
+
+def test_review_context_route(monkeypatch):
+    monkeypatch.setattr(
+        rs,
+        "collect_review_bundle",
+        lambda **kw: ({"world": [{"name": "上证指数", "price": 3200, "change_pct": 0.85}]}, []),
+    )
+    r = client.post("/api/market/review-context", json={"watch_codes": [], "sector_kind": "01"})
+    assert r.status_code == 200
+    body = r.json()["data"]
+    assert "【全球指数】" in body["text"]
+    assert "prompt_task" in body
+    assert "自选" in body["missing"] or "【自选】" in body["text"]
 
 
 def test_user_busy_skips_warmup():

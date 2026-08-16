@@ -11,7 +11,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 
 import astock
-import gstock
 from cache import TTLCache, is_nonempty
 
 BEIJING = timezone(timedelta(hours=8))
@@ -252,5 +251,8 @@ def get_turnover_top() -> dict:
 
 
 def get_global_indices() -> list[dict]:
-    """全球指数快照（美股 / 港股，含缓存 5 分钟）。空结果不缓存。"""
-    return _cached("global_indices", gstock.global_indices, valid=bool)
+    """全球指数快照. 与复盘清单同一条 _DC_CACHE 键 (world_indices / 20s)。"""
+    from api_common import _cached as dc_cached
+    import cockpit_live
+
+    return dc_cached("world_indices", "live", 20, cockpit_live.world_indices)

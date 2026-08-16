@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from cache import TTLCache
+from index_catalog import A_INDEX_CODES
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
@@ -368,21 +369,12 @@ def seal_flag(q: dict | None, side: str) -> bool | None:
         return None
 
 
-# A股大盘指数（前缀规则与个股不同，固定带前缀代码）+ 港股恒生系（国内复盘对照）
-A_INDICES = [
-    "sh000001",  # 上证指数
-    "sz399001",  # 深证成指
-    "sz399006",  # 创业板指
-    "sh000300",  # 沪深300
-    "sh000688",  # 科创50
-    "sh000852",  # 中证1000
-    "hkHSI",     # 恒生指数（腾讯分时可用）
-    "hkHSTECH",  # 恒生科技
-]
+# A股大盘指数 + 港股恒生系. 名单与驾驶舱同一份 index_catalog.
+A_INDICES = list(A_INDEX_CODES)
 
 
 def index_quote() -> list[dict]:
-    """大盘指数实时行情（A股六指数 + 恒生 / 恒生科技）。
+    """大盘指数实时行情（A股 + 恒生, 名单见 index_catalog）。
 
     返回含 symbol（如 sh000001 / hkHSI）供分时/K线直连，避免 000001 歧义。
     """

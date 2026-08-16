@@ -5,6 +5,22 @@
 
 ## Unreleased
 
+### 文档：AI 改代码约定
+
+`CONTEXT.md`：名单 / 缓存 / 报价只留一份入口，下次改代码先挂再写。
+
+### 改进：K 线页和自选公告走报价中心
+
+K 线自选列表 / 估值快照、自选公告里的名称不再打 `/api/quote`，和顶栏格子共用 5 秒报价中心。腾讯已有的 PE/市值跟着这条走。
+
+### 改进：问 AI 全球指数与预热共用缓存
+
+`get_global_indices` 不再另存 5 分钟份，与复盘清单的 `world_indices` 20 秒键相同。
+
+### 改进：复盘清单 / 上下文 / 指数目录收成一份
+
+预热、邮件、问 AI 不再各写一份「该拉哪些格」。`POST /api/market/review-context` 由后端打包复盘上下文（含自选），网页不再本地拼快照。全球指数只认一份指数目录（中证500，不再混中证1000）；问 AI 工具的全球指数与驾驶舱同源。
+
 ### 改进：去掉没有页面的功能与空 HTTP 入口
 
 README 不再写「我的研报 / 研究记录 / 反思审计」。删掉对应后端（`myreports` / `reflection` / `/api/reflect`）、死前端 client（`agents.ts` / `ndjson.ts`），以及前端从不打的 HTTP 壳（`/api/radar*` `/kline` `/finance` `/disclosure` `/indices` `/industry` `/global/indices` `/market/overview` `/emotion` `/turnover-top` `/world-indices` `/board-flow` `/hot-list` `/stock-monitor` `/price-anomaly` `/limit-pools` `/ths-limit-up`、部分 ovlab 空路由）。`review-snapshot` 不再返回恒为 None 的占位字段。AI / MCP 仍直调底层函数。

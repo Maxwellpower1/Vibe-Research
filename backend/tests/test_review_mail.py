@@ -29,6 +29,24 @@ def test_due_weekend_false():
     assert rm.due(sat, None, 16, 10) is False
 
 
+def test_fmt_yi_and_signed_pct():
+    assert rc.fmt_yi(2.5e8) == "2.50亿"
+    assert rc.fmt_yi(-3.2e4) == "-3万"
+    assert rc.fmt_yi(0) == "—"
+    assert rc.fmt_signed_pct(1.2) == "+1.20%"
+    assert rc.fmt_signed_pct(-0.5) == "-0.50%"
+    assert rc.fmt_signed_pct(None) == "—"
+
+
+def test_pack_includes_watch():
+    text = rc.pack_review_context({
+        "watch": [{"name": "贵州茅台", "price": 1400, "pct": 1.2}],
+    })
+    assert "【自选】" in text
+    assert "贵州茅台" in text
+    assert "自选" not in rc.missing_panels(text)
+
+
 def test_pack_lists_missing_and_keeps_sections():
     text = rc.pack_review_context({
         "world": [{"name": "上证指数", "price": 3200, "change_pct": 0.85}],

@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  api, type IndexQuote, type MarketOverview, type ShortTermEmotion,
+  api, type MarketOverview, type ShortTermEmotion,
   type DailyDragonTiger, type IndustryData,
   type EtfFlow, type EtfShares, ETF_SHARE_WATCH, type ShareholderChanges,
   type LprData, type CnBondYield, type ReviewSnapshot, type HsgtLive,
@@ -9,7 +9,6 @@ import {
 import { usePolling } from "@/hooks/usePolling";
 import { useSegment } from "@/components/ui/SegmentNav";
 import { formatClock } from "@/lib/freshness";
-import { buildReviewContext, type ReviewContextInput } from "@/lib/reviewContext";
 import { useWatchCodes } from "@/lib/watchlist";
 
 const SEG_KEYS = ["boards", "money", "chain"] as const;
@@ -17,7 +16,6 @@ const SEG_KEYS = ["boards", "money", "chain"] as const;
 export type ReviewSeg = "boards" | "money" | "chain";
 
 export function useReviewData() {
-  const [indices, setIndices] = useState<IndexQuote[]>([]);
   const [overview, setOverview] = useState<MarketOverview | null>(null);
   const [emotion, setEmotion] = useState<ShortTermEmotion | null>(null);
   const [lhb, setLhb] = useState<DailyDragonTiger | null>(null);
@@ -54,7 +52,6 @@ export function useReviewData() {
   );
 
   const applyPaint = useCallback((s: ReviewSnapshot) => {
-    setIndices(s.indices ?? []);
     setHsgt(s.hsgt ?? null);
     setOverview(s.overview ?? null);
     setOvDone(true);
@@ -83,7 +80,6 @@ export function useReviewData() {
     void api.reviewSnapshot({ scope: "top" })
       .then(applyTop)
       .catch(() => {
-        setIndices([]);
         setOverview(null);
         setEmotion(null);
         setHsgt(null);
@@ -171,27 +167,6 @@ export function useReviewData() {
     return () => { cancelled = true; };
   }, []);
 
-  const contextInput: ReviewContextInput = useMemo(() => ({
-    indices,
-    overview,
-    emotion,
-    industry,
-    lhb,
-    etfFlow,
-    etfShares,
-    etfSharesList,
-    shChg,
-    lpr,
-    bondY,
-    hsgt,
-    breadth: breadth ?? null,
-    watchCodes,
-  }), [
-    indices, overview, emotion, industry, lhb, etfFlow, etfShares, etfSharesList,
-    shChg, lpr, bondY, hsgt, breadth, watchCodes,
-  ]);
-  const dataSummary = useMemo(() => buildReviewContext(contextInput), [contextInput]);
-
   return {
     emotion,
     breadth,
@@ -217,8 +192,6 @@ export function useReviewData() {
     refreshTopRows,
     seg,
     setSeg,
-    dataSummary,
-    contextInput,
     sentiment: overview?.sentiment,
     indTop: industry?.top?.[0],
     indBot: industry?.bottom?.[0],

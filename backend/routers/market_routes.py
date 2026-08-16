@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 import astock
+import review_context
 import review_mail
 import review_snapshot
 import review_warmup
@@ -60,6 +61,37 @@ def market_review_snapshot(
         return {"data": review_snapshot.build_review_snapshot(scope=sc)}
     except Exception as e:
         raise HTTPException(502, f"复盘快照异常：{e}") from e
+
+
+class ReviewContextIn(BaseModel):
+    watch_codes: list[str] = Field(default_factory=list)
+    sector_kind: str = "01"
+    news_source: str = "cls"
+
+
+@router.post("/api/market/review-context")
+def market_review_context(body: ReviewContextIn):
+    """Pack 复盘上下文 for 问 AI. Same text as the scheduled review mail."""
+    kind = "02" if str(body.sector_kind) == "02" else "01"
+    src = "lives" if str(body.news_source) == "lives" else "cls"
+    codes = [str(c).strip() for c in (body.watch_codes or []) if str(c).strip()][:20]
+    try:
+        data, errors = review_snapshot.collect_review_bundle(
+            sector_kind=kind,
+            news_source=src,
+            watch_codes=codes,
+        )
+        text = review_context.pack_review_context(data)
+    except Exception as e:
+        raise HTTPException(502, f"复盘上下文异常：{e}") from e
+    return {
+        "data": {
+            "text": text,
+            "missing": review_context.missing_panels(text),
+            "prompt_task": review_context.REVIEW_PROMPT_TASK,
+            "errors": errors[-8:],
+        }
+    }
 
 
 def _parse_flow_codes(codes: str, cap: int = 40) -> list[str]:

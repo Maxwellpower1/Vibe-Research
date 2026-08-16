@@ -11,11 +11,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-import astock
-import astock_boards
-import market
+import review_jobs
 import review_warmup
-from api_common import _cached
 
 _errors_lock = threading.Lock()
 
@@ -45,52 +42,25 @@ def _run_parallel(
             fut.result()
 
 
+def _fill_from_jobs(jobs: list, bucket: dict[str, Any], errors: list[dict]) -> None:
+    _run_parallel(jobs, bucket, errors)
+
+
 def _fill_tencent(bucket: dict[str, Any], errors: list[dict]) -> None:
-    _grab("indices", lambda: _cached("indices", "live", 60, astock.index_quote), bucket, errors)
-    _grab("hsgt", lambda: _cached("hsgt", "live", 120, astock_boards.hsgt_realtime), bucket, errors)
+    _fill_from_jobs(review_jobs.tencent_jobs(), bucket, errors)
 
 
 def _fill_overview(bucket: dict[str, Any], errors: list[dict]) -> None:
-    _grab("overview", market.get_overview, bucket, errors)
+    _fill_from_jobs(review_jobs.overview_jobs(), bucket, errors)
 
 
 def _fill_em_top(bucket: dict[str, Any], errors: list[dict]) -> None:
     """Eastmoney-backed top rows used by the emotion panel."""
-    _run_parallel(
-        [
-            ("emotion", market.get_short_term_emotion),
-            (
-                "industry",
-                lambda: _cached(
-                    "industry",
-                    "20",
-                    300,
-                    lambda: astock.industry_comparison(top_n=20),
-                    valid=lambda d: bool(isinstance(d, dict) and d.get("top")),
-                ),
-            ),
-        ],
-        bucket,
-        errors,
-    )
+    _fill_from_jobs(review_jobs.em_top_jobs(), bucket, errors)
 
 
 def _fill_em_extra(bucket: dict[str, Any], errors: list[dict]) -> None:
-    _run_parallel(
-        [
-            (
-                "lhb",
-                lambda: _cached(
-                    "dt_daily",
-                    "auto:40:all",
-                    600,
-                    lambda: astock.daily_dragon_tiger(None, None, top=40),
-                ),
-            ),
-        ],
-        bucket,
-        errors,
-    )
+    _fill_from_jobs(review_jobs.em_extra_jobs(), bucket, errors)
 
 
 def build_review_snapshot(*, scope: str = "full") -> dict[str, Any]:
@@ -127,3 +97,36 @@ def build_review_snapshot(*, scope: str = "full") -> dict[str, Any]:
         "errors": errors,
         "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M:%S"),
     }
+
+
+def collect_review_bundle(
+    *,
+    sector_kind: str = "01",
+    news_source: str = "cls",
+    watch_codes: list[str] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Full 复盘快照 plus live panels. Mail and 问 AI share this."""
+    snap = build_review_snapshot(scope="full")
+    bucket: dict[str, Any] = {}
+    errors: list[str] = []
+    if isinstance(snap, dict):
+        for key in ("indices", "overview", "emotion", "industry", "lhb", "hsgt"):
+            bucket[key] = snap.get(key)
+        for err in snap.get("errors") or []:
+            if isinstance(err, dict):
+                errors.append(f"{err.get('name')}: {err.get('error')}"[:160])
+            else:
+                errors.append(str(err)[:160])
+
+    review_jobs.run_jobs(
+        review_jobs.live_jobs(sector_kind=sector_kind, news_source=news_source),
+        bucket,
+        errors,
+    )
+    money = bucket.pop("money", None)
+    if isinstance(money, dict):
+        bucket["money_rows"] = money.get("rows")
+    elif isinstance(money, list):
+        bucket["money_rows"] = money
+    bucket["watch"] = review_jobs.watch_quotes(watch_codes)
+    return bucket, errors

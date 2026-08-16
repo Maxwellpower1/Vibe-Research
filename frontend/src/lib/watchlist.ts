@@ -1,5 +1,5 @@
 // 关注股票（自选股）—— 只存本地 localStorage，不上传、不进仓库。
-// 行情复用 /api/quote；复盘时把关注股行情一并喂给用户自己的 AI。
+// 行情走报价中心；复盘问 AI 由后端打包复盘上下文。
 
 import { useMemo, useSyncExternalStore } from "react";
 

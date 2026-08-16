@@ -1,7 +1,6 @@
-"""Pack Daily Review numbers into the same text snapshot the web AI uses.
+"""Pack 复盘上下文: one text snapshot for 问 AI and review mail.
 
-Section titles must stay in sync with frontend/src/lib/reviewContext.ts
-so the model sees one contract. Missing panels are listed; do not invent.
+Missing panels are listed; do not invent numbers.
 """
 from __future__ import annotations
 
@@ -30,6 +29,7 @@ EXPECTED = (
     "个股榜单",
     "大宗商品",
     "实时热点",
+    "自选",
     "龙虎榜",
     "资金利率",
 )
@@ -336,6 +336,24 @@ def _lhb(lhb: Any) -> str | None:
     return "\n".join(p for p in (head, body) if p)
 
 
+def _watch(rows: Any) -> str | None:
+    items = take(rows, 20)
+    if not items:
+        return None
+    lines = []
+    for r in items:
+        if not isinstance(r, dict):
+            continue
+        name = str(r.get("name") or "")
+        if not name:
+            continue
+        if r.get("price") is None and r.get("pct") is None:
+            lines.append(name)
+        else:
+            lines.append(_quote_line(name, r.get("price"), r.get("pct") if r.get("pct") is not None else r.get("change_pct"), r.get("amount")))
+    return "；".join(lines) if lines else None
+
+
 def _rates(data: dict) -> str | None:
     bits: list[str] = []
     hsgt = data.get("hsgt") if isinstance(data.get("hsgt"), dict) else None
@@ -346,6 +364,48 @@ def _rates(data: dict) -> str | None:
             f"沪{latest.get('hgt_yi') if latest.get('hgt_yi') is not None else '—'}亿 "
             f"深{latest.get('sgt_yi') if latest.get('sgt_yi') is not None else '—'}亿".strip()
         )
+    etf = data.get("etf_flow")
+    if isinstance(etf, dict):
+        etf = etf.get("rows")
+    if isinstance(etf, list) and etf:
+        rows = [r for r in etf if isinstance(r, dict)]
+        inn = sorted(rows, key=lambda r: float(r.get("main_net_inflow") or 0), reverse=True)[:5]
+        out = sorted(rows, key=lambda r: float(r.get("main_net_inflow") or 0))[:5]
+        if inn:
+            bits.append("ETF流入 " + "；".join(
+                f"{r.get('name')} {fmt_yi(r.get('main_net_inflow'))} {fmt_signed_pct(r.get('change_pct'))}"
+                for r in inn
+            ))
+        if out:
+            bits.append("ETF流出 " + "；".join(
+                f"{r.get('name')} {fmt_yi(r.get('main_net_inflow'))} {fmt_signed_pct(r.get('change_pct'))}"
+                for r in out
+            ))
+    sh_raw = data.get("sh_chg")
+    if isinstance(sh_raw, dict):
+        sh_raw = sh_raw.get("rows")
+    chg = take(sh_raw, 5)
+    if chg:
+        bits.append("增减持 " + "；".join(
+            f"{r.get('name')} {r.get('change_type')} {r.get('person')}"
+            for r in chg if isinstance(r, dict)
+        ))
+    lpr = data.get("lpr")
+    lpr_row = None
+    if isinstance(lpr, dict):
+        lpr_row = lpr.get("latest") if isinstance(lpr.get("latest"), dict) else None
+    elif isinstance(lpr, list) and lpr and isinstance(lpr[0], dict):
+        lpr_row = lpr[0]
+    if lpr_row:
+        bits.append(
+            f"LPR {lpr_row.get('date')} 1Y {lpr_row.get('one_year')}% 5Y {lpr_row.get('five_year')}%"
+        )
+    bond = data.get("bond_y") if isinstance(data.get("bond_y"), dict) else None
+    if bond and isinstance(bond.get("terms"), dict) and bond["terms"]:
+        t = bond["terms"]
+        pick = [f"{k} {t[k]}%" for k in ("2Y", "10Y", "30Y") if t.get(k) is not None]
+        spr = f" 10Y-2Y {bond['spread_10_2']:.2f}" if bond.get("spread_10_2") is not None else ""
+        bits.append(f"国债 {bond.get('date')} {' '.join(pick)}{spr}".strip())
     return "\n".join(bits) if bits else None
 
 
@@ -361,6 +421,7 @@ def pack_review_context(data: dict[str, Any]) -> str:
         _section("个股榜单", _rank(data)),
         _section("大宗商品", _commodities(data.get("commodities"))),
         _section("实时热点", _news(data.get("news"))),
+        _section("自选", _watch(data.get("watch"))),
         _section("龙虎榜", _lhb(data.get("lhb"))),
         _section("资金利率", _rates(data)),
     ])

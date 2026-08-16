@@ -6,7 +6,8 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { PageFallback } from "@/components/ui/PageFallback";
 import { WatchlistFeed } from "@/components/WatchlistFeed";
-import { api, ApiError, type AShareLightBar, type Quote } from "@/lib/api";
+import { ApiError, type AShareLightBar } from "@/lib/api";
+import { useQuotes } from "@/lib/quoteHub";
 import { loadLightKline } from "@/lib/lightKline";
 import { getAShareSession } from "@/lib/ashareSession";
 import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
@@ -68,8 +69,6 @@ export function AShareLightChart({
   });
   const [input, setInput] = useState("");
   const [hint, setHint] = useState<string | null>(null);
-  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
-  const [quotesLoading, setQuotesLoading] = useState(false);
   const [resolution, setResolution] = useState<Res>("1");
   const [bars, setBars] = useState<AShareLightBar[]>([]);
   const [meta, setMeta] = useState<{
@@ -126,17 +125,7 @@ export function AShareLightChart({
     persist(codes.filter((x) => x !== c));
   };
 
-  const loadQuotes = useCallback(async () => {
-    if (!codes.length) { setQuotes({}); return; }
-    setQuotesLoading(true);
-    try {
-      setQuotes(await api.quote(codes.join(",")));
-    } catch {
-      setQuotes({});
-    } finally {
-      setQuotesLoading(false);
-    }
-  }, [codes]);
+  const quotes = useQuotes(codes);
 
   const loadChart = useCallback(async (sym: string, res: Res) => {
     if (!sym) {
@@ -166,7 +155,6 @@ export function AShareLightChart({
     }
   }, []);
 
-  useEffect(() => { void loadQuotes(); }, [loadQuotes]);
   useEffect(() => { void loadChart(selected, resolution); }, [selected, resolution, loadChart]);
 
   // Sync selection <- URL deep link (?code=)
@@ -504,11 +492,11 @@ export function AShareLightChart({
   const chgPct = chg != null && base ? (chg / base) * 100 : null;
   const hovering = hoverIdx != null && bars[hoverIdx] != null;
   const selQuote = selected ? quotes[selected] : undefined;
-  const quoteChgPct = chgPct ?? selQuote?.change_pct ?? null;
+  const quoteChgPct = chgPct ?? selQuote?.pct ?? null;
   const quoteChgAmt = chg != null
     ? chg
-    : selQuote != null
-      ? selQuote.price - selQuote.last_close
+    : selQuote != null && selQuote.prev
+      ? selQuote.price - selQuote.prev
       : null;
 
   // Keep chart DOM mounted so ECharts survives tab switches (hide when not on kline)
@@ -588,7 +576,7 @@ export function AShareLightChart({
                 </div>
               ) : codes.map((c) => {
                 const q = quotes[c];
-                const pct = q?.change_pct;
+                const pct = q?.pct;
                 const active = c === selected;
                 return (
                   <button
@@ -668,10 +656,10 @@ export function AShareLightChart({
                   </div>
                   <button
                     type="button"
-                    onClick={() => { void loadQuotes(); if (selected) void loadChart(selected, resolution); }}
+                    onClick={() => { if (selected) void loadChart(selected, resolution); }}
                     className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground"
                   >
-                    <RefreshCw className={cn("h-3.5 w-3.5", (quotesLoading || chartLoading) && "animate-spin")} />
+                    <RefreshCw className={cn("h-3.5 w-3.5", chartLoading && "animate-spin")} />
                     刷新
                   </button>
                 </div>
@@ -762,19 +750,19 @@ export function AShareLightChart({
                           { k: "低", v: fmtPrice(bar.low) },
                           { k: "收", v: fmtPrice(bar.close) },
                           { k: "量", v: fmtVol(bar.volume) },
-                          { k: "昨收", v: fmtPrice(base ?? selQuote?.last_close) },
+                          { k: "昨收", v: fmtPrice(base ?? selQuote?.prev) },
                         ]
                       : bar
                         ? [
                             { k: "价", v: fmtPrice(bar.close) },
                             { k: "量", v: fmtVol(bar.volume) },
-                            { k: "昨收", v: fmtPrice(meta?.prev_close ?? selQuote?.last_close) },
+                            { k: "昨收", v: fmtPrice(meta?.prev_close ?? selQuote?.prev) },
                             { k: "现价", v: fmtPrice(selQuote?.price) },
                           ]
                         : [
                             { k: "现价", v: fmtPrice(selQuote?.price) },
-                            { k: "昨收", v: fmtPrice(selQuote?.last_close) },
-                            { k: "涨跌%", v: fmtPct(selQuote?.change_pct) },
+                            { k: "昨收", v: fmtPrice(selQuote?.prev) },
+                            { k: "涨跌%", v: fmtPct(selQuote?.pct) },
                           ]
                     ).map((m) => (
                       <div key={m.k} className="rounded-lg bg-muted/25 px-2.5 py-2">
@@ -788,10 +776,10 @@ export function AShareLightChart({
                     <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground/70">估值快照</p>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       {[
-                        { k: "PE(TTM)", v: selQuote?.pe_ttm != null ? fmtPrice(selQuote.pe_ttm) : "—" },
-                        { k: "PB", v: selQuote?.pb != null ? fmtPrice(selQuote.pb) : "—" },
-                        { k: "换手%", v: selQuote?.turnover_pct != null ? fmtPrice(selQuote.turnover_pct) : "—" },
-                        { k: "市值(亿)", v: selQuote?.mcap_yi != null ? fmtPrice(selQuote.mcap_yi) : "—" },
+                        { k: "PE(TTM)", v: selQuote?.pe_ttm ? fmtPrice(selQuote.pe_ttm) : "—" },
+                        { k: "PB", v: selQuote?.pb ? fmtPrice(selQuote.pb) : "—" },
+                        { k: "换手%", v: selQuote?.turnover ? fmtPrice(selQuote.turnover) : "—" },
+                        { k: "市值(亿)", v: selQuote?.mcap_yi ? fmtPrice(selQuote.mcap_yi) : "—" },
                       ].map((m) => (
                         <div key={m.k} className="rounded-lg bg-muted/25 px-2.5 py-2">
                           <p className="text-[10px] text-muted-foreground">{m.k}</p>

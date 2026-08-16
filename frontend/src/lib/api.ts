@@ -270,6 +270,7 @@ export interface WorldIndex {
 export interface MarketQuote {
   symbol: string; name: string; price: number; pct: number;
   change?: number; prev?: number; amount?: number; turnover?: number;
+  pe_ttm?: number; pb?: number; mcap_yi?: number;
 }
 export interface SectorBoard {
   code: string; raw_code?: string; name: string;
@@ -1278,6 +1279,13 @@ export interface ReviewMailRun {
   error?: string;
 }
 
+export interface ReviewContextPacked {
+  text: string;
+  missing: string[];
+  prompt_task: string;
+  errors: string[];
+}
+
 export const api = {
   health: () => get<{ ok: boolean }>("/health"),
   reviewMailStatus: () => get<ReviewMailStatus>("/market/review-mail"),
@@ -1288,6 +1296,11 @@ export const api = {
     const p = new URLSearchParams({ scope: opts?.scope ?? "full" });
     return get<ReviewSnapshot>(`/market/review-snapshot?${p}`);
   },
+  reviewContext: (body: {
+    watch_codes?: string[];
+    sector_kind?: "01" | "02";
+    news_source?: "cls" | "lives";
+  }) => request<ReviewContextPacked>("/market/review-context", "POST", body),
   stockFlow: (top = 15, board?: string | null) =>
     get<StockFlow>(`/market/stock-flow?top=${top}${board ? `&board=${encodeURIComponent(board)}` : ""}`),
   /** Quote-row 主力净额/净占比. 60ms 合并, 对齐参考看板 api.stockFlow(code). */

@@ -12,11 +12,10 @@ import logging
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import mailer
 import review_context
@@ -193,60 +192,11 @@ def _archive(day: str, snap: str, content: str) -> None:
     (data_dir() / "latest.md").write_text(content, encoding="utf-8")
 
 
-def _settle(name: str, fn: Callable[[], Any], bucket: dict[str, Any], errors: list[str]) -> None:
-    try:
-        bucket[name] = fn()
-    except Exception as e:
-        bucket[name] = None
-        errors.append(f"{name}: {e}"[:160])
-        log.warning("review-mail collect %s failed: %s", name, e)
-
-
 def collect_review_data() -> tuple[dict[str, Any], list[str]]:
-    """Pull the same cockpit sources the web snapshot uses. One miss does not abort."""
-    import astock
-    import astock_boards
-    import cockpit_live
-    import cross_section
+    """Same bundle as 问 AI. One miss does not abort."""
     import review_snapshot
 
-    bucket: dict[str, Any] = {}
-    errors: list[str] = []
-    snap = review_snapshot.build_review_snapshot(scope="full")
-    if isinstance(snap, dict):
-        bucket.update({
-            "indices": snap.get("indices"),
-            "overview": snap.get("overview"),
-            "emotion": snap.get("emotion"),
-            "industry": snap.get("industry"),
-            "lhb": snap.get("lhb"),
-            "hsgt": snap.get("hsgt"),
-        })
-
-    jobs: list[tuple[str, Callable[[], Any]]] = [
-        ("world", cockpit_live.world_indices),
-        ("sector_up", lambda: cockpit_live.sector_boards("01", "0", 12)),
-        ("sector_down", lambda: cockpit_live.sector_boards("01", "1", 12)),
-        ("board_flow", lambda: cockpit_live.board_flow_intraday(12, curves=False)),
-        ("rank_hot", lambda: cockpit_live.stock_rank("amount", 0, 10)),
-        ("rank_up", lambda: cockpit_live.stock_rank("changepercent", 0, 10)),
-        ("rank_down", lambda: cockpit_live.stock_rank("changepercent", 1, 10)),
-        ("commodities", cockpit_live.futures_quotes),
-        ("news", lambda: astock.cls_telegraph(12)),
-        ("breadth", cross_section.market_breadth),
-        ("money", lambda: astock_boards.stock_moneyflow(12)),
-    ]
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futs = [pool.submit(_settle, name, fn, bucket, errors) for name, fn in jobs]
-        for fut in futs:
-            fut.result()
-
-    money = bucket.pop("money", None)
-    if isinstance(money, dict):
-        bucket["money_rows"] = money.get("rows")
-    elif isinstance(money, list):
-        bucket["money_rows"] = money
-    return bucket, errors
+    return review_snapshot.collect_review_bundle()
 
 
 def _run_llm(cfg: dict[str, str], prompt: str, snap: str) -> str:

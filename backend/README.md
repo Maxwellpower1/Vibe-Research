@@ -32,6 +32,7 @@ python3 -m venv .venv
 | `GET /api/cls-telegraph` | 财联社电报（全市场快讯，零 key） | requests |
 | **资金面·筹码·信号（v3.3）** | `/api/margin` · `/block-trade` · `/holders` · `/dividend` · `/fund-flow` · `/dragon-tiger` · `/dragon-tiger/daily`（全市场龙虎榜） · `/lockup` · `/blocks` · `/hot-concepts` · `/investor-qa` | requests |
 | `GET /api/market/review-snapshot` | 每日复盘聚合（`scope=paint|top|full`）：先腾讯指数/总览，完成后再情绪+行业强弱，再龙虎 | 缓存命中秒回 |
+| `POST /api/market/review-context` | 复盘上下文（问 AI / 与邮件同一套打包） | 复盘清单 + 缓存 |
 | `GET /api/market/review-mail` · `PUT /api/market/review-mail` · `POST /api/market/review-mail/run` | 定时复盘邮件状态（不回 SMTP 密码 / API key）· 保存开关/时间/收件人 · 立刻试发 | SMTP + `VR_REVIEW_LLM_*` |
 | `GET /api/market/hsgt` | 北向资金分钟流向 | requests |
 | `GET /api/market/quotes` · `/boards` · `/board-stocks` · `/rank` · `/board-flow-intraday` · `/commodities` · `/commodity-minutes` | 批量报价(股票指数按代码 5s, 期货走 commodities 并行) / 板块热点 / 成分股(腾讯pt*) / 个股榜单(含成交额, 新浪) / 分钟板块资金 / 大宗商品 | 腾讯/新浪/东财(仅独有资金流) |

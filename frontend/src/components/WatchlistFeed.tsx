@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { RefreshCw, Loader2, ExternalLink, AlertCircle, Star } from "lucide-react";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { api, ApiError, type Announcement, type NewsItem } from "@/lib/api";
+import { useQuotes } from "@/lib/quoteHub";
 import { loadWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 
@@ -31,17 +32,12 @@ export function WatchlistFeed({
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [depNote, setDepNote] = useState<string | null>(null);
+  const hub = useQuotes(codes);
 
   const load = useCallback(async (cs: string[]) => {
     if (!cs.length) { setRows([]); return; }
     setLoading(true); setErr(null); setDepNote(null);
     try {
-      const nameOf: Record<string, string> = {};
-      try {
-        const quotes = await api.quote(cs.join(","));
-        for (const c of cs) if (quotes[c]?.name) nameOf[c] = quotes[c].name;
-      } catch { /* ignore: name is optional */ }
-
       const out: FeedRow[] = [];
       if (kind === "filings") {
         const res = await Promise.all(
@@ -49,7 +45,7 @@ export function WatchlistFeed({
         );
         for (const { c, a } of res)
           for (const x of a)
-            out.push({ code: c, name: nameOf[c] || c, when: x.date, title: x.title.replace(/^[^:：]*[:：]/, ""), meta: x.type, url: x.url });
+            out.push({ code: c, name: c, when: x.date, title: x.title.replace(/^[^:：]*[:：]/, ""), meta: x.type, url: x.url });
       } else {
         let dep: string | null = null;
         const res = await Promise.all(
@@ -62,7 +58,7 @@ export function WatchlistFeed({
         );
         for (const { c, n } of res)
           for (const x of n)
-            out.push({ code: c, name: nameOf[c] || c, when: x.发布时间 || "", title: x.新闻标题 || "", url: x.新闻链接 });
+            out.push({ code: c, name: c, when: x.发布时间 || "", title: x.新闻标题 || "", url: x.新闻链接 });
         if (dep && out.length === 0) setDepNote(dep);
       }
       const ts = (s: string) => {
@@ -123,7 +119,7 @@ export function WatchlistFeed({
             <a key={`${r.code}-${r.when}-${i}`} href={r.url || undefined} target={r.url ? "_blank" : undefined} rel="noreferrer"
               className={cn("group flex items-baseline gap-3 border-b border-border/30 pb-2 text-sm last:border-0", r.url && "cursor-pointer")}>
               <span className="w-20 shrink-0 font-mono text-xs text-muted-foreground/70">{(r.when || "").slice(kind === "filings" ? 0 : 5, kind === "filings" ? 10 : 16)}</span>
-              <span className="w-16 shrink-0 truncate text-xs text-primary/90" title={r.code}>{r.name}</span>
+              <span className="w-16 shrink-0 truncate text-xs text-primary/90" title={r.code}>{hub[r.code]?.name || r.name}</span>
               {kind === "filings" && r.meta && <span className="hidden w-20 shrink-0 truncate text-xs text-muted-foreground sm:block">{r.meta}</span>}
               <span className="flex-1 group-hover:text-primary">{r.title}</span>
               {r.url && <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/0 group-hover:text-primary/60" />}
