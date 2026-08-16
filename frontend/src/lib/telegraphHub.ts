@@ -151,3 +151,9 @@ export function loadTelegraph(src: FeedSource) {
 export function useTelegraph() {
   return useSyncExternalStore(subscribe, () => snap, () => snap);
 }
+
+/** Current feed items without subscribing. Used when packing the cockpit for AI. */
+export function peekTelegraphItems(src: FeedSource): ClsTelegraphItem[] {
+  const feed = src === "lives" ? snap.lives : snap.cls;
+  return feed?.items ?? [];
+}

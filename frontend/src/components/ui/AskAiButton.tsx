@@ -76,6 +76,8 @@ function saveChat(key: string, msgs: StoredMsg[]): void {
 interface Props {
   // 本分栏/本页要喂给用户 AI 的上下文，作为对话的系统上下文。
   context: string;
+  // 发送时再取一份(可异步). 复盘页用来补拉当前看板格子, 避免只喂渲染时的旧摘要.
+  getContext?: () => string | Promise<string>;
   suggestions?: string[];
   label?: string;
   // 用来在**同一路由内**再切分对话。不传则只按路由区分。
@@ -95,6 +97,7 @@ const TOOL_LABEL: Record<string, string> = {
   query_fund_flow_minute: "分钟资金",
   query_ths_limit_up: "涨停揭秘",
   query_etf_flow: "ETF资金",
+  query_etf_shares: "ETF份额",
   query_shareholder_changes: "增减持",
   query_lpr: "LPR",
   query_cn_bond_yield: "国债收益率",
@@ -111,7 +114,7 @@ interface ToolUse { name: string; arg: string }
 
 // 「问 AI」入口 —— 把当前分栏内容作为上下文，调用户自己配置的模型；
 // AI 可自行调 A股数据工具作答。结论由用户模型给出，本产品不校准、不负责。
-export function AskAiButton({ context, suggestions = [], label = "问 AI", scopeKey }: Props) {
+export function AskAiButton({ context, getContext, suggestions = [], label = "问 AI", scopeKey }: Props) {
   const { pathname } = useLocation();
   const chatKey = CHAT_KEY_PREFIX + pathname + (scopeKey ? `#${scopeKey}` : "");
 
@@ -215,8 +218,17 @@ export function AskAiButton({ context, suggestions = [], label = "问 AI", scope
     const startedKey = chatKeyRef.current;   // 这次请求属于哪份对话
     // 只有仍是「当前这次请求」才允许写 UI——旧请求的迟到 chunk 直接丢弃
     const alive = () => abortRef.current === ac && !ac.signal.aborted;
+    let ctx = context;
+    if (getContext) {
+      try {
+        ctx = await getContext();
+      } catch (e) {
+        console.warn("[ask-ai] getContext failed, fallback to prop", e);
+        ctx = context;
+      }
+    }
     try {
-      await chatStream(history, context, {
+      await chatStream(history, ctx, {
         onTool: (tool, args) => { if (alive()) patchLast((msg) => ({ ...msg, tools: [...(msg.tools || []), { name: tool, arg: argStr(args) }] })); },
         onDelta: (t) => { if (alive()) patchLast((msg) => ({ ...msg, content: msg.content + t })); },
       }, ac.signal);

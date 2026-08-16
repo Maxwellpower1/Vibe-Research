@@ -373,6 +373,39 @@ def cls_telegraph(limit: int = Query(50, ge=10, le=100)):
         raise HTTPException(502, f"财联社电报异常：{e}") from e
 
 
+@router.get("/api/market/etf-shares")
+def market_etf_shares(
+    code: str = Query("510300", description="6-digit ETF code"),
+    codes: str | None = Query(None, description="comma-separated, e.g. 510050,510300,510500,588000,159915,159919"),
+    n: int = Query(80, ge=20, le=250),
+):
+    """ETF daily shares (SSE/SZSE) + quarterly subscribe/redeem (Eastmoney). Cache 10 min."""
+    import etf_shares
+    many = [c.strip() for c in (codes or "").split(",") if c.strip()]
+    try:
+        if many:
+            key = f"{','.join(many)}:{n}"
+            data = _cached(
+                "etf_shares_many",
+                key,
+                600,
+                lambda: etf_shares.etf_shares_many(many, n),
+            )
+        else:
+            raw = (code or "").strip()
+            data = _cached(
+                "etf_shares",
+                f"{raw}:{n}",
+                600,
+                lambda: etf_shares.etf_shares(raw, n),
+            )
+        return {"data": data}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(502, f"ETF份额异常：{e}") from e
+
+
 @router.get("/api/market/etf-flow")
 def market_etf_flow(
     sort_by: str = Query("net_inflow", description="net_inflow|change_pct"),

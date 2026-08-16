@@ -28,6 +28,7 @@ import type { FeedSource } from "@/lib/telegraphHub";
 import { reviewPending } from "@/components/review/reviewPending";
 import { useReviewData } from "@/hooks/useReviewData";
 import { ApiError } from "@/lib/api";
+import { collectReviewContext, REVIEW_PROMPT_TASK } from "@/lib/reviewContext";
 import { hasLlm, chatStream } from "@/lib/llm";
 
 export function DailyReview() {
@@ -56,12 +57,14 @@ export function DailyReview() {
     if (!hasLlm()) { setNeedConfig(true); return; }
     setReviewLoading(true);
     setReview("");
-    const prompt =
-      `以下是今天 A 股大盘的客观数据：\n${d.dataSummary}\n\n` +
-      "请用中文做一段当天大盘复盘：整体涨跌、主要指数表现、盘面值得注意的点。" +
-      "只做客观陈述与多视角分析，不预测涨跌、不推荐任何标的、不构成投资建议。";
     try {
-      await chatStream([{ role: "user", content: prompt }], `今日大盘数据：${d.dataSummary}`, {
+      const snap = await collectReviewContext({
+        ...d.contextInput,
+        sectorKind,
+        newsSource,
+      });
+      const prompt = `以下是今天复盘驾驶舱的客观快照(与当前看板同源):\n${snap}\n\n${REVIEW_PROMPT_TASK}`;
+      await chatStream([{ role: "user", content: prompt }], snap, {
         onDelta: (t) => setReview((r) => r + t),
       });
     } catch (e) {
@@ -75,7 +78,8 @@ export function DailyReview() {
   const chainOn = d.seg === "chain";
 
   const moneyProps = {
-    sectors: d.sectors,
+    etfShares: d.etfShares,
+    etfSharesList: d.etfSharesList,
     etfFlow: d.etfFlow,
     etfSort: d.etfSort,
     onEtfSort: d.setEtfSort,
@@ -84,7 +88,6 @@ export function DailyReview() {
     shChg: d.shChg,
     shType: d.shType,
     onShType: d.setShType,
-    ovDone: d.ovDone,
     moneyDone: d.moneyDone,
   };
 
@@ -311,7 +314,12 @@ export function DailyReview() {
         AI 复盘
       </button>
       <AskAiButton
-        context={`今日大盘数据：${d.dataSummary}`}
+        context={d.dataSummary}
+        getContext={() => collectReviewContext({
+          ...d.contextInput,
+          sectorKind,
+          newsSource,
+        })}
         label="问 AI"
         suggestions={["今天大盘怎么走", "哪些指数领涨领跌", "盘面有什么值得注意"]}
       />
@@ -344,6 +352,9 @@ export function DailyReview() {
               </button>
             </div>
           </div>
+          <p className="mt-1 text-[10px] text-slate-500">
+            已带入当前看板各格快照 (指数 / 板块 / 资金 / 榜单 / 实时热点 / 涨跌停等)
+          </p>
           {needConfig && (
             <div className="mt-3 flex items-center gap-2 rounded border border-warning/30 bg-warning/5 p-3 text-sm text-slate-400">
               <AlertCircle className="h-4 w-4 shrink-0 text-warning" />

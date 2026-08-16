@@ -127,6 +127,7 @@ Uses your existing subscription instead of paying per API call. Supported: **Cla
 - **Requirements**: the backend runs on your own machine, and the CLI is installed, logged in and on your `PATH`.
 - Pick one on the "Bring your AI" page — no key needed.
 - ⚠️ CLIs answer in one shot without multi-step tool calls, so this suits flows where the data is already prepared (daily review, takeaways, asking about the stock currently on screen). For open-ended questions where the AI should fetch data itself, use API mode.
+- **Review snapshot**: "AI review / Ask AI" packs the current cockpit cells into one text blob (indices, breadth, limit boards, sectors, flows, ranks, commodities, full 7x24 telegraph text with tags, watchlist, dragon-tiger, rates). Missing cells are marked so the model does not invent numbers. See `frontend/src/lib/reviewContext.ts`.
 
 ### 2. API mode (bring your own key)
 

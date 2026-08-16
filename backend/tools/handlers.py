@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 import astock
+import etf_shares
 import gstock
 import market
 import newsradar
@@ -601,6 +602,10 @@ _HANDLERS = {
     "query_margin": lambda a: _pick(astock.margin_trading(str(a["code"])),
                                     ("date", "rzye", "rzmre", "rzche", "rqye", "rzrqye"), 15),
     "query_holders": lambda a: _pick(astock.holder_num_change(str(a["code"])), None, 10),
+    "query_etf_shares": lambda a: etf_shares.etf_shares(
+        str(a.get("code") or "510300"),
+        int(a.get("n") or 80),
+    ),
     "query_etf_flow": lambda a: {
         "sort_by": a.get("sort_by") or "net_inflow",
         "rows": _pick(

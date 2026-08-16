@@ -84,7 +84,7 @@ def _sectors() -> list[dict]:
 
 
 def get_overview() -> dict:
-    """市场情绪 + 板块资金（含缓存）。资金轮动由前端从 sectors 头尾取。"""
+    """市场情绪 + 板块资金（含缓存）。"""
     def build():
         return {
             "sentiment": _sentiment(),

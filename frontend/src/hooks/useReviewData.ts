@@ -1,14 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   api, type IndexQuote, type MarketOverview, type ShortTermEmotion,
   type DailyDragonTiger, type IndustryData,
-  type EtfFlow, type ShareholderChanges,
+  type EtfFlow, type EtfShares, ETF_SHARE_WATCH, type ShareholderChanges,
   type LprData, type CnBondYield, type ReviewSnapshot, type HsgtLive,
   type MarketBreadth,
 } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { useSegment } from "@/components/ui/SegmentNav";
 import { formatClock } from "@/lib/freshness";
+import { buildReviewContext, type ReviewContextInput } from "@/lib/reviewContext";
 import { useWatchCodes } from "@/lib/watchlist";
 
 const SEG_KEYS = ["boards", "money", "chain"] as const;
@@ -22,6 +23,8 @@ export function useReviewData() {
   const [lhb, setLhb] = useState<DailyDragonTiger | null>(null);
   const [industry, setIndustry] = useState<IndustryData | null>(null);
   const [etfFlow, setEtfFlow] = useState<EtfFlow | null>(null);
+  const [etfShares, setEtfShares] = useState<EtfShares | null>(null);
+  const [etfSharesList, setEtfSharesList] = useState<EtfShares[]>([]);
   const [etfSort, setEtfSort] = useState<"net_inflow" | "change_pct">("net_inflow");
   const [shChg, setShChg] = useState<ShareholderChanges | null>(null);
   const [shType, setShType] = useState<"all" | "增持" | "减持">("all");
@@ -153,17 +156,49 @@ export function useReviewData() {
     return () => { cancelled = true; };
   }, [etfSort, shType]);
 
-  const p50 = breadth?.p50;
-  const dataSummary = (indices.length
-    ? indices.map((i) => `${i.name} ${i.price}（${i.change_pct > 0 ? "+" : ""}${i.change_pct}%）`).join("；")
-    : "（指数数据未取到）")
-    + (p50 != null ? `；全市场中位涨跌 ${p50 > 0 ? "+" : ""}${p50}%（n=${breadth?.n ?? "—"}）` : "");
+  useEffect(() => {
+    let cancelled = false;
+    api.etfSharesBatch(ETF_SHARE_WATCH.map((x) => x.code), 80).then((d) => {
+      if (cancelled) return;
+      const items = d.items ?? [];
+      setEtfSharesList(items);
+      setEtfShares(items.find((x) => x.code === "510300") ?? items[0] ?? null);
+    }).catch(() => {
+      if (cancelled) return;
+      setEtfSharesList([]);
+      setEtfShares(null);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const contextInput: ReviewContextInput = useMemo(() => ({
+    indices,
+    overview,
+    emotion,
+    industry,
+    lhb,
+    etfFlow,
+    etfShares,
+    etfSharesList,
+    shChg,
+    lpr,
+    bondY,
+    hsgt,
+    breadth: breadth ?? null,
+    watchCodes,
+  }), [
+    indices, overview, emotion, industry, lhb, etfFlow, etfShares, etfSharesList,
+    shChg, lpr, bondY, hsgt, breadth, watchCodes,
+  ]);
+  const dataSummary = useMemo(() => buildReviewContext(contextInput), [contextInput]);
 
   return {
     emotion,
     breadth,
     lhb,
     etfFlow,
+    etfShares,
+    etfSharesList,
     etfSort,
     setEtfSort,
     shChg,
@@ -183,8 +218,8 @@ export function useReviewData() {
     seg,
     setSeg,
     dataSummary,
+    contextInput,
     sentiment: overview?.sentiment,
-    sectors: overview?.sectors || [],
     indTop: industry?.top?.[0],
     indBot: industry?.bottom?.[0],
   };

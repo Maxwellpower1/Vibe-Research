@@ -1,20 +1,19 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import * as echarts from "echarts";
-import { Activity, ArrowDownUp, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, ShieldAlert, TrendingUp } from "lucide-react";
 import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { PctChip } from "@/components/review/PctChip";
 import { fmt, pctColor } from "@/components/review/format";
 import { reviewPending } from "@/components/review/reviewPending";
-import type {
-  CnBondYield, EtfFlow, LprData, SectorFlow, ShareholderChanges,
-} from "@/lib/api";
+import { ETF_SHARE_WATCH, type CnBondYield, type EtfFlow, type EtfShares, type LprData, type ShareholderChanges } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const box = "overflow-hidden rounded-md border border-border/60 bg-card/80";
 
 interface Props {
-  sectors: SectorFlow[];
+  etfShares: EtfShares | null;
+  etfSharesList?: EtfShares[];
   etfFlow: EtfFlow | null;
   etfSort: "net_inflow" | "change_pct";
   onEtfSort: (v: "net_inflow" | "change_pct") => void;
@@ -23,12 +22,12 @@ interface Props {
   shChg: ShareholderChanges | null;
   shType: "all" | "增持" | "减持";
   onShType: (v: "all" | "增持" | "减持") => void;
-  ovDone: boolean;
   moneyDone: boolean;
 }
 
 export function ReviewMoneySeg({
-  sectors,
+  etfShares,
+  etfSharesList = [],
   etfFlow,
   etfSort,
   onEtfSort,
@@ -37,7 +36,6 @@ export function ReviewMoneySeg({
   shChg,
   shType,
   onShType,
-  ovDone,
   moneyDone,
 }: Props) {
   const bondChartRef = useRef<HTMLDivElement>(null);
@@ -112,41 +110,7 @@ export function ReviewMoneySeg({
 
   return (
     <div className="space-y-3 p-1">
-      <div>
-        <SectionHeader
-          icon={<ArrowDownUp className="h-3.5 w-3.5 text-cyan-400" />}
-          title="资金轮动速览"
-          hint="行业级净流入 / 流出"
-          meta={sectors.length ? `${sectors.length} 行业` : (ovDone ? "暂无" : "加载中…")}
-        />
-        <div className="grid gap-2 md:grid-cols-2">
-          {[
-            { title: "流入 Top", icon: TrendingUp, color: "text-danger", rows: sectors.slice(0, 6) },
-            { title: "流出 Top", icon: TrendingDown, color: "text-success", rows: [...sectors].slice(-6).reverse() },
-          ].map((col) => (
-            <div key={col.title} className={cn(box, "p-3")}>
-              <h4 className={cn("mb-2 flex items-center gap-1.5 text-xs font-semibold", col.color)}>
-                <col.icon className="h-3.5 w-3.5" /> {col.title}
-              </h4>
-              {col.rows.length === 0 ? (
-                reviewPending(ovDone)
-              ) : (
-                <div className="space-y-0.5">
-                  {col.rows.map((s, i) => (
-                    <div key={s.name} className="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-slate-800/50">
-                      <span className="w-4 text-[10px] text-slate-500">{i + 1}</span>
-                      <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                      <PctChip pct={s.pct} />
-                      <span className={cn("w-16 text-right font-mono text-[11px]", pctColor(s.net))}>{s.net > 0 ? "+" : ""}{fmt(s.net)} 亿</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
+      <EtfShareBlock items={etfSharesList} fallback={etfShares} />
       <div>
         <SectionHeader
           icon={<TrendingUp className="h-3.5 w-3.5 text-cyan-400" />}
@@ -337,6 +301,149 @@ export function ReviewMoneySeg({
         </div>
         <p className="mt-1 text-[10px] text-slate-500">公开披露数据，仅供了解变动事实，不构成买卖建议。</p>
       </div>
+    </div>
+  );
+}
+
+const ETF_SHARE_COLORS = ["#38bdf8", "#22d3ee", "#f59e0b", "#a78bfa", "#34d399", "#f472b6"] as const;
+
+function EtfShareBlock({ items, fallback }: { items: EtfShares[]; fallback: EtfShares | null }) {
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartObj = useRef<echarts.ECharts | null>(null);
+  const list = items.length ? items : (fallback ? [fallback] : []);
+  const rows = ETF_SHARE_WATCH.map((w, i) => ({
+    ...w,
+    color: ETF_SHARE_COLORS[i] ?? ETF_SHARE_COLORS[0],
+    item: list.find((x) => x.code === w.code) ?? null,
+  }));
+  const dates = [...new Set(rows.flatMap((r) => (r.item?.daily ?? []).map((d) => d.date)))].sort();
+  const ready = dates.length >= 2 && rows.some((r) => (r.item?.daily?.length ?? 0) >= 2);
+  const asOf = rows.map((r) => r.item?.latest?.date).find(Boolean);
+  const chartKey = rows.map((r) => {
+    const d = r.item?.daily ?? [];
+    const last = d[d.length - 1];
+    return `${r.code}:${d.length}:${last?.date ?? ""}:${last?.shares_yi ?? ""}`;
+  }).join("|");
+
+  useEffect(() => {
+    const el = chartRef.current;
+    if (!el || !ready) return;
+    let chart = chartObj.current;
+    if (!chart || chart.getDom() !== el) {
+      chart?.dispose();
+      chart = echarts.init(el, undefined, { renderer: "canvas" });
+      chartObj.current = chart;
+    }
+    const cssHsl = (name: string, fallbackColor: string) => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return raw ? `hsl(${raw})` : fallbackColor;
+    };
+    const cText = cssHsl("--chart-text", "#94a3b8");
+    const cAxis = cssHsl("--chart-axis", "#475569");
+    const cGrid = cssHsl("--chart-grid", "#334155");
+    chart.setOption({
+      animation: false,
+      legend: {
+        top: 0,
+        right: 0,
+        itemWidth: 10,
+        itemHeight: 6,
+        textStyle: { color: cText, fontSize: 10 },
+        data: rows.filter((r) => r.item).map((r) => r.label),
+      },
+      grid: { left: 44, right: 8, top: 22, bottom: 22 },
+      tooltip: {
+        trigger: "axis",
+        formatter: (params: unknown) => {
+          const arr = (Array.isArray(params) ? params : [params]) as Array<{
+            axisValue?: string; seriesName?: string; data?: number | null; marker?: string;
+          }>;
+          if (!arr.length) return "";
+          const lines = arr
+            .filter((p) => p.data != null && Number.isFinite(Number(p.data)))
+            .map((p) => `${p.marker || ""}${p.seriesName} ${Number(p.data).toFixed(2)} 亿份`);
+          return [`${arr[0]?.axisValue || ""}`, ...lines].join("<br/>");
+        },
+      },
+      xAxis: {
+        type: "category",
+        data: dates.map((d) => d.slice(5)),
+        axisLabel: { color: cText, fontSize: 9 },
+        axisLine: { lineStyle: { color: cAxis } },
+      },
+      yAxis: {
+        type: "value",
+        scale: true,
+        axisLabel: { color: cText, fontSize: 9, formatter: (v: number) => `${v}` },
+        splitLine: { lineStyle: { color: cGrid, opacity: 0.25 } },
+      },
+      series: rows.filter((r) => r.item).map((r) => {
+        const byDate = new Map((r.item?.daily ?? []).map((d) => [d.date, d.shares_yi]));
+        return {
+          name: r.label,
+          type: "line" as const,
+          data: dates.map((d) => byDate.get(d) ?? null),
+          showSymbol: false,
+          smooth: 0.15,
+          connectNulls: false,
+          lineStyle: { color: r.color, width: 2 },
+        };
+      }),
+    }, { notMerge: true });
+    requestAnimationFrame(() => chart?.resize());
+    const ro = new ResizeObserver(() => chart?.resize());
+    ro.observe(el);
+    return () => { ro.disconnect(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, chartKey]);
+
+  return (
+    <div>
+      <SectionHeader
+        icon={<Activity className="h-3.5 w-3.5 text-cyan-400" />}
+        title="ETF 份额"
+        hint="上交所/深交所日频 · 亿份"
+        meta={asOf ? `${asOf} · ${dates.length} 日` : "加载中…"}
+      />
+      <div className={cn(box, "grid gap-3 p-3 md:grid-cols-[minmax(0,1fr)_minmax(280px,38%)] md:items-stretch")}>
+        {!ready ? (
+          <p className="flex items-center justify-center py-6 text-center text-[11px] text-slate-600">份额日线加载中, 首次会回补交易所缓存</p>
+        ) : (
+          <div ref={chartRef} className="h-[200px] w-full min-w-0" />
+        )}
+        <div className="overflow-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                {["代码", "名称", "最新份额", "日增", "日增%"].map((h) => (
+                  <th key={h} className={h === "代码" || h === "名称" ? "" : "num"}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.code}>
+                  <td className="font-mono text-xs">
+                    <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full" style={{ background: r.color }} />
+                    {r.code}
+                  </td>
+                  <td className="font-medium">{r.item?.name || r.label}</td>
+                  <td className="num font-mono text-xs">
+                    {r.item?.latest?.shares_yi != null ? r.item.latest.shares_yi.toFixed(2) : "—"}
+                  </td>
+                  <td className={cn("num font-mono text-xs", pctColor(r.item?.chg_yi ?? 0))}>
+                    {r.item?.chg_yi == null ? "—" : `${r.item.chg_yi > 0 ? "+" : ""}${r.item.chg_yi.toFixed(2)}`}
+                  </td>
+                  <td className={cn("num font-mono text-xs", pctColor(r.item?.chg_pct ?? 0))}>
+                    {r.item?.chg_pct == null ? "—" : `${r.item.chg_pct > 0 ? "+" : ""}${r.item.chg_pct}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p className="mt-1 text-[10px] text-slate-500">沪市日线来自上交所 ETF 规模披露, 深市来自深交所基金规模。只呈现事实, 不构成买卖建议。</p>
     </div>
   );
 }

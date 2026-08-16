@@ -71,6 +71,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - **期货日 K / 个股板块 / 直播快讯**：`GET /api/market/future-daily?code=nf_AU0`（新浪内盘/外盘日 K）· `GET /api/market/stock-boards?code=600519` · `GET /api/market/stock-boards-batch?codes=`（东财行业/地域/概念）· `GET /api/market/lives`（新浪 7×24，失败回退华尔街见闻；不进驾驶舱格子，快讯仍是右下角球）
 - **涨跌幅分位 / 成交额榜 / 真假板 / 同花顺成份**：`GET /api/market/breadth`（全 A p10–p90 + 8 档直方图，挂情绪格；新浪 `hs_a` 按页拉满，单页上限约 100，不足则腾讯批量）· 成交额榜 / 个股榜走新浪 `hs_a` · 涨跌停池与短线情绪共用东财四池原始缓存（180 秒）· 腾讯买一/卖一标真假封（只扫池内标的）· `GET /api/market/ths-profile` / `ths-rotation`（shy313 同花顺概念/行业，24h 缓存 `~/.vibe-research/ths-ext.json`）
 - **板块热点成分股**：默认左领涨 / 右领跌；点板块后原来的成分股列表出在另一半（再点或关回双列）。成分股走腾讯 `getBoardRankList`（`pt*` 代码）；主力净流仍补东财 `ulist`（独有字段）
+- **ETF 份额**：`GET /api/market/etf-shares?code=510300` 或 `?codes=510050,510300,510500,588000,159915,159919`。沪市走上交所日频（万份/1e4），深市走深交所基金规模（份/1e8），本地缓存；季报申购/赎回仍走东财。复盘资金页一张图看这六只
 - **已去掉的闲置/兜底东财封装**：人气榜、akshare 个股概况、行业研报；板块排名/成分/个股榜/成交额/涨跌家数/全球指数不再用东财兜底。资金流、打板四池、公告研报等独有数据仍走东财。
 - **给 agent 用**：用 Claude Code 等 agent 跑本仓库时，要调 A 股数据就看 [`a-stock-data/SKILL.md`](a-stock-data/SKILL.md)——每个接口都有 copy-paste 即用的代码。Vibe-Research 后端的数据层（`backend/astock.py`）也是从它移植的。
 - **运行依赖**：`pip install mootdx requests pandas stockstats`（自包含，v3.0 起已移除 akshare 依赖）。
@@ -190,6 +191,7 @@ cd frontend && npm install && npm run dev
   - Qwen / DeepSeek：装各自 CLI 并登录
 - 在「接入 AI 页 → 订阅接入」选一个即可，**无需填 key**。
 - 原理：后端 `cli_runtime.py` 检测本机命令并 `spawn` 它一次性作答（数据已在提示词里）。⚠️ CLI 不做多轮工具调用，适合「复盘 / 今日要点 / 个股页问 AI」这类**数据已备好**的场景；要 AI 自己现场调数据工具的自由问答，用下面的「API 接入」。
+- **复盘快照**：点「AI 复盘 / 问 AI」时，前端把当前驾驶舱各格打成一份文本（指数 / 涨跌分布 / 涨跌停 / 板块 / 资金 / 个股榜 / 商品 / 实时热点 7×24 全文 / 自选 / 龙虎 / 利率），缺格标明「未取到」。实现见 `frontend/src/lib/reviewContext.ts`。
 
 ### 2. API 接入（填自己的 key）
 

@@ -166,3 +166,13 @@ export function useQuotes(codes: string[]): Record<string, HubQuote> {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, v]);
 }
+
+/** Read the hub without subscribing. Used when packing the current cockpit for AI. */
+export function peekQuotes(codes: string[]): Record<string, HubQuote> {
+  const result: Record<string, HubQuote> = {};
+  for (const c of codes) {
+    const e = entries.get(c);
+    if (e) result[c] = e;
+  }
+  return result;
+}

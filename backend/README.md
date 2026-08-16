@@ -39,7 +39,7 @@ python3 -m venv .venv
 | `GET /api/market/review-snapshot` | 每日复盘聚合（`scope=paint|top|full`）：先腾讯指数/总览，完成后再情绪+行业强弱，再龙虎 | 缓存命中秒回 |
 | `GET /api/market/board-flow` · `/hsgt` · `/hot-list` · `/stock-monitor` · `/price-anomaly` · `/limit-pools` | 板块资金流 / 北向 / 同花顺热榜 / 监控池 / 异动 / 打板池 | requests |
 | `GET /api/market/world-indices` · `/quotes` · `/boards` · `/board-stocks` · `/rank` · `/board-flow-intraday` · `/commodities` · `/commodity-minutes` | 全球关键指数 / 批量报价(股票指数按代码 5s, 期货走 commodities 并行) / 板块热点 / 成分股(腾讯pt*) / 个股榜单(含成交额, 新浪) / 分钟板块资金 / 大宗商品 | 腾讯/新浪/东财(仅独有资金流) |
-| `GET /api/market/spot-table` · `/chem-spot` · `/future-daily` · `/stock-boards` · `/stock-boards-batch` · `/stock-flows` · `/lives` | 生意社现期/基差 · 化工现货 · 新浪期货日K · 个股行业/概念(单票/批量) · 自选主力净额/净占比(对齐参考看板 ulist) · 新浪7x24(华尔街见闻兜底) | requests |
+| `GET /api/market/spot-table` · `/chem-spot` · `/future-daily` · `/stock-boards` · `/stock-boards-batch` · `/stock-flows` · `/lives` · `/etf-shares` | 生意社现期/基差 · 化工现货 · 新浪期货日K · 个股行业/概念(单票/批量) · 自选主力净额/净占比(对齐参考看板 ulist) · 新浪7x24(华尔街见闻兜底) · 沪/深ETF日频份额+季报申购赎回 | requests |
 | `GET /api/iwencai/status` · `/select` | 问财是否已配置 · 选股名单(产业链刷新) | IWENCAI_API_KEY |
 | `GET /api/market/breadth` · `/ths-profile` · `/ths-rotation` | 全A涨跌分位+直方图(新浪hs_a分页/腾讯) · shy313同花顺归属 · 概念/行业当日均涨 | requests |
 | `GET /api/fin/board` · `/forecast` · `/company` · `/suggest` | 财报窗口：盈利榜+日历 / 业绩预告 / F10+主营+现金流 / 代码联想。宏观包与 F10 并行拉东财 | 东财 datacenter |

@@ -71,6 +71,12 @@ TOOLS: list[dict] = [
            "sort_by": {"type": "string", "enum": ["net_inflow", "change_pct"], "description": "排序，默认 net_inflow"},
            "limit": {"type": "integer", "description": "条数，默认 30"},
        }, []),
+    _t("query_etf_shares",
+       "查单只 ETF 份额：沪市走上交所日频、深市走深交所日频，另附东财季报期间申购/赎回/期末份额（亿份）。默认 510300。客观公开数据，不构成推荐。",
+       {
+           "code": {"type": "string", "description": "6 位 ETF 代码，如 510050 / 510300 / 510500 / 588000 / 159915 / 159919"},
+           "n": {"type": "integer", "description": "日线条数，默认 80"},
+       }, []),
     _t("query_shareholder_changes",
        "查股东/高管增减持披露：变动人、增减方向、股数、均价、职务。可查全市场或指定个股。客观披露，不构成推荐。",
        {

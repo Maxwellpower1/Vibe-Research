@@ -868,6 +868,26 @@ export interface EtfFlowRow {
 export interface EtfFlow {
   sort_by: string; total: number; note?: string; rows: EtfFlowRow[];
 }
+export interface EtfShareDay {
+  date: string; name?: string; shares_wan?: number; shares_yi: number;
+}
+export interface EtfSharePeriod {
+  date: string; subscribe_yi: number | null; redeem_yi: number | null;
+  net_yi: number | null; shares_yi: number | null; nav_yi?: number | null; nav_chg?: string;
+}
+export interface EtfShares {
+  code: string; name: string; source?: string; unit?: string; note?: string;
+  latest?: EtfShareDay | null; chg_yi?: number | null; chg_pct?: number | null;
+  daily: EtfShareDay[]; periods: EtfSharePeriod[];
+}
+export const ETF_SHARE_WATCH = [
+  { code: "510050", label: "上证50" },
+  { code: "510300", label: "沪深300" },
+  { code: "510500", label: "中证500" },
+  { code: "588000", label: "科创50" },
+  { code: "159915", label: "创业板" },
+  { code: "159919", label: "嘉实300" },
+] as const;
 export interface ShareholderChangeRow {
   date: string; code: string; name: string; person: string; change_type: string;
   change_shares: number; change_ratio: number; avg_price: number;
@@ -1389,6 +1409,12 @@ export const api = {
     get<Array<{ code: string; name: string }>>(`/fin/suggest?q=${encodeURIComponent(q)}&n=${n}`),
   etfFlow: (sortBy: "net_inflow" | "change_pct" = "net_inflow", limit = 40) =>
     get<EtfFlow>(`/market/etf-flow?sort_by=${sortBy}&limit=${limit}`),
+  etfShares: (code = "510300", n = 80) =>
+    get<EtfShares>(`/market/etf-shares?code=${encodeURIComponent(code)}&n=${n}`),
+  etfSharesBatch: (codes: string[] = [...ETF_SHARE_WATCH.map((x) => x.code)], n = 80) =>
+    get<{ items: EtfShares[] }>(
+      `/market/etf-shares?codes=${encodeURIComponent(codes.join(","))}&n=${n}`,
+    ),
   shareholderChanges: (opts?: { code?: string; changeType?: "all" | "增持" | "减持"; limit?: number }) => {
     const p = new URLSearchParams();
     if (opts?.code) p.set("code", opts.code);
