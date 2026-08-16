@@ -10,6 +10,7 @@ export interface PanelZoomProps {
 
 interface PanelProps extends PanelZoomProps {
   title: string;
+  hint?: string;
   icon?: ReactNode;
   accent?: string;
   right?: ReactNode;
@@ -21,6 +22,7 @@ interface PanelProps extends PanelZoomProps {
 /** Terminal-style cockpit panel with optional zoom. */
 export function Panel({
   title,
+  hint,
   icon,
   accent,
   right,
@@ -53,6 +55,9 @@ export function Panel({
         )}
         <h2 className="min-w-0 flex-1 truncate text-[12px] font-semibold tracking-wide text-slate-200">
           {title}
+          {hint && (
+            <span className="ml-1.5 font-normal text-[10px] text-slate-500">{hint}</span>
+          )}
         </h2>
         <div className="flex min-w-0 max-w-[min(240px,48vw)] shrink items-center justify-end gap-1 overflow-x-auto sm:max-w-none sm:shrink-0 sm:gap-2">
           {right}

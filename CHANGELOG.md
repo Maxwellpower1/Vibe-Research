@@ -3,6 +3,12 @@
 本项目的版本号唯一来源是 `frontend/package.json`；后端 HTTP API、`/api/health`、
 前端界面与 MCP `serverInfo` 全部从它读取（见 `backend/version.py`）。
 
+## Unreleased
+
+### 改进：复盘「市场板块实时热点」左右分栏
+
+默认左领涨 / 右领跌，点板块后原来的成分股列表出在另一半；再点同一板块或点「关闭」回到双列。已去掉顶栏轮播和领涨/领跌互斥切换。
+
 ## v0.3.2 — 2026-08-16
 
 研究桌：把 Vibe-Trading 里值得进投研看板的公开源接进来，不搬回测引擎 / 券商 / Swarm。

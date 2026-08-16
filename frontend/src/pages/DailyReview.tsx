@@ -18,7 +18,7 @@ import { ReviewMoneySeg } from "@/components/review/ReviewMoneySeg";
 import { ReviewRiskSeg } from "@/components/review/ReviewRiskSeg";
 import { ChainPanel } from "@/components/review/ChainPanel";
 import { WorldIndexPanel } from "@/components/cockpit/WorldIndexPanel";
-import { SectorHotBar, SectorHotPanel, type SectorDir, type SectorKind } from "@/components/cockpit/SectorHotPanel";
+import { SectorHotBar, SectorHotPanel, type SectorKind } from "@/components/cockpit/SectorHotPanel";
 import { BoardFlowLivePanel } from "@/components/cockpit/BoardFlowLivePanel";
 import { MoneyFlowRankPanel } from "@/components/cockpit/MoneyFlowRankPanel";
 import { RankTabBar, StockRankPanel, type RankTab } from "@/components/cockpit/StockRankPanel";
@@ -41,9 +41,7 @@ export function DailyReview() {
   const [moneyRight, setMoneyRight] = useState<ReactNode>(null);
   const [flowRight, setFlowRight] = useState<ReactNode>(null);
   const [sectorKind, setSectorKind] = useState<SectorKind>("01");
-  const [sectorDir, setSectorDir] = useState<SectorDir>("0");
   const [sectorQ, setSectorQ] = useState("");
-  const [sectorAuto, setSectorAuto] = useState(true);
   const [rankTab, setRankTab] = useState<RankTab>("hot");
   const [newsAuto, setNewsAuto] = useState(true);
   const [newsSource, setNewsSource] = useState<FeedSource>("cls");
@@ -106,6 +104,7 @@ export function DailyReview() {
         {
           id: "sectors",
           title: "市场板块实时热点",
+          hint: "点击板块看个股列表",
           icon: <Layers size={14} />,
           accent: "#22d3ee",
           defaultW: 0.42,
@@ -113,22 +112,15 @@ export function DailyReview() {
           right: (
             <SectorHotBar
               kind={sectorKind}
-              dir={sectorDir}
               q={sectorQ}
-              auto={sectorAuto}
-              onKind={(k) => { setSectorKind(k); setSectorAuto(true); }}
-              onDir={setSectorDir}
+              onKind={setSectorKind}
               onQuery={setSectorQ}
-              onAuto={setSectorAuto}
             />
           ),
           body: (
             <SectorHotPanel
               kind={sectorKind}
-              dir={sectorDir}
               q={sectorQ}
-              auto={sectorAuto}
-              onAuto={setSectorAuto}
             />
           ),
         },

@@ -5,6 +5,7 @@ import { usePanelZoom, type ZoomRowDef } from "@/hooks/usePanelZoom";
 export type CockpitCell = {
   id: string;
   title: string;
+  hint?: string;
   defaultW: number;
   mobileH: string;
   maxZoomW?: number;
@@ -47,6 +48,7 @@ export function CockpitLayout({ rows }: { rows: CockpitRow[] }) {
               <Panel
                 className="h-full"
                 title={panel.title}
+                hint={panel.hint}
                 icon={panel.icon}
                 accent={panel.accent}
                 right={panel.right}

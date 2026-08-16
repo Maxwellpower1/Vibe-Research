@@ -229,6 +229,15 @@ def _warm_review_dc(paint_only: bool = False) -> tuple[int, int, list[dict]]:
             ),
         ),
         (
+            "sector_boards",
+            lambda: _cached(
+                "sector_boards",
+                "01:1:80",
+                20,
+                lambda: cockpit_live.sector_boards("01", "1", 80),
+            ),
+        ),
+        (
             "stock_rank",
             lambda: _cached(
                 "stock_rank",
