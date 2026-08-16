@@ -169,9 +169,10 @@ cd frontend && npm install && npm run dev
 
 ### 服务器部署 / 自动更新
 
+- 局域网：`bash deploy/install-lan-hook.sh` 一次，之后每次本地 commit 自动更新 `172.168.115.149`（`VR_LAN_SKIP=1` 可跳过）
 - 手动：`bash deploy/update.sh`（参数见脚本注释）
 - systemd 首次安装：`bash deploy/install-systemd.sh`
-- **GitHub Actions 自动部署**（push `main` → SSH → update；成功可发邮件）：见 [`deploy/README.md`](deploy/README.md)
+- **GitHub Actions 自动部署**（push `main` → 云主机；成功可发邮件）：见 [`deploy/README.md`](deploy/README.md)
 
 默认假定 `VR_PYTHON=/root/miniconda3/bin/python`、目录 `/root/Vibe-Research-main`。
 

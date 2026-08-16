@@ -1,6 +1,35 @@
-# 生产部署（systemd + GitHub Actions）
+# 生产部署（局域网 commit 钩子 + GitHub Actions）
 
-本机 `git push origin main` 后，GitHub Actions 在 Runner 上打包代码，经 **SCP 上传**到服务器，再执行 `deploy/update.sh`。
+两条更新线互不替代：
+
+- **局域网**：本机每次 `git commit` → `deploy/lan-update.sh` 把 **HEAD** 打包装到 `172.168.115.149:/root/Vibe-Research-main`，再跑 `update.sh`。不碰远端 `backend/.env`。
+- **公网/腾讯云**：本机 `git push origin main` 后，GitHub Actions 打包 SCP 到云主机，再执行 `deploy/update.sh`。
+
+> 服务器**不必**再 `git pull` GitHub（腾讯云访问 github.com 常出现 `Empty reply from server`）。
+
+## 〇、局域网（每次本地 commit）
+
+本机需已能 **免密** `ssh root@172.168.115.149`。装一次钩子：
+
+```bash
+bash deploy/install-lan-hook.sh
+```
+
+之后每次 commit 自动更新局域网。跳过某次：
+
+```bash
+VR_LAN_SKIP=1 git commit ...
+```
+
+手动补发当前 HEAD：
+
+```bash
+bash deploy/lan-update.sh
+```
+
+`frontend/package-lock.json` 没变时用 `--no-npm-ci`（快）；锁文件变了会全量 `npm ci`。
+
+覆盖目标（可选环境变量）：`VR_LAN_HOST` / `VR_LAN_USER` / `VR_LAN_PATH`。
 
 > 服务器**不必**再 `git pull` GitHub（腾讯云访问 github.com 常出现 `Empty reply from server`）。
 

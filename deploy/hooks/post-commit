@@ -1,0 +1,13 @@
+#!/bin/sh
+# Installed by deploy/install-lan-hook.sh -> .git/hooks/post-commit
+# Commit always succeeds; LAN deploy failure is printed only.
+ROOT=$(git rev-parse --show-toplevel) || exit 0
+if [ "${VR_LAN_SKIP:-}" = "1" ]; then
+  echo "[lan] skipped (VR_LAN_SKIP=1)"
+  exit 0
+fi
+if [ ! -f "$ROOT/deploy/lan-update.sh" ]; then
+  exit 0
+fi
+bash "$ROOT/deploy/lan-update.sh" || echo "[lan] deploy failed (commit kept). skip: VR_LAN_SKIP=1"
+exit 0
