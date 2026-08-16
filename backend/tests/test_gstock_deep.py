@@ -119,7 +119,7 @@ def test_latched_skips_yahoo(monkeypatch):
 def test_split_modules_keep_shared_names():
     """Split leftovers used to NameError on live /api/global/* routes."""
     from gstock_deep import eastmoney as em
-    from gstock_deep import edgar, earnings, finra, movers, official, options, sec
+    from gstock_deep import edgar, earnings, movers, official, options, sec
 
     assert official._et_today is earnings._et_today is options._et_today
     assert movers._MKT_FS["us_nasdaq"] == "m:105"
@@ -128,7 +128,6 @@ def test_split_modules_keep_shared_names():
     assert edgar.XBRL_TAGS["净利润"] == "NetIncomeLoss"
     assert "Assets" in edgar._INSTANT_TAGS
     assert hasattr(official, "_cik_cache")
-    assert hasattr(finra, "gstock")
 
 
 def test_earnings_calendar_no_nameerror(monkeypatch):
@@ -184,19 +183,6 @@ def test_market_movers_no_nameerror(monkeypatch):
     monkeypatch.setattr(movers.astock, "em_get", fake_get)
     out = movers.market_movers("us_gainers", top=10)
     assert out["stocks"][0]["code"] == "AAPL"
-
-
-def test_short_volume_symbol_no_nameerror(monkeypatch):
-    from gstock_deep import finra
-
-    monkeypatch.setattr(gstock, "resolve_symbol", lambda q: AAPL_INFO)
-    monkeypatch.setattr(finra, "_recent_weekdays", lambda n: ["20260814"])
-    monkeypatch.setattr(finra, "short_volume_all", lambda date=None: {
-        "date": date, "market": "CNMS", "count": 1,
-        "data": {"AAPL": {"short": 1, "short_exempt": 0, "total": 10, "ratio": 0.1}},
-    })
-    out = finra.short_volume_symbol("AAPL", days=3)
-    assert out["rows"][0]["ratio"] == 0.1
 
 
 def test_ticker_to_cik_uses_official_cache(monkeypatch):

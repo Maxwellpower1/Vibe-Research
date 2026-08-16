@@ -10,7 +10,6 @@ import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import {
   api, ApiError, fundamentalsSourceLabel, type GlobalStock, type UsKlineBar,
   type GlobalEarningsCalendar, type GlobalSecDaily, type GlobalFundamentals,
-  type GlobalShortVolume,
   type GlobalEdgarScreener, type GlobalMovers,
   type GlobalOptions, type GlobalStockNews,
 } from "@/lib/api";
@@ -25,7 +24,7 @@ const KLINE_NUM = 365;
 const VIEW_DAYS = 120;
 
 const US_SECTION_KEYS = [
-  "us.fundamentals", "us.short", "us.movers",
+  "us.fundamentals", "us.movers",
   "us.options", "us.news",
   "us.edgar", "us.earnings", "us.sec",
 ] as const;
@@ -80,8 +79,6 @@ export function UsMarket() {
   const [fund, setFund] = useState<GlobalFundamentals | null>(null);
   const [fundLoading, setFundLoading] = useState(false);
   const [fundTab, setFundTab] = useState<"val" | "analyst" | "holders">("val");
-  const [shortVol, setShortVol] = useState<GlobalShortVolume | null>(null);
-  const [shortLoading, setShortLoading] = useState(false);
   const [movers, setMovers] = useState<GlobalMovers | null>(null);
   const [moverBoard, setMoverBoard] = useState<
     "us_gainers" | "us_losers" | "us_amount" | "hk_gainers" | "hk_losers" | "hk_amount"
@@ -222,21 +219,6 @@ export function UsMarket() {
     }
   }, []);
 
-  const loadShort = useCallback(async (sym: string) => {
-    if (!sym) {
-      setShortVol(null);
-      return;
-    }
-    setShortLoading(true);
-    try {
-      setShortVol(await api.globalShortVolume(sym, 15));
-    } catch {
-      setShortVol(null);
-    } finally {
-      setShortLoading(false);
-    }
-  }, []);
-
   const loadOptFlow = useCallback(async (sym: string) => {
     if (!sym) {
       setGOpt(null);
@@ -257,7 +239,6 @@ export function UsMarket() {
   useEffect(() => { void loadPanels(); }, [loadPanels]);
   useEffect(() => { void loadEdgar(edgarTag); }, [edgarTag, loadEdgar]);
   useEffect(() => { void loadFund(selected); }, [selected, loadFund]);
-  useEffect(() => { void loadShort(selected); }, [selected, loadShort]);
   useEffect(() => { void loadOptFlow(selected); }, [selected, loadOptFlow]);
 
   useEffect(() => {
@@ -454,7 +435,6 @@ export function UsMarket() {
               if (selected) {
                 void loadChart(selected, KLINE_NUM);
                 void loadFund(selected);
-                void loadShort(selected);
                 void loadOptFlow(selected);
               }
               void loadPanels();
@@ -462,7 +442,7 @@ export function UsMarket() {
             }}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", (quotesLoading || chartLoading || panelLoading || fundLoading || shortLoading) && "animate-spin")} />
+            <RefreshCw className={cn("h-3.5 w-3.5", (quotesLoading || chartLoading || panelLoading || fundLoading) && "animate-spin")} />
             刷新
           </button>
         }
@@ -479,13 +459,12 @@ export function UsMarket() {
           if (selected) {
             void loadChart(selected, KLINE_NUM);
             void loadFund(selected);
-            void loadShort(selected);
             void loadOptFlow(selected);
           }
           void loadPanels();
           void loadEdgar(edgarTag);
         }}
-        refreshing={quotesLoading || chartLoading || panelLoading || fundLoading || shortLoading}
+        refreshing={quotesLoading || chartLoading || panelLoading || fundLoading}
         updatedAt={quotesUpdatedAt}
       />
 
@@ -772,90 +751,6 @@ export function UsMarket() {
               </div>
             ) : (
               <EmptyState className="py-6" title="该分类暂无数据" description="可切换估值 / 分析师 / 股东查看其他维度。" />
-            )}
-          </GlassCard>
-        </CollapsibleSection>
-      )}
-
-      {selected && (
-        <CollapsibleSection
-          storageKey="us.short"
-          title="FINRA 空头量"
-          summary={shortVol?.rows?.length ? `${shortVol.rows.length} 日` : selected}
-        >
-          <GlassCard className="p-3 sm:p-4">
-            <h3 className="mb-1 text-sm font-semibold">
-              空头成交量 · {selected}
-              <span className="ml-2 text-[11px] font-normal text-muted-foreground/60">FINRA Reg SHO</span>
-            </h3>
-            <p className="mb-3 text-[11px] text-muted-foreground/60">
-              short volume ≠ short interest · 看日度占比变化，勿用绝对值下结论 · 近 {shortVol?.rows.length ?? 0} 个交易日
-            </p>
-            {shortLoading && !shortVol ? (
-              <p className="py-6 text-center text-xs text-muted-foreground/60">加载中…</p>
-            ) : !shortVol || shortVol.rows.length === 0 ? (
-              <EmptyState
-                className="py-6"
-                title="暂无 FINRA 空头数据"
-                description="数据源暂不可用或该标的无覆盖，可稍后重试。"
-              />
-            ) : (
-              <>
-                <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {(() => {
-                    const latest = shortVol.rows[0];
-                    const prev = shortVol.rows[1];
-                    const delta =
-                      latest?.ratio != null && prev?.ratio != null
-                        ? latest.ratio - prev.ratio
-                        : null;
-                    return (
-                      <>
-                        <Metric
-                          k="最新空头占比"
-                          v={latest?.ratio == null ? "—" : `${(latest.ratio * 100).toFixed(1)}%`}
-                        />
-                        <Metric
-                          k="较前日"
-                          v={
-                            delta == null
-                              ? "—"
-                              : `${delta > 0 ? "+" : ""}${(delta * 100).toFixed(1)} pt`
-                          }
-                        />
-                        <Metric k="最新空头量" v={latest ? latest.short.toLocaleString() : "—"} />
-                        <Metric k="最新总成交" v={latest ? latest.total.toLocaleString() : "—"} />
-                      </>
-                    );
-                  })()}
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="data-table min-w-[420px]">
-                    <thead>
-                      <tr>
-                        <th>日期</th>
-                        <th className="num">空头占比</th>
-                        <th className="num">空头量</th>
-                        <th className="num">总成交</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {shortVol.rows.map((r) => (
-                        <tr key={r.date}>
-                          <td className="text-muted-foreground tabular-nums">
-                            {`${r.date.slice(0, 4)}-${r.date.slice(4, 6)}-${r.date.slice(6)}`}
-                          </td>
-                          <td className="num font-mono">
-                            {r.ratio == null ? "—" : `${(r.ratio * 100).toFixed(1)}%`}
-                          </td>
-                          <td className="num font-mono text-xs">{r.short.toLocaleString()}</td>
-                          <td className="num font-mono text-xs">{r.total.toLocaleString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
             )}
           </GlassCard>
         </CollapsibleSection>

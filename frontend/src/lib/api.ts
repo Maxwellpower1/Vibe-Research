@@ -1036,10 +1036,6 @@ export interface GlobalStatements {
     items: Record<string, GlobalStmtItem>;
   }>;
 }
-export interface GlobalShortVolume {
-  code: string; name: string; market: string; note?: string;
-  rows: Array<{ date: string; short: number; short_exempt: number; total: number; ratio: number | null }>;
-}
 export interface GlobalSecFilings {
   code: string; name: string; cik: string; company_name?: string;
   filings: Array<{
@@ -1437,8 +1433,6 @@ export const api = {
     get<GlobalStatements>(
       `/global/stock/statements?symbol=${encodeURIComponent(symbol)}&statement=${statement}&periods=${periods}`,
     ),
-  globalShortVolume: (symbol: string, days = 10) =>
-    get<GlobalShortVolume>(`/global/stock/short-volume?symbol=${encodeURIComponent(symbol)}&days=${days}`),
   globalSecFilings: (symbol: string, limit = 30) =>
     get<GlobalSecFilings>(`/global/stock/sec-filings?symbol=${encodeURIComponent(symbol)}&limit=${limit}`),
   globalSecDaily: (opts?: { date?: string; limit?: number }) => {

@@ -1,4 +1,4 @@
-"""Rate-limited GET helpers for SEC / FINRA / Nasdaq / Treasury."""
+"""Rate-limited GET helpers for SEC / Nasdaq / CBOE."""
 from __future__ import annotations
 
 import os
@@ -31,7 +31,6 @@ class _RateLimiter:
 
 _LIMITS = {
     "sec.gov": _RateLimiter(8),
-    "finra.org": _RateLimiter(4),
     "cboe.com": _RateLimiter(4),
     "nasdaq.com": _RateLimiter(2),
     "_default": _RateLimiter(5),

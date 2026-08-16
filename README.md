@@ -79,7 +79,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 ### 美股 / 港股数据 · global-stock-data
 
 - **就在本仓库的 [`global-stock-data/`](global-stock-data/) 文件夹里**（v2.0.3）。13 层数据架构、30+ 个端点、11 个数据源、零鉴权，覆盖美港股行情 / K线 / 技术指标 / 三表财报 / 资金流 / 期权（CBOE 官方期权链含完整希腊字母与 0DTE 流）/ FINRA 空头成交量 / SEC EDGAR 申报流与全市场筛选。每个数据源都标注了合规级别。
-- 后端 `backend/gstock.py` + `gstock_deep.py`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo quoteSummary；挂了就空）** + **三表关键科目（东财）** + **FINRA 空头成交量** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo search，crumb 被拦时走 RSS）**。个股页输 `AAPL` / `00700` 即可。
+- 后端 `backend/gstock.py` + `gstock_deep.py`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo quoteSummary；挂了就空）** + **三表关键科目（东财）** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo search，crumb 被拦时走 RSS）**。个股页输 `AAPL` / `00700` 即可。
 - **美股日 K**：`GET /api/global/us/kline?symbol=AAPL&num=180`（新浪；Yahoo chart 在国内 403）。A 股日 K 腾讯/mootdx 空时回退 **Baostock**（可选包）。
 - **研究桌**：`GET /api/research/kline`（Stooq / Baostock / OKX / Binance / CCXT / pykrx）· `/correlation` · `/etf-holdings` · `/13f`。韩股日 K 需 `pip install pykrx`（Naver 复权，不是 KRX 原始盘）。
 - **美股页**：观察列表 + K 线 + **EDGAR Screener（S 级）** + 涨跌榜 + 选中标的期权 + 财报日历 + SEC 日报。
@@ -128,7 +128,7 @@ Vibe-Research/
 │   ├── ext_feeds.py     Stooq / Baostock / OKX / Binance / CCXT / pykrx
 │   ├── etf_lookthrough.py  ETF 穿透（东财 + N-PORT）
 │   ├── inst_13f.py      13F 持仓与环比
-│   ├── gstock_deep.py   估值/三表/资金流/SEC/空头/财报日历
+│   ├── gstock_deep.py   估值/三表/资金流/SEC/财报日历
 │   ├── ai_watch/        AI 观察：OpenRouter / TTSI / AA / 基建 ROI
 │   ├── newsradar.py     资讯雷达（移植自 investment-news）
 │   ├── market.py        市场情绪 + 板块资金流 + 全球指数

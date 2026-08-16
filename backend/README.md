@@ -56,7 +56,6 @@ python3 -m venv .venv
 | `GET /api/portfolio/ctp/settlement/range?start=&end=` | 区间结算单 + 市值权益 / 净值 / 累计收益 / 盈亏日历 / 统计；缓存优先。日历：盈亏=`Δequity-出入金`，收益=`盈亏-手续费` | openctp-ctp |
 | `GET /api/global/stock/fundamentals?symbol=` | 美/港估值+分析师+机构持仓（Yahoo quoteSummary；挂了就空） | requests |
 | `GET /api/global/stock/statements?symbol=&statement=` | 三表关键科目（income/balance/cashflow，东财） | requests |
-| `GET /api/global/stock/short-volume?symbol=` | FINRA 空头成交量时序（仅美股） | requests |
 | `GET /api/global/stock/sec-filings?symbol=` | 个股 SEC 申报列表（需 `VR_SEC_CONTACT`） | requests |
 | `GET /api/global/sec/daily` | 全市场 SEC 当日流 Form4/8-K/13F（需 `VR_SEC_CONTACT`） | requests |
 | `GET /api/global/earnings-calendar` | Nasdaq 财报日历 | requests |

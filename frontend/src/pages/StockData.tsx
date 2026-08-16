@@ -16,7 +16,7 @@ import {
   type DividendRow, type FundFlowRow, type FundFlowMinute, type DragonTiger, type Lockup, type Blocks, type HotConcept, type QaRow,
   type ShareholderChangeRow,
   type GlobalStock, type HkCashflow, type GlobalFundamentals, type GlobalStatements,
-  type GlobalShortVolume, type GlobalSecFilings, type GlobalOptions,
+  type GlobalSecFilings, type GlobalOptions,
   type UsKline, type GlobalStockNews, type StockBasicInfo, type ThsProfile,
   fundamentalsSourceLabel,
 } from "@/lib/api";
@@ -125,7 +125,6 @@ export function StockData({
   const [gFund, setGFund] = useState<GlobalFundamentals | null>(null);
   const [gStmt, setGStmt] = useState<GlobalStatements | null>(null);
   const [gStmtTab, setGStmtTab] = useState<"income" | "balance" | "cashflow">("income");
-  const [gShort, setGShort] = useState<GlobalShortVolume | null>(null);
   const [gSec, setGSec] = useState<GlobalSecFilings | null>(null);
   const [gSecNote, setGSecNote] = useState<string | null>(null);
   const [gOpt, setGOpt] = useState<GlobalOptions | null>(null);
@@ -142,7 +141,7 @@ export function StockData({
     setLoading(true); setErr(null); setDepNote(null); setVal(null); setReports([]); setNews([]); setPctl(null); setFin(null); setAnns([]);
     setMargin([]); setBlockT([]); setHolders([]); setShChanges([]); setDividend([]); setFundFlow([]); setFundMin(null); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa(null); setBasic(null); setThs(null);
     setGStock(null); setCashflow(null);
-    setGFund(null); setGStmt(null); setGStmtTab("income"); setGShort(null); setGSec(null); setGSecNote(null);
+    setGFund(null); setGStmt(null); setGStmtTab("income"); setGSec(null); setGSecNote(null);
     setGOpt(null); setGOptTab("0dte"); setGKline(null); setGNews(null);
 
     // 6 位纯数字 = A 股；否则（字母 / 港股短代码）走美股 / 港股（global-stock-data）
@@ -152,7 +151,6 @@ export function StockData({
       api.hkCashflow(c).then(gOk(setCashflow)).catch(() => { if (rid === runIdRef.current) setCashflow(null); });
       api.globalFundamentals(c).then(gOk(setGFund)).catch(() => { if (rid === runIdRef.current) setGFund(null); });
       api.globalStatements(c, "income").then(gOk(setGStmt)).catch(() => { if (rid === runIdRef.current) setGStmt(null); });
-      api.globalShortVolume(c).then(gOk(setGShort)).catch(() => { if (rid === runIdRef.current) setGShort(null); });
       api.globalOptions(c).then(gOk(setGOpt)).catch(() => { if (rid === runIdRef.current) setGOpt(null); });
       api.globalStockNews(c, 12).then(gOk(setGNews)).catch(() => { if (rid === runIdRef.current) setGNews(null); });
       api.globalSecFilings(c).then(gOk(setGSec)).catch((e) => {
@@ -693,39 +691,6 @@ export function StockData({
             </GlassCard>
           )}
 
-          {gShort && gShort.rows.length > 0 && (
-            <GlassCard className="mb-4">
-              <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
-                <Trophy className="h-4 w-4 text-primary" /> 空头成交量
-              </h3>
-              <p className="mb-3 text-[11px] text-muted-foreground/60">
-                FINRA Reg SHO · short volume ≠ short interest，看日度变化，勿用绝对值下结论。
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[400px] text-sm">
-                  <thead>
-                    <tr className="text-xs text-muted-foreground">
-                      <th className="py-1 text-left font-normal">日期</th>
-                      <th className="px-2 py-1 text-right font-normal">空头占比</th>
-                      <th className="px-2 py-1 text-right font-normal">空头量</th>
-                      <th className="px-2 py-1 text-right font-normal">总成交</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {gShort.rows.map((r) => (
-                      <tr key={r.date} className="border-t border-border/40">
-                        <td className="py-1.5 text-muted-foreground">{`${r.date.slice(0, 4)}-${r.date.slice(4, 6)}-${r.date.slice(6)}`}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{r.ratio == null ? "—" : `${(r.ratio * 100).toFixed(1)}%`}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-xs">{r.short.toLocaleString()}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-xs">{r.total.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </GlassCard>
-          )}
-
           {gOpt && (
             <GlassCard className="mb-4">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -924,7 +889,7 @@ export function StockData({
 
           <p className="text-xs text-muted-foreground/60">
             美股 / 港股数据来自 <a href="https://github.com/simonlin1212/global-stock-data" target="_blank" rel="noreferrer" className="hover:text-primary">global-stock-data</a>
-            （东财 / Yahoo / SEC / FINRA / CBOE）· 金额为原生币种 · 仅客观数据，不含买卖建议。
+            （东财 / Yahoo / SEC / CBOE）· 金额为原生币种 · 仅客观数据，不含买卖建议。
           </p>
         </>
       )}

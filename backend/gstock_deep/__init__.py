@@ -4,7 +4,6 @@
 - Yahoo: 估值 / 分析师 / 机构持仓
 - 东财: 三表关键科目
 - SEC EDGAR: 个股申报列表 / 全市场当日流 (需 VR_SEC_CONTACT)
-- FINRA: 空头成交量时序
 - Nasdaq: 财报日历
 
 合规: 客观数据整理, 不推荐不预测. SEC 须声明 UA (VR_SEC_CONTACT).
@@ -23,7 +22,6 @@ from gstock_deep.yahoo import (
 from gstock_deep.eastmoney import financial_statements
 from gstock_deep.official import official_get
 from gstock_deep.sec import daily_filings, sec_filings, ticker_to_cik
-from gstock_deep.finra import short_volume_all, short_volume_symbol
 from gstock_deep.earnings import earnings_calendar, earnings_calendar_range
 from gstock_deep.options import (
     assert_us_ticker,
@@ -50,8 +48,6 @@ __all__ = [
     "ticker_to_cik",
     "sec_filings",
     "daily_filings",
-    "short_volume_all",
-    "short_volume_symbol",
     "earnings_calendar",
     "earnings_calendar_range",
     "assert_us_ticker",

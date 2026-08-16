@@ -118,28 +118,6 @@ def global_stock_statements(
         raise HTTPException(502, f"美港股报表异常：{e}") from e
 
 
-@router.get("/api/global/stock/short-volume")
-def global_stock_short_volume(
-    symbol: str = Query(..., min_length=1, max_length=16),
-    days: int = Query(10, ge=3, le=30),
-):
-    """美股 FINRA 空头成交量时序（≠ short interest，看日度趋势）。"""
-    try:
-        data = _cached(
-            f"g_short:{days}",
-            symbol.strip().upper(),
-            1800,
-            lambda: gstock_deep.short_volume_symbol(symbol.strip(), days),
-        )
-        if not data:
-            raise HTTPException(404, f"未找到美股「{symbol}」的空头成交量")
-        return {"data": data}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"空头成交量异常：{e}") from e
-
-
 @router.get("/api/global/stock/sec-filings")
 def global_stock_sec_filings(
     symbol: str = Query(..., min_length=1, max_length=16),

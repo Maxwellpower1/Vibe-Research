@@ -166,7 +166,6 @@ def test_gstock_deep_and_routers_import() -> None:
         "gstock_deep.yahoo",
         "gstock_deep.eastmoney",
         "gstock_deep.sec",
-        "gstock_deep.finra",
         "gstock_deep.earnings",
         "gstock_deep.options",
         "gstock_deep.edgar",
