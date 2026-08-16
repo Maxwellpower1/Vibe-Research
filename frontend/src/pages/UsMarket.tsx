@@ -10,12 +10,12 @@ import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import {
   api, ApiError, fundamentalsSourceLabel, type GlobalStock, type UsKlineBar,
   type GlobalEarningsCalendar, type GlobalSecDaily, type GlobalFundamentals,
-  type GlobalShortVolume, type GlobalTreasuryCurve,
-  type GlobalEdgarScreener, type GlobalMovers, type GlobalShortRanking,
-  type GlobalOptions, type GlobalFundFlow, type GlobalStockNews,
+  type GlobalShortVolume,
+  type GlobalEdgarScreener, type GlobalMovers,
+  type GlobalOptions, type GlobalStockNews,
 } from "@/lib/api";
 import { addUsTickers, loadUsWatch, saveUsWatch } from "@/lib/usWatchlist";
-import { useExpandAll, useSectionOpen } from "@/hooks/useExpandAll";
+import { useExpandAll } from "@/hooks/useExpandAll";
 import { cn } from "@/lib/utils";
 
 const UP = "#ef4444";
@@ -25,8 +25,8 @@ const KLINE_NUM = 365;
 const VIEW_DAYS = 120;
 
 const US_SECTION_KEYS = [
-  "us.fundamentals", "us.short", "us.movers", "us.shortRank",
-  "us.treasury", "us.options", "us.news", "us.fundflow",
+  "us.fundamentals", "us.short", "us.movers",
+  "us.options", "us.news",
   "us.edgar", "us.earnings", "us.sec",
 ] as const;
 
@@ -82,28 +82,21 @@ export function UsMarket() {
   const [fundTab, setFundTab] = useState<"val" | "analyst" | "holders">("val");
   const [shortVol, setShortVol] = useState<GlobalShortVolume | null>(null);
   const [shortLoading, setShortLoading] = useState(false);
-  const [treasury, setTreasury] = useState<GlobalTreasuryCurve | null>(null);
   const [movers, setMovers] = useState<GlobalMovers | null>(null);
   const [moverBoard, setMoverBoard] = useState<
     "us_gainers" | "us_losers" | "us_amount" | "hk_gainers" | "hk_losers" | "hk_amount"
   >("us_gainers");
-  const [shortRank, setShortRank] = useState<GlobalShortRanking | null>(null);
   const [edgar, setEdgar] = useState<GlobalEdgarScreener | null>(null);
   const [edgarTag, setEdgarTag] = useState("净利润");
   const [edgarLoading, setEdgarLoading] = useState(false);
   const [gOpt, setGOpt] = useState<GlobalOptions | null>(null);
-  const [gFlow, setGFlow] = useState<GlobalFundFlow | null>(null);
   const [gNews, setGNews] = useState<GlobalStockNews | null>(null);
   const [gOptTab, setGOptTab] = useState<"0dte" | "7d">("0dte");
 
   const { allOpen, toggleAll } = useExpandAll(US_SECTION_KEYS);
-  /** Re-draw treasury chart when its collapsible body mounts. */
-  const [treasuryOpen] = useSectionOpen("us.treasury", false);
 
   const chartRef = useRef<HTMLDivElement>(null);
   const echartRef = useRef<echarts.ECharts | null>(null);
-  const treasuryChartRef = useRef<HTMLDivElement>(null);
-  const treasuryEchartRef = useRef<echarts.ECharts | null>(null);
   const barsRef = useRef(bars);
   barsRef.current = bars;
 
@@ -186,21 +179,17 @@ export function UsMarket() {
     setPanelLoading(true);
     setSecNote(null);
     try {
-      const [cal, sec, curve, mv, sr] = await Promise.all([
+      const [cal, sec, mv] = await Promise.all([
         api.globalEarningsCalendar({ days: earnDays }).catch(() => null),
         api.globalSecDaily({ limit: 60 }).catch((e) => {
           if (e instanceof ApiError) setSecNote(e.message);
           return null;
         }),
-        api.globalTreasuryCurve().catch(() => null),
         api.globalMovers(moverBoard, 20).catch(() => null),
-        api.globalShortRanking(20).catch(() => null),
       ]);
       setEarnCal(cal);
       setSecDaily(sec);
-      setTreasury(curve);
       setMovers(mv);
-      setShortRank(sr);
     } finally {
       setPanelLoading(false);
     }
@@ -251,17 +240,14 @@ export function UsMarket() {
   const loadOptFlow = useCallback(async (sym: string) => {
     if (!sym) {
       setGOpt(null);
-      setGFlow(null);
       setGNews(null);
       return;
     }
-    const [opt, flow, news] = await Promise.all([
+    const [opt, news] = await Promise.all([
       api.globalOptions(sym).catch(() => null),
-      api.globalFundFlow(sym, 30).catch(() => null),
       api.globalStockNews(sym, 8).catch(() => null),
     ]);
     setGOpt(opt);
-    setGFlow(flow);
     setGNews(news);
     setGOptTab("0dte");
   }, []);
@@ -426,74 +412,6 @@ export function UsMarket() {
     }, { notMerge: true });
   }, [bars]);
 
-  // Chart div mounts only after treasury data arrives; init+draw must run in the same effect.
-  useEffect(() => {
-    const el = treasuryChartRef.current;
-    const pts = treasury?.points ?? [];
-    if (!el || pts.length === 0) return;
-
-    let chart = treasuryEchartRef.current;
-    if (!chart || chart.getDom() !== el) {
-      chart?.dispose();
-      chart = echarts.init(el, undefined, { renderer: "canvas" });
-      treasuryEchartRef.current = chart;
-    }
-
-    const cssHsl = (name: string, fallback: string) => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      return raw ? `hsl(${raw})` : fallback;
-    };
-    const cText = cssHsl("--chart-text", "#94a3b8");
-    const cAxis = cssHsl("--chart-axis", "#475569");
-    const cGrid = cssHsl("--chart-grid", "#334155");
-    const cPrimary = cssHsl("--primary", "#22d3ee");
-    chart.setOption({
-      animation: false,
-      grid: { left: 48, right: 16, top: 20, bottom: 28 },
-      tooltip: {
-        trigger: "axis",
-        formatter: (params: unknown) => {
-          const arr = Array.isArray(params) ? params : [params];
-          const p = arr[0] as { name?: string; value?: number; dataIndex?: number } | undefined;
-          if (!p) return "";
-          const chg = pts[p.dataIndex ?? -1]?.chg;
-          const chgTxt = chg == null ? "" : ` · 较前日 ${chg > 0 ? "+" : ""}${chg.toFixed(2)}`;
-          return `${p.name}: ${Number(p.value).toFixed(2)}%${chgTxt}`;
-        },
-      },
-      xAxis: {
-        type: "category",
-        data: pts.map((p) => p.tenor),
-        axisLine: { lineStyle: { color: cAxis } },
-        axisLabel: { color: cText, fontSize: 10 },
-      },
-      yAxis: {
-        type: "value",
-        scale: true,
-        axisLabel: { color: cText, fontSize: 10, formatter: (v: number) => `${v}%` },
-        splitLine: { lineStyle: { color: cGrid, opacity: 0.25 } },
-      },
-      series: [{
-        type: "line",
-        data: pts.map((p) => p.yield),
-        smooth: 0.2,
-        symbol: "circle",
-        symbolSize: 6,
-        lineStyle: { color: cPrimary, width: 2 },
-        itemStyle: { color: cPrimary },
-        areaStyle: { color: "rgba(34,211,238,0.08)" },
-      }],
-    }, { notMerge: true });
-
-    // Layout may still be settling after conditional mount
-    requestAnimationFrame(() => chart?.resize());
-    const ro = new ResizeObserver(() => chart?.resize());
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-    };
-  }, [treasury, treasuryOpen]);
-
   const selQuote = selected ? quotes[selected] : null;
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : (bars.length ? bars.length - 1 : -1);
   const bar = activeIdx >= 0 ? bars[activeIdx] : null;
@@ -527,7 +445,7 @@ export function UsMarket() {
     <div>
       <PageHeader
         title="美股"
-        subtitle="观察列表 · K线 · 基本面 · 期权/资金流 · 榜单 · EDGAR Screener · 美债。只客观呈现。"
+        subtitle="观察列表 · K线 · 基本面 · 期权 · 榜单 · EDGAR Screener。只客观呈现。"
         actions={
           <button
             type="button"
@@ -943,13 +861,11 @@ export function UsMarket() {
         </CollapsibleSection>
       )}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <CollapsibleSection
-          storageKey="us.movers"
-          title="市场榜单"
-          summary={movers?.stocks?.length ? `${movers.stocks.length} 只` : undefined}
-          className="mb-0"
-        >
+      <CollapsibleSection
+        storageKey="us.movers"
+        title="市场榜单"
+        summary={movers?.stocks?.length ? `${movers.stocks.length} 只` : undefined}
+      >
           <GlassCard className="p-3 sm:p-4">
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold">市场榜单</h3>
@@ -1017,58 +933,6 @@ export function UsMarket() {
             )}
           </GlassCard>
         </CollapsibleSection>
-
-        <CollapsibleSection
-          storageKey="us.shortRank"
-          title="空头排名"
-          summary={shortRank?.rows?.length ? `${shortRank.rows.length} 只` : undefined}
-          className="mb-0"
-        >
-          <GlassCard className="p-3 sm:p-4">
-            <h3 className="mb-1 text-sm font-semibold">
-              FINRA 空头榜
-              <span className="ml-2 text-[11px] font-normal text-muted-foreground/60">
-                {shortRank?.date
-                  ? `${shortRank.date.slice(0, 4)}-${shortRank.date.slice(4, 6)}-${shortRank.date.slice(6)}`
-                  : "—"}
-              </span>
-            </h3>
-            <p className="mb-3 text-[11px] text-muted-foreground/60">
-              全市场空头占比 TOP · 过滤总成交 ≥ 100 万 · ≠ short interest
-            </p>
-            {!shortRank?.rows?.length ? (
-              panelLoading ? (
-                <EmptyState loading title="加载空头榜" skeleton="table" />
-              ) : (
-                <EmptyState title="暂无空头榜" description="数据源暂不可用时属正常，可稍后重试。" />
-              )
-            ) : (
-              <div className="max-h-72 space-y-0.5 overflow-y-auto">
-                {shortRank.rows.map((r) => (
-                  <button
-                    key={r.symbol}
-                    type="button"
-                    onClick={() => {
-                      const c = r.symbol.toUpperCase();
-                      if (!codes.includes(c)) persist([...codes, c]);
-                      setSelected(c);
-                    }}
-                    className="flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/40"
-                  >
-                    <span className="w-16 shrink-0 font-semibold tabular-nums">{r.symbol}</span>
-                    <span className="flex-1 text-right font-mono text-xs">
-                      {r.ratio == null ? "—" : `${(r.ratio * 100).toFixed(1)}%`}
-                    </span>
-                    <span className="w-24 shrink-0 text-right font-mono text-[11px] text-muted-foreground">
-                      {r.total.toLocaleString()}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </GlassCard>
-        </CollapsibleSection>
-      </div>
 
       <CollapsibleSection
         storageKey="us.edgar"
@@ -1261,113 +1125,6 @@ export function UsMarket() {
           </GlassCard>
         </CollapsibleSection>
       )}
-
-      {selected && gFlow && gFlow.rows.length > 0 && (
-        <CollapsibleSection
-          storageKey="us.fundflow"
-          title="资金流"
-          summary={`${Math.min(gFlow.rows.length, 10)} 日`}
-        >
-          <GlassCard className="p-3 sm:p-4">
-            <h3 className="mb-1 text-sm font-semibold">资金流 · {selected}</h3>
-            <p className="mb-3 text-[11px] text-muted-foreground/60">东财日级主力净流入 · 单位：亿美元 · 最近 10 日</p>
-            <div className="overflow-x-auto">
-              <table className="data-table min-w-[480px]">
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th className="num">主力</th>
-                    <th className="num">超大单</th>
-                    <th className="num">大单</th>
-                    <th className="num">占比</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...gFlow.rows].reverse().slice(0, 10).map((r) => (
-                    <tr key={r.date}>
-                      <td className="text-muted-foreground">{r.date}</td>
-                      <td className={cn(
-                        "num font-mono",
-                        r.main_net > 0 ? "text-danger" : r.main_net < 0 ? "text-success" : "",
-                      )}>
-                        {(r.main_net / 1e8).toFixed(2)}
-                      </td>
-                      <td className="num font-mono">{(r.super_big_net / 1e8).toFixed(2)}</td>
-                      <td className="num font-mono">{(r.big_net / 1e8).toFixed(2)}</td>
-                      <td className="num font-mono">
-                        {r.main_pct == null ? "—" : `${r.main_pct.toFixed(2)}%`}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
-        </CollapsibleSection>
-      )}
-
-      <CollapsibleSection
-        storageKey="us.treasury"
-        title="美债"
-        summary={treasury?.date ?? undefined}
-      >
-        <GlassCard className="p-3 sm:p-4">
-          <h3 className="mb-1 text-sm font-semibold">
-            美债收益率曲线
-            <span className="ml-2 text-[11px] font-normal text-muted-foreground/60">
-              1M~30Y · Treasury · {treasury?.date ?? "—"}
-            </span>
-          </h3>
-          <p className="mb-3 text-[11px] text-muted-foreground/60">
-            美国财政部官方日度曲线（S 级）· 利差仅客观呈现，不构成利率预测
-          </p>
-          {!treasury || treasury.points.length === 0 ? (
-            panelLoading ? (
-              <EmptyState loading title="加载美债曲线" skeleton="lines" />
-            ) : (
-              <EmptyState title="暂无美债曲线数据" description="可稍后刷新重试。" />
-            )
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-              <div ref={treasuryChartRef} className="h-[220px] w-full min-w-0" />
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-1 content-start">
-                <Metric
-                  k="10Y − 2Y"
-                  v={
-                    treasury.spreads.ten_two == null
-                      ? "—"
-                      : `${treasury.spreads.ten_two > 0 ? "+" : ""}${treasury.spreads.ten_two.toFixed(2)}`
-                  }
-                />
-                <Metric
-                  k="10Y − 3M"
-                  v={
-                    treasury.spreads.ten_three_month == null
-                      ? "—"
-                      : `${treasury.spreads.ten_three_month > 0 ? "+" : ""}${treasury.spreads.ten_three_month.toFixed(2)}`
-                  }
-                />
-                <Metric
-                  k="30Y − 10Y"
-                  v={
-                    treasury.spreads.thirty_ten == null
-                      ? "—"
-                      : `${treasury.spreads.thirty_ten > 0 ? "+" : ""}${treasury.spreads.thirty_ten.toFixed(2)}`
-                  }
-                />
-                <Metric
-                  k="2Y / 10Y / 30Y"
-                  v={[
-                    treasury.points.find((p) => p.tenor === "2Y")?.yield,
-                    treasury.points.find((p) => p.tenor === "10Y")?.yield,
-                    treasury.points.find((p) => p.tenor === "30Y")?.yield,
-                  ].map((v) => (v == null ? "—" : v.toFixed(2))).join(" / ")}
-                />
-              </div>
-            </div>
-          )}
-        </GlassCard>
-      </CollapsibleSection>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <CollapsibleSection

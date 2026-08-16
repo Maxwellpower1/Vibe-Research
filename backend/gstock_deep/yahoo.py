@@ -715,31 +715,3 @@ def stock_fundamentals(query: str) -> dict:
         "holders": hold if hold.get("top_holders") or any((hold.get("overview") or {}).values()) else None,
     }
 
-
-# ── Financial statements (Eastmoney, key lines) ───────────────────────────
-
-_STMT_REPORT = {
-    "balance": {"us": "RPT_USF10_FN_BALANCE", "hk": "RPT_HKF10_FN_BALANCE"},
-    "income": {"us": "RPT_USF10_FN_INCOME", "hk": "RPT_HKF10_FN_INCOME"},
-    "cashflow": {"us": "RPT_USSK_FN_CASHFLOW", "hk": "RPT_HKSK_FN_CASHFLOW"},
-}
-
-# Preferred Chinese line items (exact match preferred, then contains).
-_STMT_KEYS = {
-    "income": [
-        "营业收入", "营业总收入", "营业成本", "毛利", "营业利润",
-        "利润总额", "净利润", "归属于母公司所有者的净利润",
-        "基本每股收益", "稀释每股收益",
-    ],
-    "balance": [
-        "资产总计", "资产合计", "流动资产合计", "货币资金", "现金及现金等价物",
-        "负债合计", "负债总计", "流动负债合计",
-        "股东权益合计", "所有者权益合计", "归属于母公司股东权益合计",
-    ],
-    "cashflow": [
-        "经营活动产生的现金流量净额", "投资活动产生的现金流量净额",
-        "筹资活动产生的现金流量净额", "现金及现金等价物净增加额",
-        "期末现金及现金等价物余额", "期初现金及现金等价物余额",
-    ],
-}
-

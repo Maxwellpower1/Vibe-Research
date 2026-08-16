@@ -1,7 +1,10 @@
 """SEC EDGAR filings."""
 from __future__ import annotations
 
+from datetime import datetime
+
 import gstock
+from gstock_deep import official as _official
 from gstock_deep.common import DataNotAvailable, _FORM_LABEL
 from gstock_deep.official import (
     _is_object_missing,
@@ -11,15 +14,15 @@ from gstock_deep.official import (
 )
 from gstock_deep.yahoo import _resolve_yahoo, to_yahoo_symbol
 
+
 def ticker_to_cik(ticker: str) -> dict:
-    global _cik_cache
     t = ticker.strip().upper()
     if not t:
         return {}
-    if _cik_cache is None:
+    if _official._cik_cache is None:
         raw = official_get("https://www.sec.gov/files/company_tickers.json", as_json=True)
-        _cik_cache = raw if isinstance(raw, dict) else {}
-    for _, v in (_cik_cache or {}).items():
+        _official._cik_cache = raw if isinstance(raw, dict) else {}
+    for _, v in (_official._cik_cache or {}).items():
         if (v or {}).get("ticker") == t:
             return {
                 "ticker": t,

@@ -7,6 +7,19 @@ const POLL_MS = 10_000;
 const DURATION_MS = 12_000;
 const STEP_MS = 100;
 
+function RefreshCountdown({ resetKey, seconds }: { resetKey: number; seconds: number }) {
+  const [left, setLeft] = useState(seconds);
+  useEffect(() => {
+    setLeft(seconds);
+  }, [resetKey, seconds]);
+  useEffect(() => {
+    if (left <= 0) return;
+    const id = window.setTimeout(() => setLeft((c) => c - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [left]);
+  return <span className="font-mono text-[10px] tabular-nums text-slate-500">{left}s</span>;
+}
+
 export function BoardFlowLivePanel({
   selected,
   onSelect,
@@ -26,18 +39,6 @@ export function BoardFlowLivePanel({
   const data = full?.some((f) => (f.points?.length ?? 0) > 2) ? full : ranks;
   const [progress, setProgress] = useState(1);
   const [playing, setPlaying] = useState(false);
-  const [countdown, setCountdown] = useState(POLL_MS / 1000);
-  const [prevUpdated, setPrevUpdated] = useState(updated);
-  if (prevUpdated !== updated) {
-    setPrevUpdated(updated);
-    if (updated) setCountdown(POLL_MS / 1000);
-  }
-
-  useEffect(() => {
-    if (countdown <= 0) return;
-    const id = window.setTimeout(() => setCountdown((c) => c - 1), 1000);
-    return () => window.clearTimeout(id);
-  }, [countdown]);
 
   useEffect(() => {
     if (!playing) return;
@@ -59,7 +60,7 @@ export function BoardFlowLivePanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-end gap-2 px-1.5 py-0.5">
-        <span className="font-mono text-[10px] tabular-nums text-slate-500">{countdown}s</span>
+        <RefreshCountdown resetKey={updated} seconds={POLL_MS / 1000} />
         <button
           type="button"
           onClick={() => {

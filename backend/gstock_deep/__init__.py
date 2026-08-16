@@ -2,7 +2,7 @@
 
 覆盖:
 - Yahoo: 估值 / 分析师 / 机构持仓
-- 东财: 三表关键科目 + 日级资金流
+- 东财: 三表关键科目
 - SEC EDGAR: 个股申报列表 / 全市场当日流 (需 VR_SEC_CONTACT)
 - FINRA: 空头成交量时序
 - Nasdaq: 财报日历
@@ -20,7 +20,7 @@ from gstock_deep.yahoo import (
     stock_news,
     to_yahoo_symbol,
 )
-from gstock_deep.eastmoney import financial_statements, fund_flow_daily
+from gstock_deep.eastmoney import financial_statements
 from gstock_deep.official import official_get
 from gstock_deep.sec import daily_filings, sec_filings, ticker_to_cik
 from gstock_deep.finra import short_volume_all, short_volume_symbol
@@ -36,12 +36,7 @@ from gstock_deep.options import (
     unusual_activity,
 )
 from gstock_deep.edgar import edgar_screener, frame_ranking, market_frame
-from gstock_deep.movers import (
-    market_movers,
-    market_stock_list,
-    short_volume_ranking,
-    short_volume_ranking_overview,
-)
+from gstock_deep.movers import market_movers, market_stock_list
 
 __all__ = [
     "DataNotAvailable",
@@ -52,7 +47,6 @@ __all__ = [
     "institutional_holders",
     "stock_fundamentals",
     "financial_statements",
-    "fund_flow_daily",
     "official_get",
     "ticker_to_cik",
     "sec_filings",
@@ -75,6 +69,4 @@ __all__ = [
     "edgar_screener",
     "market_stock_list",
     "market_movers",
-    "short_volume_ranking_overview",
-    "short_volume_ranking",
 ]

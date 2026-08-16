@@ -1036,13 +1036,6 @@ export interface GlobalStatements {
     items: Record<string, GlobalStmtItem>;
   }>;
 }
-export interface GlobalFundFlow {
-  code: string; name: string; market: string;
-  rows: Array<{
-    date: string; main_net: number; small_net: number; mid_net: number;
-    big_net: number; super_big_net: number; main_pct: number | null;
-  }>;
-}
 export interface GlobalShortVolume {
   code: string; name: string; market: string; note?: string;
   rows: Array<{ date: string; short: number; short_exempt: number; total: number; ratio: number | null }>;
@@ -1073,12 +1066,6 @@ export interface GlobalMovers {
     volume?: number | null; amount?: number | null; amplitude?: number | null;
   }>;
 }
-export interface GlobalShortRanking {
-  date?: string; market?: string; universe?: number; min_total?: number; note?: string;
-  rows: Array<{
-    symbol: string; short: number; short_exempt: number; total: number; ratio: number | null;
-  }>;
-}
 export interface GlobalStockNews {
   code: string; name?: string; market?: string; yahoo_symbol?: string;
   compliance?: string; source?: string;
@@ -1086,19 +1073,6 @@ export interface GlobalStockNews {
     title?: string; publisher?: string; link?: string;
     publish_time?: string | null; publish_ts?: number | null; thumbnail?: string | null;
   }>;
-}
-export interface GlobalTreasuryPoint {
-  tenor: string; yield: number; chg: number | null;
-}
-export interface GlobalTreasuryCurve {
-  date: string; prev_date?: string | null;
-  source?: string; compliance?: string;
-  points: GlobalTreasuryPoint[];
-  spreads: {
-    ten_two?: number | null;
-    thirty_ten?: number | null;
-    ten_three_month?: number | null;
-  };
 }
 export interface GlobalEarningsRow {
   date?: string; symbol?: string; name?: string; time?: string;
@@ -1442,8 +1416,6 @@ export const api = {
   },
   usKline: (symbol: string, num = 180) =>
     get<UsKline>(`/global/us/kline?symbol=${encodeURIComponent(symbol)}&num=${num}`),
-  hkKline: (symbol: string, num = 180) =>
-    get<UsKline>(`/global/hk/kline?symbol=${encodeURIComponent(symbol)}&num=${num}`),
   hkCashflow: (symbol: string) => get<HkCashflow>(`/global/hk/cashflow?symbol=${encodeURIComponent(symbol)}`),
   globalEdgarScreener: (opts?: {
     tag?: string; year?: number; quarter?: number; top?: number; ascending?: boolean;
@@ -1459,8 +1431,6 @@ export const api = {
   },
   globalMovers: (board = "us_gainers", top = 20) =>
     get<GlobalMovers>(`/global/movers?board=${encodeURIComponent(board)}&top=${top}`),
-  globalShortRanking: (top = 20, minTotal = 1_000_000) =>
-    get<GlobalShortRanking>(`/global/short-ranking?top=${top}&min_total=${minTotal}`),
   globalStockNews: (symbol: string, count = 10) =>
     get<GlobalStockNews>(`/global/stock/news?symbol=${encodeURIComponent(symbol)}&count=${count}`),
   globalFundamentals: (symbol: string) =>
@@ -1469,8 +1439,6 @@ export const api = {
     get<GlobalStatements>(
       `/global/stock/statements?symbol=${encodeURIComponent(symbol)}&statement=${statement}&periods=${periods}`,
     ),
-  globalFundFlow: (symbol: string, limit = 30) =>
-    get<GlobalFundFlow>(`/global/stock/fund-flow?symbol=${encodeURIComponent(symbol)}&limit=${limit}`),
   globalShortVolume: (symbol: string, days = 10) =>
     get<GlobalShortVolume>(`/global/stock/short-volume?symbol=${encodeURIComponent(symbol)}&days=${days}`),
   globalSecFilings: (symbol: string, limit = 30) =>
@@ -1489,7 +1457,6 @@ export const api = {
     const q = p.toString();
     return get<GlobalEarningsCalendar>(`/global/earnings-calendar${q ? `?${q}` : ""}`);
   },
-  globalTreasuryCurve: () => get<GlobalTreasuryCurve>("/global/treasury-curve"),
   globalOptions: (symbol: string, unusualTop = 15) =>
     get<GlobalOptions>(
       `/global/stock/options?symbol=${encodeURIComponent(symbol)}&unusual_top=${unusualTop}`,

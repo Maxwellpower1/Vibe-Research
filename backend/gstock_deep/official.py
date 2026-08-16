@@ -6,6 +6,11 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None  # type: ignore[misc, assignment]
+
 import requests
 
 from gstock_deep.common import DataNotAvailable, _UA, _sec_contact
@@ -97,6 +102,23 @@ def _recent_weekdays(days_back: int = 7) -> list[str]:
             out.append(d.strftime("%Y%m%d"))
         d -= timedelta(days=1)
     return out
+
+
+_ET_TZ = ZoneInfo("America/New_York") if ZoneInfo is not None else None
+
+
+def _et_today() -> str:
+    """US/Eastern calendar date (YYYY-MM-DD). Shared by Nasdaq earnings + CBOE."""
+    now = datetime.now(timezone.utc)
+    if _ET_TZ is not None:
+        return now.astimezone(_ET_TZ).strftime("%Y-%m-%d")
+    y = now.year
+    mar8 = datetime(y, 3, 8, tzinfo=timezone.utc)
+    dst_start = (mar8 + timedelta(days=(6 - mar8.weekday()) % 7)).replace(hour=7)
+    nov1 = datetime(y, 11, 1, tzinfo=timezone.utc)
+    dst_end = (nov1 + timedelta(days=(6 - nov1.weekday()) % 7)).replace(hour=6)
+    offset = 4 if dst_start <= now < dst_end else 5
+    return (now - timedelta(hours=offset)).strftime("%Y-%m-%d")
 
 
 _cik_cache: dict | None = None

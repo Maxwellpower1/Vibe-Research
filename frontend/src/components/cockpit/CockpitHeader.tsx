@@ -82,6 +82,7 @@ export function CockpitHeader({
             <Link
               key={l.to}
               to={l.to}
+              prefetch={l.to === "/fin" ? "render" : "intent"}
               className={cn(
                 "rounded border px-2 py-0.5 text-[10px] transition-colors",
                 active

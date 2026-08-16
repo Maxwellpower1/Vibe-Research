@@ -1,10 +1,34 @@
-"""Eastmoney statements and daily fund-flow for US/HK."""
+"""Eastmoney statements for US/HK."""
 from __future__ import annotations
 
 import astock
 import gstock
-from gstock_deep.common import _UA
-from gstock_deep.yahoo import _resolve_yahoo
+
+_STMT_REPORT = {
+    "balance": {"us": "RPT_USF10_FN_BALANCE", "hk": "RPT_HKF10_FN_BALANCE"},
+    "income": {"us": "RPT_USF10_FN_INCOME", "hk": "RPT_HKF10_FN_INCOME"},
+    "cashflow": {"us": "RPT_USSK_FN_CASHFLOW", "hk": "RPT_HKSK_FN_CASHFLOW"},
+}
+
+# Preferred Chinese line items (exact match preferred, then contains).
+_STMT_KEYS = {
+    "income": [
+        "营业收入", "营业总收入", "营业成本", "毛利", "营业利润",
+        "利润总额", "净利润", "归属于母公司所有者的净利润",
+        "基本每股收益", "稀释每股收益",
+    ],
+    "balance": [
+        "资产总计", "资产合计", "流动资产合计", "货币资金", "现金及现金等价物",
+        "负债合计", "负债总计", "流动负债合计",
+        "股东权益合计", "所有者权益合计", "归属于母公司股东权益合计",
+    ],
+    "cashflow": [
+        "经营活动产生的现金流量净额", "投资活动产生的现金流量净额",
+        "筹资活动产生的现金流量净额", "现金及现金等价物净增加额",
+        "期末现金及现金等价物余额", "期初现金及现金等价物余额",
+    ],
+}
+
 
 def _match_stmt_item(name: str, keys: list[str]) -> str | None:
     if not name:
@@ -73,49 +97,5 @@ def financial_statements(query: str, statement: str = "income", periods: int = 5
         "currency": periods_out[0].get("currency"),
         "item_order": item_order,
         "periods": periods_out,
-    }
-
-
-# ── Fund flow ─────────────────────────────────────────────────────────────
-
-def fund_flow_daily(query: str, limit: int = 60) -> dict:
-    info = gstock.resolve_symbol(query)
-    if not info or info.get("market") == "KR":
-        return {}
-    prefix = info["secid_prefix"]
-    code = info["code"]
-    url = "https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get"
-    params = {
-        "secid": f"{prefix}.{code}",
-        "klt": 101,
-        "fields1": "f1,f2,f3,f7",
-        "fields2": "f51,f52,f53,f54,f55,f56,f57",
-        "lmt": max(5, min(int(limit or 60), 200)),
-    }
-    r = astock.em_get(url, params=params, headers={"User-Agent": _UA}, timeout=15)
-    data = (r.json() or {}).get("data") or {}
-    klines = data.get("klines") or []
-    rows = []
-    for line in klines:
-        parts = str(line).split(",")
-        if len(parts) < 6:
-            continue
-        try:
-            rows.append({
-                "date": parts[0],
-                "main_net": float(parts[1]),
-                "small_net": float(parts[2]),
-                "mid_net": float(parts[3]),
-                "big_net": float(parts[4]),
-                "super_big_net": float(parts[5]),
-                "main_pct": float(parts[6]) if len(parts) > 6 and parts[6] else None,
-            })
-        except (TypeError, ValueError):
-            continue
-    if not rows:
-        return {}
-    return {
-        "code": info["code"], "name": info["name"], "market": info["market"],
-        "rows": rows,
     }
 

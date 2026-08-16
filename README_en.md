@@ -32,7 +32,7 @@ It does not make decisions for you. It pulls together quotes, analyst reports, v
 
 | Page | What's in it |
 |---|---|
-| 🇨🇳&nbsp;**A-share** | Header: **Review** / **K-line** / **Detail** / **Filings**. Site-wide ticker tape under the header (world indices + gold/oil/BTC + US 10Y·2Y, shares the 5s quote hub). Review is a one-screen cockpit: **world indices** (CN/HK/US/FX) / **live sector boards** / sentiment + northbound / **intraday board-flow** (click to filter) / **main-force inflow rank** / **stock ranks with turnover** / **commodities** (futures + **Sunsirs spot/basis**) / limit pools / watchlist (in-panel search, star-to-watch, industry · concepts) / LHB · funds · 8 industry chains (related boards + iwencai refresh). **7×24 news stays a floating bubble** (CLS / Sina / Wallstreetcn) |
+| 🇨🇳&nbsp;**A-share** | Header: **Review** / **K-line** / **Detail** / **Filings**. Site-wide ticker tape under the header (world indices + gold/oil/BTC, shares the 5s quote hub). Review is a one-screen cockpit: **world indices** (CN/HK/US/FX) / **live sector boards** / sentiment + northbound / **intraday board-flow** (click to filter) / **main-force inflow rank** / **stock ranks with turnover** / **commodities** (futures + **Sunsirs spot/basis**) / limit pools / watchlist (in-panel search, star-to-watch, industry · concepts) / LHB · funds · 8 industry chains (related boards + iwencai refresh). **7×24 news stays a floating bubble** (CLS / Sina / Wallstreetcn) |
 | 🪟&nbsp;**Earnings** | Header `/fin`: same two-row seven-panel layout as the reference cockpit. 21-day calendar, forecasts, industry treemap, stock ranks, company cards + mainop, 12-period trend, peers. Defaults to Kweichow Moutai. Board + F10 fetch Eastmoney in parallel; no valuation/filings pile-on |
 | 🤖&nbsp;**AI Watch** | OpenRouter public-cloud token share · TrakToken LLM price trend / cut events · AA model table + intelligence×cost scatter (optional key) · AI infra CapEx/ROI (SEC + labeled forecast) |
 | 📡&nbsp;**News&nbsp;Radar** | CLS telegraph + Sina/Wallstreetcn 7×24 (badge / toast) |
@@ -65,8 +65,8 @@ Three public data toolkits are **vendored directly into this repo** — `git clo
 
 ### US / HK data · global-stock-data
 
-- Lives in [`global-stock-data/`](global-stock-data/) (v2.0.3). 13 data layers, 30+ endpoints, 11 sources, no auth required — quotes, candles, technicals, financial statements, fund flows, options (CBOE official chain with full Greeks and 0DTE flow), FINRA short volume / market-wide short ranking, SEC EDGAR filing stream + **EDGAR frames screener**, US/HK movers boards. Every source is labeled with its compliance tier.
-- Dashboard: US page hosts EDGAR Screener, movers, FINRA short ranking, and selected-ticker options/fund-flow; stock page shows US/HK daily candles (`/api/global/us/kline` Yahoo then Sina then Stooq; `/api/global/hk/kline` Yahoo query1/query2, Tencent ifzq qfq on 403). Research desk: `/api/research/*` (correlation, ETF holdings, 13F QoQ, extra klines).
+- Lives in [`global-stock-data/`](global-stock-data/) (v2.0.3). 13 data layers, 30+ endpoints, 11 sources, no auth required — quotes, candles, technicals, financial statements, options (CBOE official chain with full Greeks and 0DTE flow), FINRA short volume, SEC EDGAR filing stream + **EDGAR frames screener**, US/HK movers boards. Every source is labeled with its compliance tier.
+- Dashboard: US page hosts EDGAR Screener, movers, and selected-ticker options; stock page shows US daily candles (`/api/global/us/kline` Yahoo then Sina then Stooq). Research desk: `/api/research/*` (correlation, ETF holdings, 13F QoQ, extra klines).
 - `backend/gstock.py` + `gstock_deep.py`: global indices, US/HK quotes & key metrics, **Yahoo valuation/analyst/holders** (quoteSummary, then v7 quote, then Eastmoney PE/PB + GMAININDICATOR margins — never map revenue onto PE), **3-statement summaries & fund flow**, **FINRA short volume**, **CBOE options 0DTE/unusual flow**, **SEC filings / earnings calendar**, **Yahoo stock news (RSS fallback when crumb is blocked)**.
 - Set `VR_SEC_CONTACT="Name you@example.com"` for SEC endpoints.
 - **CBOE options**: compliance tier C — personal research only; commercial use needs a Cboe license. Delayed data, not for live trading.
@@ -149,6 +149,8 @@ cd backend && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -m "not live"   # offline unit + API tests (fast, no network)
 .venv/bin/pytest -m live         # verifies live data source shapes (run before releases)
 ```
+
+A split-module leftover import fails as `NameError` before any upstream call. `tests/test_undefined_names.py` walks `backend/` symbol tables (stdlib only, no network) and fails on names used but never bound in that file.
 
 ## Changelog
 

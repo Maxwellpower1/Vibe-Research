@@ -7,6 +7,11 @@ import ext_feeds
 import inst_13f
 
 
+def test_hk_kline_removed():
+    out = ext_feeds.fetch_kline("00700")
+    assert out.get("error")
+
+
 def test_infer_market():
     assert ext_feeds.infer_market("AAPL") == "us"
     assert ext_feeds.infer_market("600519") == "a_share"

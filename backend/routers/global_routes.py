@@ -57,29 +57,6 @@ def global_us_kline(
         raise HTTPException(502, f"美股 K 线异常：{e}") from e
 
 
-@router.get("/api/global/hk/kline")
-def global_hk_kline(
-    symbol: str = Query(..., min_length=1, max_length=16),
-    num: int = Query(180, ge=20, le=1000),
-):
-    """港股日 K（Yahoo 前复权）。symbol 如 00700。缓存 5 分钟。"""
-    sym = symbol.strip()
-    try:
-        data = _cached(
-            f"hk_kline:{num}",
-            sym.upper(),
-            300,
-            lambda: gstock.hk_stock_kline(sym, num=num),
-        )
-        if not data:
-            raise HTTPException(404, f"未找到港股「{symbol}」的 K 线（仅港股）")
-        return {"data": data}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"港股 K 线异常：{e}") from e
-
-
 @router.get("/api/global/hk/cashflow")
 def global_hk_cashflow(symbol: str = Query(..., min_length=1, max_length=16)):
     """港股现金流量表（东财域内源 RPT_HKSK_FN_CASHFLOW）：经营/投资/筹资/净增加，多期。symbol 如 00700。"""
@@ -139,28 +116,6 @@ def global_stock_statements(
         raise
     except Exception as e:
         raise HTTPException(502, f"美港股报表异常：{e}") from e
-
-
-@router.get("/api/global/stock/fund-flow")
-def global_stock_fund_flow(
-    symbol: str = Query(..., min_length=1, max_length=16),
-    limit: int = Query(60, ge=5, le=200),
-):
-    """美/港股日级资金流（东财主力/大单等净流入）。"""
-    try:
-        data = _cached(
-            f"g_fflow:{limit}",
-            symbol.strip().upper(),
-            900,
-            lambda: gstock_deep.fund_flow_daily(symbol.strip(), limit),
-        )
-        if not data:
-            raise HTTPException(404, f"未找到「{symbol}」的资金流")
-        return {"data": data}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"美港股资金流异常：{e}") from e
 
 
 @router.get("/api/global/stock/short-volume")
@@ -326,28 +281,6 @@ def global_movers(
         raise
     except Exception as e:
         raise HTTPException(502, f"市场榜单异常：{e}") from e
-
-
-@router.get("/api/global/short-ranking")
-def global_short_ranking(
-    top: int = Query(20, ge=5, le=50),
-    min_total: float = Query(1_000_000, ge=0, description="最小总成交过滤"),
-):
-    """FINRA 全市场空头占比榜（最新有数据交易日）。"""
-    try:
-        data = _cached(
-            "g_short_rank",
-            f"{top}:{int(min_total)}",
-            1800,
-            lambda: gstock_deep.short_volume_ranking_overview(top, min_total),
-        )
-        if not data or not data.get("rows"):
-            raise HTTPException(404, "空头榜暂无数据")
-        return {"data": data}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"空头榜异常：{e}") from e
 
 
 @router.get("/api/global/stock/news")

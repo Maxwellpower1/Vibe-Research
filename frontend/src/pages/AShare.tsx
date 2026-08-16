@@ -24,6 +24,10 @@ export function AShare() {
   const [tab, setTab] = useState<Tab>(() => parseTab(params.get("tab")));
 
   useEffect(() => {
+    void import("@/pages/FinWindow");
+  }, []);
+
+  useEffect(() => {
     const t = parseTab(params.get("tab"));
     setTab(t);
     const raw = params.get("tab");

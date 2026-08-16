@@ -1,10 +1,10 @@
 """Nasdaq earnings calendar."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import datetime, timedelta
 
-from gstock_deep.common import DataNotAvailable
-from gstock_deep.official import official_get
+from gstock_deep.official import _et_today, official_get
 
 def earnings_calendar(date: str | None = None) -> dict:
     """Nasdaq earnings calendar for one day. date=YYYY-MM-DD, default US/Eastern today."""
@@ -88,13 +88,4 @@ def earnings_calendar_range(
         "count": len(flat),
         "rows": flat,
     }
-
-
-# Display order for the yield curve (skip rarely used 1.5 Month in UI points).
-_TREASURY_TENORS = (
-    ("1 Mo", "1M"), ("2 Mo", "2M"), ("3 Mo", "3M"), ("4 Mo", "4M"),
-    ("6 Mo", "6M"), ("1 Yr", "1Y"), ("2 Yr", "2Y"), ("3 Yr", "3Y"),
-    ("5 Yr", "5Y"), ("7 Yr", "7Y"), ("10 Yr", "10Y"), ("20 Yr", "20Y"),
-    ("30 Yr", "30Y"),
-)
 

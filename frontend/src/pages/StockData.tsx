@@ -16,7 +16,7 @@ import {
   type DividendRow, type FundFlowRow, type FundFlowMinute, type DragonTiger, type Lockup, type Blocks, type HotConcept, type QaRow,
   type ShareholderChangeRow,
   type GlobalStock, type HkCashflow, type GlobalFundamentals, type GlobalStatements,
-  type GlobalFundFlow, type GlobalShortVolume, type GlobalSecFilings, type GlobalOptions,
+  type GlobalShortVolume, type GlobalSecFilings, type GlobalOptions,
   type UsKline, type GlobalStockNews, type StockBasicInfo, type ThsProfile,
   fundamentalsSourceLabel,
 } from "@/lib/api";
@@ -125,7 +125,6 @@ export function StockData({
   const [gFund, setGFund] = useState<GlobalFundamentals | null>(null);
   const [gStmt, setGStmt] = useState<GlobalStatements | null>(null);
   const [gStmtTab, setGStmtTab] = useState<"income" | "balance" | "cashflow">("income");
-  const [gFlow, setGFlow] = useState<GlobalFundFlow | null>(null);
   const [gShort, setGShort] = useState<GlobalShortVolume | null>(null);
   const [gSec, setGSec] = useState<GlobalSecFilings | null>(null);
   const [gSecNote, setGSecNote] = useState<string | null>(null);
@@ -143,7 +142,7 @@ export function StockData({
     setLoading(true); setErr(null); setDepNote(null); setVal(null); setReports([]); setNews([]); setPctl(null); setFin(null); setAnns([]);
     setMargin([]); setBlockT([]); setHolders([]); setShChanges([]); setDividend([]); setFundFlow([]); setFundMin(null); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa(null); setBasic(null); setThs(null);
     setGStock(null); setCashflow(null);
-    setGFund(null); setGStmt(null); setGStmtTab("income"); setGFlow(null); setGShort(null); setGSec(null); setGSecNote(null);
+    setGFund(null); setGStmt(null); setGStmtTab("income"); setGShort(null); setGSec(null); setGSecNote(null);
     setGOpt(null); setGOptTab("0dte"); setGKline(null); setGNews(null);
 
     // 6 位纯数字 = A 股；否则（字母 / 港股短代码）走美股 / 港股（global-stock-data）
@@ -153,7 +152,6 @@ export function StockData({
       api.hkCashflow(c).then(gOk(setCashflow)).catch(() => { if (rid === runIdRef.current) setCashflow(null); });
       api.globalFundamentals(c).then(gOk(setGFund)).catch(() => { if (rid === runIdRef.current) setGFund(null); });
       api.globalStatements(c, "income").then(gOk(setGStmt)).catch(() => { if (rid === runIdRef.current) setGStmt(null); });
-      api.globalFundFlow(c, 30).then(gOk(setGFlow)).catch(() => { if (rid === runIdRef.current) setGFlow(null); });
       api.globalShortVolume(c).then(gOk(setGShort)).catch(() => { if (rid === runIdRef.current) setGShort(null); });
       api.globalOptions(c).then(gOk(setGOpt)).catch(() => { if (rid === runIdRef.current) setGOpt(null); });
       api.globalStockNews(c, 12).then(gOk(setGNews)).catch(() => { if (rid === runIdRef.current) setGNews(null); });
@@ -165,10 +163,8 @@ export function StockData({
       try {
         const g = await api.globalStock(c);
         if (rid === runIdRef.current) setGStock(g);
-        // US / HK daily K (Yahoo qfq). KR skipped.
-        if (g.market === "HK") {
-          api.hkKline(g.code, 60).then(gOk(setGKline)).catch(() => { if (rid === runIdRef.current) setGKline(null); });
-        } else if (g.market !== "KR") {
+        // US daily K only. KR / HK skipped.
+        if (g.market !== "KR" && g.market !== "HK") {
           api.usKline(g.code, 60).then(gOk(setGKline)).catch(() => { if (rid === runIdRef.current) setGKline(null); });
         }
       } catch (e) {
@@ -694,41 +690,6 @@ export function StockData({
                   </table>
                 </div>
               )}
-            </GlassCard>
-          )}
-
-          {gFlow && gFlow.rows.length > 0 && (
-            <GlassCard className="mb-4">
-              <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
-                <Wallet className="h-4 w-4 text-primary" /> 资金流
-              </h3>
-              <p className="mb-3 text-[11px] text-muted-foreground/60">东财日级主力/大单净流入 · 单位：亿{curOf(gstock.market)} · 最近 {Math.min(10, gFlow.rows.length)} 日。</p>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[520px] text-sm">
-                  <thead>
-                    <tr className="text-xs text-muted-foreground">
-                      <th className="py-1 text-left font-normal">日期</th>
-                      <th className="px-2 py-1 text-right font-normal">主力净流入</th>
-                      <th className="px-2 py-1 text-right font-normal">超大单</th>
-                      <th className="px-2 py-1 text-right font-normal">大单</th>
-                      <th className="px-2 py-1 text-right font-normal">主力占比</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...gFlow.rows].reverse().slice(0, 10).map((r) => (
-                      <tr key={r.date} className="border-t border-border/40">
-                        <td className="py-1.5 text-muted-foreground">{r.date}</td>
-                        <td className={cn("px-2 py-1.5 text-right font-mono", r.main_net > 0 ? "text-danger" : r.main_net < 0 ? "text-success" : "")}>
-                          {(r.main_net / 1e8).toFixed(2)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right font-mono">{(r.super_big_net / 1e8).toFixed(2)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{(r.big_net / 1e8).toFixed(2)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{r.main_pct == null ? "—" : `${r.main_pct.toFixed(2)}%`}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </GlassCard>
           )}
 

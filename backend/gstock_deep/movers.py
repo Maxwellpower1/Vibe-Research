@@ -1,10 +1,16 @@
-"""US/HK movers boards and FINRA short ranking."""
+"""US/HK movers boards."""
 from __future__ import annotations
 
 import astock
 from gstock_deep.common import _UA
-from gstock_deep.finra import short_volume_all
-from gstock_deep.official import _recent_weekdays
+
+_MKT_FS = {
+    "us_nasdaq": "m:105",
+    "us_nyse": "m:106",
+    "us_etf": "m:107",
+    "hk": "m:116",
+}
+
 
 def market_stock_list(
     market: str = "us_nasdaq",
@@ -94,33 +100,4 @@ def market_movers(board: str = "us_gainers", top: int = 20) -> dict:
     data = market_stock_list(market, fid, desc, page=1, page_size=n)
     data["board"] = board
     return data
-
-
-def short_volume_ranking_overview(
-    top: int = 20,
-    min_total: float = 1_000_000,
-) -> dict:
-    """FINRA CNMS short-ratio leaders for the latest available day."""
-    snap = short_volume_all()
-    rows = short_volume_ranking(snap, min_total=min_total, top=top)
-    return {
-        "date": snap.get("date"),
-        "market": snap.get("market"),
-        "universe": snap.get("count"),
-        "min_total": min_total,
-        "note": "short volume != short interest; daily flow only",
-        "rows": rows,
-    }
-
-
-def short_volume_ranking(
-    snapshot: dict,
-    min_total: float = 1_000_000,
-    top: int = 20,
-) -> list[dict]:
-    rows = [{
-        "symbol": s, **v,
-    } for s, v in (snapshot.get("data") or {}).items()
-        if v.get("total", 0) >= min_total and v.get("ratio") is not None]
-    return sorted(rows, key=lambda x: -x["ratio"])[: max(1, min(int(top or 20), 50))]
 

@@ -1,9 +1,19 @@
 """US Treasury yield curve (FiscalData)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import csv
+import io
+from datetime import datetime
 
 from gstock_deep.official import official_get
+
+# Display order for the yield curve (skip rarely used 1.5 Month in UI points).
+_TREASURY_TENORS = (
+    ("1 Mo", "1M"), ("2 Mo", "2M"), ("3 Mo", "3M"), ("4 Mo", "4M"),
+    ("6 Mo", "6M"), ("1 Yr", "1Y"), ("2 Yr", "2Y"), ("3 Yr", "3Y"),
+    ("5 Yr", "5Y"), ("7 Yr", "7Y"), ("10 Yr", "10Y"), ("20 Yr", "20Y"),
+    ("30 Yr", "30Y"),
+)
 
 def treasury_yield_curve(year: int | None = None) -> list[dict]:
     """Raw Treasury daily CSV rows (newest first). S-tier government data."""

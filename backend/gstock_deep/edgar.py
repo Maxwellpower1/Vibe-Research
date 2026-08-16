@@ -1,8 +1,34 @@
 """EDGAR company-facts screener."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from gstock_deep.common import DataNotAvailable
 from gstock_deep.official import _require_sec_contact, official_get
+
+XBRL_TAGS = {
+    "营业收入": "Revenues",
+    "营业收入(合同)": "RevenueFromContractWithCustomerExcludingAssessedTax",
+    "净利润": "NetIncomeLoss",
+    "研发费用": "ResearchAndDevelopmentExpense",
+    "毛利": "GrossProfit",
+    "经营利润": "OperatingIncomeLoss",
+    "总资产": "Assets",
+    "股东权益": "StockholdersEquity",
+    "现金及等价物": "CashAndCashEquivalentsAtCarryingValue",
+    "经营现金流": "NetCashProvidedByUsedInOperatingActivities",
+    "资本开支": "PaymentsToAcquirePropertyPlantAndEquipment",
+    "长期负债": "LongTermDebtNoncurrent",
+    "稀释EPS": "EarningsPerShareDiluted",
+}
+
+# Instant (balance-sheet) concepts need the I suffix; no pure annual period.
+_INSTANT_TAGS = {
+    "Assets",
+    "StockholdersEquity",
+    "CashAndCashEquivalentsAtCarryingValue",
+    "LongTermDebtNoncurrent",
+}
 
 def _frame_period(year: int, quarter: int | None, instant: bool) -> str:
     if instant:
@@ -89,14 +115,4 @@ def edgar_screener(
         "tags": [{"label": k, "tag": v} for k, v in XBRL_TAGS.items()],
         "rows": ranking,
     }
-
-
-# ── Market movers (Eastmoney clist) ───────────────────────────────────────
-
-_MKT_FS = {
-    "us_nasdaq": "m:105",
-    "us_nyse": "m:106",
-    "us_etf": "m:107",
-    "hk": "m:116",
-}
 

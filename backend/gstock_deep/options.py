@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 import gstock
 from gstock_deep.common import DataNotAvailable
-from gstock_deep.official import official_get
+from gstock_deep.official import _et_today, official_get
 from gstock_deep.yahoo import _resolve_yahoo, to_yahoo_symbol
 
 CBOE_BASE = "https://cdn.cboe.com/api/global/delayed_quotes"
@@ -14,13 +14,6 @@ _OSI = re.compile(
     r"^(?P<root>[A-Z][A-Z0-9]*)(?P<y>\d{2})(?P<m>\d{2})(?P<d>\d{2})"
     r"(?P<cp>[CP])(?P<strike>\d{8})$"
 )
-
-try:
-    from zoneinfo import ZoneInfo
-
-    _ET_TZ = ZoneInfo("America/New_York")
-except Exception:
-    _ET_TZ = None
 
 
 def assert_us_ticker(ticker: str) -> str:
@@ -42,19 +35,6 @@ def parse_osi(symbol: str) -> dict:
         "type": "call" if g["cp"] == "C" else "put",
         "strike": int(g["strike"]) / 1000.0,
     }
-
-
-def _et_today() -> str:
-    now = datetime.now(timezone.utc)
-    if _ET_TZ is not None:
-        return now.astimezone(_ET_TZ).strftime("%Y-%m-%d")
-    y = now.year
-    mar8 = datetime(y, 3, 8, tzinfo=timezone.utc)
-    dst_start = (mar8 + timedelta(days=(6 - mar8.weekday()) % 7)).replace(hour=7)
-    nov1 = datetime(y, 11, 1, tzinfo=timezone.utc)
-    dst_end = (nov1 + timedelta(days=(6 - nov1.weekday()) % 7)).replace(hour=6)
-    offset = 4 if dst_start <= now < dst_end else 5
-    return (now - timedelta(hours=offset)).strftime("%Y-%m-%d")
 
 
 def options_chain_cboe(ticker: str) -> dict:

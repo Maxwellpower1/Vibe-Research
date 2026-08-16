@@ -11,10 +11,11 @@ import "./index.css";
 document.documentElement.classList.add("dark");
 document.documentElement.classList.remove("light");
 
+// Cockpit polls every 1-5s. RR7 startTransition nav can starve; keep clicks sync.
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      <RouterProvider router={router} />
+      <RouterProvider router={router} useTransitions={false} />
       <Toaster position="bottom-right" theme="dark" richColors closeButton duration={3500} />
     </ErrorBoundary>
   </StrictMode>
