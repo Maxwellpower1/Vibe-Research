@@ -76,6 +76,9 @@ prune_stale_sources() {
   local stale=(
     "$ROOT/frontend/src/pages/Weather.tsx"
     "$ROOT/backend/weather.py"
+    "$ROOT/frontend/src/components/review/ReviewIndexPanel.tsx"
+    "$ROOT/frontend/src/components/review/ReviewRankRow.tsx"
+    "$ROOT/frontend/src/components/review/constants.ts"
   )
   local f
   for f in "${stale[@]}"; do
