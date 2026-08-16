@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { newsTag } from "@/lib/newsTag";
 import { itemKey, loadTelegraph, markClsSeen, useTelegraph, type FeedSource } from "@/lib/telegraphHub";
@@ -58,6 +58,8 @@ function NewsRow({ it, i, isNew }: { it: ClsTelegraphItem; i: number; isNew: boo
 /** CLS + Sina/Wallstreetcn feed for the review cockpit cell. */
 export function NewsCockpitPanel() {
   const [source, setSource] = useState<FeedSource>("cls");
+  const [auto, setAuto] = useState(true);
+  const boxRef = useRef<HTMLDivElement>(null);
   const snap = useTelegraph();
   const data = source === "lives" ? snap.lives : snap.cls;
   const err = snap.err[source];
@@ -71,6 +73,11 @@ export function NewsCockpitPanel() {
   useEffect(() => {
     if (snap.cls) markClsSeen();
   }, [snap.cls]);
+
+  useEffect(() => {
+    if (!auto || !fresh.size) return;
+    boxRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [auto, fresh]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -91,11 +98,17 @@ export function NewsCockpitPanel() {
             {label}
           </button>
         ))}
-        <span className="ml-auto text-[10px] text-slate-600">
-          {data?.count != null ? `${data.count} 条` : ""}
-        </span>
+        <label className="ml-auto flex cursor-pointer items-center gap-1 text-[10px] text-slate-500">
+          <input
+            type="checkbox"
+            checked={auto}
+            onChange={(e) => setAuto(e.target.checked)}
+            className="accent-cyan-400"
+          />
+          自动滚动{data?.count != null ? ` · ${data.count}条` : ""}
+        </label>
       </div>
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5 pt-0">
+      <div ref={boxRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto scroll-smooth p-1.5 pt-0">
         {err && <p className="px-1 py-4 text-center text-[11px] text-rose-400/80">{err}</p>}
         {loading && !data && <p className="py-6 text-center text-[11px] text-slate-600">加载中…</p>}
         {data && !(data.items?.length) && <p className="py-6 text-center text-[11px] text-slate-600">暂无数据</p>}
