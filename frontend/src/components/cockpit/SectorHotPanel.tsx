@@ -118,34 +118,38 @@ function BoardList({
 }) {
   const leadLabel = tone === "up" ? "领涨股" : "领跌股";
   return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1">
-      <div className="mb-0.5 flex items-center justify-between px-1.5 pt-0.5">
-        <span className={cn("text-[11px] font-semibold", tone === "up" ? "text-red-400" : "text-emerald-400")}>
-          {title}
-        </span>
-        <span className="text-[10px] text-slate-600">{boards.length ? `${boards.length}` : ""}</span>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="shrink-0 px-1 pt-0.5">
+        <div className="mb-0.5 flex items-center justify-between px-1.5 pt-0.5">
+          <span className={cn("text-[11px] font-semibold", tone === "up" ? "text-red-400" : "text-emerald-400")}>
+            {title}
+          </span>
+          <span className="text-[10px] text-slate-600">{boards.length ? `${boards.length}` : ""}</span>
+        </div>
+        <div className="grid grid-cols-[24px_1fr_52px_72px] items-center gap-1.5 px-1.5 py-1 text-[10px] text-slate-500">
+          <span>代码</span>
+          <span>板块 / 强度</span>
+          <span className="text-right">涨跌幅</span>
+          <span className="text-right">{leadLabel}</span>
+        </div>
       </div>
-      <div className="grid grid-cols-[24px_1fr_52px_72px] items-center gap-1.5 px-1.5 py-1 text-[10px] text-slate-500">
-        <span>代码</span>
-        <span>板块 / 强度</span>
-        <span className="text-right">涨跌幅</span>
-        <span className="text-right">{leadLabel}</span>
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-1">
+        {loading && (
+          <p className="py-6 text-center text-[11px] text-slate-600">
+            {error ? "板块源未接通, 自动重试中" : "加载中…"}
+          </p>
+        )}
+        {boards.slice(0, 80).map((b) => (
+          <BoardRow
+            key={boardId(b) || b.name}
+            b={b}
+            maxAbs={maxAbs}
+            active={selectedId === boardId(b)}
+            leadLabel={leadLabel}
+            onClick={() => onPick(b)}
+          />
+        ))}
       </div>
-      {loading && (
-        <p className="py-6 text-center text-[11px] text-slate-600">
-          {error ? "板块源未接通, 自动重试中" : "加载中…"}
-        </p>
-      )}
-      {boards.slice(0, 80).map((b) => (
-        <BoardRow
-          key={boardId(b) || b.name}
-          b={b}
-          maxAbs={maxAbs}
-          active={selectedId === boardId(b)}
-          leadLabel={leadLabel}
-          onClick={() => onPick(b)}
-        />
-      ))}
     </div>
   );
 }
