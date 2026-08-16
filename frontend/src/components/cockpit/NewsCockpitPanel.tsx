@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { ExternalLink } from "lucide-react";
 import { newsTag } from "@/lib/newsTag";
 import { itemKey, loadTelegraph, markClsSeen, useTelegraph, type FeedSource } from "@/lib/telegraphHub";
 import type { ClsTelegraphItem } from "@/lib/api";
@@ -25,14 +24,14 @@ function TagPills({ title, extra, isNew }: { title: string; extra?: string; isNe
   );
 }
 
-function NewsRow({ it, i, isNew }: { it: ClsTelegraphItem; i: number; isNew: boolean }) {
+function NewsRow({ it, isNew }: { it: ClsTelegraphItem; isNew: boolean }) {
   const extra = it.content || it.summary || "";
   const body = extra && extra !== it.title ? extra : null;
-  const row = (
+  return (
     <article
       className={cn(
         "rounded border-l-2 px-2 py-1.5",
-        isNew ? "border-cyan-400 bg-cyan-500/5" : "border-slate-700/50 hover:bg-slate-800/30",
+        isNew ? "border-cyan-400 bg-cyan-500/5" : "border-slate-700/50",
       )}
     >
       <div className="flex items-center gap-1.5">
@@ -40,18 +39,10 @@ function NewsRow({ it, i, isNew }: { it: ClsTelegraphItem; i: number; isNew: boo
           {(it.time || "").slice(11, 16) || (it.time || "").slice(-8, -3) || "—"}
         </span>
         <TagPills title={it.title} extra={extra} isNew={isNew} />
-        {it.share_url && <ExternalLink className="ml-auto h-3 w-3 shrink-0 text-slate-600" />}
       </div>
       <p className="mt-0.5 text-[12px] font-semibold leading-5 text-slate-200">{it.title}</p>
       {body && <p className="mt-0.5 line-clamp-2 text-[11px] leading-[1.55] text-slate-400">{body}</p>}
     </article>
-  );
-  return it.share_url ? (
-    <a key={itemKey(it, i)} href={it.share_url} target="_blank" rel="noreferrer" className="block">
-      {row}
-    </a>
-  ) : (
-    <div key={itemKey(it, i)}>{row}</div>
   );
 }
 
@@ -129,7 +120,7 @@ export function NewsCockpitPanel({ source, auto }: { source: FeedSource; auto: b
         {loading && !data && <p className="py-6 text-center text-[11px] text-slate-600">加载中…</p>}
         {data && !(data.items?.length) && <p className="py-6 text-center text-[11px] text-slate-600">暂无数据</p>}
         {(data?.items ?? []).map((it, i) => (
-          <NewsRow key={itemKey(it, i)} it={it} i={i} isNew={fresh.has(itemKey(it, i))} />
+          <NewsRow key={itemKey(it, i)} it={it} isNew={fresh.has(itemKey(it, i))} />
         ))}
       </div>
     </div>
