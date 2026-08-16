@@ -347,7 +347,7 @@ function ReviewMailCard() {
     try {
       const next = await api.reviewMailSave({ enabled, at, to: to.trim() });
       apply(next);
-      toast.success(next.enabled ? `已开启，工作日 ${next.at} 发送` : "已关闭定时");
+      toast.success(next.enabled ? `已开启，交易日 ${next.at} 发送` : "已关闭定时");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "保存失败");
     } finally {
@@ -375,7 +375,7 @@ function ReviewMailCard() {
         <Mail className="h-4 w-4 text-primary" /> 定时复盘邮件
       </h3>
       <p className="mb-3 text-xs text-muted-foreground">
-        开关、时间和收件人在这里改，立刻生效。SMTP 授权码和模型 key 仍在
+        开关、时间和收件人在这里改，立刻生效。A 股休市日不发。SMTP 授权码和模型 key 仍在
         <code className="mx-1 rounded bg-muted/50 px-1">backend/.env</code>
         （网页「问 AI」的 key 定时任务读不到）。
       </p>
@@ -385,11 +385,12 @@ function ReviewMailCard() {
           <Flag ok={st.enabled} label={st.enabled ? `定时 ${st.at}` : "定时未开"} />
           <Flag ok={st.smtp_ready} label={st.smtp_ready ? "SMTP 已配" : "SMTP 未配"} />
           <Flag ok={st.llm_ready} label={st.llm_ready ? (st.llm_model || "模型已配") : "模型未配"} />
+          {st.trading_day === false && <Flag ok={false} label="今日休市" />}
           {st.last_sent_date && <Flag ok={st.last_ok} label={`上次 ${st.last_sent_date}`} />}
         </div>
       )}
       <label className="mb-3 flex items-center justify-between rounded-lg border border-border/60 px-3 py-2.5">
-        <span className="text-sm">工作日自动发送</span>
+        <span className="text-sm">交易日自动发送</span>
         <button
           type="button"
           role="switch"

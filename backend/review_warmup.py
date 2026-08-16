@@ -17,6 +17,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterator
 
+import trading_calendar
+
 BEIJING = timezone(timedelta(hours=8))
 log = logging.getLogger("review_warmup")
 
@@ -75,13 +77,13 @@ def _env_int(name: str, default: int) -> int:
 
 
 def session_kind(now: datetime | None = None) -> str:
-    """Rough A-share session: open | lunch | closed (Beijing, weekdays only)."""
+    """Rough A-share session: open | lunch | closed (Beijing, trading days)."""
     now = now or datetime.now(BEIJING)
     if now.tzinfo is None:
         now = now.replace(tzinfo=BEIJING)
     else:
         now = now.astimezone(BEIJING)
-    if now.weekday() >= 5:
+    if not trading_calendar.is_cn_trading_day(now):
         return "closed"
     hm = now.hour * 100 + now.minute
     # match frontend ashareSession: auction + continuous
@@ -179,6 +181,7 @@ def status() -> dict:
         "open_sec": _env_int("VR_REVIEW_WARMUP_OPEN_SEC", 90),
         "lunch_sec": _env_int("VR_REVIEW_WARMUP_LUNCH_SEC", 300),
         "closed_sec": _env_int("VR_REVIEW_WARMUP_CLOSED_SEC", 900),
+        "trading_day": trading_calendar.is_cn_trading_day(),
     }
 
 

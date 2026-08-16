@@ -3,7 +3,7 @@
 Web「问 AI」still uses the browser key. This job needs its own model
 config in backend/.env because it runs after the browser is closed.
 
-Opt-in: VR_REVIEW_MAIL=1. Weekdays, Asia/Shanghai, default 16:10.
+Opt-in: VR_REVIEW_MAIL=1. A-share trading days, Asia/Shanghai, default 16:10.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from typing import Any
 
 import mailer
 import review_context
+import trading_calendar
 
 BEIJING = timezone(timedelta(hours=8))
 log = logging.getLogger("review_mail")
@@ -123,12 +124,12 @@ def parse_hhmm(raw: str, default: tuple[int, int] = (16, 10)) -> tuple[int, int]
 
 
 def due(now: datetime, last_sent: str | None, hour: int, minute: int) -> bool:
-    """True once on a weekday after HH:MM if that calendar day was not sent."""
+    """True once on an A-share trading day after HH:MM if that day was not sent."""
     if now.tzinfo is None:
         now = now.replace(tzinfo=BEIJING)
     else:
         now = now.astimezone(BEIJING)
-    if now.weekday() >= 5:
+    if not trading_calendar.is_cn_trading_day(now):
         return False
     if last_sent == now.date().isoformat():
         return False
@@ -216,7 +217,7 @@ def _run_llm(cfg: dict[str, str], prompt: str, snap: str) -> str:
 def run_once(*, force: bool = False) -> dict[str, Any]:
     """Collect snapshot, ask the configured model, email the result.
 
-    force=True skips the weekday/once-per-day gate (manual test).
+    force=True skips the trading-day/once-per-day gate (manual test).
     """
     pref = resolved()
     hour, minute = parse_hhmm(pref["at"])
@@ -299,6 +300,8 @@ def status() -> dict[str, Any]:
         "last_sent_date": _STATE.get("last_sent_date") or disk.get("last_sent_date"),
         "last_error": _STATE.get("last_error") or disk.get("last_error"),
         "weekday": datetime.now(BEIJING).weekday() < 5,
+        "trading_day": trading_calendar.is_cn_trading_day(),
+        "calendar": trading_calendar.status(),
     }
 
 

@@ -48,6 +48,7 @@ from fastapi.responses import JSONResponse
 import portfolio as pf
 import review_mail
 import review_warmup
+import trading_calendar
 from api_common import _warm_review_dc
 from routers import (
     ai,
@@ -116,7 +117,9 @@ app.include_router(ai_watch_routes.router)
 app.include_router(fin_routes.router)
 app.include_router(research_routes.router)
 
+# A-share calendar first so mail/warmup skip holidays (weekend fallback if fetch fails).
+trading_calendar.start_background()
 # Background: keep Daily Review caches warm (session-aware interval).
 review_warmup.start_scheduler(extra=_warm_review_dc)
-# Opt-in: weekday AI review email (VR_REVIEW_MAIL=1).
+# Opt-in: trading-day AI review email (VR_REVIEW_MAIL=1).
 review_mail.start_scheduler()

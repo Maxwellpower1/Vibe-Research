@@ -45,6 +45,12 @@ _Avoid_: 第二份 TTL、market._CACHE 再包一层
 使用者把自己的模型接到复盘页。产品只提供复盘上下文和只读数据工具，不校准结论。
 _Avoid_: chat widget, LLM service
 
+**交易日历**:
+A 股这一天开不开市。复盘邮件和预热只问这个，不各自判 weekday。
+入口: `backend/trading_calendar.py`。`is_cn_trading_day()` 不打网上游；后台刷新东财上证日 K 日期。
+拿不到日历或日期超出覆盖：只判周末。
+_Avoid_: 第二份 weekday 列表、akshare 日历
+
 ## 就地改
 
 大文件就地改：`backend/astock.py`、`frontend/src/pages/StockData.tsx`、`frontend/src/pages/CtpPortfolio.tsx`、`frontend/src/lib/api.ts`。

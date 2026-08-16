@@ -66,7 +66,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - **产业链**：上/中/下游行复用驾驶舱 `QuoteStockRow`（分时 / 额 / 主力净 / 板块）。切到该页签时从涨跌停借横向空间（约 58%）；够宽则三列 + 右侧关键技术/按链快讯，窄则单列并把技术点摊在顶上。按关键词匹配相关板块涨跌。「+添加 / 更新」粘贴问财文本在前端按上中下游解析（6 位 A 股代码），自定义链只存本机；「从问财获取 / 问财刷新」走 `GET /api/iwencai/select`（需 `IWENCAI_API_KEY`）。客观呈现不附推荐。
 - **复盘预热**：后端启动后后台定时预拉复盘清单上的接口 + **指数分时**（指数目录 14 码，美股走腾讯 `usMinute`）+ **驾驶舱热路径**（全球指数 / 板块热点 / 个股榜 / 主力净流入 / 分钟资金流 / 商品），交易时段约 90 秒一次。用户正在拉 snapshot 时预热仍补腾讯/新浪分时键，只让开东财步骤。分钟资金流流入/流出榜并行；蝴蝶图不绑情绪完成，`curves=1` 与榜同时发。按板块分键缓存，二次访问不再串行 20 次东财 kline。首屏走 `GET /api/market/review-snapshot`（`scope=paint|top|full`：先腾讯指数/总览，完成后再情绪+行业强弱，再龙虎）；东财 `em_get` 与参考看板一样不卡发起间隔，HTTP 并行。顶栏行情条与全球指数格共用 5 秒报价中心。全 A 分位走独立 `/market/breadth`，不挡情绪格。`GET /api/market/review-warmup` 看预热状态；`VR_REVIEW_WARMUP=0` 可关
 - **复盘上下文**：`POST /api/market/review-context` 把当前复盘打成给模型看的文本（与邮件同一套）。网页「AI 复盘 / 问 AI」只调这一处，不再在浏览器里拼快照。
-- **定时复盘邮件**（默认关）：接入 AI 页可开关、改时间、改收件人（立刻生效）。工作日到点按同一份复盘清单收集 → 同一套复盘上下文 → SMTP 发出。`GET/PUT /api/market/review-mail` · `POST /api/market/review-mail/run`。SMTP 与模型 key 仍在 `.env`
+- **定时复盘邮件**（默认关）：接入 AI 页可开关、改时间、改收件人（立刻生效）。A 股交易日到点按同一份复盘清单收集 → 同一套复盘上下文 → SMTP 发出（法定节假日不发；日历取不到时只跳过周末）。`GET/PUT /api/market/review-mail` · `POST /api/market/review-mail/run`。SMTP 与模型 key 仍在 `.env`
 - **生意社现货（参考看板补齐）**：`GET /api/market/spot-table` 现货/期货/基差对照（8h 缓存，历史落在 `~/.vibe-research/spot-history.json`）· `GET /api/market/chem-spot?id=` 化工现货中位数。驾驶舱商品格「现期」tab 读现期表。
 - **期货日 K / 个股板块 / 直播快讯**：`GET /api/market/future-daily?code=nf_AU0`（新浪内盘/外盘日 K）· `GET /api/market/stock-boards?code=600519` · `GET /api/market/stock-boards-batch?codes=`（东财行业/地域/概念）· `GET /api/market/lives`（新浪 7×24，失败回退华尔街见闻；不进驾驶舱格子，快讯仍是右下角球）
 - **涨跌幅分位 / 成交额榜 / 真假板 / 同花顺成份**：`GET /api/market/breadth`（全 A p10–p90 + 8 档直方图，挂情绪格；新浪 `hs_a` 按页拉满，单页上限约 100，不足则腾讯批量）· 成交额榜 / 个股榜走新浪 `hs_a` · 涨跌停池与短线情绪共用东财四池原始缓存（180 秒）· 腾讯买一/卖一标真假封（只扫池内标的）· `GET /api/market/ths-profile` / `ths-rotation`（shy313 同花顺概念/行业，24h 缓存 `~/.vibe-research/ths-ext.json`）
@@ -192,7 +192,7 @@ cd frontend && npm install && npm run dev
 - 在「接入 AI 页 → 订阅接入」选一个即可，**无需填 key**。
 - 原理：后端 `cli_runtime.py` 检测本机命令并 `spawn` 它一次性作答（数据已在提示词里）。⚠️ CLI 不做多轮工具调用，适合「复盘 / 今日要点 / 个股页问 AI」这类**数据已备好**的场景；要 AI 自己现场调数据工具的自由问答，用下面的「API 接入」。
 - **复盘快照**：点「AI 复盘 / 问 AI」时，前端把当前驾驶舱各格打成一份文本（指数 / 涨跌分布 / 涨跌停 / 板块 / 资金 / 个股榜 / 商品 / 实时热点 7×24 全文 / 自选 / 龙虎 / 利率），缺格标明「未取到」。实现见 `frontend/src/lib/reviewContext.ts`。
-- **定时复盘邮件**（可选）：工作日收盘后后端自己跑一轮同样的总结，SMTP 发到你的邮箱。开关 / 时间 / 收件人在接入 AI 页改。网页 key 定时任务读不到，必须在 `backend/.env` 再配一份模型 + SMTP。详见 `backend/.env.example`。
+- **定时复盘邮件**（可选）：A 股交易日收盘后后端自己跑一轮同样的总结，SMTP 发到你的邮箱（休市日不发）。开关 / 时间 / 收件人在接入 AI 页改。网页 key 定时任务读不到，必须在 `backend/.env` 再配一份模型 + SMTP。详见 `backend/.env.example`。
 
 ### 2. API 接入（填自己的 key）
 

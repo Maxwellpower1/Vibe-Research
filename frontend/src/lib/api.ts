@@ -1268,6 +1268,7 @@ export interface ReviewMailStatus {
   last_ok: boolean;
   running: boolean;
   weekday: boolean;
+  trading_day?: boolean;
 }
 
 export interface ReviewMailRun {
