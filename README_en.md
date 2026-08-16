@@ -66,7 +66,7 @@ Three public data toolkits are **vendored directly into this repo** — `git clo
 ### US / HK data · global-stock-data
 
 - Lives in [`global-stock-data/`](global-stock-data/) (v2.0.3). 13 data layers, 30+ endpoints, 11 sources, no auth required — quotes, candles, technicals, financial statements, options (CBOE official chain with full Greeks and 0DTE flow), FINRA short volume, SEC EDGAR filing stream + **EDGAR frames screener**, US/HK movers boards. Every source is labeled with its compliance tier.
-- Dashboard: US page hosts EDGAR Screener, movers, and selected-ticker options; stock page shows US daily candles (`/api/global/us/kline` Yahoo only). Research desk: `/api/research/*` (correlation, ETF holdings, 13F QoQ, extra klines).
+- Dashboard: US page hosts EDGAR Screener, movers, and selected-ticker options; stock page shows US daily candles (`/api/global/us/kline` Sina). Research desk: `/api/research/*` (correlation, ETF holdings, 13F QoQ, extra klines).
 - `backend/gstock.py` + `gstock_deep.py`: global indices, US/HK quotes & key metrics, **Yahoo valuation/analyst/holders** (quoteSummary only; empty if Yahoo is down), **3-statement summaries & fund flow**, **FINRA short volume**, **CBOE options 0DTE/unusual flow**, **SEC filings / earnings calendar**, **Yahoo stock news (RSS fallback when crumb is blocked)**.
 - Set `VR_SEC_CONTACT="Name you@example.com"` for SEC endpoints.
 - **CBOE options**: compliance tier C — personal research only; commercial use needs a Cboe license. Delayed data, not for live trading.

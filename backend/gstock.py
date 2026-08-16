@@ -2,7 +2,7 @@
 
 并入：
 - 东财域内合规子集：全球指数 + 美港股行情 + 关键财务指标
-- 美股日 K：Yahoo 前复权
+- 美股日 K：新浪日 K
 
 用途＝A 股「看隔夜外围脸色」+ 个股页支持美港股代码 + 「美股」页观察列表/K线。
 
@@ -11,7 +11,7 @@
   `astock.eastmoney_datacenter`（datacenter 三表/指标已封装）。
 - push2 stock/get 直连偶发掉连 → **push2 优先、失败降级 push2delay**（延时行情，研究场景足够），
   latch 到可用主机整进程复用（同成交额榜的做法）。
-- 美股前复权依赖 Yahoo chart；不可达则空。
+- 美股日 K 走新浪；Yahoo chart 在国内 403。
 
 合规：只做客观数据整理，不预置标的、不推荐、不预测。
 """
@@ -309,75 +309,40 @@ def us_hk_stock(query: str, *, with_metrics: bool = True) -> dict:
     }
 
 
-def _yahoo_chart_bars(ysym: str, n: int) -> tuple[list[dict], str]:
-    """Yahoo chart v8: try query1 then query2. Returns (bars, short_name)."""
+def _us_kline_sina(code: str, n: int) -> list[dict]:
+    """Sina US daily K. Yahoo chart/crumb are 403 from CN."""
     import requests
-    from datetime import datetime
 
-    last_err: Exception | None = None
-    for host in ("query1", "query2"):
+    url = "https://stock.finance.sina.com.cn/usstock/api/jsonp.php/var/US_MinKService.getDailyK"
+    r = requests.get(
+        url,
+        params={"symbol": code, "num": n},
+        headers={"Referer": "https://finance.sina.com.cn/", "User-Agent": astock.UA},
+        timeout=15,
+    )
+    r.raise_for_status()
+    m = re.search(r"\((\[.+\])\)", r.text, re.S)
+    if not m:
+        return []
+    items = json.loads(m.group(1))
+    bars: list[dict] = []
+    for item in items:
         try:
-            r = requests.get(
-                f"https://{host}.finance.yahoo.com/v8/finance/chart/{ysym}",
-                params={"interval": "1d", "range": "2y", "includeAdjustedClose": "true"},
-                headers={"User-Agent": astock.UA},
-                timeout=20,
-            )
-            r.raise_for_status()
-            res = ((r.json().get("chart") or {}).get("result") or [None])[0]
-            if not res:
-                continue
-            timestamps = res.get("timestamp") or []
-            quote = ((res.get("indicators") or {}).get("quote") or [{}])[0]
-            adj_list = ((res.get("indicators") or {}).get("adjclose") or [{}])
-            adjclose = (adj_list[0].get("adjclose") if adj_list else None) or []
-            bars: list[dict] = []
-            for i, ts in enumerate(timestamps):
-                try:
-                    o, h, l, c = quote["open"][i], quote["high"][i], quote["low"][i], quote["close"][i]
-                    if o is None or h is None or l is None or c is None or c == 0:
-                        continue
-                    adj = adjclose[i] if i < len(adjclose) else None
-                    factor = (float(adj) / float(c)) if adj not in (None, 0) else 1.0
-                    bars.append({
-                        "date": datetime.fromtimestamp(ts).strftime("%Y-%m-%d"),
-                        "open": round(float(o) * factor, 4),
-                        "high": round(float(h) * factor, 4),
-                        "low": round(float(l) * factor, 4),
-                        "close": round(float(c) * factor, 4),
-                        "volume": int(quote["volume"][i] or 0),
-                    })
-                except (TypeError, ValueError, KeyError, IndexError):
-                    continue
-            if bars:
-                meta = res.get("meta") or {}
-                return bars[-n:], str(meta.get("shortName") or "")
-        except Exception as e:
-            last_err = e
+            bars.append({
+                "date": str(item.get("d") or ""),
+                "open": float(item.get("o") or 0),
+                "high": float(item.get("h") or 0),
+                "low": float(item.get("l") or 0),
+                "close": float(item.get("c") or 0),
+                "volume": int(float(item.get("v") or 0)),
+            })
+        except (TypeError, ValueError):
             continue
-    if last_err:
-        raise last_err
-    return [], ""
-
-
-def _us_kline_yahoo_qfq(code: str, n: int) -> list[dict]:
-    """Yahoo chart v8: forward-adjust OHLC by adjclose/close (前复权).
-
-    Latest close stays aligned with market price; history scaled for splits/dividends.
-    Yahoo class shares use '-' (BRK-B); normalize '.' -> '-'.
-    """
-    bars, _name = _yahoo_chart_bars(code.replace(".", "-"), n)
-    return bars
+    return bars[-n:]
 
 
 def us_stock_kline(symbol: str, num: int = 180) -> dict:
-    """美股日 K，Yahoo 前复权（adjclose 缩放 OHLC）。
-
-    symbol: 如 AAPL / TSLA；仅美股 ticker。
-    num: 返回最近 N 根。
-    返回: {code, name, market, source, adjust: qfq, bars: [...]}
-    Yahoo 不可达则空。
-    """
+    """美股日 K（新浪）。symbol 如 AAPL / TSLA；仅美股 ticker。"""
     sym = (symbol or "").strip().upper()
     if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,7}", sym):
         return {}
@@ -389,7 +354,7 @@ def us_stock_kline(symbol: str, num: int = 180) -> dict:
     n = max(20, min(int(num or 180), 1000))
 
     try:
-        bars = _us_kline_yahoo_qfq(code, n)
+        bars = _us_kline_sina(code, n)
     except Exception:
         bars = []
     if not bars:
@@ -398,8 +363,8 @@ def us_stock_kline(symbol: str, num: int = 180) -> dict:
         "code": code,
         "name": name,
         "market": "US",
-        "source": "yahoo",
-        "adjust": "qfq",
+        "source": "sina",
+        "adjust": "none",
         "bars": bars,
     }
 

@@ -60,7 +60,7 @@ python3 -m venv .venv
 | `GET /api/global/stock/sec-filings?symbol=` | 个股 SEC 申报列表（需 `VR_SEC_CONTACT`） | requests |
 | `GET /api/global/sec/daily` | 全市场 SEC 当日流 Form4/8-K/13F（需 `VR_SEC_CONTACT`） | requests |
 | `GET /api/global/earnings-calendar` | Nasdaq 财报日历 | requests |
-| `GET /api/global/us/kline?symbol=` | 美股日 K（Yahoo 前复权） | requests |
+| `GET /api/global/us/kline?symbol=` | 美股日 K（新浪） | requests |
 | `GET /api/research/sources` | 研究桌可选包是否已装 | — |
 | `GET /api/research/kline?symbol=&source=` | Stooq / Baostock / OKX / Binance / CCXT / pykrx | 可选包 |
 | `GET /api/research/correlation?codes=` | 日收益 Pearson 矩阵, 最多 12 只 | 各市场 K 线 |

@@ -463,7 +463,7 @@ def fetch_kline(symbol: str, num: int = 180, source: str = "auto",
         return _a_share_auto(symbol, num)
     if market == "hk":
         return {"error": "港股日 K 已下线"}
-    # US research auto: Yahoo, then Stooq
+    # US research auto: Sina, then Stooq
     import gstock
     out = gstock.us_stock_kline(symbol, num=num)
     if out.get("bars"):

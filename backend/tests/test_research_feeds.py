@@ -209,13 +209,13 @@ def test_13f_parse_diff_units():
     assert inst_13f.detect_value_units(fat, "2020-01-01") == (1, "usd")
 
 
-def test_us_kline_empty_when_yahoo_empty(monkeypatch):
+def test_us_kline_empty_when_sina_empty(monkeypatch):
     import gstock
 
     monkeypatch.setattr(gstock, "resolve_symbol", lambda q: {
         "code": "AAPL", "name": "Apple", "market": "NASDAQ",
     })
-    monkeypatch.setattr(gstock, "_us_kline_yahoo_qfq", lambda *a, **k: [])
+    monkeypatch.setattr(gstock, "_us_kline_sina", lambda *a, **k: [])
     assert gstock.us_stock_kline("AAPL") == {}
 
 

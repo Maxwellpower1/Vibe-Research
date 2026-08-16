@@ -1,41 +1,21 @@
-"""US kline fallbacks (no live Yahoo)."""
+"""US daily kline (Sina JSONP)."""
 import gstock
 
 
-def test_yahoo_chart_tries_query2(monkeypatch):
-    calls = []
-
+def test_us_kline_parses_sina_jsonp(monkeypatch):
     class FakeResp:
-        def __init__(self, host):
-            self._host = host
+        text = 'var([{ "d":"2026-08-14","o":"1","h":"2","l":"0.5","c":"1.5","v":"9" }])'
 
         def raise_for_status(self):
-            if "query1" in self._host:
-                raise RuntimeError("403")
-
-        def json(self):
-            return {
-                "chart": {
-                    "result": [{
-                        "timestamp": [1],
-                        "meta": {"shortName": "Apple"},
-                        "indicators": {
-                            "quote": [{"open": [1], "high": [2], "low": [0.5], "close": [1.5], "volume": [9]}],
-                            "adjclose": [{"adjclose": [1.5]}],
-                        },
-                    }]
-                }
-            }
-
-    def fake_get(url, params=None, headers=None, timeout=20):
-        calls.append(url)
-        return FakeResp(url)
+            return None
 
     import requests as req_mod
 
-    monkeypatch.setattr(req_mod, "get", fake_get)
-    bars, name = gstock._yahoo_chart_bars("AAPL", 20)
-    assert any("query1" in u for u in calls)
-    assert any("query2" in u for u in calls)
-    assert bars[0]["close"] == 1.5
-    assert name == "Apple"
+    monkeypatch.setattr(req_mod, "get", lambda *a, **k: FakeResp())
+    monkeypatch.setattr(gstock, "resolve_symbol", lambda q: {
+        "code": "AAPL", "name": "Apple", "market": "NASDAQ",
+    })
+    out = gstock.us_stock_kline("AAPL", 20)
+    assert out["source"] == "sina"
+    assert out["bars"][0]["close"] == 1.5
+    assert out["bars"][0]["date"] == "2026-08-14"
