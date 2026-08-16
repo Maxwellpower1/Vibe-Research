@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import ctp
-import myreports as mr
 import portfolio as pf
 
 router = APIRouter(tags=["portfolio"])
@@ -14,11 +12,6 @@ class HoldingIn(BaseModel):
     code: str
     shares: float
     cost: float
-
-
-class ReportIn(BaseModel):
-    name: str
-    content_b64: str
 
 
 class CloseIn(BaseModel):
@@ -52,35 +45,6 @@ def portfolio_add(h: HoldingIn):
 @router.delete("/api/portfolio/holding")
 def portfolio_remove(code: str = Query(...)):
     return {"data": pf.remove_holding(code.strip())}
-
-
-@router.get("/api/myreports")
-def myreports_list():
-    return {"data": mr.list_reports()}
-
-
-@router.post("/api/myreports")
-def myreports_upload(r: ReportIn):
-    """上传一份研报（base64）→ 存本地 + 按文件名自动打行业标签。"""
-    try:
-        return {"data": mr.save_report(r.name, r.content_b64)}
-    except mr.ReportError as e:
-        raise HTTPException(400, str(e)) from e
-
-
-@router.get("/api/myreports/file/{rid}")
-def myreports_file(rid: str):
-    """下载/预览某份研报原文件。"""
-    hit = mr.report_path(rid)
-    if not hit:
-        raise HTTPException(404, "研报不存在")
-    path, name = hit
-    return FileResponse(str(path), filename=name)
-
-
-@router.delete("/api/myreports/{rid}")
-def myreports_delete(rid: str):
-    return {"data": {"ok": mr.delete_report(rid)}}
 
 
 @router.post("/api/portfolio/close")

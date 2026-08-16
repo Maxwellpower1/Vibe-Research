@@ -98,25 +98,6 @@ def test_portfolio_legacy_migration(tmp_path, monkeypatch):
     assert pf._load()["holdings"] == []
 
 
-def test_myreports_legacy_migration(tmp_path, monkeypatch):
-    import myreports as mr
-
-    old = tmp_path / "repo-cache" / "myreports"
-    old.mkdir(parents=True)
-    (old / "index.json").write_text("[]", encoding="utf-8")
-    monkeypatch.delenv("VR_REPORTS_DIR", raising=False)
-    monkeypatch.setattr(mr, "_OLD_DEFAULT_DIR", old)
-    monkeypatch.setattr(mr, "REPORTS_DIR", tmp_path / "userdata" / "myreports")
-    # 上次复制中断留下的半截临时目录，不该挡住这次迁移
-    stale = tmp_path / "userdata" / "myreports.migrate.tmp"
-    stale.mkdir(parents=True)
-    (stale / "partial.bin").write_text("x", encoding="utf-8")
-    mr._migrate_legacy()
-    dst = tmp_path / "userdata" / "myreports"
-    assert (dst / "index.json").exists()
-    assert not (dst / "partial.bin").exists()  # 半截内容没混进正式目录
-
-
 # ── full_valuation：一致预期缺「均值」/ '-' 占位不再 502 ─────────────
 
 _QUOTE = {"600519": {"name": "贵州茅台", "price": 100.0, "mcap_yi": 1000, "pe_ttm": 20.0, "pb": 5.0}}

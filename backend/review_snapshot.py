@@ -1,8 +1,7 @@
 """Daily Review BFF: paint / top / full payloads share the same TTL keys.
 
 scope=paint is Tencent + overview only (no Eastmoney). top adds emotion +
-industry strength. full then fills dragon-tiger. Unused keys stay in the
-JSON as None so the API shape does not break.
+industry strength. full then fills dragon-tiger.
 Eastmoney calls run in parallel (no em_get launch gap).
 """
 from __future__ import annotations
@@ -21,8 +20,6 @@ from api_common import _cached
 _errors_lock = threading.Lock()
 
 BEIJING = timezone(timedelta(hours=8))
-
-_LIMIT_KINDS = ("zt", "zb", "dt", "yzt", "jm")
 
 
 def _grab(name: str, fn: Callable[[], Any], bucket: dict[str, Any], errors: list[dict]) -> None:
@@ -78,55 +75,32 @@ def _fill_em_top(bucket: dict[str, Any], errors: list[dict]) -> None:
     )
 
 
-def _fill_em_extra(
-    bucket: dict[str, Any],
-    errors: list[dict],
-    *,
-    limit_kind: str,
-) -> None:
-    _ = limit_kind
-    jobs: list[tuple[str, Callable[[], Any]]] = [
-        (
-            "lhb",
-            lambda: _cached(
-                "dt_daily",
-                "auto:40:all",
-                600,
-                lambda: astock.daily_dragon_tiger(None, None, top=40),
+def _fill_em_extra(bucket: dict[str, Any], errors: list[dict]) -> None:
+    _run_parallel(
+        [
+            (
+                "lhb",
+                lambda: _cached(
+                    "dt_daily",
+                    "auto:40:all",
+                    600,
+                    lambda: astock.daily_dragon_tiger(None, None, top=40),
+                ),
             ),
-        ),
-    ]
-    bucket["monitor"] = None
-    bucket["anomaly"] = None
-    bucket["limit_pool"] = None
-    bucket["ths_limit_up"] = None
-    _run_parallel(jobs, bucket, errors)
+        ],
+        bucket,
+        errors,
+    )
 
 
-def build_review_snapshot(
-    *,
-    scope: str = "full",
-    board_type: str = "industry",
-    board_period: str = "today",
-    limit_kind: str = "zt",
-) -> dict[str, Any]:
+def build_review_snapshot(*, scope: str = "full") -> dict[str, Any]:
     """Assemble Daily Review payload. paint < top < full."""
     scope = (scope or "full").strip().lower()
     if scope not in ("paint", "top", "full"):
         scope = "full"
-    # board_type / board_period stay in the signature for older clients.
-    _ = (board_type, board_period)
-    limit_kind = limit_kind if limit_kind in _LIMIT_KINDS else "zt"
 
     top: dict[str, Any] = {}
-    extra: dict[str, Any] = {
-        "lhb": None,
-        "monitor": None,
-        "anomaly": None,
-        "limit_pool": None,
-        "ths_limit_up": None,
-        "board_flow": None,
-    }
+    extra: dict[str, Any] = {"lhb": None}
     errors: list[dict] = []
 
     with review_warmup.user_fetch():
@@ -140,23 +114,15 @@ def build_review_snapshot(
             for fut in futs:
                 fut.result()
         if scope == "full":
-            _fill_em_extra(extra, errors, limit_kind=limit_kind)
+            _fill_em_extra(extra, errors)
 
     return {
         "scope": scope,
         "indices": top.get("indices"),
-        "global_indices": top.get("global_indices"),
         "overview": top.get("overview"),
         "emotion": top.get("emotion"),
-        "turnover": top.get("turnover"),
-        "hot": top.get("hot"),
         "industry": top.get("industry"),
         "lhb": extra.get("lhb"),
-        "monitor": extra.get("monitor"),
-        "anomaly": extra.get("anomaly"),
-        "limit_pool": extra.get("limit_pool"),
-        "ths_limit_up": extra.get("ths_limit_up"),
-        "board_flow": extra.get("board_flow"),
         "hsgt": top.get("hsgt"),
         "errors": errors,
         "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M:%S"),

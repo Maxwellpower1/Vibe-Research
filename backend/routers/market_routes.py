@@ -4,63 +4,12 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 import astock
-import market
-import newsradar
 import review_mail
 import review_snapshot
 import review_warmup
 from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _cached, _DC_CACHE
 
 router = APIRouter(tags=["market"])
-
-@router.get("/api/radar")
-def radar():
-    """资讯雷达：12 赛道公开 RSS 资讯（读缓存，无缓存返回赛道骨架）。"""
-    try:
-        return {"data": newsradar.get_radar(force=False)}
-    except Exception as e:
-        raise HTTPException(502, f"资讯雷达异常：{e}") from e
-
-
-@router.post("/api/radar/refresh")
-def radar_refresh():
-    """强制重抓全部 RSS 源（耗时约 20-40s），更新缓存。"""
-    try:
-        return {"data": newsradar.fetch_radar()}
-    except Exception as e:
-        raise HTTPException(502, f"资讯雷达刷新失败：{e}") from e
-
-
-@router.get("/api/market/overview")
-def market_overview():
-    """市场情绪 + 板块资金流（板块/大盘级，全站共享缓存 5 分钟）。"""
-    try:
-        return {"data": market.get_overview()}
-    except Exception as e:
-        raise HTTPException(502, f"市场总览异常：{e}") from e
-
-
-@router.get("/api/market/emotion")
-def market_emotion():
-    """短线情绪：连板梯队 / 最高连板 / 炸板率 / 封板率 / 晋级率 / 涨跌停家数。
-
-    含连板梯队个股清单（code/name/连板数等）——2026-07-05 起如实展示客观公开榜单（东财同款），
-    只呈现事实，不附推荐/评分/预测/买卖时机。全站共享缓存 5 分钟。
-    """
-    try:
-        return {"data": market.get_short_term_emotion()}
-    except Exception as e:
-        raise HTTPException(502, f"短线情绪异常：{e}") from e
-
-
-@router.get("/api/market/turnover-top")
-def market_turnover_top():
-    """全市场成交额榜 Top20（客观公开榜单数据，非推荐/非预测/不评分）。全站共享缓存 5 分钟。"""
-    try:
-        return {"data": market.get_turnover_top()}
-    except Exception as e:
-        raise HTTPException(502, f"成交额榜异常：{e}") from e
-
 
 @router.get("/api/market/review-warmup")
 def market_review_warmup_status():
@@ -102,46 +51,15 @@ def market_review_mail_run():
 @router.get("/api/market/review-snapshot")
 def market_review_snapshot(
     scope: str = Query("full", description="paint|top|full"),
-    board_type: str = Query("industry", description="industry|concept|region"),
-    period: str = Query("today", description="today|5d|10d"),
-    limit_kind: str = Query("zt", description="zt|zb|dt|yzt|jm"),
 ):
     """每日复盘首屏聚合。读同一套 TTL 缓存, 避免前端 10+ 请求撞东财串行锁。"""
     sc = (scope or "full").strip().lower()
     if sc not in ("paint", "top", "full"):
         raise HTTPException(400, "scope 须为 paint / top / full")
     try:
-        return {
-            "data": review_snapshot.build_review_snapshot(
-                scope=sc,
-                board_type=board_type,
-                board_period=period,
-                limit_kind=limit_kind,
-            )
-        }
+        return {"data": review_snapshot.build_review_snapshot(scope=sc)}
     except Exception as e:
         raise HTTPException(502, f"复盘快照异常：{e}") from e
-
-
-@router.get("/api/market/board-flow")
-def market_board_flow(
-    board_type: str = Query("industry", description="industry|concept|region"),
-    period: str = Query("today", description="today|5d|10d"),
-    top: int = Query(20, ge=5, le=50),
-):
-    """板块资金流向（东财 clist）。客观公开榜单。缓存 3 分钟。"""
-    import astock_boards
-    try:
-        key = f"{board_type}:{period}:{top}"
-        data = _cached(
-            "board_flow",
-            key,
-            180,
-            lambda: astock_boards.board_fund_flow(board_type, period, top),
-        )
-        return {"data": data}
-    except Exception as e:
-        raise HTTPException(502, f"板块资金流异常：{e}") from e
 
 
 def _parse_flow_codes(codes: str, cap: int = 40) -> list[str]:
@@ -243,71 +161,6 @@ def market_hsgt():
         raise HTTPException(502, f"北向资金异常：{e}") from e
 
 
-@router.get("/api/market/hot-list")
-def market_hot_list(
-    period: str = Query("hour", description="hour|day"),
-    top: int = Query(30, ge=5, le=50),
-):
-    """同花顺热榜。客观公开榜单。缓存 3 分钟。"""
-    import astock_boards
-    try:
-        data = _cached(
-            "hot_ths",
-            f"{period}:{top}",
-            180,
-            lambda: astock_boards.ths_hot_list(period, top),
-        )
-        return {"data": data}
-    except Exception as e:
-        raise HTTPException(502, f"热榜异常：{e}") from e
-
-
-@router.get("/api/market/stock-monitor")
-def market_stock_monitor():
-    """交易所重点监控池。缓存 10 分钟。"""
-    import astock_boards
-    try:
-        data = _cached("monitor", "active", 600, lambda: astock_boards.em_stock_monitor(True))
-        return {"data": data}
-    except Exception as e:
-        raise HTTPException(502, f"重点监控池异常：{e}") from e
-
-
-@router.get("/api/market/price-anomaly")
-def market_price_anomaly(top: int = Query(60, ge=10, le=200)):
-    """日内严重异常波动。缓存 5 分钟。"""
-    import astock_boards
-    try:
-        data = _cached(
-            "anomaly",
-            str(top),
-            300,
-            lambda: astock_boards.em_price_anomaly(top),
-        )
-        return {"data": data}
-    except Exception as e:
-        raise HTTPException(502, f"日内异动异常：{e}") from e
-
-
-@router.get("/api/market/limit-pools")
-def market_limit_pools(
-    pool: str = Query("zt", description="zt|zb|dt|yzt"),
-    top: int = Query(40, ge=5, le=100),
-):
-    """打板池明细（涨停/炸板/跌停/昨涨停）。客观公开榜单。缓存 3 分钟。"""
-    import astock_boards
-    try:
-        data = _cached(
-            "limit_pool",
-            f"{pool}:{top}",
-            180,
-            lambda: astock_boards.limit_up_pools(pool, top=top),
-        )
-        return {"data": data}
-    except Exception as e:
-        raise HTTPException(502, f"打板池异常：{e}") from e
-
-
 @router.get("/api/market/breadth")
 def market_breadth():
     """Full A-share change-pct percentiles + 8-band histogram. Cache 3 min."""
@@ -345,24 +198,6 @@ def market_ths_rotation(
         return {"data": ths_ext.rotation(k, top)}
     except Exception as e:
         raise HTTPException(502, f"同花顺轮动异常：{e}") from e
-
-
-@router.get("/api/market/ths-limit-up")
-def market_ths_limit_up(
-    date: str | None = Query(None, description="YYYYMMDD 或 YYYY-MM-DD"),
-):
-    """同花顺涨停揭秘（原因题材/板型/封板率）。客观公开榜单。缓存 3 分钟。"""
-    try:
-        key = (date or "").strip() or "today"
-        data = _cached(
-            "ths_limit_up",
-            key,
-            180,
-            lambda: astock.ths_limit_up_pool(date),
-        )
-        return {"data": data}
-    except Exception as e:
-        raise HTTPException(502, f"同花顺涨停揭秘异常：{e}") from e
 
 
 @router.get("/api/iwencai/status")
@@ -497,17 +332,6 @@ def market_quotes(
         return {"data": cockpit_live.quotes_cached(raw)}
     except Exception as e:
         raise HTTPException(502, f"行情批量异常：{e}") from e
-
-
-@router.get("/api/market/world-indices")
-def market_world_indices():
-    """全球关键指数 (A/HK/US/FX). 缓存 20 秒."""
-    import cockpit_live
-    try:
-        data = _cached("world_indices", "live", 20, cockpit_live.world_indices)
-        return {"data": data}
-    except Exception as e:
-        raise HTTPException(502, f"全球指数异常：{e}") from e
 
 
 @router.get("/api/market/boards")

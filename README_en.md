@@ -38,9 +38,7 @@ It does not make decisions for you. It pulls together quotes, analyst reports, v
 | 📡&nbsp;**News&nbsp;Radar** | CLS telegraph + Sina/Wallstreetcn 7×24 (badge / toast) |
 | ⭐&nbsp;**Watchlist** | **Paste a whole batch of tickers at once** (commas, spaces or newlines) · one-screen table (price, change, PE, PB, turnover) · **live quotes toggle** (top right, off by default; refreshes every 3s during trading hours, auto-pauses outside them and when the tab is hidden) · hand the whole list to your AI. Stored locally |
 | 💼&nbsp;**Portfolio** | Enter cost and size, see live P&L · closed-position log (local only, never uploaded) |
-| 📄&nbsp;**My Reports** | Drag-and-drop your own research PDFs / Word / spreadsheets · auto-filed by industry from the filename · download or delete. **Stored in your local deploy directory only** |
 | 🔬&nbsp;**Research desk** | Header `/research`: correlation heatmap · ETF look-through (Eastmoney full book / SEC N-PORT) · 13F QoQ · OKX/Binance/pykrx candles. Public filings only; holdings are stale by construction |
-| 📝&nbsp;**Research Notes** | Save AI reviews, takeaways and Q&A locally · **reflection audit**: have the AI audit its own reasoning — which claims are backed by data, which are speculation, where the weakest link is, and what to check next |
 | 🔌&nbsp;**Bring Your AI** | Subscription mode (local CLI, no API key) · API mode (any OpenAI-compatible endpoint) · MCP (mount into Claude Code and other agents) |
 
 > **Built-in analysis framework**: when your AI analyzes a stock it organizes findings across five dimensions — valuation, fund flows, earnings quality, industry cycle, catalysts and risks. The framework only prescribes *how to read the data*, never what to buy. The direction still comes from your own model.
@@ -97,7 +95,6 @@ Vibe-Research/
 │   ├── portfolio.py     Portfolio (stored in your local user directory)
 │   ├── tools.py         AI tool layer (48 data tools, shared by chat / MCP)
 │   ├── chat.py          In-app AI (OpenAI-compatible function calling)
-│   ├── reflection.py    Reflection audit (audits reasoning in existing analysis)
 │   └── mcp_server.py    MCP server (for Claude Code and other agents)
 └── frontend/          Vite + React 19 + TS + Tailwind :5899
 ```
@@ -142,12 +139,6 @@ Mount the backend as an MCP server so your agent can call Vibe-Research's data t
 
 Toggle, time and recipient are on the Bring-your-AI page and take effect immediately. The browser key is invisible to the job — SMTP auth code and model key stay in `backend/.env`. Weekdays only, one mail per day, same review prompt as the web page.
 
-## Reflection audit
-
-Audit the reasoning in writing you already have and surface the parts that *sound* reasonable but aren't backed by anything. In testing it reliably catches things like "widely recognized by institutions" (generalizing from three data points) or "frequently raised estimates" (never quantified).
-
-Cheap — **a single model call** over the text you selected (auto-truncated with a notice past ~12k chars). Output is "what to verify next", never a buy/sell call.
-
 ## Tests
 
 ```bash
@@ -167,8 +158,8 @@ See [CHANGELOG.md](./CHANGELOG.md). The single source of truth for the version i
 - Objective data aggregation and public-ranking display only: **no stock recommendations, no price predictions, no trade timing, no return promises, no subjective scoring.** Neutral by design.
 - Limit-up lists and turnover rankings are **objective public data** (the same numbers Eastmoney and Tonghuashun publish); the product displays them as-is with nothing attached.
 - All analytical direction comes from the AI *you* configure, not from this project. There are no buy/sell buttons in the UI, and valuation percentiles mark position only — no lines suggesting when to act.
-- **Your portfolio, watchlist, uploaded reports and API keys stay on your machine.** Nothing is uploaded; nothing enters the repo.
-- Portfolio and uploaded reports default to `~/.vibe-research/` (override with `VR_DATA_DIR` / `VR_REPORTS_DIR`) — outside the project folder, so re-downloading or overwriting the project never loses your data.
+- **Your portfolio, watchlist and API keys stay on your machine.** Nothing is uploaded; nothing enters the repo.
+- Portfolio defaults to `~/.vibe-research/` (override with `VR_DATA_DIR`) — outside the project folder, so re-downloading or overwriting the project never loses your data.
 
 ## Related Projects
 

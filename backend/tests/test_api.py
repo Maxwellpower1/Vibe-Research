@@ -50,11 +50,6 @@ def test_stock_flow_batch_ok(monkeypatch):
     assert rows[0]["netRatio"] == 2.0
 
 
-def test_industry_top_range():
-    assert client.get("/api/industry?top=2").status_code == 422   # ge=5
-    assert client.get("/api/industry?top=999").status_code == 422  # le=50
-
-
 def test_chat_empty_messages_400():
     r = client.post("/api/chat", json={"messages": [], "llm": {"model": "x", "baseURL": "http://x", "apiKey": "k"}})
     assert r.status_code == 400

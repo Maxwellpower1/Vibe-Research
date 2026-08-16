@@ -166,16 +166,6 @@ export interface FundFlowMinute {
   rows: FundFlowMinutePoint[];
 }
 
-export interface ThsLimitUpRow {
-  code?: string; name?: string; price?: number | null; pct?: number | null;
-  reason?: string; board_type?: string; seal_rate?: number | null;
-  break_times?: number; seal_amount?: number | null;
-  high_days?: string; first_time?: string; is_again?: number | boolean | null;
-}
-export interface ThsLimitUpPool {
-  date: string; total: number; source?: string; note?: string; rows: ThsLimitUpRow[];
-}
-
 export interface IwencaiSelectRow {
   code: string; name: string;
 }
@@ -234,14 +224,6 @@ export interface ShortTermEmotion {
   seals?: EmotionSeals;
 }
 
-// 全市场成交额榜（客观公开榜单）
-export interface TurnoverStock {
-  code: string; name: string;
-  price: number | null; pct: number | null;
-  amount: number | null; mcap: number | null; float_cap: number | null; industry: string;
-}
-export interface TurnoverTop { stocks: TurnoverStock[]; updated: string }
-
 /** 全市场龙虎榜（东财公开榜单，金额单位：万元） */
 export interface DailyDragonTigerStock {
   code: string; name: string; reason: string;
@@ -253,14 +235,6 @@ export interface DailyDragonTiger {
   stocks: DailyDragonTigerStock[];
 }
 
-export interface BoardFlowRow {
-  rank: number; name: string; code: string;
-  change_pct: number; main_net: number; main_pct: number; leader?: string;
-  super_large_net?: number; large_net?: number; medium_net?: number; small_net?: number;
-}
-export interface BoardFlow {
-  board_type: string; period: string; total: number; note?: string; rows: BoardFlowRow[];
-}
 export interface HsgtLive {
   date?: string; note?: string;
   latest: { time?: string; hgt_yi?: number | null; sgt_yi?: number | null } | null;
@@ -408,35 +382,6 @@ export interface FinCompanyBundle {
   percentile: ValPercentile | null;
   announcements: Announcement[];
   reports: Report[];
-}
-export interface HotListRow {
-  rank?: number; code?: string; name?: string;
-  heat?: string | number; pct?: number | null; rank_chg?: number | null;
-  price?: number | null; concepts?: string[]; tag?: string;
-}
-export interface HotList { period?: string; source?: string; rows: HotListRow[] }
-export interface MonitorPool {
-  date?: string; count?: number; note?: string;
-  rows: Array<{ code: string; name: string; market: string; start: string; end: string; link?: string }>;
-}
-export interface AnomalyPool {
-  date?: string; count?: number; note?: string;
-  items: Array<{
-    code?: string; name?: string; market?: string; change_pct?: number;
-    deviation?: number; days?: number; rule?: string; is_today?: boolean;
-  }>;
-}
-export interface LimitPool {
-  pool: string; date: string; total: number; note?: string;
-  rows: Array<{
-    code?: string; name?: string; price?: number | null; pct?: number | null;
-    turnover?: number | null; industry?: string; zt_stat?: string;
-    limit_days?: number; break_times?: number; seal_fund?: number;
-    first_seal?: string; last_seal?: string; dt_days?: number;
-    amplitude?: number | null; speed?: number | null; y_limit_days?: number;
-    sealed?: boolean | null; bid1?: number | null; ask1?: number | null;
-    bid1_vol?: number | null; ask1_vol?: number | null;
-  }>;
 }
 export interface ThsProfile {
   code: string; name?: string; industry?: string;
@@ -933,28 +878,16 @@ export interface ReviewSnapshotError {
 export interface ReviewSnapshot {
   scope: "paint" | "top" | "full";
   indices: IndexQuote[] | null;
-  global_indices: GlobalIndex[] | null;
   overview: MarketOverview | null;
   emotion: ShortTermEmotion | null;
-  turnover: TurnoverTop | null;
-  hot: HotList | null;
   industry: IndustryData | null;
   lhb: DailyDragonTiger | null;
-  monitor: MonitorPool | null;
-  anomaly: AnomalyPool | null;
-  limit_pool: LimitPool | null;
-  ths_limit_up: ThsLimitUpPool | null;
-  board_flow: BoardFlow | null;
   hsgt?: HsgtLive | null;
   errors: ReviewSnapshotError[];
   updated: string;
 }
 
 // 全球市场（美股 / 港股，移植自 global-stock-data · 东财域内源）
-export interface GlobalIndex {
-  key: string; name: string; region: string;
-  price: number | null; change_pct: number | null;
-}
 export interface GlobalQuote {
   code: string; name: string;
   price: number | null; open: number | null; high: number | null; low: number | null;
@@ -1351,16 +1284,8 @@ export const api = {
   reviewMailSave: (body: { enabled?: boolean; at?: string; to?: string }) =>
     request<ReviewMailStatus>("/market/review-mail", "PUT", body),
   reviewMailRun: () => request<ReviewMailRun>("/market/review-mail/run", "POST"),
-  reviewSnapshot: (opts?: {
-    scope?: "paint" | "top" | "full";
-    boardType?: "industry" | "concept" | "region";
-    period?: "today" | "5d" | "10d";
-    limitKind?: "zt" | "zb" | "dt" | "yzt" | "jm";
-  }) => {
+  reviewSnapshot: (opts?: { scope?: "paint" | "top" | "full" }) => {
     const p = new URLSearchParams({ scope: opts?.scope ?? "full" });
-    if (opts?.boardType) p.set("board_type", opts.boardType);
-    if (opts?.period) p.set("period", opts.period);
-    if (opts?.limitKind) p.set("limit_kind", opts.limitKind);
     return get<ReviewSnapshot>(`/market/review-snapshot?${p}`);
   },
   stockFlow: (top = 15, board?: string | null) =>
@@ -1454,8 +1379,6 @@ export const api = {
   lpr: (days = 365) => get<LprData>(`/market/lpr?days=${days}`),
   cnBondYield: (curveType: "treasury" | "policy" = "treasury") =>
     get<CnBondYield>(`/market/bond-yield?curve_type=${curveType}`),
-  limitPools: (pool: "zt" | "zb" | "dt" | "yzt" = "zt", top = 40) =>
-    get<LimitPool>(`/market/limit-pools?pool=${pool}&top=${top}`),
   stockBasic: (code: string) => get<StockBasicInfo>(`/stock-basic?code=${code}`),
   globalStock: (symbol: string, opts?: { withMetrics?: boolean }) => {
     const p = new URLSearchParams({ symbol });
@@ -1563,8 +1486,6 @@ export const api = {
   dividend: (code: string) => get<DividendRow[]>(`/dividend?code=${code}`),
   fundFlow: (code: string) => get<FundFlowRow[]>(`/fund-flow?code=${code}`),
   fundFlowMinute: (code: string) => get<FundFlowMinute>(`/fund-flow/minute?code=${code}`),
-  thsLimitUp: (date?: string) =>
-    get<ThsLimitUpPool>(`/market/ths-limit-up${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   iwencaiStatus: () => get<{ configured: boolean }>("/iwencai/status"),
   iwencaiSelect: (q: string, limit = 12) =>
     get<IwencaiSelect>(`/iwencai/select?q=${encodeURIComponent(q)}&limit=${limit}`),
@@ -1585,8 +1506,6 @@ export const api = {
     request<OvlabFlowData>("/ovlab/flow-data", "POST", { product: product?.trim() || null, page, page_size: pageSize }),
   ovlabWarehouseHistory: (product: string) =>
     request<OvlabWarehouseHistory>("/ovlab/warehouse-history", "POST", { product }),
-  ovlabSeasonalHistory: (years?: string[], product?: string) =>
-    request<Record<string, unknown>>("/ovlab/warehouse-seasonal", "POST", { years, product }),
   ovlabProductExps: (prodUnd?: string) =>
     get<OvlabProductExp[]>(`/ovlab/product-exps${prodUnd ? `?prod_und=${encodeURIComponent(prodUnd)}` : ""}`),
   ovlabExchangeInfo: () => get<OvlabExchangeInfo[]>("/ovlab/exchange-info"),

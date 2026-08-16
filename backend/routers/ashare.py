@@ -37,15 +37,6 @@ def stock_basic(code: str = Query(...)):
         raise HTTPException(502, f"基本资料异常：{e}") from e
 
 
-@router.get("/api/indices")
-def indices():
-    """A股/港股对照指数实时行情。仅标准库。缓存 60 秒（warmup 会预热）。"""
-    try:
-        return {"data": _cached("indices", "live", 60, astock.index_quote)}
-    except Exception as e:
-        raise HTTPException(502, f"指数行情异常：{e}") from e
-
-
 @router.get("/api/quote")
 def quote(codes: str = Query(..., description="逗号分隔的 6 位代码")):
     """实时行情：现价/涨跌/PE/PB/市值/换手/涨跌停。仅标准库，永远可用。"""
@@ -136,34 +127,6 @@ def news(code: str = Query(...), limit: int = Query(20, ge=1, le=50)):
         raise HTTPException(502, f"新闻源异常：{e}") from e
 
 
-@router.get("/api/disclosure")
-def disclosure(code: str = Query(...)):
-    """巨潮公告列表（需 akshare）。"""
-    code = _validate(code)
-    try:
-        return {"data": astock.disclosure(code)}
-    except astock.DependencyMissing as e:
-        raise HTTPException(501, str(e)) from e
-    except Exception as e:
-        raise HTTPException(502, f"公告源异常：{e}") from e
-
-
-@router.get("/api/kline")
-def kline(
-    code: str = Query(...),
-    category: int = Query(4),
-    offset: int = Query(60, ge=1, le=800),
-):
-    """K线（需 mootdx）。category 4=日 5=周 6=月 11=60分钟。"""
-    code = _validate(code)
-    try:
-        return {"data": astock.kline(code, category=category, offset=offset)}
-    except astock.DependencyMissing as e:
-        raise HTTPException(501, str(e)) from e
-    except Exception as e:
-        raise HTTPException(502, f"K线源异常：{e}") from e
-
-
 @router.get("/api/astock/light-kline")
 def astock_light_kline(
     code: str = Query(..., min_length=5, max_length=8, description="6位 / sh000001 / hkHSI / usIXIC / whUSDCNY"),
@@ -215,18 +178,6 @@ def astock_light_kline_batch(
         return {"data": light_kline_map(raw, res, num)}
     except Exception as e:
         raise HTTPException(502, f"A股批量轻量K线异常：{e}") from e
-
-
-@router.get("/api/finance")
-def finance(code: str = Query(...)):
-    """季报财务快照（需 mootdx）。"""
-    code = _validate(code)
-    try:
-        return {"data": astock.finance(code)}
-    except astock.DependencyMissing as e:
-        raise HTTPException(501, str(e)) from e
-    except Exception as e:
-        raise HTTPException(502, f"财务源异常：{e}") from e
 
 
 @router.get("/api/margin")
@@ -426,18 +377,3 @@ def investor_qa(code: str = Query(...)):
     except Exception as e:
         raise HTTPException(502, f"互动易异常：{e}") from e
 
-
-@router.get("/api/industry")
-def industry(top: int = Query(20, ge=5, le=50)):
-    """全行业涨跌幅排名（东财行业板块，板块级、零个股名单）。缓存 5 分钟。"""
-    try:
-        data = _cached(
-            "industry",
-            str(top),
-            300,
-            lambda: astock.industry_comparison(top_n=top),
-            valid=lambda d: bool(isinstance(d, dict) and d.get("top")),
-        )
-        return {"data": data}
-    except Exception as e:
-        raise HTTPException(502, f"行业排名异常：{e}") from e

@@ -4,19 +4,9 @@ from fastapi import APIRouter, HTTPException, Query
 
 import gstock
 import gstock_deep
-import market
 from api_common import _cached
 
 router = APIRouter(tags=["global"])
-
-@router.get("/api/global/indices")
-def global_indices():
-    """全球指数快照（道指 / 标普500 / 纳斯达克 / 恒生 / 恒生科技）—— A 股看隔夜外围脸色。缓存 5 分钟。"""
-    try:
-        return {"data": market.get_global_indices()}
-    except Exception as e:
-        raise HTTPException(502, f"全球指数异常：{e}") from e
-
 
 @router.get("/api/global/stock")
 def global_stock(

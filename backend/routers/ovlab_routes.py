@@ -27,15 +27,6 @@ class WarehouseHistoryReq(BaseModel):
     product: str
 
 
-class SeasonalHistoryReq(BaseModel):
-    years: list[str] | None = None
-    product: str | None = None
-
-
-class CodesReq(BaseModel):
-    codes: list[str]
-
-
 class PriceVolSeriesReq(BaseModel):
     # Accept list (preferred) or JSON/comma string for older clients
     codes: list[str] | str
@@ -109,7 +100,7 @@ def ovlab_flow_data(req: FlowDataReq):
     return _ovlab_call(lambda: ovlab.get_flow_data(body), "资金流")
 
 
-# —— 持仓 / 仓差 / 季节性 ——
+# —— 持仓 / 仓差 ——
 
 
 @router.post("/api/ovlab/warehouse-history")
@@ -118,24 +109,6 @@ def ovlab_warehouse_history(req: WarehouseHistoryReq):
     return _ovlab_call(
         lambda: ovlab.get_warehouse_history(req.product.strip()), "持仓历史"
     )
-
-
-@router.post("/api/ovlab/warehouse-seasonal")
-def ovlab_warehouse_seasonal(req: SeasonalHistoryReq):
-    """OpenVlab 全品种季节性持仓 (warehouse/seasonal-history-all, POST)。缓存 5 分钟。"""
-    return _ovlab_call(
-        lambda: ovlab.get_warehouse_seasonal_history_all(req.years, req.product),
-        "季节性持仓",
-    )
-
-
-# —— K 线 / 价格波动率 (POST, 需具体合约代码) ——
-
-
-@router.post("/api/ovlab/last-bars")
-def ovlab_last_bars(req: CodesReq):
-    """OpenVlab 最新 K 线 (last-bars, POST)。codes 为具体合约代码如 ps2609-C-40000。不缓存。"""
-    return _ovlab_call(lambda: ovlab.get_last_bars(req.codes), "最新K线")
 
 
 @router.post("/api/ovlab/price-volatility-series")
@@ -186,14 +159,6 @@ def ovlab_holidays(
 ):
     """OpenVlab 某交易所节假日日历 (holidays/{exchange})。缓存 1 小时。"""
     return _ovlab_call(lambda: ovlab.get_holidays(exchange.strip()), "节假日")
-
-
-@router.get("/api/ovlab/expired")
-def ovlab_expired(
-    prod_und: str = Query(..., min_length=1, max_length=32, description="标的代码"),
-):
-    """OpenVlab 某标的已过期合约 (expired/{prodUnd})。缓存 30 分钟。"""
-    return _ovlab_call(lambda: ovlab.get_expired(prod_und.strip()), "已过期合约")
 
 
 # —— 轻量行情图表 (chart/light) ——

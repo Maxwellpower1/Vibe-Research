@@ -5,12 +5,11 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-# 用户数据隔离：portfolio / myreports 在 import 时按 VR_DATA_DIR / VR_REPORTS_DIR 固化路径，
+# 用户数据隔离：portfolio 在 import 时按 VR_DATA_DIR 固化路径，
 # 必须赶在任何测试模块 import app 之前指到临时目录——否则持仓 CRUD 类测试会增删真实
 # ~/.vibe-research/ 里的用户数据（比如把用户真实持有的 600519 合并后删掉）。
 _TEST_DATA_DIR = tempfile.mkdtemp(prefix="vr-test-data-")
 os.environ["VR_DATA_DIR"] = _TEST_DATA_DIR
-os.environ["VR_REPORTS_DIR"] = os.path.join(_TEST_DATA_DIR, "myreports")
 
 
 def pytest_configure(config):

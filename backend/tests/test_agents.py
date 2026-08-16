@@ -1,21 +1,9 @@
-"""工具层 + 反思 的回归测。全部离线、不联网（真实取数走 test_live.py）。
+"""工具层回归测。全部离线、不联网（真实取数走 test_live.py）。
 
-覆盖：
-- tools：工具定义与 handler 一一对应、裁剪逻辑、错误不抛。
-- reflection：空输入、超长截断。
-- 路由：/api/reflect 的参数与配置校验。
+覆盖：工具定义与 handler 一一对应、裁剪逻辑、错误不抛。
 """
-import pytest
-from fastapi.testclient import TestClient
-
-import app as app_module
 import chat
-import reflection
 import tools
-
-client = TestClient(app_module.app)
-
-_LLM = {"provider": "", "baseURL": "https://example.com/v1", "apiKey": "k", "model": "m"}
 
 
 # ---- 工具层 ----
@@ -60,34 +48,3 @@ def test_exec_tool_wraps_handler_exception(monkeypatch):
     monkeypatch.setitem(tools._HANDLERS, "query_quote", lambda a: 1 / 0)
     out = tools.exec_tool("query_quote", {"codes": ["600519"]})
     assert "error" in out and "query_quote" in out["error"]
-
-
-# ---- 反思 ----
-
-def test_reflection_rejects_empty():
-    evs = list(reflection.run_reflection_stream(_LLM, "   "))
-    assert evs == [{"type": "error", "message": "没有可反思的内容"}]
-
-
-def test_reflection_truncates_long_source(monkeypatch):
-    monkeypatch.setattr(chat, "_call_llm_stream", lambda *a, **k: None)
-    monkeypatch.setattr(chat, "_iter_sse_deltas", lambda resp: iter([{"content": "ok"}]))
-    evs = list(reflection.run_reflection_stream(_LLM, "字" * (reflection.MAX_SOURCE_CHARS + 500)))
-    assert evs[0]["type"] == "status" and "截取" in evs[0]["message"]
-    assert evs[-1]["type"] == "done" and evs[-1]["truncated"] is True
-
-
-def test_reflect_prompt_forbids_own_judgement():
-    assert "买卖建议" in reflection.REFLECT_PROMPT
-    assert "验证清单" in reflection.REFLECT_PROMPT
-
-
-# ---- 路由校验 ----
-
-def test_reflect_route_rejects_empty_source():
-    assert client.post("/api/reflect", json={"source": "  ", "llm": _LLM}).status_code == 400
-
-
-def test_reflect_route_requires_llm_config():
-    r = client.post("/api/reflect", json={"source": "一段分析", "llm": {**_LLM, "baseURL": ""}})
-    assert r.status_code == 400

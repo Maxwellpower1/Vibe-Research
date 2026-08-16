@@ -22,7 +22,6 @@ python3 -m venv .venv
 | 端点 | 说明 | 依赖 |
 |---|---|---|
 | `GET /api/health` | 健康检查 | — |
-| `GET /api/indices` | 大盘指数实时行情 | stdlib |
 | `GET /api/quote?codes=600519,000858` | 实时行情（PE/PB/市值/涨跌停…，与 `/market/quotes` 共用 5s 腾讯缓存） | stdlib |
 | `GET /api/valuation?code=600519` | 完整估值（前向PE/PEG/消化年数） | requests+akshare |
 | `GET /api/valuation/percentile?code=600519` | 估值历史分位（近5年·百度股市通） | akshare |
@@ -31,22 +30,17 @@ python3 -m venv .venv
 | `GET /api/announcements?code=600519` | 近期公告（东财） | requests |
 | `GET /api/news?code=600519` | 个股新闻 | akshare |
 | `GET /api/cls-telegraph` | 财联社电报（全市场快讯，零 key） | requests |
-| `GET /api/kline?code=600519` | K线 | mootdx |
-| — | *（AI 工具层走腾讯 K 线，mootdx 仅作备份：mootdx 是 TCP 7709，部分网络连不通要等十几秒超时）* | — |
-| `GET /api/finance?code=600519` | 季报财务快照（mootdx，前端未用 / 备用） | mootdx |
-| **资金面·筹码·信号（v3.3）** | `/api/margin` · `/block-trade` · `/holders` · `/dividend` · `/fund-flow` · `/dragon-tiger` · `/dragon-tiger/daily`（全市场龙虎榜） · `/lockup` · `/blocks` · `/hot-concepts` · `/investor-qa` · `/industry` | requests |
-| `GET /api/market/overview` · `/api/radar` | 市场情绪+板块资金 · 资讯雷达 | akshare / stdlib |
+| **资金面·筹码·信号（v3.3）** | `/api/margin` · `/block-trade` · `/holders` · `/dividend` · `/fund-flow` · `/dragon-tiger` · `/dragon-tiger/daily`（全市场龙虎榜） · `/lockup` · `/blocks` · `/hot-concepts` · `/investor-qa` | requests |
 | `GET /api/market/review-snapshot` | 每日复盘聚合（`scope=paint|top|full`）：先腾讯指数/总览，完成后再情绪+行业强弱，再龙虎 | 缓存命中秒回 |
 | `GET /api/market/review-mail` · `PUT /api/market/review-mail` · `POST /api/market/review-mail/run` | 定时复盘邮件状态（不回 SMTP 密码 / API key）· 保存开关/时间/收件人 · 立刻试发 | SMTP + `VR_REVIEW_LLM_*` |
-| `GET /api/market/board-flow` · `/hsgt` · `/hot-list` · `/stock-monitor` · `/price-anomaly` · `/limit-pools` | 板块资金流 / 北向 / 同花顺热榜 / 监控池 / 异动 / 打板池 | requests |
-| `GET /api/market/world-indices` · `/quotes` · `/boards` · `/board-stocks` · `/rank` · `/board-flow-intraday` · `/commodities` · `/commodity-minutes` | 全球关键指数 / 批量报价(股票指数按代码 5s, 期货走 commodities 并行) / 板块热点 / 成分股(腾讯pt*) / 个股榜单(含成交额, 新浪) / 分钟板块资金 / 大宗商品 | 腾讯/新浪/东财(仅独有资金流) |
+| `GET /api/market/hsgt` | 北向资金分钟流向 | requests |
+| `GET /api/market/quotes` · `/boards` · `/board-stocks` · `/rank` · `/board-flow-intraday` · `/commodities` · `/commodity-minutes` | 批量报价(股票指数按代码 5s, 期货走 commodities 并行) / 板块热点 / 成分股(腾讯pt*) / 个股榜单(含成交额, 新浪) / 分钟板块资金 / 大宗商品 | 腾讯/新浪/东财(仅独有资金流) |
 | `GET /api/market/spot-table` · `/chem-spot` · `/future-daily` · `/stock-boards` · `/stock-boards-batch` · `/stock-flows` · `/lives` · `/etf-shares` | 生意社现期/基差 · 化工现货 · 新浪期货日K · 个股行业/概念(单票/批量) · 自选主力净额/净占比(对齐参考看板 ulist) · 新浪7x24(华尔街见闻兜底) · 沪/深ETF日频份额+季报申购赎回 | requests |
 | `GET /api/iwencai/status` · `/select` | 问财是否已配置 · 选股名单(产业链刷新) | IWENCAI_API_KEY |
 | `GET /api/market/breadth` · `/ths-profile` · `/ths-rotation` | 全A涨跌分位+直方图(新浪hs_a分页/腾讯) · shy313同花顺归属 · 概念/行业当日均涨 | requests |
 | `GET /api/fin/board` · `/forecast` · `/company` · `/suggest` | 财报窗口：盈利榜+日历 / 业绩预告 / F10+主营+现金流 / 代码联想。宏观包与 F10 并行拉东财 | 东财 datacenter |
 | `GET /api/stock-basic?code=` | 个股基本资料（行业/地域/概念/股本/上市日） | requests |
 | `POST /api/chat` | 系统 AI 对话（function calling，AI 自己调数据工具） | requests |
-| `POST /api/reflect` | **反思审计**（流式 NDJSON）：对一段已写好的分析做推理审计 | requests |
 | `GET /api/portfolio/ctp/status` | CTP 配置/依赖/登录状态（不主动连前置） | — |
 | `GET /api/portfolio/ctp/logs` | CTP 操作日志（`?since=` 增量轮询） | — |
 | `POST /api/portfolio/ctp/login` | **点击登录**（连前置并保持会话，不下单） | openctp-ctp |
@@ -70,11 +64,6 @@ python3 -m venv .venv
 | `GET /api/global/movers?board=` | 美/港涨跌与成交额榜（东财 market_stock_list，C 级） | requests |
 | `GET /api/global/stock/news?symbol=` | 美/港个股新闻（Yahoo search，C 级） | requests |
 | `GET /api/global/stock/options?symbol=` | CBOE 延时期权概览（0DTE/近月异动·P/C·IV；仅美股，合规 C 级个人研究） | requests |
-
-`/api/reflect` 请求体：`{"source": "待审的分析文本", "title": "可选标题", "llm": {...}}`。
-事件类型：`status` · `delta` · `done` · `error`。
-
-> `/api/reflect` **不产出买卖结论**：终点是「怎么继续验证」。
 
 > 上表为主要端点；完整路由清单见 `app.py`。要更全量的 A 股数据（打板 / ETF期权 / 全市场行业排名等），用根目录 [`a-stock-data/`](../a-stock-data/SKILL.md) 工具箱。
 

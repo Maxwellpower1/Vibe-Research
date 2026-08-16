@@ -21,18 +21,10 @@ def test_review_snapshot_route_top(monkeypatch):
         lambda **kw: {
             "scope": kw.get("scope", "full"),
             "indices": [{"name": "上证", "price": 1, "change_pct": 0, "change_amt": 0}],
-            "global_indices": [],
             "overview": None,
             "emotion": None,
-            "turnover": None,
-            "hot": None,
             "industry": None,
             "lhb": None,
-            "monitor": None,
-            "anomaly": None,
-            "limit_pool": None,
-            "ths_limit_up": None,
-            "board_flow": None,
             "errors": [],
             "updated": "2026-08-13 09:00:00",
         },
@@ -76,6 +68,9 @@ def test_build_snapshot_paint_skips_em(monkeypatch):
     assert data["scope"] == "paint"
     assert data["emotion"] is None
     assert data["indices"][0]["name"] == "上证"
+    assert "global_indices" not in data
+    assert "turnover" not in data
+    assert "monitor" not in data
 
 
 def test_build_snapshot_top_skips_extra(monkeypatch):
@@ -101,10 +96,6 @@ def test_build_snapshot_top_skips_extra(monkeypatch):
     assert data["scope"] == "top"
     assert data["lhb"] is None
     assert data["indices"][0]["name"] == "上证"
-    assert data["global_indices"] is None
-    assert data["turnover"] is None
-    assert data["hot"] is None
-    assert data["board_flow"] is None
     assert "updated" in data
 
 

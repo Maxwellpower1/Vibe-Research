@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+### 改进：去掉没有页面的功能与空 HTTP 入口
+
+README 不再写「我的研报 / 研究记录 / 反思审计」。删掉对应后端（`myreports` / `reflection` / `/api/reflect`）、死前端 client（`agents.ts` / `ndjson.ts`），以及前端从不打的 HTTP 壳（`/api/radar*` `/kline` `/finance` `/disclosure` `/indices` `/industry` `/global/indices` `/market/overview` `/emotion` `/turnover-top` `/world-indices` `/board-flow` `/hot-list` `/stock-monitor` `/price-anomaly` `/limit-pools` `/ths-limit-up`、部分 ovlab 空路由）。`review-snapshot` 不再返回恒为 None 的占位字段。AI / MCP 仍直调底层函数。
+
 ### 改进：复盘邮件把 Markdown 表格渲染成 HTML
 
 正文不再整段塞进 `<pre>`。指数/板块这类 `| 列 |` 表会显示成带边框的表格，标题和加粗也能看。

@@ -41,8 +41,6 @@ Vibe-Research 是一个开源的「个人 AI 投研看板」，**主推 A 股、
 | 📡&nbsp;**资&#8288;讯&#8288;雷&#8288;达** | 复盘第一行右侧**快讯格**（财联社 / 新浪/见闻，打标 + NEW，默认自动滚到顶）。右下角悬浮球只显示未读角标，不再弹窗 |
 | ⭐&nbsp;**自&#8288;选&#8288;股** | **批量粘贴一串代码即加**（逗号 / 空格 / 换行都行）· 一屏表格总览（现价 / 涨跌 / PE / PB / 换手）· **实时行情开关**（右上角，默认关；开了在交易时段每 3 秒自动刷新，非交易时段与页面切走时自动暂停）· 一键交给 AI 读。只存本地 |
 | 💼&nbsp;**我&#8288;的&#8288;持&#8288;仓** | **A股**：录入即实时盈亏 · 已清仓记录（只存本地）。**期货账户**：CTP 只读 · 区间结算单本地缓存 · 净值/累计收益/盈亏日历/统计（账号在本机 `~/.vibe-research/ctp.json`）|
-| 📄&nbsp;**我&#8288;的&#8288;研&#8288;报** | **拖拽 / 多选上传**自己的研报（PDF / Word / txt / 表格 / 图片）· 按文件名**自动分行业**归档 · 下载 / 删除。**只存本地部署目录、不上传、不进仓库** |
-| 📝&nbsp;**研&#8288;究&#8288;记&#8288;录** | 复盘 / 今日要点 / 问 AI 本地沉淀，随时回看 · **反思审计**：让 AI 回头审这段推理——哪些结论有数据撑着、哪些是脑补、最脆弱的一环在哪、要验证得看什么 |
 | 🌊&nbsp;**期&#8288;权&#8288;/&#8288;期&#8288;货** | **OpenVlab** 公开数据：市场概览（全部品种现价 / 涨跌 / 平值隐波 / 隐波百分位 / 22 日实波 / VolAlphaT / Carry / 偏度及百分位 / 主力合约 / 到期日 / 夜盘 / 境外）· 单品种详情（dto）· 波动率期限结构汇总。只客观呈现，不推荐不预测 |
 | 🇺🇸&nbsp;**美&#8288;股** | 本地观察列表（ticker）· 东财快照行情 · **日 K + 成交量**（新浪）· **财报日历** · **SEC 当日申报流**（需 `VR_SEC_CONTACT`）。点列表即切图；只客观呈现，不推荐不预测 |
 | 🔬&nbsp;**研&#8288;究&#8288;桌** | 顶栏 `/research`：多标的 **相关性热力图** · **ETF 穿透**（A 股东财中报/年报全持仓，美股 N-PORT）· **13F 环比** · OKX/Binance/pykrx K 线。只呈现公开披露，持仓天生滞后 |
@@ -106,12 +104,11 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
   - **异动榜** `GET /api/ovlab/flow-alert` — 合约 / 触发规则 / 价格 / 涨跌 / 持仓量 / 窗口成交量 / 权利金
   - **资金流** `POST /api/ovlab/flow-data` — 分页资金流
   - **持仓历史** `POST /api/ovlab/warehouse-history` — 单品种多年持仓（year2013~2026 + ratioData），仓差 / 季节性分析
-  - **季节性持仓** `POST /api/ovlab/warehouse-seasonal` — 全品种按年份分组的持仓，季节性规律研究
-  - **K 线 / 价格波动率** `POST /api/ovlab/last-bars` · `POST /api/ovlab/price-volatility-series`（body: `{codes: ["MA:202609", ...]}`，返回当日分时价格+隐波序列；市场概览「走势」列同源，缓存 5 分钟）
+  - **K 线 / 价格波动率** `POST /api/ovlab/price-volatility-series`（body: `{codes: ["MA:202609", ...]}`，返回当日分时价格+隐波序列；市场概览「走势」列同源，缓存 5 分钟）
   - **轻量行情图表**（移植自 `/chart/light`）`GET /api/ovlab/kline-history?symbol=SC2609&resolution=1D`（K 线 OHLC + 持仓 + 成交量）· `GET /api/ovlab/atmvol-history`（ATM 隐含波动率历史）· `GET /api/ovlab/last-bar?code=SC2609`（实时最新 bar）· `GET /api/ovlab/search-symbols?keyword=SC`（标的搜索）· `GET /api/ovlab/symbol-info?code=SC2609`（合约元信息：交易时段 / 价格精度 / 到期日）· `GET /api/ovlab/volatility-surface?product=SC`（波动率曲面）· `POST /api/ovlab/skewmap`（偏度图）· `GET /api/ovlab/surfacemap`（曲面图）
   - **持仓排名**（移植自 `/flow/option-flow`、`/future/position-ranking`）`GET /api/ovlab/option-position-products`（期权持仓品种列表）· `GET /api/ovlab/option-position-details?product=IO&code=IO2608&direction=C&day=2026-07-03`（期权持仓明细，方向 C/P）· `GET /api/ovlab/future-position-products`（期货持仓品种列表）· `GET /api/ovlab/future-position-details?product=RB&code=rb2608&direction=0&day=2026-08-03`（期货持仓明细：买方/卖方/净多/净空 4 张期货公司持仓排名表 + 增减 + 净多/净空第一）
   - **异动资金流** `POST /api/ovlab/flow-data`（期权异动明细分页：合约/最新价/涨跌幅/持仓量/持仓变化/成交量/成交额/买卖盘占比/OTM/DTE，可按品种筛选，不缓存）
-  - **元数据** `GET /api/ovlab/product-exps`（合约月份）· `/exchange-info` · `/sector-info` · `/next-trading-day` · `/holidays?exchange=CZCE` · `/expired?prod_und=510300`
+  - **元数据** `GET /api/ovlab/product-exps`（合约月份）· `/exchange-info` · `/sector-info` · `/next-trading-day` · `/holidays?exchange=CZCE`
 - 前端「期权/期货」页 8 个 tab：市场概览（含**走势预览**列：价格+隐波分时叠加迷你图，悬停放大，对齐 [openvlab.cn/market](https://www.openvlab.cn/market)）/ 单品种详情 / **轻量图表**（K 线主图 + ATM 隐波副图 + 实时刷新 + 周期切换）/ **T型报价**（期权链买卖价/最新价/涨跌幅）/ 异动榜 / **异动资金流**（期权异动明细分页表，持仓变化/买卖盘占比）/ 持仓历史 / **持仓排名**（期货/期权持仓排名榜，期货公司持仓 + 增减 + 净多/净空第一）。AI 工具层（`tools.py`）注册 14 个 `query_ovlab_*` 工具（含波动率/期货期限结构、K线/ATM隐波、合约搜索、资金流、波动率曲面，前端虽部分未展示但 AI 可查），问 AI / MCP 均可调用。缓存分层：行情/概览 5 分钟、走势预览序列 5 分钟、波动率曲面 2 分钟、合约搜索 60 秒、合约元信息/到期月份 30 分钟、交易所/板块/节假日 1 小时、实时 K 线 / 最新 bar / flow-data 不缓存。**只客观呈现公开数据，不推荐、不预测、不评分。**
 
 > 数据均来自公开源。Vibe-Research 只做客观信息整理与公开榜单呈现（连板股 / 成交额榜等，与东财 / 同花顺同款客观数据），**只呈现事实、不推荐个股、不预测涨跌、不给买卖时机、不做主观评分**；用这些数据做什么分析、看什么方向，由你和你自己的 AI 决定。
@@ -139,7 +136,6 @@ Vibe-Research/
 │   ├── ctp/             期货 CTP 只读查资金/持仓（可选 openctp-ctp）
 │   ├── tools.py         AI 工具层（chat / MCP 共用, 含研究桌 4 个）
 │   ├── chat.py          系统 AI（OpenAI 兼容 function-calling）
-│   ├── reflection.py    反思审计（对已有分析做推理审计）
 │   └── mcp_server.py    MCP server（给 Claude Code 等 agent）
 └── frontend/          Vite + React 19 + TS + Tailwind（深蓝青驾驶舱）:5899
 ```
@@ -222,13 +218,6 @@ SMTP_PASS=                 # QQ 邮箱授权码, 不是登录密码
 
 后端在工作日到点后收集看板快照，复用现有复盘提示词，SMTP 发一封。每天最多一封；服务器晚启动会补发当天那封。接入 AI 页可看状态、立刻试发。只做客观陈述，不构成投资建议。
 
-## 反思审计
-
-对一段已写好的分析做推理审计，挑出「听起来合理但没有依据」的部分。
-实测能揪出诸如「获得机构广泛认可」（用三家推断整体）、「频繁上调预期」（未量化）这类似是而非的表述。
-
-开销小——**只有 1 次模型调用**，输入就是你选中的那段文本（超过 1.2 万字会自动截断并提示）。产物是「怎么继续验证」，不是买卖结论。
-
 ## 测试
 
 ```bash
@@ -248,8 +237,8 @@ cd backend && .venv/bin/pip install -r requirements-dev.txt
 - 只做客观数据整理与公开榜单呈现：**不荐股、不预测涨跌、不给买卖时机、不承诺收益、不做主观评分**；中立无倾向。
 - 连板股 / 成交额榜等均为**客观公开榜单数据**（东财 / 同花顺同款），产品只如实呈现、不附带任何推荐或预测。
 - 所有分析方向由你自己配置的 AI 给出，与本产品无关。UI 无买卖按钮；估值历史分位只标位置、不划买卖线。
-- **持仓 / 关注股 / 上传的研报 / API key 只存本地，不上传、不进仓库。**
-- 持仓与上传的研报默认存在**用户目录 `~/.vibe-research/`**（可用环境变量 `VR_DATA_DIR` 换根目录、`VR_REPORTS_DIR` 单独指定研报目录）——在项目文件夹之外，**重新下载 / 覆盖更新项目文件夹不会丢数据**；旧版本存在 `backend/.cache/` 的数据，新版首次启动自动迁移（复制，原文件保留）。
+- **持仓 / 关注股 / API key 只存本地，不上传、不进仓库。**
+- 持仓默认存在**用户目录 `~/.vibe-research/`**（可用环境变量 `VR_DATA_DIR` 换根目录）——在项目文件夹之外，**重新下载 / 覆盖更新项目文件夹不会丢数据**；旧版本存在 `backend/.cache/` 的数据，新版首次启动自动迁移（复制，原文件保留）。
 
 ## 相关生态
 
