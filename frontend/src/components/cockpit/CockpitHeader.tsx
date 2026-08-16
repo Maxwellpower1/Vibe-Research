@@ -15,15 +15,24 @@ const PAGE_TITLES: { match: (p: string) => boolean; title: string; subtitle: str
 
 const DEFAULT_TITLE = { title: "市场研究驾驶舱", subtitle: "MARKET RESEARCH COCKPIT" };
 
-const NAV = [
-  { to: "/a-share", label: "A股", match: (p: string) => p.startsWith("/a-share") },
-  { to: "/fin", label: "财报窗口", match: (p: string) => p.startsWith("/fin") },
-  { to: "/us-market", label: "美股", match: (p: string) => p.startsWith("/us-market") },
-  { to: "/research", label: "研究", match: (p: string) => p.startsWith("/research") },
-  { to: "/ai-watch", label: "AI观察", match: (p: string) => p.startsWith("/ai-watch") },
-  { to: "/ovlab", label: "期权期货", match: (p: string) => p.startsWith("/ovlab") },
-  { to: "/portfolio", label: "持仓", match: (p: string) => p.startsWith("/portfolio") },
-  { to: "/settings", label: "接入 AI", match: (p: string) => p.startsWith("/settings") },
+export type PageNavItem = {
+  to: string;
+  label: string;
+  short: string;
+  match: (p: string) => boolean;
+  primary: boolean;
+};
+
+/** Desktop header and phone bottom bar share this list. primary = thumb-row on phone. */
+export const PAGE_NAV: PageNavItem[] = [
+  { to: "/a-share", label: "A股", short: "A股", match: (p) => p.startsWith("/a-share"), primary: true },
+  { to: "/fin", label: "财报窗口", short: "财报", match: (p) => p.startsWith("/fin"), primary: true },
+  { to: "/us-market", label: "美股", short: "美股", match: (p) => p.startsWith("/us-market"), primary: true },
+  { to: "/research", label: "研究", short: "研究", match: (p) => p.startsWith("/research"), primary: true },
+  { to: "/ai-watch", label: "AI观察", short: "AI观察", match: (p) => p.startsWith("/ai-watch"), primary: false },
+  { to: "/ovlab", label: "期权期货", short: "期权", match: (p) => p.startsWith("/ovlab"), primary: false },
+  { to: "/portfolio", label: "持仓", short: "持仓", match: (p) => p.startsWith("/portfolio"), primary: true },
+  { to: "/settings", label: "接入 AI", short: "接入AI", match: (p) => p.startsWith("/settings"), primary: false },
 ];
 
 export const A_SHARE_TABS = [
@@ -76,7 +85,7 @@ export function CockpitHeader({
       </Link>
       <div className="mx-0.5 hidden h-4 w-px bg-slate-700 md:block" />
       <nav className="hidden items-center gap-1.5 md:flex">
-        {NAV.map((l) => {
+        {PAGE_NAV.map((l) => {
           const active = l.match(pathname);
           return (
             <Link

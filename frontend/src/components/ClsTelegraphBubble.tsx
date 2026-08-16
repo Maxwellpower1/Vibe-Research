@@ -18,7 +18,7 @@ export function ClsTelegraphBubble() {
   };
 
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-50 sm:bottom-6 sm:right-6">
+    <div className="pointer-events-none fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-4 z-50 md:bottom-6 md:right-6">
       <button
         type="button"
         onClick={goNews}
