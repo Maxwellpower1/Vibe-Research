@@ -1,7 +1,4 @@
-"""CTP futures account package (session login + read-only queries).
-
-Public surface matches the former ``ctp_account`` module.
-"""
+"""CTP futures account package (session login + read-only queries)."""
 from __future__ import annotations
 
 from ctp.constants import (

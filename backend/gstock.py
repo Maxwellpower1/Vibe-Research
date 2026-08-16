@@ -2,7 +2,7 @@
 
 并入：
 - 东财域内合规子集：全球指数 + 美港股行情 + 关键财务指标
-- 美股日 K：Yahoo 前复权（主）+ 新浪不复权（备）
+- 美股日 K：Yahoo 前复权
 
 用途＝A 股「看隔夜外围脸色」+ 个股页支持美港股代码 + 「美股」页观察列表/K线。
 
@@ -11,7 +11,7 @@
   `astock.eastmoney_datacenter`（datacenter 三表/指标已封装）。
 - push2 stock/get 直连偶发掉连 → **push2 优先、失败降级 push2delay**（延时行情，研究场景足够），
   latch 到可用主机整进程复用（同成交额榜的做法）。
-- 美股前复权依赖 Yahoo chart；不可达时回退新浪（不复权）。
+- 美股前复权依赖 Yahoo chart；不可达则空。
 
 合规：只做客观数据整理，不预置标的、不推荐、不预测。
 """
@@ -370,45 +370,13 @@ def _us_kline_yahoo_qfq(code: str, n: int) -> list[dict]:
     return bars
 
 
-def _us_kline_sina(code: str, n: int) -> list[dict]:
-    """Sina US daily K — unadjusted fallback when Yahoo unreachable."""
-    import requests
-
-    url = "https://stock.finance.sina.com.cn/usstock/api/jsonp.php/var/US_MinKService.getDailyK"
-    r = requests.get(
-        url,
-        params={"symbol": code, "num": n},
-        headers={"Referer": "https://finance.sina.com.cn/", "User-Agent": astock.UA},
-        timeout=15,
-    )
-    r.raise_for_status()
-    m = re.search(r"\((\[.+\])\)", r.text, re.S)
-    if not m:
-        return []
-    items = json.loads(m.group(1))
-    bars: list[dict] = []
-    for item in items:
-        try:
-            bars.append({
-                "date": str(item.get("d") or ""),
-                "open": float(item.get("o") or 0),
-                "high": float(item.get("h") or 0),
-                "low": float(item.get("l") or 0),
-                "close": float(item.get("c") or 0),
-                "volume": int(float(item.get("v") or 0)),
-            })
-        except (TypeError, ValueError):
-            continue
-    return bars[-n:]
-
-
 def us_stock_kline(symbol: str, num: int = 180) -> dict:
-    """美股日 K，默认前复权（Yahoo adjclose 缩放 OHLC）。
+    """美股日 K，Yahoo 前复权（adjclose 缩放 OHLC）。
 
     symbol: 如 AAPL / TSLA；仅美股 ticker。
     num: 返回最近 N 根。
-    返回: {code, name, market, source, adjust: qfq|none, bars: [...]}
-    Yahoo 不可达时回退新浪（不复权, adjust=none），再回退 Stooq。
+    返回: {code, name, market, source, adjust: qfq, bars: [...]}
+    Yahoo 不可达则空。
     """
     sym = (symbol or "").strip().upper()
     if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,7}", sym):
@@ -420,35 +388,18 @@ def us_stock_kline(symbol: str, num: int = 180) -> dict:
     name = (info or {}).get("name") or code
     n = max(20, min(int(num or 180), 1000))
 
-    bars: list[dict] = []
-    source, adjust = "yahoo", "qfq"
     try:
         bars = _us_kline_yahoo_qfq(code, n)
     except Exception:
         bars = []
-    if not bars:
-        try:
-            bars = _us_kline_sina(code, n)
-            source, adjust = "sina", "none"
-        except Exception:
-            bars = []
-    if not bars:
-        try:
-            import ext_feeds
-            st = ext_feeds.stooq_kline(code, n)
-            bars = list(st.get("bars") or [])
-            if bars:
-                source, adjust = "stooq", "none"
-        except Exception:
-            bars = []
     if not bars:
         return {}
     return {
         "code": code,
         "name": name,
         "market": "US",
-        "source": source,
-        "adjust": adjust,
+        "source": "yahoo",
+        "adjust": "qfq",
         "bars": bars,
     }
 

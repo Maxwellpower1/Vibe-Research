@@ -25,7 +25,6 @@ from gstock_deep.official import official_get
 from gstock_deep.sec import daily_filings, sec_filings, ticker_to_cik
 from gstock_deep.finra import short_volume_all, short_volume_symbol
 from gstock_deep.earnings import earnings_calendar, earnings_calendar_range
-from gstock_deep.treasury import treasury_curve_overview, treasury_yield_curve
 from gstock_deep.options import (
     assert_us_ticker,
     chain_summary,
@@ -55,8 +54,6 @@ __all__ = [
     "short_volume_symbol",
     "earnings_calendar",
     "earnings_calendar_range",
-    "treasury_yield_curve",
-    "treasury_curve_overview",
     "assert_us_ticker",
     "parse_osi",
     "options_chain_cboe",

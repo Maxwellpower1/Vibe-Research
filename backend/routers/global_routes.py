@@ -42,7 +42,7 @@ def global_us_kline(
     symbol: str = Query(..., min_length=1, max_length=16),
     num: int = Query(180, ge=20, le=1000),
 ):
-    """美股日 K（Yahoo 前复权; 回退新浪不复权, 再回退 Stooq）。symbol 如 AAPL / TSLA。缓存 5 分钟。"""
+    """美股日 K（Yahoo 前复权）。symbol 如 AAPL / TSLA。缓存 5 分钟。"""
     sym = symbol.strip().upper()
     try:
         data = _cached(
@@ -194,7 +194,7 @@ def global_earnings_calendar(
 ):
     """Nasdaq 美股财报日历（可看未来一段时间：盘前/盘后 + EPS 预期）。
 
-    days=1 时等同单日；默认 7 个交易日。返回 by_day 分组 + 扁平 rows。
+    days=1 时等同单日；默认 7 个交易日。返回 by_day 分组。
     """
     try:
         start = (date or "").strip() or None
@@ -211,25 +211,6 @@ def global_earnings_calendar(
         raise
     except Exception as e:
         raise HTTPException(502, f"财报日历异常：{e}") from e
-
-
-@router.get("/api/global/treasury-curve")
-def global_treasury_curve():
-    """美债收益率曲线 1M~30Y（Treasury 官方 CSV，S 级）。含关键利差与较前日变化。"""
-    try:
-        data = _cached(
-            "g_treasury",
-            "latest",
-            1800,
-            lambda: gstock_deep.treasury_curve_overview(),
-        )
-        if not data:
-            raise HTTPException(404, "美债收益率曲线无数据")
-        return {"data": data}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"美债曲线异常：{e}") from e
 
 
 @router.get("/api/global/edgar/screener")

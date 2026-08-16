@@ -56,7 +56,6 @@ def earnings_calendar_range(
         return {}
     cur = datetime.strptime(start_s, "%Y-%m-%d").date()
     by_day: list[dict] = []
-    flat: list[dict] = []
     covered = 0
     guard = 0
     while covered < n and guard < n + 10:
@@ -71,8 +70,6 @@ def earnings_calendar_range(
             one = {"date": day, "count": 0, "rows": []}
         rows = one.get("rows") or []
         by_day.append({"date": day, "count": len(rows), "rows": rows})
-        for r in rows:
-            flat.append({"date": day, **r})
         covered += 1
         cur += timedelta(days=1)
     if not by_day:
@@ -81,11 +78,7 @@ def earnings_calendar_range(
         "start": by_day[0]["date"],
         "end": by_day[-1]["date"],
         "days": len(by_day),
-        "total": len(flat),
+        "total": sum(d["count"] for d in by_day),
         "by_day": by_day,
-        # Backward-compatible single-day fields (first day)
-        "date": f"{by_day[0]['date']}~{by_day[-1]['date']}",
-        "count": len(flat),
-        "rows": flat,
     }
 

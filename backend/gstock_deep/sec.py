@@ -6,13 +6,7 @@ from datetime import datetime
 import gstock
 from gstock_deep import official as _official
 from gstock_deep.common import DataNotAvailable, _FORM_LABEL
-from gstock_deep.official import (
-    _is_object_missing,
-    _recent_weekdays,
-    _require_sec_contact,
-    official_get,
-)
-from gstock_deep.yahoo import _resolve_yahoo, to_yahoo_symbol
+from gstock_deep.official import _recent_weekdays, official_get
 
 
 def ticker_to_cik(ticker: str) -> dict:

@@ -18,6 +18,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo [backend] Freeing port 8900...
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":8900 .*LISTENING"') do (
+  if not "%%P"=="0" taskkill /F /PID %%P >nul 2>&1
+)
+
 echo [backend] Starting FastAPI at http://0.0.0.0:8900 (LAN open)
 python -m uvicorn app:app --host 0.0.0.0 --port 8900
 if errorlevel 1 (

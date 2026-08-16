@@ -168,7 +168,6 @@ def test_gstock_deep_and_routers_import() -> None:
         "gstock_deep.sec",
         "gstock_deep.finra",
         "gstock_deep.earnings",
-        "gstock_deep.treasury",
         "gstock_deep.options",
         "gstock_deep.edgar",
         "gstock_deep.movers",

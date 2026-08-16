@@ -1132,7 +1132,7 @@ export function UsMarket() {
           title="财报日历"
           summary={
             earnCal
-              ? `${earnCal.total ?? earnCal.count ?? 0} 家`
+              ? `${earnCal.total ?? 0} 家`
               : undefined
           }
           className="mb-0"
@@ -1158,10 +1158,10 @@ export function UsMarket() {
             </div>
             <p className="mb-3 text-[11px] text-muted-foreground/60">
               Nasdaq · {earnCal?.start && earnCal?.end ? `${earnCal.start} → ${earnCal.end}` : "—"}
-              {" · "}共 {earnCal?.total ?? earnCal?.count ?? 0} 家
+              {" · "}共 {earnCal?.total ?? 0} 家
               {" · "}跳过周末 · 仅客观日程与 EPS 预期
             </p>
-            {!earnCal || (earnCal.total ?? earnCal.count) === 0 ? (
+            {!earnCal || earnCal.total === 0 ? (
               panelLoading ? (
                 <p className="py-6 text-center text-xs text-muted-foreground/60">加载中…</p>
               ) : (
@@ -1173,7 +1173,7 @@ export function UsMarket() {
               )
             ) : (
               <div className="max-h-80 space-y-3 overflow-y-auto">
-                {(earnCal.by_day ?? [{ date: earnCal.date, count: earnCal.count, rows: earnCal.rows }])
+                {earnCal.by_day
                   .filter((d) => d.count > 0)
                   .map((day) => (
                     <div key={day.date}>

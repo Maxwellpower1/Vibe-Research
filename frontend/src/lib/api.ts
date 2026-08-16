@@ -1079,10 +1079,8 @@ export interface GlobalEarningsRow {
   eps_forecast?: string; market_cap?: string;
 }
 export interface GlobalEarningsCalendar {
-  date: string; count: number;
-  start?: string; end?: string; days?: number; total?: number;
-  by_day?: Array<{ date: string; count: number; rows: GlobalEarningsRow[] }>;
-  rows: GlobalEarningsRow[];
+  start: string; end: string; days: number; total: number;
+  by_day: Array<{ date: string; count: number; rows: GlobalEarningsRow[] }>;
 }
 export interface GlobalOptContract {
   symbol?: string; expiry?: string; type?: string; strike?: number;

@@ -209,24 +209,14 @@ def test_13f_parse_diff_units():
     assert inst_13f.detect_value_units(fat, "2020-01-01") == (1, "usd")
 
 
-def test_us_kline_falls_back_to_stooq(monkeypatch):
+def test_us_kline_empty_when_yahoo_empty(monkeypatch):
     import gstock
 
     monkeypatch.setattr(gstock, "resolve_symbol", lambda q: {
         "code": "AAPL", "name": "Apple", "market": "NASDAQ",
     })
     monkeypatch.setattr(gstock, "_us_kline_yahoo_qfq", lambda *a, **k: [])
-    monkeypatch.setattr(gstock, "_us_kline_sina", lambda *a, **k: [])
-    monkeypatch.setattr(
-        "ext_feeds.stooq_kline",
-        lambda code, n: {
-            "bars": [{"date": "2026-08-14", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 9}],
-        },
-    )
-    out = gstock.us_stock_kline("AAPL")
-    assert out["source"] == "stooq"
-    assert out["adjust"] == "none"
-    assert out["bars"][0]["close"] == 1.5
+    assert gstock.us_stock_kline("AAPL") == {}
 
 
 def test_light_kline_falls_back_to_baostock(monkeypatch):
