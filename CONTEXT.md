@@ -47,9 +47,21 @@ _Avoid_: chat widget, LLM service
 
 **交易日历**:
 A 股这一天开不开市。复盘邮件、预热、网页报价中心/分时中心的休市间隔只问这个，不各自判 weekday。
-入口: `backend/trading_calendar.py`。`is_cn_trading_day()` 不打网上游；后台刷新东财上证日 K 日期。网页读预热状态的 `trading_day`。
+入口: `backend/trading_calendar.py`。`is_cn_trading_day()` 不打网上游；后台刷新上证日 K 日期（东财 push2his，挂了走 push2delay，再挂走已有 `astock.daily_bars("sh000001")`）。网页读预热状态的 `trading_day`。
 拿不到日历或日期超出覆盖：只判周末。
 _Avoid_: 第二份 weekday 列表、akshare 日历
+
+**回测**:
+自选 / 持仓的日线账户模拟。信号日不等于成交日。默认次日开盘。一笔共享现金。T+1、整手 100、佣金双边、印花税只卖。涨跌停看成交价对昨收带宽。净值只从现金+市值来。
+行情: `VR_DATA_DIR/market/` 分区 parquet（原始 OHLC 与复权因子分开），内存 DuckDB / Polars 查，不建 `.db`。只写已收盘 bar（`trading_calendar.last_closed_session`，15:00）。
+成分股按日快照；财务用 `(start, end)` + 公告日。自选仍是静态池，页面上写明幸存者偏差。
+实验: `VR_DATA_DIR/backtest/runs/<id>/` 写 config / 成交 / 净值 / 数据哈希，写完不改。作业先同步；要排队再加 `jobs.json`，不上 SQLite。
+入口: `backend/backtest/`；HTTP `GET /api/backtest/meta` · `POST /api/backtest/run` · `GET/DELETE /api/backtest/runs` · `GET /api/backtest/store`。网页 `/backtest` · `/data`。日 K 走 `astock.daily_bars`（与 `light_kline` 同一腾讯日 K 解析 `_tencent_daily`）。
+本机数据页只读日历 / parquet 日 K / 实验，不拉上游，不做 TickFlow 式全量同步。
+问 AI 工具 `run_backtest` 只读成交摘要和净值，不校准该不该买。
+样本外: 参数只在切点前选；`stats_oos_fresh` 是切点后新开的一笔钱（均线仍用切点前历史）。滚动切窗每折新开账户，开着时不再叠单点切窗。回看实验用本机 parquet 对 `data_hash`，对不上只提示、不改 run。持仓页「回测这些」进 `/backtest?codes=&from=portfolio&autostart=1`。
+V1 不做: 全 A 选股、因子 IC、全样本网格搜参、分钟成交、LLM 荐股胜率。
+_Avoid_: vectorbt, Backtrader, 第二条日历, 第二条报价轮询, 重叠持有期×252/horizon 年化, SQLite/.db, 用已跑完净值切窗冒充 walk-forward, TickFlow 式全量同步/清库
 
 ## 就地改
 

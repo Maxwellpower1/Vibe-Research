@@ -61,6 +61,13 @@ python3 -m venv .venv
 | `GET /api/research/correlation?codes=` | 日收益 Pearson 矩阵, 最多 12 只 | 各市场 K 线 |
 | `GET /api/research/etf-holdings?symbol=` | ETF 穿透（东财 / N-PORT） | requests；美股需 VR_SEC_CONTACT |
 | `GET /api/research/13f?manager=` | 13F 持仓 + 两季环比；`ticker=` 列持有人 | VR_SEC_CONTACT |
+| `GET /api/backtest/meta` | 回测策略 / 默认费用 / 免责声明 | — |
+| `POST /api/backtest/run` | A 股日线账户回测（次日开盘、T+1、整手、印花税只卖） | 腾讯日 K |
+| `GET /api/backtest/store` | 本机日历 / parquet 日 K / 实验库存（不拉上游） | — |
+| `GET /api/backtest/store/{symbol}` | 读一只已落盘日 K 的尾部 | — |
+| `GET /api/backtest/runs` | 实验列表（`runs/<id>/` 写完不改） | — |
+| `GET /api/backtest/runs/{id}` | 读回一个实验 | — |
+| `DELETE /api/backtest/runs/{id}` | 删掉整个实验目录 | — |
 | `GET /api/global/edgar/screener` | SEC EDGAR frames 全市场 screener（S 级，需 VR_SEC_CONTACT） | requests |
 | `GET /api/global/movers?board=` | 美/港涨跌与成交额榜（东财 market_stock_list，C 级） | requests |
 | `GET /api/global/stock/news?symbol=` | 美/港个股新闻（Yahoo search，C 级） | requests |

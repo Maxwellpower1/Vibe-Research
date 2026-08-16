@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, ShieldCheck, RefreshCw, Loader2, Trash2, AlertCircle } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Plus, ShieldCheck, RefreshCw, Loader2, Trash2, AlertCircle, FlaskConical } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
@@ -93,8 +94,17 @@ export function StockPortfolio() {
     <div>
       <div className="mb-4 flex items-center justify-end gap-2">
         {holdings.length > 0 && (
-          <AskAiButton context={aiContext} label="让 AI 看我的持仓" scopeKey="stock"
-            suggestions={["我的持仓集中在哪些方向", "结构上有什么风险", "帮我梳理一下"]} />
+          <>
+            <Link
+              to={`/backtest?codes=${holdings.map((h) => h.code).filter(Boolean).slice(0, 20).join(",")}&from=portfolio&autostart=1`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-sm text-cyan-200 hover:bg-cyan-500/20"
+            >
+              <FlaskConical className="h-4 w-4" />
+              回测这些
+            </Link>
+            <AskAiButton context={aiContext} label="让 AI 看我的持仓" scopeKey="stock"
+              suggestions={["我的持仓集中在哪些方向", "结构上有什么风险", "帮我梳理一下"]} />
+          </>
         )}
         <button onClick={() => load(true)} disabled={refreshing}
           className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50">

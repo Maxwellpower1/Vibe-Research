@@ -12,6 +12,8 @@ const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m
 const AiWatch = lazy(() => import("@/pages/AiWatch").then((m) => ({ default: m.AiWatch })));
 const FinWindow = lazy(() => import("@/pages/FinWindow").then((m) => ({ default: m.FinWindow })));
 const Research = lazy(() => import("@/pages/Research").then((m) => ({ default: m.Research })));
+const Backtest = lazy(() => import("@/pages/Backtest").then((m) => ({ default: m.Backtest })));
+const Data = lazy(() => import("@/pages/Data").then((m) => ({ default: m.Data })));
 
 export const router = createBrowserRouter([
   {
@@ -26,6 +28,8 @@ export const router = createBrowserRouter([
           { path: "/ovlab", element: <Ovlab /> },
           { path: "/us-market", element: <UsMarket /> },
           { path: "/research", element: <Research /> },
+          { path: "/backtest", element: <Backtest /> },
+          { path: "/data", element: <Data /> },
           { path: "/ai-watch", element: <AiWatch /> },
           { path: "/fin", element: <FinWindow /> },
           { path: "/settings", element: <Settings /> },

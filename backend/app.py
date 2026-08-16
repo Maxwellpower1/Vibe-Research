@@ -54,6 +54,7 @@ from routers import (
     ai,
     ai_watch_routes,
     ashare,
+    backtest_routes,
     core,
     fin_routes,
     fino_routes,
@@ -116,6 +117,7 @@ app.include_router(fino_routes.router)
 app.include_router(ai_watch_routes.router)
 app.include_router(fin_routes.router)
 app.include_router(research_routes.router)
+app.include_router(backtest_routes.router)
 
 # A-share calendar first so mail/warmup skip holidays (weekend fallback if fetch fails).
 trading_calendar.start_background()

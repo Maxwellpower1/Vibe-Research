@@ -44,6 +44,8 @@ Vibe-Research 是一个开源的「个人 AI 投研看板」，**主推 A 股、
 | 🌊&nbsp;**期&#8288;权&#8288;/&#8288;期&#8288;货** | **OpenVlab** 公开数据：市场概览（全部品种现价 / 涨跌 / 平值隐波 / 隐波百分位 / 22 日实波 / VolAlphaT / Carry / 偏度及百分位 / 主力合约 / 到期日 / 夜盘 / 境外）· 单品种详情（dto）· 波动率期限结构汇总。只客观呈现，不推荐不预测 |
 | 🇺🇸&nbsp;**美&#8288;股** | 本地观察列表（ticker）· 东财快照行情 · **日 K + 成交量**（新浪）· **财报日历** · **SEC 当日申报流**（需 `VR_SEC_CONTACT`）。点列表即切图；只客观呈现，不推荐不预测 |
 | 🔬&nbsp;**研&#8288;究&#8288;桌** | 顶栏 `/research`：多标的 **相关性热力图** · **ETF 穿透**（A 股东财中报/年报全持仓，美股 N-PORT）· **13F 环比** · OKX/Binance/pykrx K 线。只呈现公开披露，持仓天生滞后 |
+| 🧪&nbsp;**回&#8288;测** | 顶栏 `/backtest`：A 股日线账户模拟。买入持有 / 均线金叉死叉 / 指定买卖日。默认**次日开盘**成交，T+1、整手 100、佣金双边、印花税只卖。可叠沪深300。样本外切窗（参数只在前段选，后段另开账户）· 滚动切窗。持仓页可一键回测。研究模拟，不荐股 |
+| 🗄️&nbsp;**数&#8288;据** | 顶栏更多 `/data`：看本机日历、已落盘日 K、实验。只读库存，不拉上游 |
 | 🤖&nbsp;**AI&#8288;观&#8288;察** | 顶栏进入：公有云 Token 消耗（OpenRouter 日榜）· LLM 价格趋势 / 降价事件（TrakToken TTSI）· 大模型价格表与智能×成本散点（Artificial Analysis，可选 key）· AI 基建 CapEx/ROI（SEC + 模型外推）。只客观呈现，预测段标「模型假设」 |
 | 🔌&nbsp;**接&#8288;入&nbsp;AI** | 订阅接入（本机 CLI，免 key）· API 多模型（自动填 baseURL）· MCP（挂进 Claude Code 等 agent）|
 
@@ -83,6 +85,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - 后端 `backend/gstock.py` + `gstock_deep.py`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo quoteSummary；挂了就空）** + **三表关键科目（东财）** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo search，crumb 被拦时走 RSS）**。个股页输 `AAPL` / `00700` 即可。
 - **美股日 K**：`GET /api/global/us/kline?symbol=AAPL&num=180`（新浪；Yahoo chart 在国内 403）。A 股日 K 腾讯/mootdx 空时回退 **Baostock**（可选包）。
 - **研究桌**：`GET /api/research/kline`（Stooq / Baostock / OKX / Binance / CCXT / pykrx）· `/correlation` · `/etf-holdings` · `/13f`。韩股日 K 需 `pip install pykrx`（Naver 复权，不是 KRX 原始盘）。
+- **回测**：`GET /api/backtest/meta` · `POST /api/backtest/run` · `GET/DELETE /api/backtest/runs` · `GET /api/backtest/store`。日 K 走 `daily_bars`（腾讯，与 light_kline 同源）：原始 OHLC + 复权因子分区 parquet，落在 `~/.vibe-research/market/`，内存 DuckDB/Polars 查，不建 `.db`。实验在 `~/.vibe-research/backtest/runs/<id>/`。本机库存见顶栏「数据」页。
 - **美股页**：观察列表 + K 线 + **EDGAR Screener（S 级）** + 涨跌榜 + 选中标的期权 + 财报日历 + SEC 日报。
 - **AI 观察**：`GET /api/ai-watch/openrouter-usage`（需 `OPENROUTER_API_KEY`，无 key 读本地缓存）· `spend-index`（TrakToken RSS）· `aa-models`（可选 `ARTIFICIAL_ANALYSIS_API_KEY`）· `ai-infra`（SEC CapEx + 模型外推）。快照落在 `~/.vibe-research/ai-watch/`。
 - **SEC**：设置 `VR_SEC_CONTACT="Name you@example.com"`，否则 SEC 端点返回 503。

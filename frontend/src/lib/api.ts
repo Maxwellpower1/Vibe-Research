@@ -1600,6 +1600,14 @@ export const api = {
     p.set("top", String(opts.top ?? 40));
     return get<Research13f>(`/research/13f?${p}`);
   },
+  backtestMeta: () => get<BacktestMeta>("/backtest/meta"),
+  backtestRun: (body: BacktestRunBody) => request<BacktestResult>("/backtest/run", "POST", body),
+  backtestRuns: (limit = 40) => get<BacktestRunSummary[]>(`/backtest/runs?limit=${limit}`),
+  backtestRunGet: (id: string) => get<BacktestResult>(`/backtest/runs/${encodeURIComponent(id)}`),
+  backtestRunDelete: (id: string) => request<{ ok: boolean; id: string }>(`/backtest/runs/${encodeURIComponent(id)}`, "DELETE"),
+  backtestStore: () => get<BacktestStore>("/backtest/store"),
+  backtestStorePeek: (symbol: string, n = 30) =>
+    get<BacktestStorePeek>(`/backtest/store/${encodeURIComponent(symbol)}?n=${n}`),
   openRouterUsage: () => get<OrUsageDay[]>("/ai-watch/openrouter-usage"),
   spendIndex: () => get<SpendIndexResp>("/ai-watch/spend-index"),
   aaModels: () => get<AaModelsResp>("/ai-watch/aa-models"),
@@ -1769,4 +1777,197 @@ export interface Research13f {
   changes?: Research13fChange[];
   change_counts?: { new?: number; increased?: number; reduced?: number; closed?: number };
   note?: string;
+}
+
+export type BacktestStrategy = "hold" | "ma_cross" | "dates";
+
+export interface BacktestEvent {
+  code: string;
+  side: "buy" | "sell";
+  date: string;
+}
+
+export interface BacktestRunBody {
+  codes: string[];
+  strategy?: BacktestStrategy;
+  lookback?: "1y" | "2y" | "3y";
+  start?: string;
+  end?: string;
+  short_win?: number;
+  long_win?: number;
+  events?: BacktestEvent[];
+  fill?: "open_t+1" | "close_t";
+  initial_capital?: number;
+  max_positions?: number;
+  commission_pct?: number;
+  commission_min?: number;
+  stamp_tax_pct?: number;
+  slippage_bps?: number;
+  oos_frac?: number;
+  oos_date?: string;
+  tune_ma?: boolean;
+  walk_forward?: boolean;
+}
+
+export interface BacktestTrade {
+  symbol: string;
+  name?: string;
+  side: "buy" | "sell" | string;
+  date: string;
+  signal_date?: string;
+  price: number;
+  shares: number;
+  notional: number;
+  commission: number;
+  stamp_tax: number;
+  cash_delta: number;
+  pnl?: number | null;
+  hold_days?: number;
+  reason?: string;
+}
+
+export interface BacktestResult {
+  equity_curve: { date: string; equity: number; cash: number; market_value: number }[];
+  drawdown_curve: { date: string; drawdown: number }[];
+  trades: BacktestTrade[];
+  stats: {
+    initial_capital: number;
+    final_equity: number;
+    total_return: number;
+    cagr: number;
+    sharpe: number;
+    vol: number;
+    max_drawdown: number;
+    calmar: number;
+    days: number;
+    trades: number;
+    round_trips: number;
+    win_rate: number;
+    profit_factor: number | null;
+    benchmark_return?: number | null;
+    excess_return?: number | null;
+    oos_return?: number | null;
+    oos_sharpe?: number | null;
+    oos_fresh_return?: number | null;
+    oos_fresh_sharpe?: number | null;
+    wf_mean_sharpe?: number | null;
+    wf_compound_return?: number | null;
+  };
+  execution: {
+    fills: number;
+    open_positions: number;
+    rejects: Record<string, number>;
+  };
+  universe?: {
+    symbols: string[];
+    names?: Record<string, string>;
+    start?: string;
+    end?: string;
+    bars?: number;
+  };
+  strategy?: { name: string; short_win?: number; long_win?: number };
+  warnings?: string[];
+  disclaimer?: string;
+  config?: Record<string, number | string>;
+  run_id?: string;
+  data_hash?: string;
+  data_hash_now?: string | null;
+  data_hash_match?: boolean | null;
+  created?: string;
+  closed_end?: string;
+  benchmark?: {
+    symbol: string;
+    name?: string;
+    curve: { date: string; equity: number | null }[];
+    total_return?: number | null;
+  };
+  oos?: {
+    split: string;
+    is_bars: number;
+    oos_bars: number;
+    stats_is: BacktestResult["stats"];
+    stats_oos: BacktestResult["stats"];
+    stats_oos_fresh: BacktestResult["stats"];
+    note?: string;
+  };
+  walk_forward?: {
+    folds: {
+      is_start: string;
+      is_end: string;
+      oos_start: string;
+      oos_end: string;
+      short_win?: number;
+      long_win?: number;
+      stats: BacktestResult["stats"];
+    }[];
+    summary: { folds: number; mean_sharpe: number; mean_return: number; compound_return: number };
+  };
+}
+
+export interface BacktestRunSummary {
+  id: string;
+  created?: string;
+  data_hash?: string;
+  strategy?: { name?: string } | string;
+  symbols?: string[];
+  start?: string;
+  end?: string;
+  total_return?: number | null;
+  sharpe?: number | null;
+  excess_return?: number | null;
+}
+
+export interface BacktestStoreSymbol {
+  symbol: string;
+  bars: number;
+  from?: string | null;
+  to?: string | null;
+  years?: string[];
+  adj: number;
+}
+
+export interface BacktestStore {
+  root: string;
+  closed_end?: string;
+  bytes: { market: number; runs: number };
+  calendar: {
+    loaded: boolean;
+    count: number;
+    from?: string | null;
+    to?: string | null;
+    source?: string | null;
+    trading_day?: boolean;
+    fallback?: boolean;
+  };
+  bars: { count: number; symbols: BacktestStoreSymbol[] };
+  members: { index: string; rows: number; snapshots: number; from?: string | null; to?: string | null }[];
+  fundamentals: { symbol: string; rows: number; from?: string | null; to?: string | null }[];
+  runs: { count: number; recent: BacktestRunSummary[] };
+  legacy_kline: number;
+  note?: string;
+}
+
+export interface BacktestStorePeek {
+  symbol: string;
+  count: number;
+  available?: [string, string] | null;
+  bars: {
+    date: string;
+    open?: number | null;
+    high?: number | null;
+    low?: number | null;
+    close?: number | null;
+    volume?: number | null;
+    factor?: number | null;
+  }[];
+}
+
+export interface BacktestMeta {
+  strategies: { id: BacktestStrategy; label: string; hint: string }[];
+  fills: string[];
+  lookbacks: string[];
+  defaults: BacktestRunBody & Record<string, unknown>;
+  limits: { max_codes: number; max_bars: number };
+  disclaimer: string;
+  notes: string[];
 }

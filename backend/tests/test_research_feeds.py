@@ -219,6 +219,29 @@ def test_us_kline_empty_when_sina_empty(monkeypatch):
     assert gstock.us_stock_kline("AAPL") == {}
 
 
+def test_daily_bars_shares_tencent_daily_with_light_kline(monkeypatch):
+    import astock
+
+    payload = {
+        "data": {
+            "sh600519": {
+                "qfqday": [["2026-08-14", 1, 1.5, 2, 0.5, 8]],
+                "day": [["2026-08-14", 10, 15, 20, 5, 8]],
+                "qt": {"sh600519": ["", "贵州茅台"]},
+            }
+        }
+    }
+    monkeypatch.setattr(astock, "resolve_symbol", lambda _c: "sh600519")
+    monkeypatch.setattr(astock, "_tencent_json", lambda _url: payload)
+    qfq = astock.daily_bars("600519", 20, "qfq")
+    raw = astock.daily_bars("600519", 20, "none")
+    lk = astock.light_kline("600519", "1D", 20)
+    assert qfq["bars"][0]["close"] == 1.5
+    assert raw["bars"][0]["close"] == 15
+    assert lk["bars"][0]["close"] == 1.5
+    assert qfq["name"] == lk["name"] == "贵州茅台"
+
+
 def test_light_kline_falls_back_to_baostock(monkeypatch):
     import astock
 

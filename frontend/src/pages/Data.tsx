@@ -1,0 +1,240 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { RefreshCw } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { GlassCard } from "@/components/ui/GlassCard";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { api, ApiError, type BacktestStore, type BacktestStorePeek } from "@/lib/api";
+import { cn } from "@/lib/utils";
+
+function fmtBytes(n: number) {
+  if (!n) return "0 B";
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)} KB`;
+  return `${n} B`;
+}
+
+function fmtNum(v: number | null | undefined) {
+  if (v == null || Number.isNaN(v)) return "—";
+  return v.toLocaleString("zh-CN", { maximumFractionDigits: 3 });
+}
+
+export function Data() {
+  const [store, setStore] = useState<BacktestStore | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [peekSym, setPeekSym] = useState("");
+  const [peek, setPeek] = useState<BacktestStorePeek | null>(null);
+  const [peeking, setPeeking] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      setStore(await api.backtestStore());
+    } catch (e) {
+      setStore(null);
+      setError(e instanceof ApiError ? e.message : "本机库存没读到");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function openPeek(symbol: string) {
+    setPeekSym(symbol);
+    setPeeking(true);
+    try {
+      setPeek(await api.backtestStorePeek(symbol, 20));
+    } catch (e) {
+      setPeek(null);
+      setError(e instanceof ApiError ? e.message : "这段日 K 没读到");
+    } finally {
+      setPeeking(false);
+    }
+  }
+
+  const cal = store?.calendar;
+  const symbols = store?.bars.symbols || [];
+
+  return (
+    <div className="mx-auto max-w-6xl px-3 py-3 sm:px-4">
+      <PageHeader
+        title="本机数据"
+        subtitle="只看已经落到磁盘上的日历、日 K、实验。不拉上游，也没有 TickFlow 那种全量同步。"
+        actions={
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:text-slate-100"
+          >
+            <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
+            刷新
+          </button>
+        }
+      />
+
+      {error && <p className="mb-2 text-[12px] text-rose-300">{error}</p>}
+
+      {loading && !store && (
+        <GlassCard>
+          <EmptyState title="在读本机目录" loading />
+        </GlassCard>
+      )}
+
+      {store && (
+        <>
+          <p className="mb-2 font-mono text-[10px] text-slate-500">
+            {store.root} · 已收盘至 {store.closed_end || "?"} · 行情 {fmtBytes(store.bytes.market)} · 实验{" "}
+            {fmtBytes(store.bytes.runs)}
+          </p>
+
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Stat
+              label="交易日历"
+              value={cal?.loaded ? `${cal.count} 日` : "周末回退"}
+              hint={
+                cal?.loaded
+                  ? `${cal.from} ~ ${cal.to} · ${cal.source || "?"}`
+                  : "还没有日历文件, 工作日当开市"
+              }
+            />
+            <Stat
+              label="日 K"
+              value={`${store.bars.count} 只`}
+              hint="回测跑过才会写入 parquet"
+            />
+            <Stat
+              label="实验"
+              value={`${store.runs.count} 个`}
+              hint="写完不改, 回看时对哈希"
+            />
+            <Stat
+              label="成分 / 财务"
+              value={`${store.members.length} / ${store.fundamentals.length}`}
+              hint="按日成分和公告日还是空架子"
+            />
+          </div>
+
+          {store.legacy_kline > 0 && (
+            <p className="mb-2 text-[11px] text-amber-200/80">
+              还有 {store.legacy_kline} 个旧版 kline/*.json, 回测已经不读它们。
+            </p>
+          )}
+
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <GlassCard className="overflow-x-auto p-0">
+              {symbols.length === 0 ? (
+                <EmptyState
+                  title="还没有日 K"
+                  description="去回测页跑一次, 标的的已收盘日 K 会落到本机。"
+                />
+              ) : (
+                <table className="w-full min-w-[560px] text-left text-[11px]">
+                  <thead className="text-slate-500">
+                    <tr className="border-b border-slate-800">
+                      {["代码", "根数", "起", "止", "复权因子"].map((h) => (
+                        <th key={h} className="px-2 py-1.5 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {symbols.map((s) => (
+                      <tr
+                        key={s.symbol}
+                        className={cn(
+                          "cursor-pointer border-b border-slate-800/70 hover:bg-slate-800/40",
+                          peekSym === s.symbol && "bg-cyan-500/10",
+                        )}
+                        onClick={() => void openPeek(s.symbol)}
+                      >
+                        <td className="px-2 py-1 font-mono text-slate-200">{s.symbol}</td>
+                        <td className="px-2 py-1 font-mono tabular-nums">{s.bars}</td>
+                        <td className="px-2 py-1 font-mono text-slate-400">{s.from || "—"}</td>
+                        <td className="px-2 py-1 font-mono text-slate-400">{s.to || "—"}</td>
+                        <td className="px-2 py-1 font-mono tabular-nums text-slate-400">{s.adj}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </GlassCard>
+
+            <div className="space-y-3">
+              <GlassCard className="overflow-x-auto p-0">
+                <p className="px-2 py-1.5 text-[11px] text-slate-400">
+                  {peek
+                    ? `${peek.symbol} 最近 ${peek.bars.length} 根 · 共 ${peek.count}`
+                    : "点左边一只看原始 OHLC"}
+                </p>
+                {peeking && <EmptyState title="在读" loading />}
+                {peek && peek.bars.length > 0 && (
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="text-slate-500">
+                      <tr className="border-b border-slate-800">
+                        {["日期", "收", "因子"].map((h) => (
+                          <th key={h} className="px-2 py-1 font-medium">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {peek.bars.map((b) => (
+                        <tr key={b.date} className="border-b border-slate-800/70">
+                          <td className="px-2 py-1 font-mono text-slate-400">{b.date}</td>
+                          <td className="px-2 py-1 font-mono tabular-nums">{fmtNum(b.close)}</td>
+                          <td className="px-2 py-1 font-mono tabular-nums text-slate-500">
+                            {b.factor == null ? "—" : fmtNum(b.factor)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </GlassCard>
+
+              <GlassCard className="p-2">
+                <p className="mb-1 text-[11px] text-slate-400">最近实验</p>
+                {(store.runs.recent || []).length === 0 ? (
+                  <p className="text-[11px] text-slate-500">还没有 run</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {store.runs.recent.map((r) => (
+                      <li key={r.id}>
+                        <Link
+                          to="/backtest"
+                          className="font-mono text-[11px] text-cyan-400 hover:text-cyan-200"
+                        >
+                          {r.id}
+                        </Link>
+                        <span className="ml-2 text-[10px] text-slate-500">
+                          {(r.symbols || []).slice(0, 3).join(" ")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <Link to="/backtest" className="mt-2 inline-block text-[11px] text-cyan-400 hover:text-cyan-200">
+                  去回测
+                </Link>
+              </GlassCard>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <GlassCard className="py-2">
+      <p className="text-[10px] text-slate-500">{label}</p>
+      <p className="mt-0.5 font-mono text-[16px] tabular-nums text-slate-100">{value}</p>
+      {hint && <p className="mt-0.5 text-[10px] text-slate-500">{hint}</p>}
+    </GlassCard>
+  );
+}

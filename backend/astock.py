@@ -568,6 +568,47 @@ def _tencent_json(url: str) -> dict:
         return json.loads(resp.read().decode("utf-8", errors="replace"))
 
 
+def _parse_tencent_daily_rows(rows: object, n: int) -> list[dict]:
+    bars: list[dict] = []
+    if not isinstance(rows, list):
+        return bars
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) < 6:
+            continue
+        try:
+            bars.append({
+                "datetime": str(row[0]),
+                "open": float(row[1]),
+                "close": float(row[2]),
+                "high": float(row[3]),
+                "low": float(row[4]),
+                "volume": int(float(row[5])),
+            })
+        except (TypeError, ValueError):
+            continue
+    return bars[-n:]
+
+
+def _tencent_daily(symbol: str, n: int, adjust: str = "qfq") -> dict:
+    """One Tencent fqkline daily fetch. light_kline 1D and daily_bars share this."""
+    adj = "qfq" if (adjust or "qfq").strip().lower() == "qfq" else "none"
+    param = f"{symbol},day,,,{n},qfq" if adj == "qfq" else f"{symbol},day,,,{n},"
+    try:
+        d = _tencent_json(f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={param}")
+    except Exception:
+        return {}
+    block = ((d.get("data") or {}).get(symbol) or {})
+    rows = (block.get("qfqday") if adj == "qfq" else None) or block.get("day") or []
+    bars = _parse_tencent_daily_rows(rows, n)
+    if not bars:
+        return {}
+    name = None
+    qt = (block.get("qt") or {}).get(symbol) or []
+    if isinstance(qt, list) and len(qt) > 1 and isinstance(qt[1], str):
+        name = qt[1]
+    return {"bars": bars, "name": name, "adjust": adj, "source": "tencent"}
+
+
 def _parse_minute_line(line: str, day: str = "") -> dict | None:
     """Parse '0930 1328.36 521 69207556.00' -> bar. day=YYYYMMDD optional for 5-day."""
     parts = str(line).split()
@@ -752,33 +793,11 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
                     prev_close = None
 
         else:
-            # Daily forward-adjusted OHLC
-            adjust = "qfq"
-            param = f"{symbol},day,,,{n},qfq"
-            d = _tencent_json(
-                f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={param}"
-            )
-            block = ((d.get("data") or {}).get(symbol) or {})
-            rows = block.get("qfqday") or block.get("day") or []
-            for row in rows:
-                if not isinstance(row, (list, tuple)) or len(row) < 6:
-                    continue
-                try:
-                    # [date, open, close, high, low, volume]
-                    bars.append({
-                        "datetime": str(row[0]),
-                        "open": float(row[1]),
-                        "close": float(row[2]),
-                        "high": float(row[3]),
-                        "low": float(row[4]),
-                        "volume": int(float(row[5])),
-                    })
-                except (TypeError, ValueError):
-                    continue
-            bars = bars[-n:]
-            qt = (block.get("qt") or {}).get(symbol) or []
-            if isinstance(qt, list) and len(qt) > 1:
-                name = qt[1] if isinstance(qt[1], str) else name
+            daily = _tencent_daily(symbol, n, "qfq")
+            if daily:
+                adjust = "qfq"
+                bars = list(daily["bars"])
+                name = daily.get("name") or name
     except Exception:
         bars = []
 
@@ -852,6 +871,34 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
         "source": "tencent",
         "prev_close": prev_close,
         "bars": bars,
+    }
+
+
+def daily_bars(code: str, num: int = 365, adjust: str = "qfq") -> dict:
+    """Daily OHLC from the same Tencent fqkline as light_kline.
+
+    adjust=qfq: forward-adjusted. adjust=none: raw unadjusted.
+    Backtest stores raw + factor separately; do not persist qfq as the only price.
+    """
+    symbol = resolve_symbol(code)
+    if not symbol:
+        return {}
+    n = max(20, min(int(num or 365), 1000))
+    adj = (adjust or "qfq").strip().lower()
+    if adj not in ("qfq", "none"):
+        adj = "qfq"
+    daily = _tencent_daily(symbol, n, adj)
+    if not daily:
+        return {}
+    code6 = symbol[2:] if len(symbol) > 2 else symbol
+    return {
+        "code": code6,
+        "symbol": symbol,
+        "name": daily.get("name") or code6,
+        "resolution": "1D",
+        "adjust": adj,
+        "source": "tencent",
+        "bars": daily["bars"],
     }
 
 

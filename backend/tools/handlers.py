@@ -561,6 +561,31 @@ def _etf_holdings(args: dict) -> dict:
     return out
 
 
+def _run_backtest(args: dict) -> dict:
+    from backtest.service import BacktestError, run_backtest
+
+    try:
+        out = run_backtest(args or {})
+    except BacktestError as e:
+        return {"error": str(e)}
+    trades = out.get("trades") or []
+    return {
+        "disclaimer": out.get("disclaimer"),
+        "run_id": out.get("run_id"),
+        "data_hash": out.get("data_hash"),
+        "universe": out.get("universe"),
+        "strategy": out.get("strategy"),
+        "stats": out.get("stats"),
+        "oos": out.get("oos"),
+        "walk_forward": (out.get("walk_forward") or {}).get("summary") if out.get("walk_forward") else None,
+        "execution": out.get("execution"),
+        "warnings": out.get("warnings") or [],
+        "trades_shown": min(20, len(trades)),
+        "trades": trades[-20:],
+        "note": "只给摘要和最近成交, 不校准买卖。完整净值曲线在 /backtest 页。实验写完不改。",
+    }
+
+
 def _13f(args: dict) -> dict:
     import inst_13f
 
@@ -667,5 +692,6 @@ _HANDLERS = {
     "query_correlation": _correlation,
     "query_etf_holdings": _etf_holdings,
     "query_13f": _13f,
+    "run_backtest": _run_backtest,
 }
 

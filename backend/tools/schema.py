@@ -221,6 +221,19 @@ TOOLS: list[dict] = [
         "ticker": {"type": "string", "description": "美股代码, 列持有人"},
         "top": {"type": "integer", "description": "持仓条数, 默认 20"}},
        []),
+    _t("run_backtest",
+       "跑 A 股日线账户回测, 只返回净值摘要/成交笔数/未成交原因。研究模拟, 不荐股、不预测、不校准该不该买。默认次日开盘, T+1, 整手 100, 印花税只卖。",
+       {"codes": {"type": "array", "items": {"type": "string"}, "description": "最多 20 个 A 股代码"},
+        "strategy": {"type": "string", "enum": ["hold", "ma_cross", "dates"], "description": "默认 hold"},
+        "lookback": {"type": "string", "enum": ["1y", "2y", "3y"], "description": "默认 2y"},
+        "start": {"type": "string", "description": "YYYY-MM-DD, 可替代 lookback"},
+        "end": {"type": "string", "description": "YYYY-MM-DD"},
+        "short_win": {"type": "integer", "description": "均线短窗口, 默认 5"},
+        "long_win": {"type": "integer", "description": "均线长窗口, 默认 20"},
+        "oos_frac": {"type": "number", "description": "样本外占比, 如 0.3. 参数只在前段选"},
+        "tune_ma": {"type": "boolean", "description": "均线是否只在样本内选, 默认 false"},
+        "walk_forward": {"type": "boolean", "description": "滚动切窗, 每折新开账户"}},
+       ["codes"]),
 ]
 
 TOOL_NAMES = [t["function"]["name"] for t in TOOLS]

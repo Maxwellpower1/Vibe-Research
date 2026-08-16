@@ -27,7 +27,9 @@ _SOURCE = ""
 _ALLOW_DISK = True
 _LOCK = threading.Lock()
 
-_KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+# Same Eastmoney kline path; push2his is often reset, push2delay is the sibling host.
+_EM_HOSTS = ("push2his.eastmoney.com", "push2delay.eastmoney.com")
+_KLINE_PATH = "/api/qt/stock/kline/get"
 _KLINE_PARAMS = {
     "secid": "1.000001",
     "klt": "101",
@@ -100,6 +102,26 @@ def parse_kline_dates(payload: object) -> frozenset[date]:
     return frozenset(out)
 
 
+def parse_bar_dates(payload: object) -> frozenset[date]:
+    """daily_bars payload -> trading dates. No network."""
+    if not isinstance(payload, dict):
+        return frozenset()
+    rows = payload.get("bars")
+    if not isinstance(rows, list):
+        return frozenset()
+    out: set[date] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        day = str(row.get("datetime") or row.get("date") or "")[:10]
+        if len(day) == 10 and day[4] == "-" and day[7] == "-":
+            try:
+                out.add(date.fromisoformat(day))
+            except ValueError:
+                continue
+    return frozenset(out)
+
+
 def _data_dir() -> Path:
     root = Path(os.environ.get("VR_DATA_DIR") or (Path.home() / ".vibe-research"))
     root.mkdir(parents=True, exist_ok=True)
@@ -161,6 +183,35 @@ def is_cn_trading_day(d: date | datetime | None = None) -> bool:
     return True
 
 
+# Regular session close. Do not persist today's bar before this.
+_A_SHARE_CLOSE = (15, 0)
+
+
+def last_closed_session(now: date | datetime | None = None) -> date:
+    """Last A-share session that has already closed (15:00 Beijing).
+
+    Uses is_cn_trading_day. No second weekday list.
+    """
+    if isinstance(now, date) and not isinstance(now, datetime):
+        current = datetime(now.year, now.month, now.day, 23, 59, tzinfo=BEIJING)
+    elif now is None:
+        current = datetime.now(BEIJING)
+    else:
+        current = now
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=BEIJING)
+        else:
+            current = current.astimezone(BEIJING)
+    day = current.date()
+    if is_cn_trading_day(day) and (current.hour, current.minute) >= _A_SHARE_CLOSE:
+        return day
+    for i in range(1, 30):
+        cand = day - timedelta(days=i)
+        if is_cn_trading_day(cand):
+            return cand
+    return day - timedelta(days=1)
+
+
 def status() -> dict[str, Any]:
     _ensure_memory()
     today = is_cn_trading_day()
@@ -177,22 +228,63 @@ def status() -> dict[str, Any]:
     }
 
 
-def _fetch() -> frozenset[date]:
+def _fetch_eastmoney() -> frozenset[date]:
     import astock
 
-    r = astock.em_get(
-        _KLINE_URL,
-        params=_KLINE_PARAMS,
-        headers={
-            "User-Agent": astock.UA,
-            "Referer": "https://quote.eastmoney.com/",
-        },
-        timeout=20,
-    )
-    dates = parse_kline_dates(r.json())
+    last: Exception | None = None
+    headers = {
+        "User-Agent": astock.UA,
+        "Referer": "https://quote.eastmoney.com/",
+    }
+    for host in _EM_HOSTS:
+        try:
+            r = astock.em_get(
+                f"https://{host}{_KLINE_PATH}",
+                params=_KLINE_PARAMS,
+                headers=headers,
+                timeout=8,
+            )
+            dates = parse_kline_dates(r.json())
+            if len(dates) >= _MIN_DATES:
+                return dates
+            last = RuntimeError(f"{host} calendar too short: {len(dates)}")
+        except Exception as e:
+            last = e
+            log.info("A-share calendar %s failed, try next: %s", host, e)
+    raise last or RuntimeError("eastmoney calendar empty")
+
+
+def _fetch_tencent() -> frozenset[date]:
+    import astock
+
+    payload = astock.daily_bars("sh000001", 1000, "none") or {}
+    dates = parse_bar_dates(payload)
     if len(dates) < _MIN_DATES:
-        raise RuntimeError(f"calendar too short: {len(dates)}")
+        raise RuntimeError(f"tencent calendar too short: {len(dates)}")
     return dates
+
+
+def _merge_disk(live: frozenset[date]) -> tuple[frozenset[date], bool]:
+    disk = _load_disk()
+    if not disk:
+        return live, False
+    return disk | live, True
+
+
+def _fetch() -> tuple[frozenset[date], str]:
+    """Live dates for the one A-share calendar. Eastmoney first, Tencent daily_bars next."""
+    errors: list[str] = []
+    try:
+        return _fetch_eastmoney(), "eastmoney"
+    except Exception as e:
+        errors.append(f"eastmoney: {e}")
+    try:
+        live = _fetch_tencent()
+        merged, used_disk = _merge_disk(live)
+        return merged, "tencent+disk" if used_disk else "tencent"
+    except Exception as e:
+        errors.append(f"tencent: {e}")
+    raise RuntimeError("; ".join(errors))
 
 
 def refresh() -> bool:
@@ -201,18 +293,19 @@ def refresh() -> bool:
     with _LOCK:
         _ALLOW_DISK = True
         try:
-            dates = _fetch()
+            dates, source = _fetch()
         except Exception as e:
             log.warning("A-share calendar fetch failed, keep fallback: %s", e)
             _ensure_memory()
             return False
-        _set(dates, "eastmoney")
+        _set(dates, source)
         try:
             _save_disk(dates)
         except OSError as e:
             log.warning("A-share calendar disk save failed: %s", e)
         log.info(
-            "A-share calendar loaded: %s days (%s .. %s)",
+            "A-share calendar loaded from %s: %s days (%s .. %s)",
+            source,
             len(dates),
             _RANGE[0] if _RANGE else "",
             _RANGE[1] if _RANGE else "",

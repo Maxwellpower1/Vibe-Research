@@ -13,4 +13,15 @@ test("desktop header and phone bar share PAGE_NAV", () => {
   assert.match(layout, /PAGE_NAV/);
   assert.doesNotMatch(layout, /const MOBILE_NAV/);
   assert.doesNotMatch(header, /const NAV =/);
+  assert.match(header, /to: "\/backtest"/);
+  assert.match(layout, /"\/backtest"/);
+  assert.match(header, /to: "\/data"/);
+  assert.match(layout, /"\/data"/);
+});
+
+test("A-share portfolio jumps to backtest and autostarts", () => {
+  const src = readFileSync(join(root, "src/components/portfolio/StockPortfolio.tsx"), "utf8");
+  assert.match(src, /\/backtest\?codes=/);
+  assert.match(src, /autostart=1/);
+  assert.match(src, /from=portfolio/);
 });

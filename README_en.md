@@ -39,6 +39,8 @@ It does not make decisions for you. It pulls together quotes, analyst reports, v
 | ⭐&nbsp;**Watchlist** | **Paste a whole batch of tickers at once** (commas, spaces or newlines) · one-screen table (price, change, PE, PB, turnover) · **live quotes toggle** (top right, off by default; refreshes every 3s during trading hours, auto-pauses outside them and when the tab is hidden) · hand the whole list to your AI. Stored locally |
 | 💼&nbsp;**Portfolio** | Enter cost and size, see live P&L · closed-position log (local only, never uploaded) |
 | 🔬&nbsp;**Research desk** | Header `/research`: correlation heatmap · ETF look-through (Eastmoney full book / SEC N-PORT) · 13F QoQ · OKX/Binance/pykrx candles. Public filings only; holdings are stale by construction |
+| 🧪&nbsp;**Backtest** | Header `/backtest`: A-share daily account sim. Next-open fill, T+1, lots, stamp on sells. CSI 300 overlay. True OOS (params fit on the first leg only; a fresh book trades the rest) and rolling walk-forward. Portfolio page can jump here and run. Research only — no tips |
+| 🗄️&nbsp;**Data** | More menu `/data`: local calendar, on-disk daily bars, experiments. Read-only inventory, no upstream fetch |
 | 🔌&nbsp;**Bring Your AI** | Subscription mode (local CLI, no API key) · API mode (any OpenAI-compatible endpoint) · MCP (mount into Claude Code and other agents) |
 
 > **Built-in analysis framework**: when your AI analyzes a stock it organizes findings across five dimensions — valuation, fund flows, earnings quality, industry cycle, catalysts and risks. The framework only prescribes *how to read the data*, never what to buy. The direction still comes from your own model.

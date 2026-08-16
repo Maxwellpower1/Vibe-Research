@@ -9,6 +9,9 @@ akshare>=1.10
 mootdx>=0.10
 pandas
 openpyxl  # SZSE ETF share xlsx
+polars
+pyarrow
+duckdb  # 回测行情: 分区 parquet, 内存查, 不建 .db
 
 # 期货 CTP 持仓只读查询（可选）——「我的持仓 → 期货账户」
 # 未安装时 /api/portfolio/ctp 返回配置提示，不影响其余功能
