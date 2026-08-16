@@ -18,6 +18,7 @@ export interface Chain {
   name: string;
   segments: ChainSegment[];
   keywords: string[];
+  tech: string[];
 }
 
 export function matchRelatedBoards<T extends { name: string; pct: number }>(
@@ -75,6 +76,7 @@ export const CHAINS: Chain[] = [
       },
     ],
     keywords: ["大模型", "AI", "人工智能", "GPT", "多模态", "算力", "GPU", "Agent", "智能体", "训练", "推理"],
+    tech: ["MoE 混合专家", "千亿参数训练", "多模态融合", "Agent 框架", "RAG 检索增强", "端侧推理"],
   },
   {
     id: "embodied",
@@ -118,6 +120,7 @@ export const CHAINS: Chain[] = [
       },
     ],
     keywords: ["具身智能", "人形机器人", "减速器", "丝杠", "灵巧手", "伺服", "传感器"],
+    tech: ["人形机器人", "谐波减速器", "行星滚柱丝杠", "灵巧手", "具身智能大模型", "六维力传感", "Sim-to-Real"],
   },
   {
     id: "semi",
@@ -161,6 +164,7 @@ export const CHAINS: Chain[] = [
       },
     ],
     keywords: ["半导体", "芯片", "晶圆", "光刻", "存储", "封测", "先进封装", "碳化硅"],
+    tech: ["EUV光刻", "先进封装 Chiplet", "HBM 高带宽存储", "SiC/GaN 第三代半导体", "EDA 国产化", "RISC-V"],
   },
   {
     id: "newenergy",
@@ -204,6 +208,7 @@ export const CHAINS: Chain[] = [
       },
     ],
     keywords: ["新能源", "光伏", "风电", "锂电", "储能", "电池", "充电", "电动车", "逆变器"],
+    tech: ["固态电池", "钙钛矿光伏", "800V高压平台", "城市NOA智驾", "V2G车网互动", "氢燃料电池"],
   },
   {
     id: "pharma",
@@ -247,6 +252,7 @@ export const CHAINS: Chain[] = [
       },
     ],
     keywords: ["创新药", "医药", "ADC", "疫苗", "临床", "CXO", "靶点"],
+    tech: ["ADC 偶联药物", "GLP-1 减重", "双特异性抗体", "细胞基因治疗 CGT", "License-out 出海", "AI 制药"],
   },
   {
     id: "newindustrial",
@@ -290,6 +296,7 @@ export const CHAINS: Chain[] = [
       },
     ],
     keywords: ["新型工业化", "工业互联网", "智能制造", "工业软件", "自动化", "机器人", "数字孪生"],
+    tech: ["工业互联网", "数字孪生", "AI质检", "柔性制造", "工业大模型", "边缘计算"],
   },
   {
     id: "digitalgov",
@@ -333,6 +340,7 @@ export const CHAINS: Chain[] = [
       },
     ],
     keywords: ["数字政府", "政务", "智慧城市", "信创", "数据要素", "网络安全", "一网通办"],
+    tech: ["政务大模型", "一网通办", "城市大脑", "数据要素", "隐私计算", "信创替代"],
   },
   {
     id: "smartmed",
@@ -376,5 +384,6 @@ export const CHAINS: Chain[] = [
       },
     ],
     keywords: ["智慧医疗", "医疗信息化", "AI医疗", "互联网医疗", "远程医疗", "健康管理", "影像"],
+    tech: ["AI辅助诊断", "医疗大模型", "数字病理", "远程手术", "可穿戴健康监测", "医疗数据要素"],
   },
 ];

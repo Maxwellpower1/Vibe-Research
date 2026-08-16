@@ -74,6 +74,7 @@ export function DailyReview() {
   };
 
   const showReviewPanel = Boolean(aiOpen && (review || reviewLoading || needConfig || reviewErr));
+  const chainOn = d.seg === "chain";
 
   const moneyProps = {
     sectors: d.sectors,
@@ -236,7 +237,7 @@ export function DailyReview() {
           title: "自选",
           icon: <Star size={14} />,
           accent: "#fbbf24",
-          defaultW: 0.28,
+          defaultW: 0.26,
           mobileH: "h-[400px]",
           right: (
             <span className="text-[10px] tabular-nums text-slate-500">
@@ -250,7 +251,7 @@ export function DailyReview() {
           title: "涨跌停",
           icon: <Flame size={14} />,
           accent: "#fb7185",
-          defaultW: 0.36,
+          defaultW: chainOn ? 0.16 : 0.22,
           mobileH: "h-[380px]",
           body: (
             <ReviewRiskSeg
@@ -264,9 +265,9 @@ export function DailyReview() {
           title: "龙虎 / 资金 / 产业链",
           icon: <ScrollText size={14} />,
           accent: "#a78bfa",
-          defaultW: 0.36,
+          defaultW: chainOn ? 0.58 : 0.52,
           mobileH: "h-[520px]",
-          maxZoomW: 0.78,
+          maxZoomW: 0.82,
           right: (
             <ChipGroup>
               {([

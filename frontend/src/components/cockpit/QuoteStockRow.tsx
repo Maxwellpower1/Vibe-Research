@@ -73,6 +73,7 @@ export function QuoteStockRow({
   symbol,
   link = true,
   spark,
+  tag,
   watchable = true,
   boards: wantBoards = true,
   flow = false,
@@ -90,6 +91,8 @@ export function QuoteStockRow({
   link?: boolean;
   /** Parent-owned spark. undefined = fetch here. */
   spark?: RowSpark | null;
+  /** Chain-role label, shown after the code. */
+  tag?: string;
   watchable?: boolean;
   /** Industry/concept tag. Off for rotating sector rows to spare em_get. */
   boards?: boolean;
@@ -154,7 +157,9 @@ export function QuoteStockRow({
       )}
       <div className="row-span-2 flex min-w-0 flex-col justify-center gap-1 leading-none">
         <span className="truncate text-[11px] text-slate-200">{name}</span>
-        <span className="truncate text-[10px] text-slate-500">{symbol || code}</span>
+        <span className="truncate text-[10px] text-slate-500">
+          {tag ? `${symbol || code} · ${tag}` : (symbol || code)}
+        </span>
       </div>
       <div className="col-span-2 flex h-5 min-w-0 items-center self-center">
         <MinuteSpark
