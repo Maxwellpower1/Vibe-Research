@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
 import { useFin } from "@/components/fin/FinContext";
 import { fmtYiYuan, quarterLabel, TNUM } from "@/components/fin/utils";
 import { pctColor } from "@/components/review/format";
-import { api } from "@/lib/api";
+import { SuggestHits, useSuggestSearch } from "@/hooks/useSuggestSearch";
 import { cn } from "@/lib/utils";
 
 function Card({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -24,33 +23,10 @@ function Card({ label, value, sub }: { label: string; value: string; sub?: strin
 
 export function FinCompanyPanel() {
   const { company, recent, select, companyBundle: data, companyError: error } = useFin();
-  const [q, setQ] = useState("");
-  const [hits, setHits] = useState<Array<{ code: string; name: string }>>([]);
-  const [open, setOpen] = useState(false);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const timer = useRef<number>(0);
-
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
-
-  const onType = (v: string) => {
-    setQ(v);
-    window.clearTimeout(timer.current);
-    if (!v.trim()) {
-      setHits([]);
-      return;
-    }
-    timer.current = window.setTimeout(() => {
-      void api.finSuggest(v.trim(), 8).then((rows) => {
-        setHits(rows);
-        setOpen(true);
-      }).catch(() => setHits([]));
-    }, 280);
+  const s = useSuggestSearch();
+  const pick = (code: string, name: string) => {
+    select(code, name);
+    s.clear();
   };
 
   const main = data?.main;
@@ -61,28 +37,25 @@ export function FinCompanyPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1 p-1.5">
-      <div ref={boxRef} className="relative shrink-0">
+      <div ref={s.boxRef} className="relative shrink-0">
         <input
-          value={q}
-          onChange={(e) => onType(e.target.value)}
-          onFocus={() => hits.length && setOpen(true)}
+          value={s.q}
+          onChange={(e) => s.type(e.target.value)}
+          onFocus={() => s.hits.length && s.setOpen(true)}
+          onKeyDown={(e) => s.onKeyDown(e, (h) => pick(h.code, h.name), (digits) => {
+            const hit = s.hits.find((h) => h.code === digits || h.code.endsWith(digits));
+            pick(digits, hit?.name || digits);
+          })}
           placeholder="输入代码/名称"
           className="h-6 w-full rounded bg-slate-800/60 px-2 text-[11px] text-slate-200 placeholder:text-[9px] placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
         />
-        {open && hits.length > 0 && (
-          <div className="absolute left-0 right-0 top-7 z-20 overflow-hidden rounded border border-border bg-card">
-            {hits.map((s) => (
-              <button
-                key={s.code}
-                type="button"
-                onClick={() => { select(s.code, s.name); setQ(""); setOpen(false); }}
-                className="flex h-6 w-full items-center gap-2 px-2 text-left hover:bg-slate-800/50"
-              >
-                <span className="w-14 font-mono text-[10px] text-slate-500">{s.code}</span>
-                <span className="truncate text-[11px] text-slate-200">{s.name}</span>
-              </button>
-            ))}
-          </div>
+        {s.open && (
+          <SuggestHits
+            hits={s.hits}
+            hi={s.hi}
+            onPick={(h) => pick(h.code, h.name)}
+            className="absolute left-0 right-0 top-7 z-20 overflow-hidden rounded border border-border bg-card"
+          />
         )}
       </div>
       {recent.length > 0 && (

@@ -37,6 +37,7 @@ export function CockpitLayout({ rows }: { rows: CockpitRow[] }) {
         >
           {row.panels.map((panel, panelIdx) => (
             <div
+              id={`cockpit-${panel.id}`}
               key={panel.id}
               className={`w-full shrink-0 transition-all duration-300 lg:h-full lg:min-h-0 lg:w-[var(--panel-w)] lg:shrink ${
                 isZoomed(panel.id) ? "h-[70vh] lg:h-full" : panel.mobileH

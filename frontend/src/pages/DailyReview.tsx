@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import {
   Sparkles, Loader2, AlertCircle, RefreshCw, X,
   ArrowLeftRight, ListOrdered, Globe, Layers, BarChart3,
-  Activity, Diamond, Star, Flame, ScrollText,
+  Activity, Diamond, Star, Flame, ScrollText, Rss,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -24,6 +24,7 @@ import { BoardFlowLivePanel } from "@/components/cockpit/BoardFlowLivePanel";
 import { MoneyFlowRankPanel } from "@/components/cockpit/MoneyFlowRankPanel";
 import { RankTabBar, StockRankPanel, type RankTab } from "@/components/cockpit/StockRankPanel";
 import { CommodityPanel } from "@/components/cockpit/CommodityPanel";
+import { NewsCockpitPanel } from "@/components/cockpit/NewsCockpitPanel";
 import { reviewPending } from "@/components/review/reviewPending";
 import { useReviewData } from "@/hooks/useReviewData";
 import { ApiError } from "@/lib/api";
@@ -94,32 +95,16 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           title: "全球关键指数",
           icon: <Globe size={14} />,
           accent: "#38bdf8",
-          defaultW: 0.28,
+          defaultW: 0.25,
           mobileH: "h-[420px]",
           body: <WorldIndexPanel />,
-        },
-        {
-          id: "sentiment",
-          title: "涨跌分布 / 广度",
-          icon: <BarChart3 size={14} />,
-          accent: "#818cf8",
-          defaultW: 0.24,
-          mobileH: "h-[420px]",
-          body: (
-            <ReviewSentimentPanel
-              sentiment={d.sentiment}
-              ovDone={d.ovDone}
-              pending={reviewPending(false, "lines")}
-              breadth={d.breadth}
-            />
-          ),
         },
         {
           id: "sectors",
           title: "市场板块实时热点",
           icon: <Layers size={14} />,
           accent: "#22d3ee",
-          defaultW: 0.48,
+          defaultW: 0.42,
           mobileH: "h-[420px]",
           right: (
             <SectorHotBar
@@ -143,6 +128,15 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
             />
           ),
         },
+        {
+          id: "news",
+          title: "实时热点 · 7×24",
+          icon: <Rss size={14} />,
+          accent: "#f472b6",
+          defaultW: 0.33,
+          mobileH: "h-[420px]",
+          body: <NewsCockpitPanel />,
+        },
       ],
     },
     {
@@ -153,7 +147,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           title: "板块资金流向",
           icon: <Activity size={14} />,
           accent: "#f43f5e",
-          defaultW: 0.28,
+          defaultW: 0.2,
           mobileH: "h-[380px]",
           body: (
             <BoardFlowLivePanel
@@ -167,7 +161,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           title: "主力净流入排行",
           icon: <ArrowLeftRight size={14} />,
           accent: "#fb7185",
-          defaultW: 0.24,
+          defaultW: 0.18,
           mobileH: "h-[380px]",
           right: moneyRight,
           body: (
@@ -183,7 +177,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           title: "个股榜单",
           icon: <ListOrdered size={14} />,
           accent: "#fbbf24",
-          defaultW: 0.26,
+          defaultW: 0.2,
           mobileH: "h-[380px]",
           right: <RankTabBar tab={rankTab} onTab={setRankTab} />,
           body: <StockRankPanel tab={rankTab} />,
@@ -193,9 +187,25 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           title: "大宗商品",
           icon: <Diamond size={14} />,
           accent: "#f5c542",
-          defaultW: 0.22,
+          defaultW: 0.18,
           mobileH: "h-[380px]",
           body: <CommodityPanel />,
+        },
+        {
+          id: "sentiment",
+          title: "涨跌分布 / 广度",
+          icon: <BarChart3 size={14} />,
+          accent: "#818cf8",
+          defaultW: 0.24,
+          mobileH: "h-[380px]",
+          body: (
+            <ReviewSentimentPanel
+              sentiment={d.sentiment}
+              ovDone={d.ovDone}
+              pending={reviewPending(false, "lines")}
+              breadth={d.breadth}
+            />
+          ),
         },
       ],
     },
