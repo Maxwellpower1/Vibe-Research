@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { hubPollMs, primeTradingDay } from "@/lib/ashareSession";
 import { api } from "@/lib/api";
 
 /**
- * Cockpit quote hub: 5s loop. Equities/indices and futures are fetched in parallel
- * so a slow Sina/Binance tick cannot stall index prices.
+ * Cockpit quote hub: 5s when A-share is open, 60s when closed/lunch/holiday.
+ * Equities/indices and futures are fetched in parallel so a slow Sina/Binance
+ * tick cannot stall index prices.
  */
 
 export interface HubQuote {
@@ -27,6 +29,7 @@ const refCounts = new Map<string, number>();
 const listeners = new Set<() => void>();
 let version = 0;
 let timer: number | null = null;
+let looping = false;
 let flushTimer: number | null = null;
 let lastFlush = 0;
 
@@ -109,20 +112,31 @@ function onVisibility() {
   if (!document.hidden) void tick();
 }
 
-function ensureLoop() {
+function arm() {
   if (timer != null) return;
-  timer = window.setInterval(() => {
+  timer = window.setTimeout(() => {
+    timer = null;
     if (!document.hidden) void tick();
-  }, QUOTE_POLL_MS);
+    if (looping) arm();
+  }, hubPollMs(QUOTE_POLL_MS));
+}
+
+function ensureLoop() {
+  if (looping) return;
+  looping = true;
+  void primeTradingDay();
   document.addEventListener("visibilitychange", onVisibility);
+  arm();
 }
 
 function maybeStopLoop() {
-  if (refCounts.size === 0 && timer != null) {
-    window.clearInterval(timer);
+  if (refCounts.size > 0) return;
+  looping = false;
+  if (timer != null) {
+    window.clearTimeout(timer);
     timer = null;
-    document.removeEventListener("visibilitychange", onVisibility);
   }
+  document.removeEventListener("visibilitychange", onVisibility);
 }
 
 function scheduleFlush() {

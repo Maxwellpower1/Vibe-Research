@@ -1,4 +1,6 @@
-/** A-share session status from Beijing wall clock (no holiday calendar). */
+/** A-share session from Beijing clock. Holidays come from 交易日历 via warmup trading_day. */
+
+import { api } from "@/lib/api";
 
 export type AShareSessionKind = "open" | "closed" | "off";
 
@@ -8,6 +10,40 @@ export interface AShareSession {
   label: string;
   /** One-line hint */
   hint: string;
+}
+
+/** Quote / minute hub interval when not in continuous auction. */
+export const HUB_POLL_CLOSED_MS = 60_000;
+
+/** null = calendar not loaded; false = 休市 (weekend or holiday). */
+let _tradingDay: boolean | null = null;
+let _primed = false;
+let _prime: Promise<void> | null = null;
+
+export function setTradingDay(ok: boolean | null) {
+  _tradingDay = ok;
+}
+
+/** One fetch of warmup status. Hubs share this; not a second cache key. */
+export function primeTradingDay(): Promise<void> {
+  if (_primed) return Promise.resolve();
+  if (_prime) return _prime;
+  _prime = api.reviewWarmup()
+    .then((s) => {
+      if (typeof s.trading_day === "boolean") setTradingDay(s.trading_day);
+    })
+    .catch(() => {
+      /* clock-only fallback; do not skip a real session */
+    })
+    .finally(() => {
+      _primed = true;
+      _prime = null;
+    });
+  return _prime;
+}
+
+export function hubPollMs(openMs: number, now: Date = new Date()): number {
+  return getAShareSession(now).kind === "open" ? openMs : HUB_POLL_CLOSED_MS;
 }
 
 function beijingParts(now: Date): { weekday: number; minutes: number } {
@@ -30,9 +66,12 @@ function beijingParts(now: Date): { weekday: number; minutes: number } {
 
 /**
  * Approximate session: weekend / lunch / after-close → off or closed;
- * continuous auction windows → open. No exchange holiday table.
+ * continuous auction windows → open. trading_day=false from 交易日历 wins.
  */
 export function getAShareSession(now: Date = new Date()): AShareSession {
+  if (_tradingDay === false) {
+    return { kind: "off", label: "休市", hint: "今日休市 · 数据可能为上一交易日" };
+  }
   const { weekday, minutes } = beijingParts(now);
   if (weekday === 0 || weekday === 6) {
     return { kind: "off", label: "休市", hint: "周末休市 · 数据可能为上一交易日" };

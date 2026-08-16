@@ -31,10 +31,10 @@ _Avoid_: prompt packer, reviewContext.ts, system prompt
 _Avoid_: A_INDICES, WORLD_INDICES, WORLD_INDEX_DEFS（实现名，不是领域名）
 
 **报价中心**:
-网页里全球指数 / 商品 / 自选 / K 线页 / 自选公告表共用的那一份实时报价。格子 5 秒轮询走这里。
+网页里全球指数 / 商品 / 自选 / K 线页 / 自选公告表共用的那一份实时报价。开市 5 秒，休市/午休拉长，仍走这里。间隔问 `ashareSession.hubPollMs`（交易日来自预热状态的 `trading_day`）。
 入口: `frontend/src/lib/quoteHub.ts` 的 `useQuotes`。字段用 `pct` / `prev` / `turnover`，以及腾讯已有的 `pe_ttm` / `pb` / `mcap_yi`。
 `/api/quote` 是遗留 HTTP 适配，新页面订阅报价中心。
-_Avoid_: quoteHub, market quotes client
+_Avoid_: quoteHub, market quotes client, 第二条报价轮询, 休市再写一套间隔
 
 **缓存键**:
 同一份数只用 `api_common._cached` 的一把钥匙和 TTL。全球指数是 `("world_indices", "live")`、20 秒；`market.get_global_indices` 与复盘清单共用这把。
@@ -46,8 +46,8 @@ _Avoid_: 第二份 TTL、market._CACHE 再包一层
 _Avoid_: chat widget, LLM service
 
 **交易日历**:
-A 股这一天开不开市。复盘邮件和预热只问这个，不各自判 weekday。
-入口: `backend/trading_calendar.py`。`is_cn_trading_day()` 不打网上游；后台刷新东财上证日 K 日期。
+A 股这一天开不开市。复盘邮件、预热、网页报价中心/分时中心的休市间隔只问这个，不各自判 weekday。
+入口: `backend/trading_calendar.py`。`is_cn_trading_day()` 不打网上游；后台刷新东财上证日 K 日期。网页读预热状态的 `trading_day`。
 拿不到日历或日期超出覆盖：只判周末。
 _Avoid_: 第二份 weekday 列表、akshare 日历
 

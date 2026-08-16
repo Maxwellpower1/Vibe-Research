@@ -1255,6 +1255,11 @@ export interface FinoDetailRow {
   [k: string]: unknown;
 }
 
+export interface ReviewWarmupStatus {
+  trading_day?: boolean;
+  session_now?: string;
+}
+
 export interface ReviewMailStatus {
   enabled: boolean;
   at: string;
@@ -1289,6 +1294,7 @@ export interface ReviewContextPacked {
 
 export const api = {
   health: () => get<{ ok: boolean }>("/health"),
+  reviewWarmup: () => get<ReviewWarmupStatus>("/market/review-warmup"),
   reviewMailStatus: () => get<ReviewMailStatus>("/market/review-mail"),
   reviewMailSave: (body: { enabled?: boolean; at?: string; to?: string }) =>
     request<ReviewMailStatus>("/market/review-mail", "PUT", body),

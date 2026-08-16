@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { hubPollMs, primeTradingDay } from "@/lib/ashareSession";
 import { loadLightKlineBatch } from "@/lib/lightKline";
 import type { AShareLightKline } from "@/lib/api";
 
 /**
- * Merge cockpit minute-spark subscriptions into one 20s batch.
- * Backend TTL is 20s for indices and 120s for stocks, so extra stock polls hit cache.
+ * Merge cockpit minute-spark subscriptions into one batch.
+ * Open: 20s. Closed/lunch/holiday: 60s (backend TTL still covers extras).
  */
 
 export const MINUTE_POLL_MS = 20_000;
@@ -16,6 +17,7 @@ const refCounts = new Map<string, number>();
 const listeners = new Set<() => void>();
 let version = 0;
 let timer: number | null = null;
+let looping = false;
 let flushTimer: number | null = null;
 let lastFlush = 0;
 
@@ -63,20 +65,31 @@ function onVisibility() {
   if (!document.hidden) void tick();
 }
 
-function ensureLoop() {
+function arm() {
   if (timer != null) return;
-  timer = window.setInterval(() => {
+  timer = window.setTimeout(() => {
+    timer = null;
     if (!document.hidden) void tick();
-  }, MINUTE_POLL_MS);
+    if (looping) arm();
+  }, hubPollMs(MINUTE_POLL_MS));
+}
+
+function ensureLoop() {
+  if (looping) return;
+  looping = true;
+  void primeTradingDay();
   document.addEventListener("visibilitychange", onVisibility);
+  arm();
 }
 
 function maybeStopLoop() {
-  if (refCounts.size === 0 && timer != null) {
-    window.clearInterval(timer);
+  if (refCounts.size > 0) return;
+  looping = false;
+  if (timer != null) {
+    window.clearTimeout(timer);
     timer = null;
-    document.removeEventListener("visibilitychange", onVisibility);
   }
+  document.removeEventListener("visibilitychange", onVisibility);
 }
 
 function scheduleFlush() {
