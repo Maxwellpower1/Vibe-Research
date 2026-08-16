@@ -68,11 +68,9 @@ export function MinuteSpark({
         y1={y0}
         x2={w - 1}
         y2={y0}
-        stroke="currentColor"
-        strokeOpacity={0.22}
-        strokeWidth={0.8}
+        stroke="#94a3b8"
+        strokeWidth={1}
         strokeDasharray="2 3"
-        className="text-muted-foreground"
       />
       <polyline
         fill="none"

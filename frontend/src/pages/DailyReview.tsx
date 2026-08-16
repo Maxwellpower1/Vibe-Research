@@ -24,7 +24,8 @@ import { BoardFlowLivePanel } from "@/components/cockpit/BoardFlowLivePanel";
 import { MoneyFlowRankPanel } from "@/components/cockpit/MoneyFlowRankPanel";
 import { RankTabBar, StockRankPanel, type RankTab } from "@/components/cockpit/StockRankPanel";
 import { CommodityPanel } from "@/components/cockpit/CommodityPanel";
-import { NewsCockpitPanel } from "@/components/cockpit/NewsCockpitPanel";
+import { NewsFeedBar, NewsCockpitPanel } from "@/components/cockpit/NewsCockpitPanel";
+import type { FeedSource } from "@/lib/telegraphHub";
 import { reviewPending } from "@/components/review/reviewPending";
 import { useReviewData } from "@/hooks/useReviewData";
 import { ApiError } from "@/lib/api";
@@ -39,11 +40,14 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [aiOpen, setAiOpen] = useState(false);
   const [flowSector, setFlowSector] = useState<{ code: string; name: string } | null>(null);
   const [moneyRight, setMoneyRight] = useState<ReactNode>(null);
+  const [flowRight, setFlowRight] = useState<ReactNode>(null);
   const [sectorKind, setSectorKind] = useState<SectorKind>("01");
   const [sectorDir, setSectorDir] = useState<SectorDir>("0");
   const [sectorQ, setSectorQ] = useState("");
   const [sectorAuto, setSectorAuto] = useState(true);
   const [rankTab, setRankTab] = useState<RankTab>("hot");
+  const [newsAuto, setNewsAuto] = useState(true);
+  const [newsSource, setNewsSource] = useState<FeedSource>("cls");
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
     setHeaderSlot(document.getElementById("cockpit-header-actions"));
@@ -135,7 +139,15 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           accent: "#f472b6",
           defaultW: 0.33,
           mobileH: "h-[420px]",
-          body: <NewsCockpitPanel />,
+          right: (
+            <NewsFeedBar
+              source={newsSource}
+              auto={newsAuto}
+              onSource={setNewsSource}
+              onAuto={setNewsAuto}
+            />
+          ),
+          body: <NewsCockpitPanel source={newsSource} auto={newsAuto} />,
         },
       ],
     },
@@ -149,10 +161,12 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           accent: "#f43f5e",
           defaultW: 0.2,
           mobileH: "h-[380px]",
+          right: flowRight,
           body: (
             <BoardFlowLivePanel
               selected={flowSector}
               onSelect={setFlowSector}
+              onRight={setFlowRight}
             />
           ),
         },
@@ -189,6 +203,7 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           accent: "#f5c542",
           defaultW: 0.18,
           mobileH: "h-[380px]",
+          right: <span className="text-[10px] tabular-nums text-slate-500">5s</span>,
           body: <CommodityPanel />,
         },
         {
@@ -198,6 +213,11 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           accent: "#818cf8",
           defaultW: 0.24,
           mobileH: "h-[380px]",
+          right: (
+            <span className="text-[10px] tabular-nums text-slate-500">
+              {d.sentiment?.date || d.emotion?.date || ""}
+            </span>
+          ),
           body: (
             <ReviewSentimentPanel
               sentiment={d.sentiment}
@@ -214,11 +234,16 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
       panels: [
         {
           id: "watch",
-          title: `自选${d.watchCodes.length ? ` ${d.watchCodes.length}` : ""}`,
+          title: "自选",
           icon: <Star size={14} />,
           accent: "#fbbf24",
           defaultW: 0.28,
           mobileH: "h-[400px]",
+          right: (
+            <span className="text-[10px] tabular-nums text-slate-500">
+              {d.watchCodes.length}只 · 5s
+            </span>
+          ),
           body: <WatchlistCockpitPanel />,
         },
         {

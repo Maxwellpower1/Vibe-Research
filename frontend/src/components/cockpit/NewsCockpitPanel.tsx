@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { ExternalLink } from "lucide-react";
 import { newsTag } from "@/lib/newsTag";
 import { itemKey, loadTelegraph, markClsSeen, useTelegraph, type FeedSource } from "@/lib/telegraphHub";
@@ -55,10 +55,53 @@ function NewsRow({ it, i, isNew }: { it: ClsTelegraphItem; i: number; isNew: boo
   );
 }
 
+export function NewsFeedBar({
+  source,
+  auto,
+  onSource,
+  onAuto,
+}: {
+  source: FeedSource;
+  auto: boolean;
+  onSource: (s: FeedSource) => void;
+  onAuto: (v: boolean) => void;
+}) {
+  const snap = useTelegraph();
+  const count = (source === "lives" ? snap.lives : snap.cls)?.count;
+  return (
+    <div className="flex items-center gap-1 text-[10px]">
+      {([
+        ["cls", "财联社"],
+        ["lives", "新浪/见闻"],
+      ] as const).map(([k, label]) => (
+        <button
+          key={k}
+          type="button"
+          onClick={() => onSource(k)}
+          className={cn(
+            "rounded px-1.5 py-0.5",
+            source === k ? "bg-cyan-500/15 text-cyan-300" : "text-slate-400 hover:text-slate-200",
+          )}
+        >
+          {label}
+        </button>
+      ))}
+      <span className="mx-0.5 h-3 w-px bg-slate-700" />
+      <label className="flex cursor-pointer items-center gap-1 text-slate-400">
+        <input
+          type="checkbox"
+          checked={auto}
+          onChange={(e) => onAuto(e.target.checked)}
+          className="accent-cyan-400"
+        />
+        自动滚动{count != null ? ` · ${count}条` : ""}
+      </label>
+    </div>
+  );
+}
+
 /** CLS + Sina/Wallstreetcn feed for the review cockpit cell. */
-export function NewsCockpitPanel() {
-  const [source, setSource] = useState<FeedSource>("cls");
-  const [auto, setAuto] = useState(true);
+export function NewsCockpitPanel({ source, auto }: { source: FeedSource; auto: boolean }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const snap = useTelegraph();
   const data = source === "lives" ? snap.lives : snap.cls;
@@ -81,34 +124,7 @@ export function NewsCockpitPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 px-2 py-1">
-        {([
-          ["cls", "财联社"],
-          ["lives", "新浪/见闻"],
-        ] as const).map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setSource(k)}
-            className={cn(
-              "rounded px-1.5 py-0.5 text-[10px]",
-              source === k ? "bg-cyan-500/15 text-cyan-300" : "text-slate-500 hover:text-slate-300",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-        <label className="ml-auto flex cursor-pointer items-center gap-1 text-[10px] text-slate-500">
-          <input
-            type="checkbox"
-            checked={auto}
-            onChange={(e) => setAuto(e.target.checked)}
-            className="accent-cyan-400"
-          />
-          自动滚动{data?.count != null ? ` · ${data.count}条` : ""}
-        </label>
-      </div>
-      <div ref={boxRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto scroll-smooth p-1.5 pt-0">
+      <div ref={boxRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto scroll-smooth p-1.5">
         {err && <p className="px-1 py-4 text-center text-[11px] text-rose-400/80">{err}</p>}
         {loading && !data && <p className="py-6 text-center text-[11px] text-slate-600">加载中…</p>}
         {data && !(data.items?.length) && <p className="py-6 text-center text-[11px] text-slate-600">暂无数据</p>}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { BoardFlowChart } from "@/components/cockpit/BoardFlowChart";
 import { usePolling } from "@/hooks/usePolling";
 import { api } from "@/lib/api";
@@ -23,10 +23,12 @@ function RefreshCountdown({ resetKey, seconds }: { resetKey: number; seconds: nu
 export function BoardFlowLivePanel({
   selected,
   onSelect,
+  onRight,
   curvesEnabled = true,
 }: {
   selected?: { code: string; name: string } | null;
   onSelect?: (sel: { code: string; name: string } | null) => void;
+  onRight?: (node: ReactNode) => void;
   curvesEnabled?: boolean;
 }) {
   const { data: ranks, error, updated } = usePolling(() => api.boardFlowIntraday(20, false), POLL_MS, []);
@@ -57,21 +59,27 @@ export function BoardFlowLivePanel({
 
   const label = playing ? "暂停" : progress < 1 ? "继续" : "重放";
 
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-end gap-2 px-1.5 py-0.5">
+  useEffect(() => {
+    if (!onRight) return;
+    onRight(
+      <span className="flex items-center gap-1.5">
         <RefreshCountdown resetKey={updated} seconds={POLL_MS / 1000} />
         <button
           type="button"
           onClick={() => {
-            if (progress >= 1) setProgress(0);
+            setProgress((p) => (p >= 1 ? 0 : p));
             setPlaying((v) => !v);
           }}
           className="rounded border border-slate-700/60 px-1.5 py-0.5 text-[10px] text-slate-400 hover:border-cyan-500/50 hover:text-cyan-300"
         >
           {label}
         </button>
-      </div>
+      </span>,
+    );
+  }, [onRight, updated, label]);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
         {data && data.length ? (
           <BoardFlowChart
