@@ -9,7 +9,6 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { EarningsSnapshot } from "@/components/ui/EarningsSnapshot";
-import { Disclaimer } from "@/components/ui/Disclaimer";
 import {
   api, ApiError, type Valuation, type Report, type NewsItem, type ValPercentile, type ValMetric,
   type Financials, type Announcement, type MarginRow, type BlockTradeRow, type HolderRow,
@@ -1293,8 +1292,6 @@ export function StockData({
           />
         </GlassCard>
       )}
-
-      {!embedded && <Disclaimer />}
     </div>
   );
 }

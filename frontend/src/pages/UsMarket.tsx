@@ -4,7 +4,6 @@ import { AlertCircle, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Disclaimer } from "@/components/ui/Disclaimer";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import {
@@ -1147,8 +1146,6 @@ export function UsMarket() {
           </GlassCard>
         </CollapsibleSection>
       </div>
-
-      <Disclaimer />
     </div>
   );
 }

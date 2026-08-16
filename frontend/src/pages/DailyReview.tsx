@@ -9,7 +9,6 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AskAiButton } from "@/components/ui/AskAiButton";
-import { Disclaimer } from "@/components/ui/Disclaimer";
 import { CockpitLayout, type CockpitRow } from "@/components/cockpit/CockpitLayout";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { WatchlistCockpitPanel } from "@/components/cockpit/WatchlistCockpitPanel";
@@ -370,8 +369,6 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           ) : null}
         </div>
       )}
-
-      {!embedded && <Disclaimer />}
     </div>
   );
 }

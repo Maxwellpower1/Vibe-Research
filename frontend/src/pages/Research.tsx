@@ -4,7 +4,6 @@ import { RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Disclaimer } from "@/components/ui/Disclaimer";
 import {
   api,
   ApiError,
@@ -83,7 +82,6 @@ export function Research() {
       {tab === "etf" && <EtfPanel />}
       {tab === "f13" && <ThirteenFPanel />}
       {tab === "kline" && <KlinePanel sources={sources} />}
-      <Disclaimer />
     </div>
   );
 }

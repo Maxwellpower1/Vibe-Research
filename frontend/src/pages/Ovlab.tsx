@@ -1,7 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import { Activity, CandlestickChart, History, MessagesSquare, Search, Table2, Zap } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Disclaimer } from "@/components/ui/Disclaimer";
 import { PageFallback } from "@/components/ui/PageFallback";
 import { cn } from "@/lib/utils";
 
@@ -88,8 +87,6 @@ export function Ovlab() {
         {tab === "position" && <PositionRankPanel />}
         {tab === "fino" && <FinoViewsPanel />}
       </Suspense>
-
-      <Disclaimer />
     </div>
   );
 }

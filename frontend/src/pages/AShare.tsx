@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Disclaimer } from "@/components/ui/Disclaimer";
 import { PageFallback } from "@/components/ui/PageFallback";
 import type { AShareChartSeg } from "@/pages/AShareLightChart";
 
@@ -69,7 +68,6 @@ export function AShare() {
           />
         </Suspense>
       )}
-      <Disclaimer />
     </div>
   );
 }

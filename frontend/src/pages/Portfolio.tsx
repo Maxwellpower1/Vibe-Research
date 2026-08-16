@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Landmark, Waves } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Disclaimer } from "@/components/ui/Disclaimer";
 import { PageFallback } from "@/components/ui/PageFallback";
 import { cn } from "@/lib/utils";
 
@@ -61,8 +60,6 @@ export function Portfolio() {
           </div>
         )}
       </Suspense>
-
-      <Disclaimer />
     </div>
   );
 }
