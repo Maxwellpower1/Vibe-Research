@@ -1544,7 +1544,6 @@ export const api = {
   reports: (code: string) => get<Report[]>(`/reports?code=${code}`),
   news: (code: string) => get<NewsItem[]>(`/news?code=${code}`),
   clsTelegraph: (limit = 50) => get<ClsTelegraph>(`/cls-telegraph?limit=${limit}`),
-  globalNews: (limit = 50) => get<ClsTelegraph>(`/global-news?limit=${limit}`),
   margin: (code: string) => get<MarginRow[]>(`/margin?code=${code}`),
   blockTrade: (code: string) => get<BlockTradeRow[]>(`/block-trade?code=${code}`),
   holders: (code: string) => get<HolderRow[]>(`/holders?code=${code}`),

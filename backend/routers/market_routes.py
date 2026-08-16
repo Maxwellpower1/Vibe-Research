@@ -373,25 +373,6 @@ def cls_telegraph(limit: int = Query(50, ge=10, le=100)):
         raise HTTPException(502, f"财联社电报异常：{e}") from e
 
 
-@router.get("/api/global-news")
-def global_news(limit: int = Query(50, ge=10, le=100)):
-    """东财全球财经资讯 7x24。缓存 60 秒。客观呈现，不附推荐。"""
-    try:
-        data = _cached(
-            "em_global_news",
-            str(limit),
-            60,
-            lambda: astock.eastmoney_global_news(limit),
-        )
-        if not data:
-            raise HTTPException(404, "东财全球资讯暂无数据")
-        return {"data": {"source": "东财7x24", "count": len(data), "items": data}}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"东财全球资讯异常：{e}") from e
-
-
 @router.get("/api/market/etf-flow")
 def market_etf_flow(
     sort_by: str = Query("net_inflow", description="net_inflow|change_pct"),

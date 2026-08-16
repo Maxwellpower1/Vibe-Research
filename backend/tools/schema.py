@@ -52,9 +52,6 @@ TOOLS: list[dict] = [
     _t("query_cls_telegraph",
        "查财联社电报：全市场实时财经快讯（标题/正文/时间）。客观公开资讯，不构成投资建议。",
        {"limit": {"type": "integer", "description": "条数，默认 30"}}, []),
-    _t("query_global_news",
-       "查东财全球财经资讯 7x24（标题/摘要/时间）。客观公开资讯，不构成投资建议。",
-       {"limit": {"type": "integer", "description": "条数，默认 30"}}, []),
     # —— 资金面与筹码 ——
     _t("query_fund_flow",
        "查个股资金流向：最近若干日主力/超大单/大单/中单/小单净流入，并附近 5 日、20 日累计主力净额。",

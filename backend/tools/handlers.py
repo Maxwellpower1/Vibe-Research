@@ -595,14 +595,6 @@ _HANDLERS = {
             int(a.get("limit") or 30),
         ),
     },
-    "query_global_news": lambda a: {
-        "source": "东财7x24",
-        "items": _pick(
-            astock.eastmoney_global_news(int(a.get("limit") or 30)),
-            ("time", "title", "summary"),
-            int(a.get("limit") or 30),
-        ),
-    },
     "query_fund_flow": _fund_flow,
     "query_fund_flow_minute": lambda a: _fund_flow_minute(a),
     "query_ths_limit_up": lambda a: astock.ths_limit_up_pool(a.get("date") or None),

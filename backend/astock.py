@@ -1305,50 +1305,6 @@ def eastmoney_fund_flow_minute(code: str) -> list[dict]:
     return rows
 
 
-def eastmoney_global_news(page_size: int = 50) -> list[dict]:
-    """东财全球财经资讯 7x24。返回 [{id, title, summary, time}, ...]。"""
-    import uuid
-
-    n = max(10, min(int(page_size or 50), 100))
-    params = {
-        "client": "web",
-        "biz": "web_724",
-        "fastColumn": "102",
-        "sortEnd": "",
-        "pageSize": str(n),
-        "req_trace": str(uuid.uuid4()),
-    }
-    headers = {"User-Agent": UA, "Referer": "https://kuaixun.eastmoney.com/"}
-    try:
-        d = em_get(
-            "https://np-weblist.eastmoney.com/comm/web/getFastNewsList",
-            params=params,
-            headers=headers,
-            timeout=10,
-        ).json()
-    except Exception:
-        return []
-    rows: list[dict] = []
-    for i, item in enumerate((d.get("data") or {}).get("fastNewsList") or []):
-        if not isinstance(item, dict):
-            continue
-        title = str(item.get("title") or "").strip()
-        if not title:
-            continue
-        summary = str(item.get("summary") or "")[:200]
-        show = str(item.get("showTime") or "")
-        nid = item.get("code") or item.get("art_code") or f"{show}-{i}"
-        rows.append({
-            "id": nid,
-            "title": title,
-            "summary": summary,
-            "content": summary,
-            "time": show,
-            "share_url": None,
-        })
-    return rows
-
-
 def ths_limit_up_pool(date: str | None = None) -> dict:
     """同花顺涨停揭秘：涨停原因题材 / 板型 / 封板成功率。
 

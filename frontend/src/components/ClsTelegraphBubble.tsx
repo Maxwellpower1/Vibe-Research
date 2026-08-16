@@ -8,7 +8,7 @@ const TOAST_MS = 3 * 60_000;
 const SEEN_KEY = "vr.cls.seenId";
 const LIMIT = 40;
 
-type FeedSource = "cls" | "em" | "lives";
+type FeedSource = "cls" | "lives";
 
 function readSeen(): string {
   try {
@@ -51,7 +51,7 @@ function collectSince(items: ClsTelegraphItem[], sinceKey: string): ClsTelegraph
 
 type ToastState = { count: number; items: ClsTelegraphItem[] };
 
-/** Global floating feed: CLS telegraph + Eastmoney 7x24. */
+/** Global floating feed: CLS telegraph + Sina/Wallstreetcn 7x24. */
 export function ClsTelegraphBubble() {
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState<FeedSource>("cls");
@@ -93,9 +93,7 @@ export function ClsTelegraphBubble() {
     setErr(null);
     try {
       let next: ClsTelegraph;
-      if (src === "em") {
-        next = await api.globalNews(LIMIT);
-      } else if (src === "lives") {
+      if (src === "lives") {
         const lives = await api.marketLives(1, LIMIT);
         next = {
           count: lives.count,
@@ -208,7 +206,7 @@ export function ClsTelegraphBubble() {
     );
   };
 
-  const title = source === "em" ? "东财全球 7×24" : source === "lives" ? "新浪/见闻 7×24" : "财联社电报";
+  const title = source === "lives" ? "新浪/见闻 7×24" : "财联社电报";
 
   return (
     <>
@@ -297,7 +295,6 @@ export function ClsTelegraphBubble() {
             <div className="flex gap-1 border-b border-border/40 px-2 py-1.5">
               {([
                 { key: "cls" as const, label: "财联社" },
-                { key: "em" as const, label: "东财7×24" },
                 { key: "lives" as const, label: "新浪/见闻" },
               ]).map((t) => (
                 <button
@@ -342,7 +339,7 @@ export function ClsTelegraphBubble() {
             "pointer-events-auto relative flex h-14 w-14 items-center justify-center rounded-full border border-border/60 bg-card/95 text-primary shadow-lg backdrop-blur-md transition-transform hover:scale-105 hover:border-primary/40",
             open && "border-primary/50 bg-primary/15",
           )}
-          title={open ? "收起资讯" : "打开资讯（财联社 / 东财7×24 / 新浪/见闻）"}
+          title={open ? "收起资讯" : "打开资讯（财联社 / 新浪/见闻）"}
           aria-expanded={open}
         >
           <Zap className="h-6 w-6" />

@@ -91,7 +91,6 @@ const TOOL_LABEL: Record<string, string> = {
   query_reports: "查研报",
   query_news: "查新闻",
   query_cls_telegraph: "财联社",
-  query_global_news: "东财7x24",
   query_fund_flow: "资金流",
   query_fund_flow_minute: "分钟资金",
   query_ths_limit_up: "涨停揭秘",
