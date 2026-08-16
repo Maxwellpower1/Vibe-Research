@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 import astock
 import market
 import newsradar
+import review_mail
 import review_snapshot
 import review_warmup
 from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _cached, _DC_CACHE
@@ -64,6 +66,37 @@ def market_turnover_top():
 def market_review_warmup_status():
     """复盘缓存预热状态（后台 daemon；可用 VR_REVIEW_WARMUP=0 关闭）。"""
     return {"data": review_warmup.status()}
+
+
+class ReviewMailPrefsIn(BaseModel):
+    enabled: bool | None = None
+    at: str | None = Field(None, description="HH:MM, Asia/Shanghai")
+    to: str | None = Field(None, description="recipient; empty falls back to env")
+
+
+@router.get("/api/market/review-mail")
+def market_review_mail_status():
+    """定时复盘邮件状态。不返回 SMTP 密码或 API key。"""
+    return {"data": review_mail.status()}
+
+
+@router.put("/api/market/review-mail")
+def market_review_mail_save(body: ReviewMailPrefsIn):
+    """保存开关 / 时间 / 收件人。立刻生效, 不必重启。不写 SMTP 密码或模型 key。"""
+    try:
+        review_mail.save_prefs(body.model_dump(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"data": review_mail.status()}
+
+
+@router.post("/api/market/review-mail/run")
+def market_review_mail_run():
+    """立刻跑一轮复盘并发信 (忽略当日是否已发)。配置不全时 400。"""
+    out = review_mail.run_once(force=True)
+    if not out.get("ok"):
+        raise HTTPException(400, out.get("error") or "复盘邮件失败")
+    return {"data": out}
 
 
 @router.get("/api/market/review-snapshot")

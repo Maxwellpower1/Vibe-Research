@@ -40,7 +40,7 @@ export function authHeaders(): Record<string, string> {
   return k ? { Authorization: `Bearer ${k}` } : {};
 }
 
-async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown): Promise<T> {
+async function request<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown): Promise<T> {
   let resp: Response;
   const headers: Record<string, string> = { ...authHeaders() };
   const opts: RequestInit = { method, cache: "no-store" };
@@ -1321,8 +1321,36 @@ export interface FinoDetailRow {
   [k: string]: unknown;
 }
 
+export interface ReviewMailStatus {
+  enabled: boolean;
+  at: string;
+  to: string | null;
+  smtp_ready: boolean;
+  llm_ready: boolean;
+  llm_model: string | null;
+  llm_provider: string | null;
+  last_sent_date: string | null;
+  last_error: string | null;
+  last_ok: boolean;
+  running: boolean;
+  weekday: boolean;
+}
+
+export interface ReviewMailRun {
+  ok: boolean;
+  date?: string;
+  to?: string;
+  chars?: number;
+  collect_errors?: string[];
+  error?: string;
+}
+
 export const api = {
   health: () => get<{ ok: boolean }>("/health"),
+  reviewMailStatus: () => get<ReviewMailStatus>("/market/review-mail"),
+  reviewMailSave: (body: { enabled?: boolean; at?: string; to?: string }) =>
+    request<ReviewMailStatus>("/market/review-mail", "PUT", body),
+  reviewMailRun: () => request<ReviewMailRun>("/market/review-mail/run", "POST"),
   reviewSnapshot: (opts?: {
     scope?: "paint" | "top" | "full";
     boardType?: "industry" | "concept" | "region";

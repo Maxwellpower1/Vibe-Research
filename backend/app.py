@@ -46,6 +46,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import portfolio as pf
+import review_mail
 import review_warmup
 from api_common import _warm_review_dc
 from routers import (
@@ -78,7 +79,7 @@ _ORIGINS = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ORIGINS,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -117,3 +118,5 @@ app.include_router(research_routes.router)
 
 # Background: keep Daily Review caches warm (session-aware interval).
 review_warmup.start_scheduler(extra=_warm_review_dc)
+# Opt-in: weekday AI review email (VR_REVIEW_MAIL=1).
+review_mail.start_scheduler()

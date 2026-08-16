@@ -67,6 +67,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - **自选 / 个股行 / 分时轴**：驾驶舱自选格可搜名称/代码/拼音（`GET /api/fin/suggest`）当场加减，下拉可用上下键高亮、回车加入；财报窗搜公司同一套键盘。榜单/成分/产业链点星加入自选。可见行批量补行业/概念（`GET /api/market/stock-boards-batch`，前端 5 分钟缓存）。分时迷你图按交易时段画 X 轴（A 股午休压缩，商品/美股/汇率 24h）。
 - **产业链**：上/中/下游行复用驾驶舱 `QuoteStockRow`（分时 / 额 / 主力净 / 板块）。切到该页签时从涨跌停借横向空间（约 58%）；够宽则三列 + 右侧关键技术/按链快讯，窄则单列并把技术点摊在顶上。按关键词匹配相关板块涨跌。「+添加 / 更新」粘贴问财文本在前端按上中下游解析（6 位 A 股代码），自定义链只存本机；「从问财获取 / 问财刷新」走 `GET /api/iwencai/select`（需 `IWENCAI_API_KEY`）。客观呈现不附推荐。
 - **复盘预热**：后端启动后后台定时预拉复盘常用接口 + **指数分时**（A股/恒生/美股 `usIXIC` 等，美股走腾讯 `usMinute`）+ **驾驶舱热路径**（全球指数 / 板块热点 / 个股榜 / 主力净流入 / 分钟资金流 / 商品），交易时段约 90 秒一次。用户正在拉 snapshot 时预热仍补腾讯/新浪分时键，只让开东财步骤。分钟资金流流入/流出榜并行；蝴蝶图不绑情绪完成，`curves=1` 与榜同时发。按板块分键缓存，二次访问不再串行 20 次东财 kline。首屏走 `GET /api/market/review-snapshot`（`scope=paint|top|full`：先腾讯指数/总览，完成后再情绪+行业强弱，再龙虎）；东财 `em_get` 与参考看板一样不卡发起间隔，HTTP 并行。顶栏行情条与全球指数格共用 5 秒报价中心。全 A 分位走独立 `/market/breadth`，不挡情绪格。`GET /api/market/review-warmup` 看预热状态；`VR_REVIEW_WARMUP=0` 可关
+- **定时复盘邮件**（默认关）：接入 AI 页可开关、改时间、改收件人（立刻生效）。工作日到点收集看板快照 → 复用现有复盘提示词 → SMTP 发出。`GET/PUT /api/market/review-mail` · `POST /api/market/review-mail/run`。SMTP 与模型 key 仍在 `.env`
 - **生意社现货（参考看板补齐）**：`GET /api/market/spot-table` 现货/期货/基差对照（8h 缓存，历史落在 `~/.vibe-research/spot-history.json`）· `GET /api/market/chem-spot?id=` 化工现货中位数。驾驶舱商品格「现期」tab 读现期表。
 - **期货日 K / 个股板块 / 直播快讯**：`GET /api/market/future-daily?code=nf_AU0`（新浪内盘/外盘日 K）· `GET /api/market/stock-boards?code=600519` · `GET /api/market/stock-boards-batch?codes=`（东财行业/地域/概念）· `GET /api/market/lives`（新浪 7×24，失败回退华尔街见闻；不进驾驶舱格子，快讯仍是右下角球）
 - **涨跌幅分位 / 成交额榜 / 真假板 / 同花顺成份**：`GET /api/market/breadth`（全 A p10–p90 + 8 档直方图，挂情绪格；新浪 `hs_a` 按页拉满，单页上限约 100，不足则腾讯批量）· 成交额榜 / 个股榜走新浪 `hs_a` · 涨跌停池与短线情绪共用东财四池原始缓存（180 秒）· 腾讯买一/卖一标真假封（只扫池内标的）· `GET /api/market/ths-profile` / `ths-rotation`（shy313 同花顺概念/行业，24h 缓存 `~/.vibe-research/ths-ext.json`）
@@ -192,6 +193,7 @@ cd frontend && npm install && npm run dev
 - 在「接入 AI 页 → 订阅接入」选一个即可，**无需填 key**。
 - 原理：后端 `cli_runtime.py` 检测本机命令并 `spawn` 它一次性作答（数据已在提示词里）。⚠️ CLI 不做多轮工具调用，适合「复盘 / 今日要点 / 个股页问 AI」这类**数据已备好**的场景；要 AI 自己现场调数据工具的自由问答，用下面的「API 接入」。
 - **复盘快照**：点「AI 复盘 / 问 AI」时，前端把当前驾驶舱各格打成一份文本（指数 / 涨跌分布 / 涨跌停 / 板块 / 资金 / 个股榜 / 商品 / 实时热点 7×24 全文 / 自选 / 龙虎 / 利率），缺格标明「未取到」。实现见 `frontend/src/lib/reviewContext.ts`。
+- **定时复盘邮件**（可选）：工作日收盘后后端自己跑一轮同样的总结，SMTP 发到你的邮箱。开关 / 时间 / 收件人在接入 AI 页改。网页 key 定时任务读不到，必须在 `backend/.env` 再配一份模型 + SMTP。详见 `backend/.env.example`。
 
 ### 2. API 接入（填自己的 key）
 
@@ -200,6 +202,25 @@ cd frontend && npm install && npm run dev
 ### 3. MCP（给 Claude Code / 高手 agent）
 
 把后端挂成 MCP server，agent 用自己的订阅额度调 Vibe-Research 的数据工具、多步分析。命令见 [`backend/README.md`](backend/README.md)。要更全量的 A 股数据端点，用根目录 [`a-stock-data/`](a-stock-data/SKILL.md) 工具箱。
+
+### 4. 定时复盘邮件（收盘后发到你的邮箱）
+
+开关、时间和收件人在「接入 AI」页改，立刻生效。网页「问 AI」的 key 定时任务读不到，SMTP 授权码和模型 key 仍写在 `backend/.env`（字段见 `backend/.env.example`）：
+
+```
+VR_REVIEW_MAIL=1
+VR_REVIEW_MAIL_AT=16:10
+VR_REVIEW_MAIL_TO=you@qq.com
+VR_REVIEW_LLM_BASE_URL=https://api.deepseek.com
+VR_REVIEW_LLM_API_KEY=
+VR_REVIEW_LLM_MODEL=deepseek-chat
+SMTP_HOST=smtp.qq.com
+SMTP_PORT=465
+SMTP_USER=you@qq.com
+SMTP_PASS=                 # QQ 邮箱授权码, 不是登录密码
+```
+
+后端在工作日到点后收集看板快照，复用现有复盘提示词，SMTP 发一封。每天最多一封；服务器晚启动会补发当天那封。接入 AI 页可看状态、立刻试发。只做客观陈述，不构成投资建议。
 
 ## 反思审计
 

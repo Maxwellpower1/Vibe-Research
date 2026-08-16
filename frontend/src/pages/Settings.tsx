@@ -1,10 +1,10 @@
-import { useState } from "react";
-import { KeyRound, Sparkles, ShieldCheck, Check, Trash2, Terminal } from "lucide-react";
+import { useEffect, useState } from "react";
+import { KeyRound, Sparkles, ShieldCheck, Check, Trash2, Terminal, Mail, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { toast } from "sonner";
 import { loadLlm, saveLlm, clearLlm } from "@/lib/llm";
-import { loadAccessKey, saveAccessKey } from "@/lib/api";
+import { api, loadAccessKey, saveAccessKey, type ReviewMailStatus } from "@/lib/api";
 import { subscriptionModels, apiModels, PROVIDER_BASE, isCliProvider, aiModels, type ProviderId } from "@/lib/ai-models";
 import { cn } from "@/lib/utils";
 
@@ -275,6 +275,8 @@ export function Settings() {
         )}
       </GlassCard>
 
+      <ReviewMailCard />
+
       <GlassCard className="mt-4">
         <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
           <KeyRound className="h-4 w-4 text-primary" /> 后端访问密钥（可选）
@@ -302,5 +304,151 @@ export function Settings() {
         </div>
       </GlassCard>
     </div>
+  );
+}
+
+function Flag({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span className={cn("rounded px-1.5 py-0.5 text-[11px]", ok ? "bg-success/15 text-success" : "bg-muted/60 text-muted-foreground")}>
+      {label}
+    </span>
+  );
+}
+
+function ReviewMailCard() {
+  const [st, setSt] = useState<ReviewMailStatus | null>(null);
+  const [err, setErr] = useState("");
+  const [sending, setSending] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [at, setAt] = useState("16:10");
+  const [to, setTo] = useState("");
+
+  const apply = (d: ReviewMailStatus) => {
+    setSt(d);
+    setEnabled(d.enabled);
+    setAt(d.at || "16:10");
+    setTo(d.to || "");
+    setErr("");
+  };
+
+  const load = () => {
+    api.reviewMailStatus()
+      .then(apply)
+      .catch((e) => setErr(e instanceof Error ? e.message : "读不到后端"));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const next = await api.reviewMailSave({ enabled, at, to: to.trim() });
+      apply(next);
+      toast.success(next.enabled ? `已开启，工作日 ${next.at} 发送` : "已关闭定时");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sendNow = async () => {
+    setSending(true);
+    try {
+      const out = await api.reviewMailRun();
+      toast.success(`已发送到 ${out.to || "邮箱"}`);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "发送失败");
+      load();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <GlassCard className="mt-4">
+      <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
+        <Mail className="h-4 w-4 text-primary" /> 定时复盘邮件
+      </h3>
+      <p className="mb-3 text-xs text-muted-foreground">
+        开关、时间和收件人在这里改，立刻生效。SMTP 授权码和模型 key 仍在
+        <code className="mx-1 rounded bg-muted/50 px-1">backend/.env</code>
+        （网页「问 AI」的 key 定时任务读不到）。
+      </p>
+      {err && <p className="mb-2 text-xs text-destructive">{err}</p>}
+      {st && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <Flag ok={st.enabled} label={st.enabled ? `定时 ${st.at}` : "定时未开"} />
+          <Flag ok={st.smtp_ready} label={st.smtp_ready ? "SMTP 已配" : "SMTP 未配"} />
+          <Flag ok={st.llm_ready} label={st.llm_ready ? (st.llm_model || "模型已配") : "模型未配"} />
+          {st.last_sent_date && <Flag ok={st.last_ok} label={`上次 ${st.last_sent_date}`} />}
+        </div>
+      )}
+      <label className="mb-3 flex items-center justify-between rounded-lg border border-border/60 px-3 py-2.5">
+        <span className="text-sm">工作日自动发送</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          onClick={() => setEnabled((v) => !v)}
+          className={cn(
+            "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+            enabled ? "bg-primary" : "bg-muted",
+          )}
+        >
+          <span className={cn("inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform", enabled ? "translate-x-[18px]" : "translate-x-1")} />
+        </button>
+      </label>
+      <div className="mb-3 grid gap-3 sm:grid-cols-2">
+        <div className="field">
+          <label className="field-label" htmlFor="review-mail-at">发送时间（北京时间）</label>
+          <input
+            id="review-mail-at"
+            type="time"
+            value={at}
+            onChange={(e) => setAt(e.target.value)}
+            className="field-input"
+          />
+        </div>
+        <div className="field">
+          <label className="field-label" htmlFor="review-mail-to">收件人</label>
+          <input
+            id="review-mail-to"
+            type="email"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            placeholder="you@qq.com"
+            className="field-input"
+          />
+        </div>
+      </div>
+      {st?.last_error && (
+        <p className="mb-2 text-xs text-destructive">上次失败：{st.last_error}</p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="btn-press inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25 disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {saving ? "保存中…" : "保存"}
+        </button>
+        <button
+          type="button"
+          onClick={sendNow}
+          disabled={sending}
+          className="btn-press inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm text-muted-foreground ring-1 ring-border hover:bg-muted/40 disabled:opacity-50"
+        >
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+          {sending ? "正在收集并发送…" : "立即发送一封"}
+        </button>
+      </div>
+    </GlassCard>
   );
 }

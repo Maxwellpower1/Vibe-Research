@@ -37,6 +37,7 @@ python3 -m venv .venv
 | **资金面·筹码·信号（v3.3）** | `/api/margin` · `/block-trade` · `/holders` · `/dividend` · `/fund-flow` · `/dragon-tiger` · `/dragon-tiger/daily`（全市场龙虎榜） · `/lockup` · `/blocks` · `/hot-concepts` · `/investor-qa` · `/industry` | requests |
 | `GET /api/market/overview` · `/api/radar` | 市场情绪+板块资金 · 资讯雷达 | akshare / stdlib |
 | `GET /api/market/review-snapshot` | 每日复盘聚合（`scope=paint|top|full`）：先腾讯指数/总览，完成后再情绪+行业强弱，再龙虎 | 缓存命中秒回 |
+| `GET /api/market/review-mail` · `PUT /api/market/review-mail` · `POST /api/market/review-mail/run` | 定时复盘邮件状态（不回 SMTP 密码 / API key）· 保存开关/时间/收件人 · 立刻试发 | SMTP + `VR_REVIEW_LLM_*` |
 | `GET /api/market/board-flow` · `/hsgt` · `/hot-list` · `/stock-monitor` · `/price-anomaly` · `/limit-pools` | 板块资金流 / 北向 / 同花顺热榜 / 监控池 / 异动 / 打板池 | requests |
 | `GET /api/market/world-indices` · `/quotes` · `/boards` · `/board-stocks` · `/rank` · `/board-flow-intraday` · `/commodities` · `/commodity-minutes` | 全球关键指数 / 批量报价(股票指数按代码 5s, 期货走 commodities 并行) / 板块热点 / 成分股(腾讯pt*) / 个股榜单(含成交额, 新浪) / 分钟板块资金 / 大宗商品 | 腾讯/新浪/东财(仅独有资金流) |
 | `GET /api/market/spot-table` · `/chem-spot` · `/future-daily` · `/stock-boards` · `/stock-boards-batch` · `/stock-flows` · `/lives` · `/etf-shares` | 生意社现期/基差 · 化工现货 · 新浪期货日K · 个股行业/概念(单票/批量) · 自选主力净额/净占比(对齐参考看板 ulist) · 新浪7x24(华尔街见闻兜底) · 沪/深ETF日频份额+季报申购赎回 | requests |

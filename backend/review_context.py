@@ -1,0 +1,372 @@
+"""Pack Daily Review numbers into the same text snapshot the web AI uses.
+
+Section titles must stay in sync with frontend/src/lib/reviewContext.ts
+so the model sees one contract. Missing panels are listed; do not invent.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+REVIEW_CONTEXT_MAX_CHARS = 24_000
+
+REVIEW_PROMPT_TASK = (
+    "请用中文做当天大盘复盘, 按下面顺序写, 有数据才写、没数据就跳过:\n"
+    "1. 整体涨跌与主要指数(含外围)\n"
+    "2. 涨跌分布 / 情绪 / 涨跌停\n"
+    "3. 板块与资金(领涨领跌、主力净流入)\n"
+    "4. 个股榜与龙虎(只陈述公开榜单, 不荐股)\n"
+    "5. 实时热点/快讯全文里与盘面相关的客观信息\n"
+    "只做客观陈述与多视角分析, 不预测涨跌、不推荐任何标的、不构成投资建议。"
+    "数字必须来自上面的快照, 不要编造。"
+)
+
+EXPECTED = (
+    "全球指数",
+    "涨跌分布",
+    "涨跌停",
+    "板块热点",
+    "板块资金",
+    "主力净流入",
+    "个股榜单",
+    "大宗商品",
+    "实时热点",
+    "龙虎榜",
+    "资金利率",
+)
+
+
+def fmt_signed_pct(v: Any, digits: int = 2) -> str:
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    if n != n:  # NaN
+        return "—"
+    return f"{n:+.{digits}f}%"
+
+
+def fmt_yi(v: Any) -> str:
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    if n != n or n == 0:
+        return "—"
+    sign = "-" if n < 0 else ""
+    abs_n = abs(n)
+    if abs_n >= 1e8:
+        return f"{sign}{abs_n / 1e8:.2f}亿"
+    if abs_n >= 1e4:
+        return f"{sign}{abs_n / 1e4:.0f}万"
+    return f"{sign}{abs_n:.0f}"
+
+
+def take(rows: Any, n: int) -> list:
+    if not isinstance(rows, list):
+        return []
+    return rows[:n]
+
+
+def _num(v: Any) -> float | None:
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return None
+    if n != n:
+        return None
+    return n
+
+
+def _join(parts: list[str | None]) -> str:
+    return "\n".join(p for p in parts if p and p.strip())
+
+
+def _section(title: str, body: str | None) -> str | None:
+    t = (body or "").strip()
+    return f"【{title}】\n{t}" if t else None
+
+
+def _quote_line(name: str, price: Any = None, pct: Any = None, amount: Any = None) -> str:
+    bits = [name]
+    p = _num(price)
+    if p is not None:
+        bits.append(str(p))
+    bits.append(fmt_signed_pct(pct))
+    a = _num(amount)
+    if a is not None and a != 0:
+        bits.append(f"额{fmt_yi(a)}")
+    return " ".join(bits)
+
+
+def _fmt_rate(v: Any) -> str:
+    n = _num(v)
+    if n is None:
+        return "—"
+    pct = n * 100 if n <= 1 else n
+    return f"{pct:.1f}%"
+
+
+def missing_panels(text: str) -> list[str]:
+    return [name for name in EXPECTED if f"【{name}】" not in text]
+
+
+def build_user_prompt(snap: str) -> str:
+    return (
+        "以下是今天复盘驾驶舱的客观快照(与当前看板同源):\n"
+        f"{snap}\n\n{REVIEW_PROMPT_TASK}"
+    )
+
+
+def _world(data: dict) -> str | None:
+    world = data.get("world") or []
+    if isinstance(world, list) and world:
+        lines = []
+        for i in world:
+            if not isinstance(i, dict):
+                continue
+            lines.append(_quote_line(
+                str(i.get("name") or i.get("label") or ""),
+                i.get("price"),
+                i.get("change_pct") if i.get("change_pct") is not None else i.get("pct"),
+                i.get("amount"),
+            ))
+        if lines:
+            return "；".join(lines)
+    indices = data.get("indices") or []
+    if not isinstance(indices, list) or not indices:
+        return None
+    return "；".join(
+        _quote_line(str(i.get("name") or ""), i.get("price"), i.get("change_pct"))
+        for i in indices if isinstance(i, dict)
+    )
+
+
+def _sentiment(data: dict) -> str | None:
+    ov = data.get("overview") or {}
+    s = ov.get("sentiment") if isinstance(ov, dict) else None
+    b = data.get("breadth") if isinstance(data.get("breadth"), dict) else None
+    bits: list[str] = []
+    if isinstance(s, dict) and (s.get("up") or 0) + (s.get("down") or 0) + (s.get("flat") or 0) > 0:
+        bits.append(
+            f"上涨{s.get('up')} 平{s.get('flat')} 下跌{s.get('down')}；"
+            f"涨停{s.get('zt')}(真实{s.get('zt_real')}) 跌停{s.get('dt')}(真实{s.get('dt_real')})"
+        )
+        if s.get("breadth"):
+            bits.append(f"广度 {s.get('breadth')}")
+        if s.get("speculation"):
+            bits.append(f"投机 {s.get('speculation')}")
+        if s.get("date"):
+            bits.append(f"日期 {s.get('date')}")
+    if isinstance(b, dict) and b.get("n"):
+        pcts = []
+        for k, label in (("p10", "p10"), ("p25", "p25"), ("p50", "p50"),
+                         ("p75", "p75"), ("p90", "p90"), ("avg", "均")):
+            if b.get(k) is not None:
+                pcts.append(f"{label} {fmt_signed_pct(b.get(k))}")
+        bits.append(f"全A分位 n={b.get('n')}" + (f" {' '.join(pcts)}" if pcts else ""))
+        hist = b.get("histogram") or []
+        if isinstance(hist, list) and hist:
+            bits.append("分布 " + " ".join(
+                f"{h.get('label')}:{h.get('count')}" for h in hist if isinstance(h, dict)
+            ))
+    return "\n".join(bits) if bits else None
+
+
+def _emotion(e: Any) -> str | None:
+    if not isinstance(e, dict):
+        return None
+    bits = [
+        f"涨停{e.get('zt_count')} 跌停{e.get('dt_count')} 炸板{e.get('zb_count')} 昨涨停{e.get('yzt_count')}",
+        f"最高连板{e.get('max_boards')} 连板家数{e.get('lianban_count')}",
+    ]
+    if e.get("seal_rate") is not None:
+        bits.append(f"封板率{_fmt_rate(e.get('seal_rate'))}")
+    if e.get("break_rate") is not None:
+        bits.append(f"炸板率{_fmt_rate(e.get('break_rate'))}")
+    if e.get("promotion_rate") is not None:
+        bits.append(f"晋级率{_fmt_rate(e.get('promotion_rate'))}")
+    seals = e.get("seals")
+    if isinstance(seals, dict):
+        bits.append(
+            f"封板 真{seals.get('sealed_up')}/假{seals.get('fake_up')} "
+            f"跌停封 真{seals.get('sealed_down')}/假{seals.get('fake_down')}"
+        )
+    up = take(e.get("zt_stocks") or e.get("lianban_stocks"), 8)
+    if up:
+        bits.append("连板 " + "；".join(
+            f"{s.get('name')}({s.get('boards')}板 {fmt_signed_pct(s.get('pct'))} {s.get('industry') or ''})".strip()
+            for s in up if isinstance(s, dict)
+        ))
+    down = take(e.get("dt_stocks"), 6)
+    if down:
+        bits.append("跌停 " + "；".join(
+            f"{s.get('name')}({s.get('boards')}跌 {s.get('industry') or ''})".strip()
+            for s in down if isinstance(s, dict)
+        ))
+    return "\n".join(bits)
+
+
+def _board_line(b: dict) -> str:
+    lead = ""
+    if b.get("lead_name"):
+        extra = fmt_signed_pct(b.get("lead_pct"), 1) if b.get("lead_pct") is not None else ""
+        lead = f" 领{b.get('lead_name')}{extra}"
+    return f"{b.get('name')} {fmt_signed_pct(b.get('pct'))}{lead}"
+
+
+def _sectors(data: dict) -> str | None:
+    up = [x for x in take(data.get("sector_up"), 8) if isinstance(x, dict)]
+    down = [x for x in take(data.get("sector_down"), 8) if isinstance(x, dict)]
+    bits: list[str] = []
+    if up:
+        bits.append("领涨行业 " + "；".join(_board_line(b) for b in up))
+    if down:
+        bits.append("领跌行业 " + "；".join(_board_line(b) for b in down))
+    if bits:
+        return "\n".join(bits)
+    industry = data.get("industry") if isinstance(data.get("industry"), dict) else None
+    if not industry:
+        return None
+    top = take(industry.get("top"), 8)
+    bot = take(industry.get("bottom"), 8)
+    if top:
+        bits.append("行业强 " + "；".join(
+            f"{r.get('name')} {fmt_signed_pct(r.get('change_pct'))}"
+            for r in top if isinstance(r, dict)
+        ))
+    if bot:
+        bits.append("行业弱 " + "；".join(
+            f"{r.get('name')} {fmt_signed_pct(r.get('change_pct'))}"
+            for r in bot if isinstance(r, dict)
+        ))
+    return "\n".join(bits) if bits else None
+
+
+def _flow(rows: Any) -> str | None:
+    items = [r for r in (rows or []) if isinstance(r, dict) and _num(r.get("net_in")) is not None]
+    if not items:
+        return None
+    items.sort(key=lambda r: float(r.get("net_in") or 0), reverse=True)
+    inn = [r for r in items if float(r.get("net_in") or 0) > 0][:8]
+    out = [r for r in reversed(items) if float(r.get("net_in") or 0) < 0][:8]
+    bits: list[str] = []
+    if inn:
+        bits.append("流入 " + "；".join(f"{r.get('name')} {fmt_yi(r.get('net_in'))}" for r in inn))
+    if out:
+        bits.append("流出 " + "；".join(f"{r.get('name')} {fmt_yi(r.get('net_in'))}" for r in out))
+    return "\n".join(bits) if bits else None
+
+
+def _money(rows: Any) -> str | None:
+    items = take(rows, 10)
+    if not items:
+        return None
+    lines = []
+    for r in items:
+        if not isinstance(r, dict):
+            continue
+        extra = f"{fmt_signed_pct(r.get('change_pct'))} 主力{fmt_yi(r.get('main_net'))}"
+        if r.get("main_pct") is not None:
+            extra += f" {float(r.get('main_pct')):.1f}%"
+        lines.append(f"{r.get('name')} {extra}".strip())
+    return "；".join(lines) if lines else None
+
+
+def _rank(data: dict) -> str | None:
+    def line(rows: Any) -> str:
+        return "；".join(
+            f"{s.get('name')} {fmt_signed_pct(s.get('pct'))} 额{fmt_yi(s.get('amount'))}"
+            for s in take(rows, 8) if isinstance(s, dict)
+        )
+    bits: list[str] = []
+    if data.get("rank_hot"):
+        bits.append(f"热门 {line(data.get('rank_hot'))}")
+    if data.get("rank_up"):
+        bits.append(f"涨幅 {line(data.get('rank_up'))}")
+    if data.get("rank_down"):
+        bits.append(f"跌幅 {line(data.get('rank_down'))}")
+    return "\n".join(bits) if bits else None
+
+
+def _commodities(quotes: Any) -> str | None:
+    if not isinstance(quotes, dict) or not quotes:
+        return None
+    lines = []
+    for code, q in quotes.items():
+        if not isinstance(q, dict):
+            continue
+        name = q.get("name") or code
+        lines.append(_quote_line(str(name), q.get("price"), q.get("pct") if q.get("pct") is not None else q.get("change_pct")))
+    return "；".join(lines) if lines else None
+
+
+def _news(items: Any) -> str | None:
+    rows = take(items, 12)
+    if not rows:
+        return None
+    blocks = []
+    for i, it in enumerate(rows, 1):
+        if not isinstance(it, dict):
+            continue
+        title = str(it.get("title") or "").strip()
+        if not title:
+            continue
+        time = str(it.get("time") or "")
+        clock = time[11:16] if len(time) >= 16 else time[-5:]
+        extra = str(it.get("content") or it.get("summary") or "").replace("\n", " ").strip()
+        head = f"{i}. {clock} {title}".strip()
+        blocks.append(f"{head}\n{extra}" if extra and extra != title else head)
+    return "财联社\n" + "\n".join(blocks) if blocks else None
+
+
+def _lhb(lhb: Any) -> str | None:
+    if not isinstance(lhb, dict):
+        return None
+    rows = take(lhb.get("stocks"), 8)
+    if not rows:
+        return None
+    head = ""
+    if lhb.get("date"):
+        head = f"{lhb.get('date')} 共{lhb.get('total_records')}条"
+    body = "；".join(
+        f"{s.get('name')} {fmt_signed_pct(s.get('change_pct'))} "
+        f"净买{float(s.get('net_buy_wan') or 0):.0f}万 {s.get('reason') or ''}".strip()
+        for s in rows if isinstance(s, dict)
+    )
+    return "\n".join(p for p in (head, body) if p)
+
+
+def _rates(data: dict) -> str | None:
+    bits: list[str] = []
+    hsgt = data.get("hsgt") if isinstance(data.get("hsgt"), dict) else None
+    latest = hsgt.get("latest") if hsgt else None
+    if isinstance(latest, dict):
+        bits.append(
+            f"北向 {latest.get('time') or ''} "
+            f"沪{latest.get('hgt_yi') if latest.get('hgt_yi') is not None else '—'}亿 "
+            f"深{latest.get('sgt_yi') if latest.get('sgt_yi') is not None else '—'}亿".strip()
+        )
+    return "\n".join(bits) if bits else None
+
+
+def pack_review_context(data: dict[str, Any]) -> str:
+    """Turn collected review dicts into the AI snapshot string."""
+    body = _join([
+        _section("全球指数", _world(data)),
+        _section("涨跌分布", _sentiment(data)),
+        _section("涨跌停", _emotion(data.get("emotion"))),
+        _section("板块热点", _sectors(data)),
+        _section("板块资金", _flow(data.get("board_flow"))),
+        _section("主力净流入", _money(data.get("money_rows"))),
+        _section("个股榜单", _rank(data)),
+        _section("大宗商品", _commodities(data.get("commodities"))),
+        _section("实时热点", _news(data.get("news"))),
+        _section("龙虎榜", _lhb(data.get("lhb"))),
+        _section("资金利率", _rates(data)),
+    ])
+    miss = missing_panels(body)
+    footer = f"\n【未取到】{'、'.join(miss)}。这些格子没有数据, 不要编造数字。" if miss else ""
+    text = (body or "（复盘看板数据尚未加载）") + footer
+    if len(text) <= REVIEW_CONTEXT_MAX_CHARS:
+        return text
+    return text[:REVIEW_CONTEXT_MAX_CHARS] + "\n…(快照已截断)"

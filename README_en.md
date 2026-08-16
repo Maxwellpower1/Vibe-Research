@@ -128,6 +128,7 @@ Uses your existing subscription instead of paying per API call. Supported: **Cla
 - Pick one on the "Bring your AI" page — no key needed.
 - ⚠️ CLIs answer in one shot without multi-step tool calls, so this suits flows where the data is already prepared (daily review, takeaways, asking about the stock currently on screen). For open-ended questions where the AI should fetch data itself, use API mode.
 - **Review snapshot**: "AI review / Ask AI" packs the current cockpit cells into one text blob (indices, breadth, limit boards, sectors, flows, ranks, commodities, full 7x24 telegraph text with tags, watchlist, dragon-tiger, rates). Missing cells are marked so the model does not invent numbers. See `frontend/src/lib/reviewContext.ts`.
+- **Scheduled review email** (opt-in): toggle, time and recipient on the Bring-your-AI page. The browser key is not visible to the job — SMTP and model key stay in `backend/.env`.
 
 ### 2. API mode (bring your own key)
 
@@ -136,6 +137,10 @@ Pick a model and the base URL is filled in for you — just paste the key. Built
 ### 3. MCP (for Claude Code and other agents)
 
 Mount the backend as an MCP server so your agent can call Vibe-Research's data tools with its own subscription. See [`backend/README.md`](backend/README.md).
+
+### 4. Scheduled review email
+
+Toggle, time and recipient are on the Bring-your-AI page and take effect immediately. The browser key is invisible to the job — SMTP auth code and model key stay in `backend/.env`. Weekdays only, one mail per day, same review prompt as the web page.
 
 ## Reflection audit
 

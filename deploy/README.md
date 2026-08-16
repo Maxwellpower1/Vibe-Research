@@ -111,6 +111,8 @@ QQ 邮箱：网页登录 [mail.qq.com](https://mail.qq.com) → 设置 → 账�
 
 不配这三项时，自动部署照常跑，只是不发信。
 
+同一套 `SMTP_*` / `NOTIFY_EMAIL` 也可写进服务器 `backend/.env`，给工作日复盘邮件用（`VR_REVIEW_MAIL=1` + `VR_REVIEW_LLM_*`）。部署成功通知和复盘正文是两条线，互不影响。
+
 ## 六、常见问题
 
 - **DEPLOY_HOST is empty**：Secret 必须在 Repository secrets，名字完全一致。
