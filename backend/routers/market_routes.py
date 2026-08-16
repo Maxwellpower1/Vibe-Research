@@ -7,7 +7,7 @@ import market
 import newsradar
 import review_snapshot
 import review_warmup
-from api_common import _cached, _DC_CACHE
+from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _cached, _DC_CACHE
 
 router = APIRouter(tags=["market"])
 
@@ -509,24 +509,24 @@ def market_rank(
 
 @router.get("/api/market/board-flow-intraday")
 def market_board_flow_intraday(
-    n: int = Query(16, ge=6, le=24),
+    n: int = Query(BOARD_FLOW_N, ge=6, le=30),
     curves: bool = Query(True, description="false=only ranks (2 Eastmoney pages)"),
 ):
-    """板块资金流向. curves=0 只回流入/流出榜; curves=1 再补分钟曲线. 分键缓存."""
+    """板块资金流向. curves=0 只回流入/流出榜; curves=1 再补分钟曲线. 120s 缓存."""
     import cockpit_live
     try:
         if curves:
             data = _cached(
                 "board_flow_intraday",
                 str(n),
-                120,
+                BOARD_FLOW_TTL,
                 lambda: cockpit_live.board_flow_intraday(n, curves=True),
             )
         else:
             data = _cached(
                 "board_flow_ranks",
                 str(n),
-                60,
+                BOARD_FLOW_TTL,
                 lambda: cockpit_live.board_flow_intraday(n, curves=False),
                 valid=lambda d: isinstance(d, list) and len(d) > 0,
             )

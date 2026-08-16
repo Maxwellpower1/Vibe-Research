@@ -24,8 +24,10 @@ def test_session_weekend_closed():
 def test_cockpit_warm_keys_cover_first_paint():
     import inspect
 
-    from api_common import COCKPIT_WARM_KEYS, _warm_review_dc
+    from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, COCKPIT_WARM_KEYS, _warm_review_dc
 
+    assert BOARD_FLOW_TTL == 120
+    assert BOARD_FLOW_N == 20
     assert "board_flow_intraday" in COCKPIT_WARM_KEYS
     assert "world_indices" in COCKPIT_WARM_KEYS
     assert COCKPIT_WARM_KEYS[-1] == "board_flow_intraday"

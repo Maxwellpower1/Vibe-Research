@@ -7,7 +7,7 @@ import { usePolling } from "@/hooks/usePolling";
 import { loadLightKline, sparkFromKline } from "@/lib/lightKline";
 import { api } from "@/lib/api";
 import { useQuote } from "@/lib/quoteHub";
-import { useStockBoards } from "@/lib/stockBoardsHub";
+import { boardLineParts, useStockBoards } from "@/lib/stockBoardsHub";
 import { cn } from "@/lib/utils";
 import { watchDigits } from "@/lib/watchlist";
 import { klineHref } from "@/components/cockpit/QuoteLine";
@@ -115,7 +115,7 @@ export function QuoteStockRow({
   const liveNet = mainNet ?? fl?.netIn ?? null;
   const liveMainPct = mainPct ?? fl?.netRatio ?? null;
   const boards = useStockBoards(code, visible && wantBoards);
-  const tag = boards?.industry || boards?.concepts?.[0] || "";
+  const boardLine = wantBoards ? boardLineParts(boards) : null;
   const showStar = watchable && !!watchDigits(code);
 
   const { data: kl } = usePolling(
@@ -154,9 +154,7 @@ export function QuoteStockRow({
       )}
       <div className="row-span-2 flex min-w-0 flex-col justify-center gap-1 leading-none">
         <span className="truncate text-[11px] text-slate-200">{name}</span>
-        <span className="truncate text-[10px] text-slate-500">
-          {symbol || code}{tag ? ` · ${tag}` : ""}
-        </span>
+        <span className="truncate text-[10px] text-slate-500">{symbol || code}</span>
       </div>
       <div className="col-span-2 flex h-5 min-w-0 items-center self-center">
         <MinuteSpark
@@ -201,13 +199,29 @@ export function QuoteStockRow({
     </div>
   );
 
+  const line = boardLine && (
+    <div
+      className="mt-0.5 flex h-[13px] min-w-0 items-center text-[9px] leading-none"
+      title={`${boardLine.industry}${boardLine.concepts ? ` · ${boardLine.concepts}` : ""}`}
+    >
+      <span className="truncate">
+        {boardLine.industry && <span className="text-cyan-500/80">{boardLine.industry}</span>}
+        {boardLine.concepts && (
+          <span className="text-slate-600">
+            {boardLine.industry ? " · " : ""}
+            {boardLine.concepts}
+          </span>
+        )}
+      </span>
+    </div>
+  );
   const cls = "group block w-full rounded px-2 py-[4px] text-left transition-colors hover:bg-slate-800/40 hover:shadow-[inset_0_0_0_1px_rgba(34,211,238,0.22)]";
   return (
     <div ref={setEl}>
       {href ? (
-        <Link to={href} className={cls}>{inner}</Link>
+        <Link to={href} className={cls}>{inner}{line}</Link>
       ) : (
-        <div className={cls}>{inner}</div>
+        <div className={cls}>{inner}{line}</div>
       )}
     </div>
   );

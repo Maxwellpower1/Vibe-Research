@@ -47,6 +47,7 @@ export function QuoteLine({
   href,
   unit,
   accent,
+  badge,
   variant = "plain",
 }: {
   name: string;
@@ -63,6 +64,8 @@ export function QuoteLine({
   href?: string;
   unit?: string;
   accent?: string;
+  /** Region chip before the name (CN / US / HK / FX). */
+  badge?: string;
   variant?: "plain" | "index";
 }) {
   const spark = (className?: string) => (
@@ -71,8 +74,18 @@ export function QuoteLine({
   const inner = variant === "index" ? (
     <div
       className="grid items-center gap-x-1.5"
-      style={{ gridTemplateColumns: "72px minmax(0,1fr) 70px", gridTemplateRows: "16px 14px" }}
+      style={{
+        gridTemplateColumns: `${badge ? "auto " : ""}72px minmax(0,1fr) 70px`,
+        gridTemplateRows: "16px 14px",
+      }}
     >
+      {badge && (
+        <div className="row-span-2 self-center">
+          <span className="inline-block w-6 shrink-0 rounded-sm bg-slate-700/50 text-center text-[8px] leading-3 text-slate-400">
+            {badge}
+          </span>
+        </div>
+      )}
       <div className="row-span-2 flex min-w-0 flex-col justify-center gap-0.5 leading-none">
         <span className="truncate text-[11px] text-slate-200" style={accent ? { color: accent } : undefined}>
           {name}
@@ -102,7 +115,7 @@ export function QuoteLine({
           <span className="w-4 shrink-0 text-right font-mono text-[10px] text-slate-600">{rank}</span>
         )}
         <span className="min-w-0">
-          <span className="block truncate text-[12px] text-slate-200" style={accent ? { color: accent } : undefined}>
+          <span className="block truncate text-[12px] text-slate-200">
             {name}
           </span>
           {unit && <span className="block truncate text-[9px] text-slate-600">{unit}</span>}
@@ -123,13 +136,22 @@ export function QuoteLine({
       <span className="text-right"><PctChip pct={pct} /></span>
     </>
   );
+  const bar = accent && variant === "plain" ? (
+    <span
+      aria-hidden
+      className="absolute left-0 top-0 h-full w-[3px] rounded-l"
+      style={{ background: accent, opacity: 0.55 }}
+    />
+  ) : null;
   const cls = variant === "index"
     ? "block w-full rounded px-1.5 py-[2px] hover:bg-slate-800/40"
-    : "grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,1.2fr)_4.2rem_3.1rem] items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-slate-800/40";
+    : cn(
+      "relative grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,1.2fr)_4.2rem_3.1rem] items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-slate-800/40",
+    );
   if (href) {
-    return <Link to={href} className={cls}>{inner}</Link>;
+    return <Link to={href} className={cls}>{bar}{inner}</Link>;
   }
-  return <div className={cls}>{inner}</div>;
+  return <div className={cls}>{bar}{inner}</div>;
 }
 
 export function klineHref(code?: string) {

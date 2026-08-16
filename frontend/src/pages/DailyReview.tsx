@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import {
@@ -19,7 +19,7 @@ import { ReviewMoneySeg } from "@/components/review/ReviewMoneySeg";
 import { ReviewRiskSeg } from "@/components/review/ReviewRiskSeg";
 import { ChainPanel } from "@/components/review/ChainPanel";
 import { WorldIndexPanel } from "@/components/cockpit/WorldIndexPanel";
-import { SectorHotPanel } from "@/components/cockpit/SectorHotPanel";
+import { SectorHotBar, SectorHotPanel, type SectorDir, type SectorKind } from "@/components/cockpit/SectorHotPanel";
 import { BoardFlowLivePanel } from "@/components/cockpit/BoardFlowLivePanel";
 import { MoneyFlowRankPanel } from "@/components/cockpit/MoneyFlowRankPanel";
 import { RankTabBar, StockRankPanel, type RankTab } from "@/components/cockpit/StockRankPanel";
@@ -37,6 +37,11 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
   const [needConfig, setNeedConfig] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [flowSector, setFlowSector] = useState<{ code: string; name: string } | null>(null);
+  const [moneyRight, setMoneyRight] = useState<ReactNode>(null);
+  const [sectorKind, setSectorKind] = useState<SectorKind>("01");
+  const [sectorDir, setSectorDir] = useState<SectorDir>("0");
+  const [sectorQ, setSectorQ] = useState("");
+  const [sectorAuto, setSectorAuto] = useState(true);
   const [rankTab, setRankTab] = useState<RankTab>("hot");
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -116,7 +121,27 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           accent: "#22d3ee",
           defaultW: 0.48,
           mobileH: "h-[420px]",
-          body: <SectorHotPanel />,
+          right: (
+            <SectorHotBar
+              kind={sectorKind}
+              dir={sectorDir}
+              q={sectorQ}
+              auto={sectorAuto}
+              onKind={(k) => { setSectorKind(k); setSectorAuto(true); }}
+              onDir={setSectorDir}
+              onQuery={setSectorQ}
+              onAuto={setSectorAuto}
+            />
+          ),
+          body: (
+            <SectorHotPanel
+              kind={sectorKind}
+              dir={sectorDir}
+              q={sectorQ}
+              auto={sectorAuto}
+              onAuto={setSectorAuto}
+            />
+          ),
         },
       ],
     },
@@ -144,10 +169,12 @@ export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
           accent: "#fb7185",
           defaultW: 0.24,
           mobileH: "h-[380px]",
+          right: moneyRight,
           body: (
             <MoneyFlowRankPanel
               sectorFilter={flowSector}
               onClearSector={() => setFlowSector(null)}
+              onRight={setMoneyRight}
             />
           ),
         },

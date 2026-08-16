@@ -40,6 +40,7 @@ export function WorldIndexPanel() {
                 key={d.code}
                 variant="index"
                 name={h?.name || d.label}
+                badge={d.region}
                 price={h?.price}
                 pct={h?.pct}
                 amount={d.region !== "US" ? h?.amount : undefined}

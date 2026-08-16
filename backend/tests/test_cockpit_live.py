@@ -133,6 +133,18 @@ def test_board_flow_picks_both_sides(monkeypatch):
     assert {r["code"] for r in out} == {"BK0000", "BK0001"}
 
 
+def test_board_flow_n20_half_is_10(monkeypatch):
+    halves: list[int] = []
+
+    def pick(po: int, half: int):
+        halves.append(half)
+        return [{"code": f"BK000{po}", "name": str(po), "net_in": 1.0}]
+
+    monkeypatch.setattr(cl, "_board_flow_pick", pick)
+    cl.board_flow_intraday(20, curves=False)
+    assert len(halves) == 2 and set(halves) == {10}
+
+
 def test_future_minutes_runs_all_codes(monkeypatch):
     seen: list[str] = []
 

@@ -20,6 +20,7 @@ import {
   type UsKline, type GlobalStockNews, type StockBasicInfo, type ThsProfile,
   fundamentalsSourceLabel,
 } from "@/lib/api";
+import { boardLineParts } from "@/lib/stockBoardsHub";
 import { cn } from "@/lib/utils";
 
 // 金额格式化（后端资金单位：元 / 万元）
@@ -264,6 +265,10 @@ export function StockData({
     ...(basic?.concepts ?? []),
     ...(ths?.concepts ?? []),
   ])].slice(0, 24);
+  const headerBoard = boardLineParts({
+    industry: basic?.industry || ths?.industry || "",
+    concepts: conceptTags,
+  });
 
   const aiContext = val
     ? `个股：${val.name}（${val.code}）\n现价 ${val.price} · PE(TTM) ${val.pe_ttm} · PB ${val.pb} · 市值 ${val.mcap_yi}亿\n` +
@@ -984,6 +989,17 @@ export function StockData({
                 <span className="ml-auto text-xs text-muted-foreground">机构覆盖 {val.analyst_count} 家</span>
               )}
             </div>
+            {headerBoard && (
+              <p className="mb-2 truncate text-[11px] leading-none" title={`${headerBoard.industry}${headerBoard.concepts ? ` · ${headerBoard.concepts}` : ""}`}>
+                {headerBoard.industry && <span className="text-cyan-500/80">{headerBoard.industry}</span>}
+                {headerBoard.concepts && (
+                  <span className="text-muted-foreground">
+                    {headerBoard.industry ? " · " : ""}
+                    {headerBoard.concepts}
+                  </span>
+                )}
+              </p>
+            )}
             {basic && (
               <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground/70">
                 {basic.list_date && <span>上市 {basic.list_date}</span>}

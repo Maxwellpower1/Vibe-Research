@@ -12,6 +12,60 @@ const POLL_MS = 20_000;
 const MAX_STOCK_ROWS = 40;
 const ROTATE_MS = 10_000;
 
+export type SectorKind = "01" | "02";
+export type SectorDir = "0" | "1";
+
+export function SectorHotBar({
+  kind,
+  dir,
+  q,
+  auto,
+  onKind,
+  onDir,
+  onQuery,
+  onAuto,
+}: {
+  kind: SectorKind;
+  dir: SectorDir;
+  q: string;
+  auto: boolean;
+  onKind: (k: SectorKind) => void;
+  onDir: (d: SectorDir) => void;
+  onQuery: (q: string) => void;
+  onAuto: (a: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 text-[11px]">
+      <input
+        value={q}
+        onChange={(e) => onQuery(e.target.value)}
+        placeholder="搜索板块"
+        className="h-6 w-20 rounded border border-slate-700/50 bg-slate-800/40 px-1.5 text-[11px] text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-500/50"
+      />
+      <button
+        type="button"
+        onClick={() => onAuto(!auto)}
+        title={auto ? `轮播中(${ROTATE_MS / 1000}s),点击暂停` : "已暂停,点击恢复轮播"}
+        className={cn(
+          "rounded px-2 py-0.5 text-[10px]",
+          auto ? "bg-cyan-500/20 text-cyan-300" : "text-slate-400 hover:text-slate-200",
+        )}
+      >
+        轮播
+      </button>
+      <ChipGroup className="border-0 bg-transparent p-0">
+        <Chip active={kind === "01"} onClick={() => onKind("01")}>行业</Chip>
+        <Chip active={kind === "02"} onClick={() => onKind("02")}>概念</Chip>
+      </ChipGroup>
+      <span className="mx-0.5 h-3 w-px bg-slate-700" />
+      <ChipGroup className="border-0 bg-transparent p-0">
+        <Chip active={dir === "0"} onClick={() => onDir("0")}>领涨</Chip>
+        <Chip active={dir === "1"} onClick={() => onDir("1")}>领跌</Chip>
+      </ChipGroup>
+    </div>
+  );
+}
+
 function fmtPct(v?: number | null): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
@@ -36,10 +90,13 @@ function BoardRow({
       type="button"
       onClick={onClick}
       className={cn(
-        "grid w-full grid-cols-[1fr_52px_72px] items-center gap-1.5 rounded px-1.5 py-1 text-left",
+        "grid w-full grid-cols-[24px_1fr_52px_72px] items-center gap-1.5 rounded px-1.5 py-1 text-left",
         active ? "bg-cyan-500/10 ring-1 ring-cyan-500/40" : "hover:bg-slate-800/40",
       )}
     >
+      <span className="text-[10px] tabular-nums text-slate-600">
+        {(b.code || "").slice(-4) || "—"}
+      </span>
       <span className="min-w-0">
         <span className="block truncate text-[12px] text-slate-200">{b.name}</span>
         <span className="mt-0.5 block h-1 rounded-full bg-slate-800">
@@ -65,12 +122,20 @@ function BoardRow({
 }
 
 /** Industry / concept realtime hot boards + constituent sidebar (default first board). */
-export function SectorHotPanel() {
-  const [kind, setKind] = useState<"01" | "02">("01");
-  const [dir, setDir] = useState<"0" | "1">("0");
-  const [q, setQ] = useState("");
+export function SectorHotPanel({
+  kind,
+  dir,
+  q,
+  auto,
+  onAuto,
+}: {
+  kind: SectorKind;
+  dir: SectorDir;
+  q: string;
+  auto: boolean;
+  onAuto: (a: boolean) => void;
+}) {
   const [selected, setSelected] = useState<SectorBoard | null>(null);
-  const [auto, setAuto] = useState(true);
   const [idx, setIdx] = useState(0);
 
   const { data, error } = usePolling(
@@ -118,49 +183,21 @@ export function SectorHotPanel() {
   const minutes = useMinutes(stockCodes);
   const maxAbs = Math.max(...filtered.map((b) => Math.abs(b.pct)), 0.01);
 
-  const switchKind = (next: "01" | "02") => {
-    setKind(next);
-    setSelected(null);
-    setAuto(true);
-    setIdx(0);
-  };
-
   const pickBoard = (b: SectorBoard) => {
-    setAuto(false);
+    onAuto(false);
     setSelected(boardId(selected) === boardId(b) && !auto ? null : b);
   };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-slate-700/40 px-1.5 py-1">
-        <ChipGroup>
-          <Chip active={kind === "01"} onClick={() => switchKind("01")}>行业</Chip>
-          <Chip active={kind === "02"} onClick={() => switchKind("02")}>概念</Chip>
-        </ChipGroup>
-        <ChipGroup>
-          <Chip active={dir === "0"} onClick={() => setDir("0")}>领涨</Chip>
-          <Chip active={dir === "1"} onClick={() => setDir("1")}>领跌</Chip>
-        </ChipGroup>
-        <button
-          type="button"
-          onClick={() => setAuto((a) => !a)}
-          title={auto ? `轮播中(${ROTATE_MS / 1000}s),点击暂停` : "已暂停,点击恢复轮播"}
-          className={cn(
-            "rounded px-1.5 py-0.5 text-[10px]",
-            auto ? "bg-cyan-500/20 text-cyan-300" : "text-slate-500 hover:text-slate-300",
-          )}
-        >
-          轮播
-        </button>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="搜索"
-          className="ml-auto h-6 w-20 rounded border border-slate-700/60 bg-slate-900/50 px-1.5 text-[10px] text-slate-300 outline-none focus:border-cyan-500/50"
-        />
-      </div>
       <div className={cn("min-h-0 flex-1", activeBoard ? "flex flex-col sm:flex-row" : "")}>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1">
+          <div className="grid grid-cols-[24px_1fr_52px_72px] items-center gap-1.5 px-1.5 py-1 text-[10px] text-slate-500">
+            <span>代码</span>
+            <span>板块 / 强度{data ? ` (${filtered.length})` : ""}</span>
+            <span className="text-right">涨跌幅</span>
+            <span className="text-right">领涨股</span>
+          </div>
           {!data && (
             <p className="py-6 text-center text-[11px] text-slate-600">
               {error ? "板块源未接通, 自动重试中" : "加载中…"}

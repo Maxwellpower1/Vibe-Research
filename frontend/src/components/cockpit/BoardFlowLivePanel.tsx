@@ -3,7 +3,7 @@ import { BoardFlowChart } from "@/components/cockpit/BoardFlowChart";
 import { usePolling } from "@/hooks/usePolling";
 import { api } from "@/lib/api";
 
-const POLL_MS = 120_000;
+const POLL_MS = 10_000;
 const DURATION_MS = 12_000;
 const STEP_MS = 100;
 
@@ -16,9 +16,9 @@ export function BoardFlowLivePanel({
   onSelect?: (sel: { code: string; name: string } | null) => void;
   curvesEnabled?: boolean;
 }) {
-  const { data: ranks, error } = usePolling(() => api.boardFlowIntraday(16, false), POLL_MS, []);
+  const { data: ranks, error, updated } = usePolling(() => api.boardFlowIntraday(20, false), POLL_MS, []);
   const { data: full } = usePolling(
-    () => api.boardFlowIntraday(16, true),
+    () => api.boardFlowIntraday(20, true),
     POLL_MS,
     [],
     curvesEnabled,
@@ -26,6 +26,18 @@ export function BoardFlowLivePanel({
   const data = full?.some((f) => (f.points?.length ?? 0) > 2) ? full : ranks;
   const [progress, setProgress] = useState(1);
   const [playing, setPlaying] = useState(false);
+  const [countdown, setCountdown] = useState(POLL_MS / 1000);
+  const [prevUpdated, setPrevUpdated] = useState(updated);
+  if (prevUpdated !== updated) {
+    setPrevUpdated(updated);
+    if (updated) setCountdown(POLL_MS / 1000);
+  }
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const id = window.setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [countdown]);
 
   useEffect(() => {
     if (!playing) return;
@@ -47,6 +59,7 @@ export function BoardFlowLivePanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-end gap-2 px-1.5 py-0.5">
+        <span className="font-mono text-[10px] tabular-nums text-slate-500">{countdown}s</span>
         <button
           type="button"
           onClick={() => {

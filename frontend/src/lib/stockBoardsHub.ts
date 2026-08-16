@@ -58,6 +58,16 @@ function schedule() {
   timer = window.setTimeout(() => { void flush(); }, 400);
 }
 
+/** Same line as the reference cockpit: 通信设备 · 物联网/5G概念/... */
+export function boardLineParts(
+  bd: { industry?: string; concepts?: string[] } | null | undefined,
+): { industry: string; concepts: string } | null {
+  const industry = String(bd?.industry || "").trim();
+  const concepts = (bd?.concepts || []).map((x) => String(x).trim()).filter(Boolean);
+  if (!industry && !concepts.length) return null;
+  return { industry, concepts: concepts.join("/") };
+}
+
 export function useStockBoards(code: string, enabled = true): StockBoards | null {
   const key = watchDigits(code);
   useEffect(() => {

@@ -725,10 +725,10 @@ def board_flow_intraday(n: int = 20, curves: bool = True) -> list[dict]:
     """Industry inflow/outflow TOP, optional minute cumulative main-net.
 
     curves=False is 2 Eastmoney pages (ranks). curves=True adds one kline
-    per board (~16 more launches). Peek cached klines on the rank path so a
+    per board (~20 more launches). Peek cached klines on the rank path so a
     warm process can paint the butterfly without waiting.
     """
-    half = max(3, min(10, (int(n or 20)) // 2))
+    half = max(3, min(15, (int(n or 20)) // 2))
     with ThreadPoolExecutor(max_workers=2) as pool:
         fu = pool.submit(_board_flow_pick, 1, half)
         fd = pool.submit(_board_flow_pick, 0, half)
@@ -745,13 +745,13 @@ def board_flow_intraday(n: int = 20, curves: bool = True) -> list[dict]:
 
 def _board_fflow_kline_cached(code: str) -> list[dict]:
     """Per-board minute curve. Same TTL key as a later full-list refresh."""
-    from api_common import _cached
+    from api_common import BOARD_FLOW_TTL, _cached
 
     bk = normalize_board_code(code)
     return _cached(
         "board_fflow_kline",
         bk,
-        120,
+        BOARD_FLOW_TTL,
         lambda: _board_fflow_kline(bk),
         valid=lambda d: isinstance(d, list) and len(d) > 0,
     )

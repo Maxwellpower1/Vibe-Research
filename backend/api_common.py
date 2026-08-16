@@ -53,6 +53,11 @@ _FIN_CACHE = TTLCache(maxsize=256, default_ttl=1800, negative_ttl=30, name="fin"
 # negative TTL so warmup + concurrent tabs do not stampede Eastmoney.
 _DC_CACHE = TTLCache(maxsize=512, default_ttl=300, negative_ttl=15, name="app_dc")
 
+# Same as marketingdashboard /api/board-flow: 120s Eastmoney cache.
+# Frontend still polls every 10s and hits this cache.
+BOARD_FLOW_TTL = 120
+BOARD_FLOW_N = 20
+
 # Same keys as GET /api/market/{world-indices,boards,rank,stock-flow,board-flow-intraday,commodities}
 COCKPIT_WARM_KEYS = (
     "world_indices",
@@ -245,9 +250,9 @@ def _warm_review_dc(paint_only: bool = False) -> tuple[int, int, list[dict]]:
             "board_flow_ranks",
             lambda: _cached(
                 "board_flow_ranks",
-                "16",
-                60,
-                lambda: cockpit_live.board_flow_intraday(16, curves=False),
+                str(BOARD_FLOW_N),
+                BOARD_FLOW_TTL,
+                lambda: cockpit_live.board_flow_intraday(BOARD_FLOW_N, curves=False),
                 valid=lambda d: isinstance(d, list) and len(d) > 0,
             ),
         ),
@@ -255,9 +260,9 @@ def _warm_review_dc(paint_only: bool = False) -> tuple[int, int, list[dict]]:
             "board_flow_intraday",
             lambda: _cached(
                 "board_flow_intraday",
-                "16",
-                120,
-                lambda: cockpit_live.board_flow_intraday(16, curves=True),
+                str(BOARD_FLOW_N),
+                BOARD_FLOW_TTL,
+                lambda: cockpit_live.board_flow_intraday(BOARD_FLOW_N, curves=True),
             ),
         ),
     ]

@@ -1391,7 +1391,7 @@ export const api = {
     get<BoardStock[]>(`/market/board-stocks?code=${encodeURIComponent(code)}&n=${n}`),
   stockRank: (sort: "amount" | "changepercent" = "amount", asc: 0 | 1 = 0, n = 30) =>
     get<StockRankRow[]>(`/market/rank?sort=${sort}&asc=${asc}&n=${n}`),
-  boardFlowIntraday: (n = 16, curves = true) =>
+  boardFlowIntraday: (n = 20, curves = true) =>
     get<BoardFlowIntraday[]>(`/market/board-flow-intraday?n=${n}${curves ? "" : "&curves=0"}`),
   commodities: (codes?: string) =>
     get<Record<string, CommodityQuote>>(`/market/commodities${codes ? `?codes=${encodeURIComponent(codes)}` : ""}`),
