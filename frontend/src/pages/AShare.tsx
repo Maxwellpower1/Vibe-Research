@@ -53,7 +53,7 @@ export function AShare() {
   if (tab === "review") {
     return (
       <Suspense fallback={<PageFallback />}>
-        <DailyReview embedded />
+        <DailyReview />
       </Suspense>
     );
   }

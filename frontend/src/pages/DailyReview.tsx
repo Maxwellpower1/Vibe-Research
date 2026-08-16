@@ -30,7 +30,7 @@ import { useReviewData } from "@/hooks/useReviewData";
 import { ApiError } from "@/lib/api";
 import { hasLlm, chatStream } from "@/lib/llm";
 
-export function DailyReview({ embedded = false }: { embedded?: boolean } = {}) {
+export function DailyReview() {
   const d = useReviewData();
   const [review, setReview] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
