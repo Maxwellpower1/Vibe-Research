@@ -405,7 +405,7 @@ function EtfShareBlock({ items, fallback }: { items: EtfShares[]; fallback: EtfS
         hint="上交所/深交所日频 · 亿份"
         meta={asOf ? `${asOf} · ${dates.length} 日` : "加载中…"}
       />
-      <div className={cn(box, "grid gap-3 p-3 md:grid-cols-[minmax(0,1fr)_minmax(280px,38%)] md:items-stretch")}>
+      <div className={cn(box, "grid gap-3 p-3 md:grid-cols-2 md:items-stretch")}>
         {!ready ? (
           <p className="flex items-center justify-center py-6 text-center text-[11px] text-slate-600">份额日线加载中, 首次会回补交易所缓存</p>
         ) : (
