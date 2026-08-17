@@ -1,6 +1,7 @@
 """Daily Review BFF: paint / top / full payloads share the same TTL keys.
 
-scope=paint is Tencent + overview only (no Eastmoney). top adds emotion +
+scope=paint is northbound + overview only (no Eastmoney, no index_quote).
+Index prices stay on the quote hub / world_indices key. top adds emotion +
 industry strength. full then fills dragon-tiger.
 Eastmoney calls run in parallel (no em_get launch gap).
 """

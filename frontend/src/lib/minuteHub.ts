@@ -6,13 +6,18 @@ import type { AShareLightKline } from "@/lib/api";
 /**
  * Merge cockpit minute-spark subscriptions into one batch.
  * Open: 20s. Closed/lunch/holiday: 60s (backend TTL still covers extras).
+ * Last frame stays in memory and localStorage so a new tab paints the line first.
  */
 
 export const MINUTE_POLL_MS = 20_000;
 const CHUNK = 40;
 const MAX_AGE_MS = 15_000;
+const STORE_KEY = "vr.minuteHub.v1";
+const STORE_MAX = 20;
+const STORE_MAX_AGE_MS = 12 * 3600_000;
 
 const entries = new Map<string, AShareLightKline | null>();
+const storedAt = new Map<string, number>();
 const refCounts = new Map<string, number>();
 const listeners = new Set<() => void>();
 let version = 0;
@@ -20,6 +25,67 @@ let timer: number | null = null;
 let looping = false;
 let flushTimer: number | null = null;
 let lastFlush = 0;
+let persistTimer: number | null = null;
+
+function storage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function loadStore() {
+  const store = storage();
+  if (!store) return;
+  try {
+    const raw = store.getItem(STORE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, { at?: number; data?: AShareLightKline }>;
+    const now = Date.now();
+    for (const [k, v] of Object.entries(parsed || {})) {
+      const kl = v?.data;
+      const at = v?.at || 0;
+      if (kl && (kl.bars?.length ?? 0) >= 2 && now - at < STORE_MAX_AGE_MS) {
+        entries.set(k, kl);
+        storedAt.set(k, at);
+      }
+    }
+  } catch {
+    /* ignore broken store */
+  }
+}
+
+function saveStore() {
+  const store = storage();
+  if (!store) return;
+  try {
+    const out: Record<string, { at: number; data: AShareLightKline }> = {};
+    let n = 0;
+    for (const [k, v] of entries) {
+      if (n >= STORE_MAX) break;
+      if (!v || (v.bars?.length ?? 0) < 2) continue;
+      out[k] = { at: storedAt.get(k) || Date.now(), data: v };
+      n += 1;
+    }
+    store.setItem(STORE_KEY, JSON.stringify(out));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function schedulePersist() {
+  if (persistTimer != null) return;
+  persistTimer = window.setTimeout(() => {
+    persistTimer = null;
+    saveStore();
+  }, 300);
+}
+
+loadStore();
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", saveStore);
+}
 
 function emit() {
   version += 1;
@@ -47,6 +113,7 @@ async function tick() {
   const rs = await Promise.allSettled(
     chunks(codes).map((c) => loadLightKlineBatch(c, "1", 240, MAX_AGE_MS)),
   );
+  const now = Date.now();
   let changed = false;
   for (const r of rs) {
     if (r.status !== "fulfilled") continue;
@@ -54,11 +121,15 @@ async function tick() {
       const old = entries.get(code);
       if (old !== kl) {
         entries.set(code, kl);
+        storedAt.set(code, now);
         changed = true;
       }
     }
   }
-  if (changed) emit();
+  if (changed) {
+    emit();
+    schedulePersist();
+  }
 }
 
 function onVisibility() {
@@ -94,7 +165,7 @@ function maybeStopLoop() {
 
 function scheduleFlush() {
   if (flushTimer != null || document.hidden) return;
-  const wait = Math.max(250, 2000 - (Date.now() - lastFlush));
+  const wait = lastFlush === 0 ? 0 : Math.max(0, 2000 - (Date.now() - lastFlush));
   flushTimer = window.setTimeout(() => {
     flushTimer = null;
     lastFlush = Date.now();
@@ -114,7 +185,6 @@ function useCodes(codes: string[]) {
         const n = (refCounts.get(c) || 1) - 1;
         if (n <= 0) {
           refCounts.delete(c);
-          entries.delete(c);
         } else {
           refCounts.set(c, n);
         }

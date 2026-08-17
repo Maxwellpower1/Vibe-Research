@@ -160,16 +160,21 @@ export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-/** Server first; on fail/timeout, optional browser-direct Tencent. */
+/** True when withTimeout fired. Backend may still be in-flight. */
+export function isTimeoutError(e: unknown): boolean {
+  return e instanceof Error && e.message === "timeout";
+}
+
+/** Server first. Direct Tencent only if the server is gone, not on timeout. */
 export async function withFallback<T>(
   serverFn: () => Promise<T>,
   directFn?: () => Promise<T>,
-  timeoutMs = 4000,
+  timeoutMs = 12_000,
 ): Promise<T> {
   try {
     return await withTimeout(serverFn(), timeoutMs);
   } catch (e) {
-    if (directFn) return directFn();
+    if (directFn && !isTimeoutError(e)) return directFn();
     throw e;
   }
 }

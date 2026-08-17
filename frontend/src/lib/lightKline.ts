@@ -92,7 +92,6 @@ export function loadLightKline(
       const data = await withFallback(
         () => api.ashareLightKline(code, resolution, num),
         resolution === "1" && canDirectMinute(code) ? () => directKline(code) : undefined,
-        6000,
       );
       cache.set(key, { at: Date.now(), data });
       return data;
@@ -144,7 +143,6 @@ export async function loadLightKlineBatch(
         return fresh;
       }
       : undefined,
-    8000,
   );
   const merged: Record<string, AShareLightKline | null> = { ...(map || {}) };
   if (resolution === "1") {

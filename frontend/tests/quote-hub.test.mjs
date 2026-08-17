@@ -34,6 +34,22 @@ test("quote hub keeps last price/pct across refresh", () => {
   assert.match(quoteSrc, /lastFlush === 0 \? 0/);
 });
 
+test("minute hub keeps last bars across refresh", () => {
+  assert.match(minuteSrc, /localStorage/);
+  assert.match(minuteSrc, /vr\.minuteHub\.v1/);
+  assert.match(minuteSrc, /function loadStore/);
+  assert.match(minuteSrc, /pagehide/);
+  assert.doesNotMatch(minuteSrc, /entries\.delete\(c\)/);
+  assert.match(minuteSrc, /lastFlush === 0 \? 0/);
+});
+
+test("browser-direct Tencent is not used when the server is still in flight", () => {
+  assert.match(directSrc, /export function isTimeoutError/);
+  assert.match(directSrc, /timeoutMs = 12_000/);
+  assert.match(directSrc, /directFn && !isTimeoutError\(e\)/);
+  assert.doesNotMatch(directSrc, /on fail\/timeout/);
+});
+
 test("quote and minute hubs stretch the interval when A-share is not open", () => {
   assert.match(sessionSrc, /export const HUB_POLL_CLOSED_MS = 60_000/);
   assert.match(sessionSrc, /export function hubPollMs/);

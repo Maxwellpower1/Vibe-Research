@@ -53,9 +53,7 @@ def test_build_snapshot_paint_skips_em(monkeypatch):
     monkeypatch.setattr(
         rs,
         "_fill_tencent",
-        lambda b, e: b.update(
-            indices=[{"name": "上证", "price": 1, "change_pct": 0, "change_amt": 0}]
-        ),
+        lambda b, e: b.update(hsgt={"latest": None, "points": []}),
     )
     monkeypatch.setattr(
         rs, "_fill_overview", lambda b, e: b.update(overview={"sentiment": {}, "sectors": [], "updated": ""})
@@ -67,7 +65,8 @@ def test_build_snapshot_paint_skips_em(monkeypatch):
     assert extra_calls == []
     assert data["scope"] == "paint"
     assert data["emotion"] is None
-    assert data["indices"][0]["name"] == "上证"
+    assert data["indices"] is None
+    assert data["hsgt"]["points"] == []
     assert "global_indices" not in data
     assert "turnover" not in data
     assert "monitor" not in data
@@ -78,9 +77,7 @@ def test_build_snapshot_top_skips_extra(monkeypatch):
     monkeypatch.setattr(
         rs,
         "_fill_tencent",
-        lambda b, e: b.update(
-            indices=[{"name": "上证", "price": 1, "change_pct": 0, "change_amt": 0}]
-        ),
+        lambda b, e: b.update(hsgt={"latest": None, "points": []}),
     )
     monkeypatch.setattr(
         rs, "_fill_overview", lambda b, e: b.update(overview={"sentiment": {}, "sectors": [], "updated": ""})
@@ -95,8 +92,20 @@ def test_build_snapshot_top_skips_extra(monkeypatch):
     assert extra_calls == []
     assert data["scope"] == "top"
     assert data["lhb"] is None
-    assert data["indices"][0]["name"] == "上证"
+    assert data["indices"] is None
     assert "updated" in data
+
+
+def test_tencent_jobs_skip_index_quote():
+    import inspect
+    import review_jobs
+
+    jobs = inspect.getsource(review_jobs.tencent_jobs)
+    warm = inspect.getsource(review_jobs.warm_dc_jobs)
+    assert "index_quote" not in jobs
+    assert "index_quote" not in warm
+    assert "hsgt" in jobs
+    assert "world_indices" in warm
 
 
 def test_em_fillers_skip_unused_eastmoney():

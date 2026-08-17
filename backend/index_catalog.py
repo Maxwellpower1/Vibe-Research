@@ -32,5 +32,5 @@ def catalog_codes(*regions: str) -> list[str]:
     return [c for c, _n, r in INDEX_CATALOG if r in want]
 
 
-# A-share + HK: used by index_quote / 复盘快照 indices row.
+# A-share + HK: used by index_quote (问 AI 工具 scope=indices).
 A_INDEX_CODES = catalog_codes("CN", "HK")

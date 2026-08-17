@@ -22,11 +22,9 @@ PAINT_SAFE_COCKPIT = frozenset({
 
 
 def tencent_jobs() -> list[Job]:
-    import astock
     import astock_boards
 
     return [
-        ("indices", lambda: _cached("indices", "live", 60, astock.index_quote)),
         ("hsgt", lambda: _cached("hsgt", "live", 120, astock_boards.hsgt_realtime)),
     ]
 
@@ -228,13 +226,10 @@ def watch_quotes(codes: list[str] | None) -> list[dict]:
 
 def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
     """App-level _DC_CACHE steps. paint_only skips Eastmoney-heavy keys."""
-    import astock
     import astock_boards
     import cockpit_live
 
-    steps: list[Job] = [
-        ("indices", lambda: _cached("indices", "live", 60, astock.index_quote)),
-    ]
+    steps: list[Job] = []
     if not paint_only:
         steps.extend(em_top_jobs()[1:])  # industry only; emotion is warm_market
         steps.extend(em_extra_jobs())
