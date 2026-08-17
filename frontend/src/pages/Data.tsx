@@ -28,6 +28,7 @@ export function Data() {
   const [peek, setPeek] = useState<BacktestStorePeek | null>(null);
   const [peeking, setPeeking] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [pitBusy, setPitBusy] = useState("");
 
   async function load() {
     setLoading(true);
@@ -87,7 +88,7 @@ export function Data() {
     <div className="mx-auto max-w-6xl px-3 py-3 sm:px-4">
       <PageHeader
         title="本机数据"
-        subtitle="看本机日历、标的池日 K 覆盖、实验。可补齐近 2 年已收盘日 K，不算 enriched，不清库。"
+        subtitle="看本机日历、标的池日 K、按日成分、财务 PIT、实验。可补齐近 2 年已收盘日 K，不算 enriched，不清库。"
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -97,6 +98,34 @@ export function Data() {
               className="inline-flex items-center gap-1 rounded border border-cyan-700/60 px-2 py-1 text-[11px] text-cyan-200 hover:text-cyan-100 disabled:opacity-50"
             >
               {syncState === "running" ? "补齐中…" : "补齐近2年"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPitBusy("members");
+                setError("");
+                void api.backtestStoreMembers().then(() => load()).catch((e) => {
+                  setError(e instanceof ApiError ? e.message : "按日成分没补上");
+                }).finally(() => setPitBusy(""));
+              }}
+              disabled={!!pitBusy}
+              className="inline-flex items-center gap-1 rounded border border-cyan-700/60 px-2 py-1 text-[11px] text-cyan-200 hover:text-cyan-100 disabled:opacity-50"
+            >
+              {pitBusy === "members" ? "成分…" : "补齐按日成分"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPitBusy("fund");
+                setError("");
+                void api.backtestStoreFundamentals().then(() => load()).catch((e) => {
+                  setError(e instanceof ApiError ? e.message : "财务PIT没补上");
+                }).finally(() => setPitBusy(""));
+              }}
+              disabled={!!pitBusy}
+              className="inline-flex items-center gap-1 rounded border border-cyan-700/60 px-2 py-1 text-[11px] text-cyan-200 hover:text-cyan-100 disabled:opacity-50"
+            >
+              {pitBusy === "fund" ? "财务…" : "补齐财务PIT"}
             </button>
             <button
               type="button"
@@ -152,7 +181,14 @@ export function Data() {
             <Stat
               label="成分 / 财务"
               value={`${store.members.length} / ${store.fundamentals.length}`}
-              hint="按日成分和公告日还是空架子"
+              hint={
+                store.members.length || store.fundamentals.length
+                  ? [
+                      ...store.members.map((m) => `${m.index} ${m.snapshots}张 ${m.from || "?"}~${m.to || "?"}`),
+                      store.fundamentals.length ? `财务 ${store.fundamentals.length} 只` : "",
+                    ].filter(Boolean).join(" · ")
+                  : "点补齐按日成分 / 财务PIT, 挂已有 members/ 与 fundamentals/"
+              }
             />
           </div>
 

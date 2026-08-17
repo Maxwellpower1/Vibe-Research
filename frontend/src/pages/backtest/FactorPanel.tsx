@@ -18,7 +18,7 @@ const FALLBACK_FACTORS: BacktestFactorDef[] = [
   { id: "zoo_alpha101", label: "WQ #101 日内实体", win: 1, kind: "zoo101", group: "WorldQuant" },
 ];
 
-const GROUP_ORDER = ["动量", "超买超卖", "波动", "量价", "趋势", "WorldQuant"];
+const GROUP_ORDER = ["动量", "超买超卖", "波动", "量价", "趋势", "WorldQuant", "财务PIT"];
 
 function groupedFactors(factors: BacktestFactorDef[]) {
   const buckets = new Map<string, BacktestFactorDef[]>();
@@ -133,6 +133,7 @@ export function FactorPanel({
   const [indexPools, setIndexPools] = useState<BacktestIndexPoolDef[]>(FALLBACK_INDEX_POOLS);
   const [factorMax, setFactorMax] = useState(600);
   const [poolNote, setPoolNote] = useState("");
+  const [indexId, setIndexId] = useState("");
   const [factor, setFactor] = useState("momentum_20");
   const [picked, setPicked] = useState<string[]>(["momentum_20", "rsi_14"]);
   const [rebalance, setRebalance] = useState<"daily" | "weekly" | "monthly">("monthly");
@@ -193,6 +194,7 @@ export function FactorPanel({
         n_groups: nGroups,
         direction,
         weight,
+        index: indexId || undefined,
       }));
       void refreshRuns();
     } catch (e) {
@@ -208,6 +210,7 @@ export function FactorPanel({
       <div className="rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-100/80">
         先问因子有没有预测力: Rank IC、五档净值、多空。不是账户撮合, 没有 T+1 / 整手。
         从本机日 K 现场算: TickFlow 那组技术因子 + 3 条 WorldQuant 公式。不是 enriched, 也不是 460 条整库。换手率要股本, 没加。少于 30 只 IC 很噪。库存已覆盖最多 600 只, 不是全 A。
+        财务 ROE/净利润/营收按公告日 PIT, 不是报告期偷看. 点指数导入后因子截面可按日成分掩码.
         实验落本机 runs/ 写完不改, 和账户实验分开列。
       </div>
       {runs.length > 0 && (
@@ -266,9 +269,10 @@ export function FactorPanel({
             <IndexPoolButtons
               pools={indexPools}
               cap={factorMax}
-              onFill={(next, note) => {
+              onFill={(next, note, id) => {
                 setError("");
                 setPoolNote(note);
+                setIndexId(id);
                 onCodes(next);
                 setPool("codes");
               }}
@@ -280,7 +284,10 @@ export function FactorPanel({
           </div>
           <textarea
             value={codes}
-            onChange={(e) => onCodes(e.target.value)}
+            onChange={(e) => {
+              setIndexId("");
+              onCodes(e.target.value);
+            }}
             rows={2}
             className="w-full resize-y rounded border border-slate-700 bg-slate-950/60 px-2 py-1.5 font-mono text-[12px] text-slate-100 outline-none focus:border-cyan-500/50"
             placeholder="600519 000858 300750"
@@ -426,6 +433,7 @@ export function FactorPanel({
               n_groups: nGroups,
               direction,
               weight,
+              index: indexId || undefined,
             }).then((out) => {
               setCompare(out);
             }).catch((e) => {

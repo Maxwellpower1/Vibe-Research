@@ -44,6 +44,9 @@ FACTORS: dict[str, dict] = {
     "zoo_alpha006": {"id": "zoo_alpha006", "label": "WQ #6 开盘量价相关", "win": 10, "kind": "zoo006", "group": "WorldQuant"},
     "zoo_alpha012": {"id": "zoo_alpha012", "label": "WQ #12 量价同向", "win": 2, "kind": "zoo012", "group": "WorldQuant"},
     "zoo_alpha101": {"id": "zoo_alpha101", "label": "WQ #101 日内实体", "win": 1, "kind": "zoo101", "group": "WorldQuant"},
+    "roe": {"id": "roe", "label": "ROE(公告日PIT)", "win": 1, "kind": "pit", "field": "roe", "group": "财务PIT"},
+    "np": {"id": "np", "label": "净利润(公告日PIT)", "win": 1, "kind": "pit", "field": "np", "group": "财务PIT"},
+    "revenue": {"id": "revenue", "label": "营收(公告日PIT)", "win": 1, "kind": "pit", "field": "revenue", "group": "财务PIT"},
 }
 
 
@@ -55,6 +58,7 @@ def factor_catalog() -> list[dict]:
             "win": spec["win"],
             "kind": spec["kind"],
             "group": spec["group"],
+            **({"field": spec["field"]} if spec.get("field") else {}),
         }
         for spec in FACTORS.values()
     ]
@@ -264,7 +268,36 @@ def factor_matrix(panel: Panel, factor_id: str) -> np.ndarray:
         return out
     if kind == "zoo101":
         return np.divide(close - open_, high - low + 0.001)
+    if kind == "pit":
+        return fundamental_matrix(panel, str(spec.get("field") or factor_id))
     raise ValueError(f"未知 kind {kind}")
+
+
+def fundamental_matrix(panel: Panel, field: str) -> np.ndarray:
+    """Value known on each bar. announce_date <= date. No report-date leak."""
+    from backtest.market import query_fundamentals
+
+    t, s = panel.T, panel.S
+    out = np.full((t, s), np.nan)
+    for j, sym in enumerate(panel.symbols):
+        rows = [
+            r for r in query_fundamentals(sym, field)
+            if r.get("announce_date") and r.get("value") is not None
+        ]
+        if not rows:
+            continue
+        k = 0
+        val = float("nan")
+        n = len(rows)
+        for i, day in enumerate(panel.dates):
+            while k < n and str(rows[k].get("announce_date") or "") <= day:
+                try:
+                    val = float(rows[k]["value"])
+                except (TypeError, ValueError):
+                    val = float("nan")
+                k += 1
+            out[i, j] = val
+    return out
 
 
 def _group_ids(values: np.ndarray, n_groups: int) -> np.ndarray:
@@ -325,6 +358,7 @@ def evaluate(
     direction: str = "high",
     weight: str = "equal",
     ls_fee: float = 0.0,
+    member_mask: np.ndarray | None = None,
 ) -> dict:
     if n_groups < 2 or n_groups > 10:
         raise ValueError("分层数要在 2 到 10")
@@ -347,6 +381,8 @@ def evaluate(
         prev = panel.adj_close[i]
         later = panel.adj_close[nxt]
         ok = np.isfinite(scores) & np.isfinite(prev) & np.isfinite(later) & (prev > 0)
+        if member_mask is not None:
+            ok = ok & member_mask[i]
         if int(ok.sum()) < MIN_CROSS:
             skipped += 1
             continue
@@ -400,9 +436,12 @@ def evaluate(
 
     warnings = [
         "因子研究不是账户撮合, 没有 T+1 / 整手 / 共享现金",
-        "静态池按整段都在, 不是按日成分, 有幸存者偏差",
         "从本机日 K 现场算, 不是 TickFlow enriched, 也不是整库 Alpha Zoo",
     ]
+    if member_mask is not None:
+        warnings.append("因子截面已按日成分掩码")
+    else:
+        warnings.append("静态池按整段都在, 不是按日成分, 有幸存者偏差")
     if panel.S < 30:
         warnings.append(f"只有 {panel.S} 只, Rank IC 很噪, 建议 30 只以上或改用库存已覆盖")
     if skipped:
@@ -527,6 +566,19 @@ def _run_factor_body(
         use_cache=bars_by_symbol is None,
     )
     mark(step="factor", done=len(symbols), total=len(symbols))
+    if FACTORS[factor_id]["kind"] == "pit" and bars_by_symbol is None:
+        from backtest.fundamentals import ensure_fundamentals
+
+        ensure_fundamentals(panel.symbols)
+    index_id = str(body.get("index") or "").strip().lower()
+    member_mask = None
+    if index_id:
+        from backtest.market import members_covers, membership_mask
+
+        if members_covers(index_id, start):
+            member_mask = membership_mask(index_id, panel.dates, panel.symbols)
+        else:
+            warnings.append("没有覆盖这段的按日成分, 因子仍是静态池")
     out = evaluate(
         panel,
         factor_id,
@@ -536,6 +588,7 @@ def _run_factor_body(
         direction=direction,
         weight=weight,
         ls_fee=ls_fee,
+        member_mask=member_mask,
     )
     out["warnings"] = warnings + out["warnings"]
     out["universe"] = {
@@ -560,6 +613,7 @@ def _run_factor_body(
         "lookback": body.get("lookback"),
         "start": start,
         "end": end,
+        "index": index_id or None,
     }
     persist = body.get("persist")
     if persist is None:

@@ -61,6 +61,8 @@ interface Draft {
   rebalance: number;
   stopLossPct: number;
   maxHoldDays: number;
+  indexId: string;
+  pitMembers: boolean;
 }
 
 const STRATS: { id: BacktestStrategy; label: string; hint: string }[] = [
@@ -92,6 +94,8 @@ function defaultDraft(): Draft {
     rebalance: 20,
     stopLossPct: 0,
     maxHoldDays: 0,
+    indexId: "",
+    pitMembers: false,
   };
 }
 
@@ -159,6 +163,8 @@ function draftFromResult(result: BacktestResult, base: Draft): Draft {
     tuneMa: Boolean(cfg.tune_ma),
     stopLossPct: Number(matcher.stop_loss_pct ?? 0) * 100,
     maxHoldDays: Number(matcher.max_hold_days ?? 0),
+    indexId: String(cfg.index || base.indexId || ""),
+    pitMembers: Boolean(cfg.pit_members),
   };
 }
 
@@ -200,7 +206,7 @@ function buildCopy(result: BacktestResult, codes: string[]) {
     `策略: ${result.strategy?.name || "?"}`,
     `净值: ${fmtNum(s.initial_capital, 0)} → ${fmtNum(s.final_equity, 0)} · 收益 ${fmtPct(s.total_return)} · CAGR ${fmtPct(s.cagr)}`,
     `夏普 ${s.sharpe.toFixed(2)} · 波动 ${fmtPct(s.vol)} · 最大回撤 ${fmtPct(s.max_drawdown)}`,
-    s.excess_return != null ? `相对沪深300超额 ${fmtPct(s.excess_return)}` : "",
+    s.excess_return != null ? `相对${result.benchmark?.name || "沪深300"}超额 ${fmtPct(s.excess_return)}` : "",
     result.oos
       ? `样本外切点 ${result.oos.split} · 续跑收益 ${fmtPct(result.oos.stats_oos.total_return)} · 新开账户 ${fmtPct(result.oos.stats_oos_fresh.total_return)}`
       : "",
@@ -439,6 +445,8 @@ export function Backtest() {
         walk_forward: next.oosMode === "wf",
         stop_loss_pct: next.stopLossPct > 0 ? next.stopLossPct / 100 : 0,
         max_hold_days: next.maxHoldDays > 0 ? next.maxHoldDays : 0,
+        index: next.pitMembers && next.indexId ? next.indexId : undefined,
+        pit_members: Boolean(next.pitMembers && next.indexId),
       };
       const out = await api.backtestRun(body);
       setResult(out);
@@ -547,6 +555,7 @@ export function Backtest() {
       <div className="mb-3 rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-100/80">
         一笔共享现金 · T+1 · 整手 100 · 佣金双边 · 印花税只卖 · 涨跌停看成交价对昨收.
         每只预算 = 净值 / 最大持仓数. 满仓 5 只就把最大持仓设成 5. ST 的 5% 从代码看不出来.
+        北交所 920 按 30% 算. 沪深300 基准有按日成分时是等权可交易账户, 不是指数价格比.
         原始价和复权因子分开, 只写已收盘 K. 实验落本机 runs/ 写完不改.
       </div>
 
@@ -623,7 +632,7 @@ export function Backtest() {
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-200"
-                  onClick={() => patch({ codes: loadWatch().slice(0, maxCodes).join(" ") })}
+                  onClick={() => patch({ codes: loadWatch().slice(0, maxCodes).join(" "), indexId: "", pitMembers: false })}
                 >
                   <Star className="h-3 w-3" />
                   自选
@@ -634,7 +643,7 @@ export function Backtest() {
                   onClick={() => {
                     void api.portfolio().then((p) => {
                       const got = (p.holdings || []).map((h) => h.code).filter(Boolean);
-                      if (got.length) patch({ codes: got.slice(0, maxCodes).join(" ") });
+                      if (got.length) patch({ codes: got.slice(0, maxCodes).join(" "), indexId: "", pitMembers: false });
                     }).catch(() => setError("持仓没取到"));
                   }}
                 >
@@ -644,10 +653,10 @@ export function Backtest() {
                 <IndexPoolButtons
                   pools={indexPools}
                   cap={maxCodes}
-                  onFill={(codes, note) => {
+                  onFill={(codes, note, indexId) => {
                     setError("");
                     setPoolNote(note);
-                    patch({ codes });
+                    patch({ codes, indexId, pitMembers: true });
                   }}
                   onError={(msg) => {
                     setPoolNote("");
@@ -658,7 +667,7 @@ export function Backtest() {
             </div>
             <textarea
               value={draft.codes}
-              onChange={(e) => patch({ codes: e.target.value })}
+              onChange={(e) => patch({ codes: e.target.value, indexId: "", pitMembers: false })}
               rows={3}
               className="w-full resize-y rounded border border-slate-700 bg-slate-950/60 px-2 py-1.5 font-mono text-[12px] text-slate-100 outline-none focus:border-cyan-500/50"
               placeholder="600519 000858 300750"
@@ -684,6 +693,15 @@ export function Backtest() {
             {poolNote && (
               <p className="mt-1 text-[10px] text-amber-200/80">{poolNote}</p>
             )}
+            <label className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">
+              <input
+                type="checkbox"
+                checked={draft.pitMembers && !!draft.indexId}
+                disabled={!draft.indexId}
+                onChange={(e) => patch({ pitMembers: e.target.checked })}
+              />
+              按日成分回放{draft.indexId ? ` (${draft.indexId})` : " (先点沪深300等)"}
+            </label>
             {draft.lookback === "3y" && (
               <p className="mt-1 text-[10px] text-amber-200/80">库存是近 2 年, 3y 缺的段会现拉.</p>
             )}

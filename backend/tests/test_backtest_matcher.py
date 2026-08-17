@@ -57,6 +57,8 @@ def test_limit_pct_by_board():
     assert limit_pct("300001") == 0.20
     assert limit_pct("688001") == 0.20
     assert limit_pct("830001") == 0.30
+    assert limit_pct("920010") == 0.30
+    assert limit_pct("bj920000") == 0.30
 
 
 def test_stop_loss_sells_after_t1():

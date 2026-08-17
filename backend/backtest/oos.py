@@ -161,6 +161,7 @@ def run_walk_forward(
     train: int = 252,
     test: int = 63,
     step: int = 63,
+    member_mask=None,
 ) -> dict:
     folds_idx = walk_folds(panel.T, train, test, step)
     folds: list[dict] = []
@@ -175,6 +176,7 @@ def run_walk_forward(
             s, l, grid = tune_ma(window.slice(0, rel), cfg)
         if tune and strategy == "rank_mom":
             mw, grid = tune_mom(window.slice(0, rel), cfg, rebalance)
+        win_mask = member_mask[is_start:oos_end] if member_mask is not None else None
         entries, exits = oos_flags(
             window,
             rel,
@@ -185,6 +187,7 @@ def run_walk_forward(
             mom_win=mw,
             rebalance=rebalance,
             top_k=cfg.max_positions,
+            member_mask=win_mask,
         )
         out = run_match(window, entries, exits, cfg)
         ret = float(out["stats"]["total_return"])

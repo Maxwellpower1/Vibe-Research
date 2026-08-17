@@ -65,7 +65,7 @@ def limit_pct(code: str) -> float:
     d = digits6(code)
     if d.startswith(_LIMIT_20):
         return 0.20
-    if d.startswith(("8", "4")):
+    if d.startswith(("8", "4", "92")):
         return 0.30
     return 0.10
 

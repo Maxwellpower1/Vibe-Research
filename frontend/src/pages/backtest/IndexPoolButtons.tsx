@@ -16,7 +16,7 @@ export function IndexPoolButtons({
 }: {
   pools: BacktestIndexPoolDef[];
   cap: number;
-  onFill: (codes: string, note: string) => void;
+  onFill: (codes: string, note: string, indexId: string) => void;
   onError: (msg: string) => void;
 }) {
   const [busy, setBusy] = useState("");
@@ -30,7 +30,7 @@ export function IndexPoolButtons({
           className="text-cyan-400 hover:text-cyan-200 disabled:opacity-50"
           onClick={() => {
             setBusy(p.id);
-            void api.backtestIndexPool(p.id).then((row) => {
+            void api.backtestIndexPool(p.id, false, true).then((row) => {
               const got = (row.codes || []).slice(0, cap);
               if (!got.length) {
                 onError(row.note || `${p.label} 成分没取到`);
@@ -39,7 +39,7 @@ export function IndexPoolButtons({
               const head = row.n > cap
                 ? `${row.label} 最新 ${row.n} 只, 已填前 ${cap} (上限). `
                 : `${row.label} ${got.length} 只 (${row.asof}). `;
-              onFill(got.join(" "), head + (row.note || ""));
+              onFill(got.join(" "), head + (row.note || ""), p.id);
             }).catch((e) => {
               onError(e instanceof ApiError ? e.message : `${p.label} 没取到`);
             }).finally(() => setBusy(""));

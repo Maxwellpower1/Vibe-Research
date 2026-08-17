@@ -75,14 +75,14 @@ _Avoid_: 第二份 weekday 列表、akshare 日历
 **回测**:
 自选 / 持仓的日线账户模拟。信号日不等于成交日。默认次日开盘。一笔共享现金。T+1、整手 100、佣金双边、印花税只卖。涨跌停看成交价对昨收带宽。净值只从现金+市值来。
 行情: `VR_DATA_DIR/market/` 分区 parquet（原始 OHLC 与复权因子分开），内存 DuckDB / Polars 查，不建 `.db`。只写已收盘 bar（`trading_calendar.last_closed_session`，15:00）。
-成分股按日快照；财务用 `(start, end)` + 公告日。自选仍是静态池，页面上写明幸存者偏差。
+成分股按日快照（中证调整公告写入变动日，`members_on(asof)` 取 `<= asof` 最新一张）。财务用 `(start, end)` + 公告日，东财 F10 `NOTICE_DATE` 入库 `np` / `revenue` / `roe`。自选默认仍是静态池；勾选按日成分才回放。沪深300 基准有覆盖时是等权可交易账户（同一套撮合），没有快照才退回指数价格比。北交所 920 涨跌停按 30%。
 实验: `VR_DATA_DIR/backtest/runs/<id>/` 写完不改。账户写 config / 成交 / 净值；因子写 config / factor.json。`meta.kind` 区分 account / factor。作业先同步；要排队再加 `jobs.json`，不上 SQLite。
-入口: `backend/backtest/`；HTTP `GET /api/backtest/meta` · `GET /api/backtest/progress` · `GET /api/backtest/index-pool` · `POST /api/backtest/run` · `POST /api/backtest/factor` · `POST /api/backtest/factor/compare` · `GET/DELETE /api/backtest/runs` · `GET /api/backtest/store`。进度在内存里, 网页在跑时轮询, 不是 TickFlow worker/SSE, 不上 jobs.json。网页 `/backtest`（账户 / 因子）· `/data`。日 K 走 `astock.daily_bars`（与 `light_kline` 同一腾讯日 K 解析 `_tencent_daily`）。因子从这份日 K 现场算：TickFlow 那组技术因子（动量 / RSI / ATR / 量比 / MACD / KDJ / 振幅）+ 3 条只用 OHLCV 的 WorldQuant 公式。换手率要流通股本，库存没有，不加。不做 TickFlow enriched，不上 460 条整库 Alpha Zoo。
-一键导入指数成分：东财最新名单写入 `market/members/`，再填表单。账户 / 因子硬顶 600，中证500 能一次进完。不是无上限：全 A 五千只同步跑会打挂，V1 也不做每天重选全 A。是今天的快照，不是 Vibe-Trading 那种按日 PIT，也不是 TickFlow 命名池直接当回测宇宙。写明幸存者偏差。
-本机数据页看日历 / 标的池日 K 覆盖 / 实验。可点补齐近 2 年，只写已收盘 bar，不算 enriched，不清库。回测页 `GET /api/backtest/store?codes=` 看这批齐不齐，缺的跑的时候现拉。
+入口: `backend/backtest/`；HTTP `GET /api/backtest/meta` · `GET /api/backtest/progress` · `GET /api/backtest/index-pool` · `POST /api/backtest/run` · `POST /api/backtest/factor` · `POST /api/backtest/factor/compare` · `GET/DELETE /api/backtest/runs` · `GET /api/backtest/store` · `POST /api/backtest/store/members` · `POST /api/backtest/store/fundamentals`。进度在内存里, 网页在跑时轮询, 不是 TickFlow worker/SSE, 不上 jobs.json。网页 `/backtest`（账户 / 因子）· `/data`。日 K 走 `astock.daily_bars`（与 `light_kline` 同一腾讯日 K 解析 `_tencent_daily`）。因子从这份日 K 现场算：TickFlow 那组技术因子（动量 / RSI / ATR / 量比 / MACD / KDJ / 振幅）+ 3 条只用 OHLCV 的 WorldQuant 公式。换手率要流通股本，库存没有，不加。不做 TickFlow enriched，不上 460 条整库 Alpha Zoo。
+一键导入指数成分：东财最新名单写入 `market/members/`，并拉中证调整公告按变动日补快照（`GET /api/backtest/index-pool?history=1`）。账户 / 因子硬顶 600，中证500 能一次进完。不是无上限：全 A 五千只同步跑会打挂，V1 也不做每天重选全 A。表单填的仍是最新名单（静态池，有幸存者偏差）；勾选按日成分才用 `members_on` 回放。不是 TickFlow 命名池直接当回测宇宙。
+本机数据页看日历 / 标的池日 K / 按日成分 / 财务 PIT / 实验。可点补齐近 2 年、按日成分、财务 PIT，只写已收盘 bar，不算 enriched，不清库。回测页 `GET /api/backtest/store?codes=` 看这批齐不齐，缺的跑的时候现拉。`POST /api/backtest/store/members` · `POST /api/backtest/store/fundamentals`。
 问 AI 工具 `run_backtest` 只读成交摘要和净值，不校准该不该买。
 样本外: 参数只在切点前选；`stats_oos_fresh` 是切点后新开的一笔钱（均线仍用切点前历史）。滚动切窗每折新开账户，开着时不再叠单点切窗。回看账户实验用本机 parquet 对 `data_hash`（超过 40 只跳过，避免打开卡死服务）；因子回看只读落盘结果，不重算哈希。对不上只提示、不改 run。持仓页「回测这些」进 `/backtest?codes=&from=portfolio&autostart=1`。
-V1 做: 全 A 横截面数据层 + 标的池近 2 年日 K 库存。回测优先读这份库存，缺的再补；账户 / 因子硬顶 600（够中证500，不是全 A）。静态池可做动量轮动。因子页：Rank IC / 五档净值 / 多空，可改方向 / 分层 / 等权或因子加权；对照最多 6 个因子。账户有止损、最长持有、月收益和回撤段。均线 / 动量窗口只在样本内选。因子实验也落 runs/，和账户分开列。写明幸存者偏差。实验条可叠对照；成交按标的汇总；可填回表单再跑。
+V1 做: 全 A 横截面数据层 + 标的池近 2 年日 K 库存。回测优先读这份库存，缺的再补；账户 / 因子硬顶 600（够中证500，不是全 A）。静态池可做动量轮动。因子页：Rank IC / 五档净值 / 多空，可改方向 / 分层 / 等权或因子加权；对照最多 6 个因子。财务 PIT 因子（ROE/净利润/营收）按公告日。账户有止损、最长持有、月收益和回撤段。均线 / 动量窗口只在样本内选。因子实验也落 runs/，和账户分开列。写明幸存者偏差。实验条可叠对照；成交按标的汇总；可填回表单再跑。
 V1 不做: TickFlow enriched、整库 Alpha Zoo（460）、全样本网格搜参、分钟成交、监控中心、LLM 荐股胜率、选股页、每天重选的全 A 策略组合回测。
 _Avoid_: vectorbt, Backtrader, 第二条日历, 第二条报价轮询, 重叠持有期×252/horizon 年化, SQLite/.db, 用已跑完净值切窗冒充 walk-forward, TickFlow 式盘后 enriched/清库, 第二份代码名单, 第二份板块 JSON, 第二套行情目录
 
@@ -107,3 +107,4 @@ _Avoid_: vectorbt, Backtrader, 第二条日历, 第二条报价轮询, 重叠持
 - 全 A 库存：`backend/tests/test_universe_sync.py`（补齐走 `ensure_bars`，已齐跳过，不进预热）
 - 因子：`backend/tests/test_backtest_factor.py`（IC / 五档走日 K 面板，不建 enriched）
 - 指数成分导入：`backend/tests/test_backtest_index_pool.py`（今日快照走 members/，fetch 可注入，不扫全 A）
+- 按日成分 / 财务 PIT / 可交易基准：`backend/tests/test_backtest_pit.py`（调整公告可注入，不打中证/东财；没有快照时基准才用价格比）

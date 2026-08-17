@@ -25,12 +25,12 @@ def backtest_progress():
 
 
 @router.get("/api/backtest/index-pool")
-def backtest_index_pool(index: str = "", refresh: int = 0):
-    """Latest constituents for the form. Snapshot, not daily PIT."""
+def backtest_index_pool(index: str = "", refresh: int = 0, history: int = 0):
+    """Latest constituents for the form. history=1 also writes CSI change-date snapshots."""
     from backtest.index_pool import load_index_pool
 
     try:
-        return {"data": load_index_pool(index, refresh=bool(refresh))}
+        return {"data": load_index_pool(index, refresh=bool(refresh), history=bool(history))}
     except BacktestError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -71,6 +71,65 @@ def backtest_store_sync():
     from backtest.universe_sync import start_sync
 
     return {"data": start_sync()}
+
+
+@router.post("/api/backtest/store/members")
+def backtest_store_members(body: dict | None = None):
+    """Write CSI change-date snapshots into members/. One index or all pools."""
+    from backtest.index_pool import POOLS
+    from backtest.members_hist import ensure_member_history
+
+    payload = body or {}
+    want = str(payload.get("index") or "").strip().lower()
+    specs = [p for p in POOLS if (not want) or p["id"] == want]
+    if want and not specs:
+        raise HTTPException(400, f"不支持的指数: {want}")
+    items = []
+    for spec in specs:
+        try:
+            items.append(ensure_member_history(
+                spec["id"],
+                refresh=bool(payload.get("refresh")),
+                csi_code=spec.get("csi") or "",
+            ))
+        except BacktestError as exc:
+            items.append({"id": spec["id"], "error": str(exc)})
+    return {"data": {"items": items}}
+
+
+@router.post("/api/backtest/store/fundamentals")
+def backtest_store_fundamentals(body: dict | None = None):
+    """Write F10 facts with announce_date. Caps at 600."""
+    from backtest.fundamentals import sync_fundamentals
+    from backtest.index_pool import POOLS
+    from backtest.market import last_closed_iso, members_on, members_union
+    from backtest.service import MAX_CODES, resolve_codes
+
+    payload = body or {}
+    codes = payload.get("codes") or []
+    index_id = str(payload.get("index") or "").strip().lower()
+    if isinstance(codes, str):
+        symbols = resolve_codes(codes, limit=MAX_CODES)
+    elif codes:
+        symbols = resolve_codes(codes, limit=MAX_CODES)
+    elif index_id:
+        asof = last_closed_iso()
+        symbols = members_union(index_id, "2000-01-01", asof) or members_on(index_id, asof)
+    else:
+        asof = last_closed_iso()
+        seen: list[str] = []
+        for spec in POOLS:
+            for sym in members_union(spec["id"], "2000-01-01", asof) or members_on(spec["id"], asof):
+                if sym not in seen:
+                    seen.append(sym)
+                if len(seen) >= MAX_CODES:
+                    break
+            if len(seen) >= MAX_CODES:
+                break
+        symbols = seen
+    if not symbols:
+        raise HTTPException(400, "没有可写财务的标的: 先导入指数成分或传入 codes")
+    return {"data": sync_fundamentals(symbols[:MAX_CODES])}
 
 
 @router.get("/api/backtest/store/{symbol}")

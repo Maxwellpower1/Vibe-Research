@@ -16,13 +16,13 @@ log = logging.getLogger(__name__)
 
 # Use index_catalog codes only. 上证50 is not in the cockpit list.
 POOLS: tuple[dict[str, str], ...] = (
-    {"id": "sh000300", "label": "沪深300", "fs": "b:1.000300", "sina": "hs300"},
-    {"id": "sh000905", "label": "中证500", "fs": "b:1.000905", "sina": "zhishu_000905"},
-    {"id": "sh000688", "label": "科创50", "fs": "b:1.000688", "sina": "zhishu_000688"},
-    {"id": "sz399006", "label": "创业板指", "fs": "b:0.399006", "sina": "zhishu_399006"},
+    {"id": "sh000300", "label": "沪深300", "fs": "b:1.000300", "sina": "hs300", "csi": "000300"},
+    {"id": "sh000905", "label": "中证500", "fs": "b:1.000905", "sina": "zhishu_000905", "csi": "000905"},
+    {"id": "sh000688", "label": "科创50", "fs": "b:1.000688", "sina": "zhishu_000688", "csi": "000688"},
+    {"id": "sz399006", "label": "创业板指", "fs": "b:0.399006", "sina": "zhishu_399006", "csi": ""},
 )
 
-NOTE = "今天的成分快照, 不是按日 PIT. 填进表单后仍是静态池, 有幸存者偏差."
+NOTE = "表单填的是最新名单, 仍是静态池, 有幸存者偏差. 按日快照要勾选按日成分或去数据页补齐."
 
 _SINA_LIST = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
 _SINA_COUNT = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCount"
@@ -30,7 +30,7 @@ _EM_UT = "bd1d9ddb04089700cf9c27f6f7426281"
 
 
 def pool_meta() -> list[dict[str, str]]:
-    return [{"id": p["id"], "label": p["label"]} for p in POOLS]
+    return [{"id": p["id"], "label": p["label"], "csi": p.get("csi") or ""} for p in POOLS]
 
 
 def _spec(index_id: str) -> dict[str, str] | None:
@@ -177,9 +177,11 @@ def load_index_pool(
     index_id: str,
     *,
     refresh: bool = False,
+    history: bool = False,
     fetch_fn: Callable[[str], list[str]] | None = None,
+    changes_fn: Callable[[], list[dict]] | None = None,
 ) -> dict:
-    """Latest constituents. Cache when today's snapshot exists."""
+    """Latest constituents. Optional CSI history into the same members/ hive."""
     from backtest.service import BacktestError
 
     spec = _spec(index_id)
@@ -187,7 +189,7 @@ def load_index_pool(
         raise BacktestError(f"不支持的指数: {index_id or '(空)'}")
     asof = last_closed_iso()
     snap_day, cached = members_asof(spec["id"], asof)
-    if cached and not refresh and snap_day == asof:
+    if cached and not refresh and snap_day == asof and not history:
         return _pack(spec, snap_day, cached, source="cache")
 
     getter = fetch_fn or fetch_members
@@ -205,4 +207,16 @@ def load_index_pool(
         raise BacktestError(f"{spec['label']} 成分没取到")
 
     write_members(spec["id"], asof, symbols)
-    return _pack(spec, asof, symbols, source="live")
+    extra = ""
+    if history:
+        from backtest.members_hist import ensure_member_history
+
+        hist = ensure_member_history(
+            spec["id"],
+            refresh=refresh,
+            current_fn=lambda _i: symbols,
+            changes_fn=changes_fn,
+            csi_code=spec.get("csi") or "",
+        )
+        extra = hist.get("note") or ""
+    return _pack(spec, asof, symbols, source="live", extra=extra)

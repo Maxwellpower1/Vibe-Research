@@ -103,9 +103,10 @@ def test_meta_lists_factors():
     assert "vol_ratio_5" in ids
     assert "zoo_alpha006" in ids
     assert "zoo_alpha101" in ids
+    assert "roe" in ids and "np" in ids and "revenue" in ids
     assert "turnover_rate" not in ids
     groups = {f["group"] for f in data["factors"]}
-    assert "动量" in groups and "WorldQuant" in groups
+    assert "动量" in groups and "WorldQuant" in groups and "财务PIT" in groups
     assert data["limits"]["factor_max_codes"] == 600
 
 
@@ -268,3 +269,23 @@ def test_store_pool_empty_errors(monkeypatch, tmp_path):
         assert "库存" in str(exc)
     else:
         raise AssertionError("expected empty store error")
+
+
+def test_roe_pit_uses_announce_date(tmp_path, monkeypatch):
+    monkeypatch.setenv("VR_DATA_DIR", str(tmp_path))
+    from backtest.factor import evaluate
+    from backtest.market import write_fundamentals
+
+    panel, days = _panel(20, 50)
+    for j, sym in enumerate(panel.symbols):
+        write_fundamentals(sym, [{
+            "field": "roe",
+            "start": "2023-01-01",
+            "end": "2023-12-31",
+            "announce_date": days[8],
+            "value": 5 + j,
+        }])
+    out = evaluate(panel, "roe", rebalance="monthly", n_groups=5, start=days[12])
+    assert out["factor"]["id"] == "roe"
+    assert out["n_periods"] >= 1
+    assert out["ic_mean"] is not None

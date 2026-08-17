@@ -9,7 +9,9 @@ from backtest.market import (
     drop_open_bars,
     fundamental_asof,
     inventory,
+    members_covers,
     members_on,
+    members_union,
     peek_bars,
     query_adj,
     query_bars,
@@ -95,6 +97,13 @@ def test_members_asof_latest_snapshot(tmp_path, monkeypatch):
     day, syms = members_asof("sh000300", "2024-03-01")
     assert day == "2024-01-02"
     assert syms == ["sh600000", "sh600519"]
+    assert members_covers("sh000300", "2024-03-01")
+    assert not members_covers("sh000300", "2023-12-31")
+    assert members_union("sh000300", "2024-03-01", "2024-06-01") == [
+        "sh600000", "sh600519", "sz000858",
+    ]
+    write_members("sh000300", "2024-06-01", ["sz000858"])
+    assert members_on("sh000300", "2024-06-01") == ["sz000858"]
 
 
 def test_fundamental_needs_announce_date(tmp_path, monkeypatch):

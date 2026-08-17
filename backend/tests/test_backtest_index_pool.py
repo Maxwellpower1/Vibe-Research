@@ -64,6 +64,21 @@ def test_codes_from_sina_rows():
     ) == ["600519", "000858"]
 
 
+def test_history_writes_change_dates(tmp_path, monkeypatch):
+    monkeypatch.setenv("VR_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr("backtest.index_pool.last_closed_iso", lambda: "2024-12-31")
+    monkeypatch.setattr("backtest.members_hist.last_closed_iso", lambda: "2024-12-31")
+    out = load_index_pool(
+        "sh000300",
+        history=True,
+        fetch_fn=lambda _i: ["600000", "600519"],
+        changes_fn=lambda: [{"date": "2024-06-17", "added": ["600519"], "removed": ["000858"]}],
+    )
+    assert out["source"] == "live"
+    assert members_on("sh000300", "2024-03-01") == ["sh600000", "sz000858"]
+    assert members_on("sh000300", "2024-06-17") == ["sh600000", "sh600519"]
+
+
 def test_unknown_index():
     try:
         load_index_pool("sh000852", fetch_fn=lambda _i: ["600519"])

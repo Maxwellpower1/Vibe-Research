@@ -43,6 +43,31 @@ def signal_hold(panel: Panel) -> tuple[np.ndarray, np.ndarray]:
     return entries, exits
 
 
+def signal_members(panel: Panel, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Enter when a name joins the index; exit when it leaves."""
+    entries, exits = _empty(panel)
+    if mask.shape != (panel.T, panel.S):
+        raise ValueError("成分掩码形状要和面板一致")
+    for i in range(panel.T):
+        if i == 0:
+            entries[0] = mask[0]
+        else:
+            entries[i] = mask[i] & ~mask[i - 1]
+            exits[i] = ~mask[i] & mask[i - 1]
+    return entries, exits
+
+
+def apply_membership(
+    entries: np.ndarray,
+    exits: np.ndarray,
+    mask: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Keep signals only while in the index; force exit on deletion."""
+    entries = entries & mask
+    exits = exits | ~mask
+    return entries, exits
+
+
 def signal_ma_cross(panel: Panel, short_win: int = 5, long_win: int = 20) -> tuple[np.ndarray, np.ndarray]:
     if short_win < 1 or long_win < 2 or short_win >= long_win:
         raise ValueError("均线窗口需满足 1 <= 短 < 长")
@@ -100,10 +125,11 @@ def signal_rank_mom(
     lookback: int = 20,
     rebalance: int = 20,
     top_k: int = 10,
+    mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Buy top-k by lookback return on rebalance bars; exit the rest.
 
-    Uses adj_close. Static pool only: membership does not change by day.
+    Uses adj_close. Optional daily membership mask; otherwise a static pool.
     """
     if lookback < 2:
         raise ValueError("动量窗口至少 2 根")
@@ -120,6 +146,8 @@ def signal_rank_mom(
             continue
         scores: list[tuple[float, int]] = []
         for j in range(panel.S):
+            if mask is not None and not bool(mask[i, j]):
+                continue
             now = panel.adj_close[i, j]
             prev = panel.adj_close[i - lookback, j]
             if np.isfinite(now) and np.isfinite(prev) and float(prev) > 0:
@@ -144,25 +172,40 @@ def build_signals(
     mom_win: int = 20,
     rebalance: int = 20,
     top_k: int = 10,
+    member_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     name = (strategy or "hold").strip().lower()
     if name not in STRATEGIES:
         raise ValueError(f"strategy 仅支持 {STRATEGIES}")
     notes: list[str] = []
     if name == "hold":
-        entries, exits = signal_hold(panel)
+        if member_mask is not None:
+            entries, exits = signal_members(panel, member_mask)
+            notes.append("买入持有按日成分: 入池买, 出池卖")
+        else:
+            entries, exits = signal_hold(panel)
     elif name == "ma_cross":
         entries, exits = signal_ma_cross(panel, short_win, long_win)
         if panel.T < long_win:
             notes.append(f"日 K 只有 {panel.T} 根, 长均线 {long_win} 可能不够")
+        if member_mask is not None:
+            entries, exits = apply_membership(entries, exits, member_mask)
+            notes.append("均线信号已按日成分掩码, 出池强平")
     elif name == "rank_mom":
-        entries, exits = signal_rank_mom(panel, mom_win, rebalance, top_k)
+        entries, exits = signal_rank_mom(panel, mom_win, rebalance, top_k, mask=member_mask)
         if panel.T <= mom_win:
             notes.append(f"日 K 只有 {panel.T} 根, 动量窗口 {mom_win} 不够, 不会开仓")
-        notes.append("动量轮动只在这次填的静态池里排, 不是按日全 A 重选, 有幸存者偏差")
+        if member_mask is not None:
+            entries, exits = apply_membership(entries, exits, member_mask)
+            notes.append("动量只在当日成分里排, 出池卖")
+        else:
+            notes.append("动量轮动只在这次填的静态池里排, 不是按日全 A 重选, 有幸存者偏差")
         notes.append("续持会计入已持有, 不是没买进")
     else:
         entries, exits, notes = signal_dates(panel, events or [])
         if not events:
             notes.append("dates 策略没有买卖日, 不会开仓")
+        if member_mask is not None:
+            entries, exits = apply_membership(entries, exits, member_mask)
+            notes.append("指定日信号已按日成分掩码, 出池强平")
     return entries, exits, notes

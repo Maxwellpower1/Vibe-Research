@@ -140,7 +140,7 @@ def write_adj(symbol: str, rows: list[dict], *, closed_end: str | None = None) -
 
 
 def write_members(index: str, asof: str, symbols: list[str]) -> int:
-    """One snapshot: members of `index` on `asof`. Point-in-time, by day."""
+    """Replace the snapshot of `index` on `asof`. Leftover names that day are dropped."""
     p = _need_pl()
     day = norm_date(asof)
     if not day:
@@ -148,8 +148,16 @@ def write_members(index: str, asof: str, symbols: list[str]) -> int:
     syms = [s for s in symbols if s]
     if not syms:
         return 0
-    df = p.DataFrame({"date": [day] * len(syms), "symbol": syms})
-    _upsert(members_path(index, day[:4]), df, ["date", "symbol"])
+    incoming = p.DataFrame({"date": [day] * len(syms), "symbol": syms})
+    path = members_path(index, day[:4])
+    old = _read_parquet(path)
+    if old is not None:
+        old = old.filter(p.col("date") != day)
+        df = incoming if old.is_empty() else p.concat([old, incoming], how="diagonal_relaxed")
+    else:
+        df = incoming
+    df = df.unique(subset=["date", "symbol"], keep="last").sort(["date", "symbol"])
+    _atomic_write(df, path)
     return len(syms)
 
 
@@ -276,6 +284,75 @@ def members_on(index: str, asof: str) -> list[str]:
     """Members of the latest snapshot on or before asof."""
     _day, symbols = members_asof(index, asof)
     return symbols
+
+
+def iter_snapshots(index: str) -> list[tuple[str, list[str]]]:
+    """All stored snapshots, oldest first."""
+    p = _need_pl()
+    root = market_root() / "members" / f"index={_safe(index)}"
+    files = list(root.glob("year=*.parquet"))
+    if not files:
+        return []
+    frames = [f for f in (_read_parquet(path) for path in files) if f is not None]
+    if not frames:
+        return []
+    df = p.concat(frames, how="diagonal_relaxed")
+    if df.is_empty():
+        return []
+    out: list[tuple[str, list[str]]] = []
+    for day in sorted({str(x) for x in df["date"].to_list()}):
+        out.append((day, sorted(df.filter(p.col("date") == day)["symbol"].to_list())))
+    return out
+
+
+def members_union(index: str, start: str, end: str) -> list[str]:
+    """Names that appear in any snapshot overlapping [start, end]."""
+    start_d = norm_date(start)
+    end_d = norm_date(end)
+    seen: set[str] = set(members_on(index, start_d))
+    for day, syms in iter_snapshots(index):
+        if start_d < day <= end_d:
+            seen.update(syms)
+    return sorted(seen)
+
+
+def members_covers(index: str, start: str) -> bool:
+    """True only when a snapshot exists on or before start. Today's list does not cover last year."""
+    day, symbols = members_asof(index, start)
+    return bool(day and symbols)
+
+
+def membership_mask(index: str, dates: list[str], symbols: list[str]):
+    """(T, S) bool: in the index on that bar. Needs numpy."""
+    import numpy as np
+
+    snaps = iter_snapshots(index)
+    out = np.zeros((len(dates), len(symbols)), dtype=bool)
+    col = {sym: j for j, sym in enumerate(symbols)}
+    k = -1
+    current: list[str] = []
+    for i, day in enumerate(dates):
+        while k + 1 < len(snaps) and snaps[k + 1][0] <= day:
+            k += 1
+            current = snaps[k][1]
+        for sym in current:
+            j = col.get(sym)
+            if j is not None:
+                out[i, j] = True
+    return out
+
+
+def query_fundamentals(symbol: str, field: str | None = None) -> list[dict]:
+    """Local PIT rows. No network."""
+    df = _read_parquet(fundamentals_path(symbol))
+    if df is None:
+        return []
+    p = _need_pl()
+    if field:
+        df = df.filter(p.col("field") == field)
+    if df.is_empty():
+        return []
+    return df.sort("announce_date").to_dicts()
 
 
 def fundamental_asof(symbol: str, field: str, asof: str) -> float | None:
@@ -405,7 +482,7 @@ def inventory() -> dict:
         "fundamentals": funds,
         "runs": {"count": run_count, "recent": list_runs(8)},
         "legacy_kline": legacy,
-        "note": "本机日历 / 日 K / 实验. 标的池近 2 年可点补齐, 只写已收盘 bar, 不算 enriched, 不清库.",
+        "note": "本机日历 / 日 K / 按日成分 / 财务PIT / 实验. 标的池近 2 年可点补齐, 只写已收盘 bar, 不算 enriched, 不清库.",
     }
 
 

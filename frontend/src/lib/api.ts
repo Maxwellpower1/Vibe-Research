@@ -1617,14 +1617,25 @@ export const api = {
     return get<BacktestStoreCover>(`/backtest/store?${p}`);
   },
   backtestStoreSync: () => request<BacktestStoreSync>("/backtest/store/sync", "POST"),
+  backtestStoreMembers: (index?: string, refresh = false) =>
+    request<{ items: Array<Record<string, unknown>> }>("/backtest/store/members", "POST", {
+      index: index || undefined,
+      refresh,
+    }),
+  backtestStoreFundamentals: (opts?: { codes?: string[]; index?: string }) =>
+    request<{ asked: number; ok: number; skip: number; fail: number; rows: number }>(
+      "/backtest/store/fundamentals",
+      "POST",
+      opts || {},
+    ),
   backtestStorePeek: (symbol: string, n = 30) =>
     get<BacktestStorePeek>(`/backtest/store/${encodeURIComponent(symbol)}?n=${n}`),
   backtestFactor: (body: BacktestFactorBody) => request<BacktestFactorResult>("/backtest/factor", "POST", body),
   backtestFactorCompare: (body: BacktestFactorCompareBody) =>
     request<BacktestFactorCompare>("/backtest/factor/compare", "POST", body),
-  backtestIndexPool: (index: string, refresh = false) =>
+  backtestIndexPool: (index: string, refresh = false, history = false) =>
     get<BacktestIndexPool>(
-      `/backtest/index-pool?index=${encodeURIComponent(index)}${refresh ? "&refresh=1" : ""}`,
+      `/backtest/index-pool?index=${encodeURIComponent(index)}${refresh ? "&refresh=1" : ""}${history ? "&history=1" : ""}`,
     ),
   openRouterUsage: () => get<OrUsageDay[]>("/ai-watch/openrouter-usage"),
   spendIndex: () => get<SpendIndexResp>("/ai-watch/spend-index"),
@@ -1827,6 +1838,8 @@ export interface BacktestRunBody {
   oos_date?: string;
   tune_ma?: boolean;
   walk_forward?: boolean;
+  index?: string;
+  pit_members?: boolean;
 }
 
 export interface BacktestSymbolRow {
@@ -1916,6 +1929,8 @@ export interface BacktestResult {
     walk_forward?: boolean;
     tune_ma?: boolean;
     oos_frac?: number | string | null;
+    index?: string;
+    pit_members?: boolean;
     matcher?: {
       fill?: "open_t+1" | "close_t";
       commission_pct?: number;
@@ -1943,8 +1958,10 @@ export interface BacktestResult {
   benchmark?: {
     symbol: string;
     name?: string;
+    kind?: "tradable_equal" | "index_price" | string;
     curve: { date: string; equity: number | null }[];
     total_return?: number | null;
+    note?: string;
   };
   oos?: {
     split: string;
@@ -2097,6 +2114,7 @@ export interface BacktestFactorBody {
   weight?: "equal" | "factor_weight";
   ls_fee?: number;
   factors?: string[];
+  index?: string;
 }
 
 export interface BacktestFactorCompareBody extends BacktestFactorBody {
