@@ -9,7 +9,7 @@ const POLL_MS = 20_000;
 
 export type RankTab = "hot" | "up" | "down";
 export const RANK_TABS: { key: RankTab; label: string; sort: "amount" | "changepercent"; asc: 0 | 1 }[] = [
-  { key: "hot", label: "热门股", sort: "amount", asc: 0 },
+  { key: "hot", label: "成交额", sort: "amount", asc: 0 },
   { key: "up", label: "涨幅榜", sort: "changepercent", asc: 0 },
   { key: "down", label: "跌幅榜", sort: "changepercent", asc: 1 },
 ];
