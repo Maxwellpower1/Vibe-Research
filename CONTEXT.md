@@ -33,8 +33,24 @@ _Avoid_: A_INDICES, WORLD_INDICES, WORLD_INDEX_DEFS（实现名，不是领域�
 **报价中心**:
 网页里全球指数 / 商品 / 自选 / K 线页 / 自选公告表共用的那一份实时报价。开市 5 秒，休市/午休拉长，仍走这里。间隔问 `ashareSession.hubPollMs`（交易日来自预热状态的 `trading_day`）。
 入口: `frontend/src/lib/quoteHub.ts` 的 `useQuotes`。字段用 `pct` / `prev` / `turnover`，以及腾讯已有的 `pe_ttm` / `pb` / `mcap_yi`。
-`/api/quote` 是遗留 HTTP 适配，新页面订阅报价中心。
-_Avoid_: quoteHub, market quotes client, 第二条报价轮询, 休市再写一套间隔
+`/api/quote` 是遗留 HTTP 适配，新页面订阅报价中心。全 A 横截面不准塞进这里。
+_Avoid_: quoteHub, market quotes client, 第二条报价轮询, 休市再写一套间隔, 5000 只进报价中心
+
+**标的池**:
+全 A 六位代码的唯一名单。名称写在同一份文件的 `names`，不是第二张 instruments 表。广度、板块轮动、横截面都读这份。
+入口: `backend/universe.py`（`load` / `name_map` / `rows` / `search`）。文件 `VR_DATA_DIR/a-share-codes.json`（新浪 `hs_a` 拉满后落下，24h）。
+联想走现有 `GET /api/fin/suggest`：先扫这份（代码/名称前缀 → 拼音首字母 → 包含），空了再腾讯智能框。搜索读过期名单，24h 只卡广度。名单进进程内存、拼音预热一次，不是第二份表。名称不够厚时非数字查询直接走腾讯，避免本地落空再打一枪。
+_Avoid_: 第二份代码名单, a-share-codes 再写一处, TickFlow instruments parquet / DuckDB 维表, 第二条搜索 HTTP
+
+**板块归属**:
+shy313 概念/行业快照，给横截面 JOIN、个股 profile、轮动反查。
+入口: `backend/ths_ext.py`。文件 `VR_DATA_DIR/ths-ext.json`（24h）。不是 TickFlow 式同步/清库。
+_Avoid_: 第二份板块 JSON, parquet 扩展表, 数据页同步按钮
+
+**横截面快照**:
+全 A 当日价 / 涨跌 / PE / PB / 市值 / 换手 + 行业概念。给二期选股页用，先数据层。
+入口: `backend/screener_snap.py`。180 秒一把钥匙。打腾讯不写报价中心 5 秒缓存。不进复盘预热，不加 HTTP。
+_Avoid_: 第二把全 A 估值钥匙, 预热里拉 5000 只, 选股页还没做先写 README
 
 **缓存键**:
 同一份数只用 `api_common._cached` 的一把钥匙和 TTL。全球指数是 `("world_indices", "live")`、20 秒；`market.get_global_indices` 与复盘清单共用这把。
@@ -80,3 +96,4 @@ _Avoid_: vectorbt, Backtrader, 第二条日历, 第二条报价轮询, 重叠持
 - 指数目录：`backend/tests/test_index_catalog.py` + `frontend/tests/review-context.test.mjs`
 - 报价中心：`frontend/tests/quote-hub.test.mjs`（K 线页 / 自选公告走 `useQuotes`）
 - 缓存键：预热填过 `world_indices` 后，`get_global_indices` 不再打上游
+- 标的池 / 横截面：`backend/tests/test_cross_section.py`（只有 `a-share-codes.json`；快照不写报价 5 秒缓存）

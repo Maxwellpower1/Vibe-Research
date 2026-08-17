@@ -512,8 +512,13 @@ def _suggest_eastmoney(q: str, n: int) -> list[dict]:
 
 
 def suggest_ashare(q: str, n: int = 8) -> list[dict]:
-    """Name / code / pinyin initials. Tencent smartbox first (quote source); Eastmoney if empty."""
+    """Local universe first (code / name / pinyin), then Tencent, then Eastmoney."""
     q = (q or "").strip()
     if not q:
         return []
+    import universe
+
+    local = universe.search(q, n)
+    if local:
+        return local
     return _suggest_tencent(q, n) or _suggest_eastmoney(q, n)

@@ -1,26 +1,23 @@
 """A-share cross-section: change-pct percentiles + 8-band histogram.
 
 Primary: Sina hs_a, paged (one page is capped at ~100). Then Tencent quotes
-on a cached universe. Does not persist the 5000-name map to API clients;
-callers that need it (ths rotation) read pct_map() from the process cache.
+on a cached universe. Names from hs_a go into the same universe file;
+API clients still get stats only. THS rotation reads pct_map() from cache.
 """
 from __future__ import annotations
 
 import json
-import os
-import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
 import astock
+import universe
 from cache import TTLCache, is_nonempty
 
 BEIJING = timezone(timedelta(hours=8))
 UA = astock.UA
-_UNIVERSE_TTL = 24 * 3600
 
 _CACHE = TTLCache(maxsize=8, default_ttl=180, negative_ttl=15, name="breadth")
 
@@ -125,6 +122,23 @@ def parse_sina_pcts(items: Any) -> dict[str, float]:
     return out
 
 
+def parse_sina_names(items: Any) -> dict[str, str]:
+    """Sina getHQNodeData rows -> {code: name}."""
+    if not isinstance(items, list):
+        return {}
+    out: dict[str, str] = {}
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        code = str(it.get("code") or "").strip()
+        if not (code.isdigit() and len(code) == 6):
+            continue
+        name = str(it.get("name") or "").strip()
+        if name:
+            out[code] = name
+    return out
+
+
 # Sina getHQNodeData silently caps num at ~100 even if the client asks for 4000.
 SINA_PAGE_SIZE = 100
 SINA_MAX_PAGES = 80
@@ -212,43 +226,6 @@ def _sina_hs_a_all(page_size: int = SINA_PAGE_SIZE, max_pages: int = SINA_MAX_PA
     return rows
 
 
-def _universe_path() -> Path:
-    root = Path(os.environ.get("VR_DATA_DIR") or Path.home() / ".vibe-research")
-    return root / "a-share-codes.json"
-
-
-def _load_universe() -> list[str]:
-    try:
-        raw = json.loads(_universe_path().read_text(encoding="utf-8"))
-        ts = float(raw.get("ts") or 0)
-        codes = raw.get("codes") or []
-        if time.time() - ts > _UNIVERSE_TTL:
-            return []
-        if not isinstance(codes, list) or len(codes) < 2000:
-            return []
-        return [c for c in codes if isinstance(c, str) and c.isdigit() and len(c) == 6]
-    except Exception:
-        return []
-
-
-def _save_universe(codes: list[str]) -> None:
-    uniq = []
-    seen: set[str] = set()
-    for c in codes:
-        if c in seen or not (isinstance(c, str) and c.isdigit() and len(c) == 6):
-            continue
-        seen.add(c)
-        uniq.append(c)
-    if len(uniq) < 2000:
-        return
-    path = _universe_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"ts": time.time(), "codes": uniq}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
 def _tencent_pcts(codes: list[str]) -> dict[str, float]:
     """Batch Tencent quotes. Does not write the 5s per-code quote cache."""
     chunks = [codes[i:i + 400] for i in range(0, len(codes), 400)]
@@ -281,14 +258,17 @@ def fetch_market_pcts() -> dict[str, float]:
 
 def fetch_market_pcts_with_source() -> tuple[dict[str, float], str]:
     try:
-        sina = parse_sina_pcts(_sina_hs_a_all())
+        sina_rows = _sina_hs_a_all()
+        sina = parse_sina_pcts(sina_rows)
+        sina_names = parse_sina_names(sina_rows)
     except Exception:
         sina = {}
+        sina_names = {}
     if len(sina) >= SINA_FULL_MIN:
-        _save_universe(list(sina.keys()))
+        universe.save(list(sina.keys()), names=sina_names)
         return sina, "sina"
 
-    codes = _load_universe()
+    codes = universe.load()
     if len(codes) >= 2000:
         try:
             tencent = _tencent_pcts(codes)

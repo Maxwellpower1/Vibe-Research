@@ -105,7 +105,24 @@ def test_parse_tencent_hint_pinyin_and_filters():
     assert fw.parse_tencent_hint("") == []
 
 
+def test_suggest_ashare_uses_local_then_tencent(monkeypatch):
+    calls: list[str] = []
+
+    def fake_get(url, params=None, **_k):
+        calls.append(url)
+        raise AssertionError("upstream should not run when local hits")
+
+    monkeypatch.setattr(fw, "_http_get", fake_get)
+    monkeypatch.setattr(
+        "universe.search",
+        lambda q, n=8: [{"code": "000001", "name": "平安银行"}] if q == "payh" else [],
+    )
+    assert fw.suggest_ashare("payh") == [{"code": "000001", "name": "平安银行"}]
+    assert calls == []
+
+
 def test_suggest_ashare_uses_tencent_then_eastmoney(monkeypatch):
+    monkeypatch.setattr("universe.search", lambda q, n=8: [])
     class R:
         def __init__(self, text="", payload=None):
             self.text = text

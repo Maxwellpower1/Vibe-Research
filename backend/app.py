@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 
 
@@ -123,5 +124,15 @@ app.include_router(backtest_routes.router)
 trading_calendar.start_background()
 # Background: keep Daily Review caches warm (session-aware interval).
 review_warmup.start_scheduler(extra=_warm_review_dc)
+
+def _warm_suggest() -> None:
+    try:
+        import universe
+        universe.warm_search()
+    except Exception:
+        pass
+
+
+threading.Thread(target=_warm_suggest, name="universe-suggest", daemon=True).start()
 # Opt-in: trading-day AI review email (VR_REVIEW_MAIL=1).
 review_mail.start_scheduler()

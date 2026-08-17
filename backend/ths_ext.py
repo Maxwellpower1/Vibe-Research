@@ -209,6 +209,15 @@ def _invert(kind: str) -> dict[str, list[str]]:
     return inv
 
 
+def members(kind: str, label: str) -> list[str]:
+    """Codes in one THS concept label or industry path. Missing label -> []."""
+    lab = _label(label)
+    if not lab:
+        return []
+    k = "industry" if (kind or "").strip().lower() == "industry" else "concept"
+    return list(_invert(k).get(lab) or [])
+
+
 def rotation(kind: str = "concept", top: int = 15) -> dict[str, Any]:
     """Today avg change-pct of THS concept / industry members."""
     import cross_section
