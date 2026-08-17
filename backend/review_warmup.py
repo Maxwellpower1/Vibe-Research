@@ -56,6 +56,8 @@ _STATE: dict[str, Any] = {
     "last_errors": [],
     "session": None,
     "next_interval_sec": None,
+    "last_minute_at": None,
+    "minute_interval_sec": None,
 }
 
 
@@ -102,6 +104,13 @@ def interval_for_session(kind: str) -> int:
     if kind == "lunch":
         return _env_int("VR_REVIEW_WARMUP_LUNCH_SEC", 300)
     return _env_int("VR_REVIEW_WARMUP_CLOSED_SEC", 900)
+
+
+def minute_interval_for_session(kind: str) -> int:
+    """Keep-warm cadence. Must be shorter than light_kline_ttl for that session."""
+    if kind == "open":
+        return 20
+    return 60
 
 
 def _run_step(name: str, fn: Callable[[], Any], errors: list[dict]) -> bool:
@@ -165,6 +174,18 @@ def warm_once(extra: Callable[..., tuple[int, int, list[dict]]] | None = None) -
             fail += 1
             errors.append({"name": "extra", "error": str(e)[:160]})
 
+    try:
+        import review_jobs
+        m_ok, m_fail, m_err = review_jobs.warm_minutes()
+        ok += m_ok
+        fail += m_fail
+        errors.extend(m_err)
+        _STATE["last_minute_at"] = datetime.now(BEIJING).isoformat(timespec="seconds")
+        _STATE["minute_interval_sec"] = minute_interval_for_session(kind)
+    except Exception as e:
+        fail += 1
+        errors.append({"name": "minutes", "error": str(e)[:160]})
+
     _STATE["last_ok"] = ok
     _STATE["last_fail"] = fail
     _STATE["last_errors"] = errors[-12:]
@@ -181,6 +202,8 @@ def status() -> dict:
         "open_sec": _env_int("VR_REVIEW_WARMUP_OPEN_SEC", 90),
         "lunch_sec": _env_int("VR_REVIEW_WARMUP_LUNCH_SEC", 300),
         "closed_sec": _env_int("VR_REVIEW_WARMUP_CLOSED_SEC", 900),
+        "minute_open_sec": 20,
+        "minute_closed_sec": 60,
         "trading_day": trading_calendar.is_cn_trading_day(),
     }
 
@@ -199,17 +222,33 @@ def start_scheduler(
 
     def loop() -> None:
         time.sleep(max(0.5, initial_delay))
+        next_full = 0.0
+        next_minute = 0.0
         while True:
-            try:
-                warm_once(extra=extra)
-            except Exception:
-                log.exception("review warmup pass crashed")
-            if _STATE.get("skipped"):
-                delay = 5
-            else:
-                delay = interval_for_session(session_kind())
-            _STATE["next_interval_sec"] = delay
-            time.sleep(delay)
+            now = time.monotonic()
+            kind = session_kind()
+            if now >= next_full:
+                try:
+                    warm_once(extra=extra)
+                except Exception:
+                    log.exception("review warmup pass crashed")
+                delay = 5 if _STATE.get("skipped") else interval_for_session(session_kind())
+                _STATE["next_interval_sec"] = delay
+                next_full = time.monotonic() + delay
+                next_minute = time.monotonic() + minute_interval_for_session(session_kind())
+            elif now >= next_minute:
+                try:
+                    import review_jobs
+                    m_ok, m_fail, m_err = review_jobs.warm_minutes()
+                    _STATE["last_minute_at"] = datetime.now(BEIJING).isoformat(timespec="seconds")
+                    _STATE["minute_interval_sec"] = minute_interval_for_session(kind)
+                    if m_fail:
+                        _STATE["last_errors"] = (list(_STATE.get("last_errors") or []) + m_err)[-12:]
+                    log.info("minute keep-warm ok=%s fail=%s", m_ok, m_fail)
+                except Exception:
+                    log.exception("minute keep-warm crashed")
+                next_minute = time.monotonic() + minute_interval_for_session(session_kind())
+            time.sleep(1)
 
     threading.Thread(target=loop, name="review-warmup", daemon=True).start()
     log.info("review warmup started")

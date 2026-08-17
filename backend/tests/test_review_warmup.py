@@ -39,6 +39,7 @@ def test_cockpit_warm_keys_cover_first_paint():
 
 def test_user_busy_still_warms_paint_keys(monkeypatch):
     monkeypatch.setattr(rw, "warm_market", lambda: (_ for _ in ()).throw(AssertionError("EM market")))
+    monkeypatch.setattr("review_jobs.warm_minutes", lambda: (15, 0, []))
     called: dict[str, bool] = {}
 
     def extra(paint_only: bool = False):
@@ -49,7 +50,31 @@ def test_user_busy_still_warms_paint_keys(monkeypatch):
         out = rw.warm_once(extra=extra)
     assert called["paint_only"] is True
     assert out.get("skipped") is True
-    assert out.get("last_ok") == 2
+    assert out.get("last_ok") == 17
+    assert out.get("last_minute_at")
+
+
+def test_warm_minutes_rewrites_catalog_and_cached_rank(monkeypatch):
+    import cockpit_live
+    import review_jobs
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        review_jobs,
+        "put_light_kline",
+        lambda sym, res="1", num=240: calls.append(sym) or {"symbol": sym, "bars": [1]},
+    )
+    monkeypatch.setattr(cockpit_live, "future_minutes", lambda _c: {"hf_GC": {"points": [1]}})
+    monkeypatch.setattr(cockpit_live, "warm_hub_quotes", lambda _c: 15)
+    review_jobs._DC_CACHE.clear()
+    review_jobs._DC_CACHE.set(("stock_rank", "amount:0:30"), [{"code": "600519"}], ttl=60)
+    ok, fail, errors = review_jobs.warm_minutes()
+    assert fail == 0
+    assert errors == []
+    assert "sh000001" in calls
+    assert "whUSDCNY" in calls
+    assert "600519" in calls
+    assert ok >= 17
 
 
 def test_interval_defaults(monkeypatch):
@@ -57,3 +82,6 @@ def test_interval_defaults(monkeypatch):
     monkeypatch.delenv("VR_REVIEW_WARMUP_CLOSED_SEC", raising=False)
     assert rw.interval_for_session("open") == 90
     assert rw.interval_for_session("closed") == 900
+    assert rw.minute_interval_for_session("open") == 20
+    assert rw.minute_interval_for_session("closed") == 60
+    assert rw.minute_interval_for_session("lunch") == 60

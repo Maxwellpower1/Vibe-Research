@@ -47,9 +47,9 @@ test("Daily Review and Ask AI send the packed snapshot", () => {
 });
 
 test("frontend WORLD_INDEX_DEFS matches backend index_catalog", () => {
-  const fe = [...cockpitSrc.matchAll(/code:\s*"([^"]+)"/g)].map((m) => m[1]).slice(0, 14);
   const be = [...catalogSrc.matchAll(/\("([A-Za-z0-9]+)",\s*"[^"]+",\s*"(?:CN|HK|US|FX)"\)/g)].map((m) => m[1]);
+  const fe = [...cockpitSrc.matchAll(/code:\s*"([^"]+)"/g)].map((m) => m[1]).slice(0, be.length);
   assert.deepEqual(fe, be);
   assert.ok(fe.includes("sh000905"));
-  assert.ok(!fe.includes("sh000852"));
+  assert.ok(fe.includes("sh000852"));
 });

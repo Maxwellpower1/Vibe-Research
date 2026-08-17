@@ -16,6 +16,7 @@ import json
 import math
 import os
 import re
+import threading
 import time
 import urllib.request
 from datetime import datetime, timedelta
@@ -26,9 +27,12 @@ from index_catalog import A_INDEX_CODES
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
-# Shared by /api/quote, /api/market/quotes, index_quote, seal flags. 5s matches quoteHub.
+# Shared by /api/quote, /api/market/quotes, index_quote, seal flags.
+# Open 5s (quote hub poll). Closed/lunch longer so a refresh is a cache hit.
 _QUOTE_CACHE = TTLCache(maxsize=2048, default_ttl=5.0, name="quote")
+_QUOTE_LAST: dict[str, dict] = {}
 _QUOTE_MISS = object()
+_GTIMG_FETCH_LOCK = threading.Lock()
 _ZT_POOL_CACHE = TTLCache(maxsize=32, default_ttl=180.0, name="zt_pool")
 _GTIMG_LINE_RE = re.compile(r'v_([A-Za-z0-9_]+)="([^"]*)"')
 
@@ -259,6 +263,22 @@ def _quote_cache_keys(symbol: str) -> list[str]:
     return list(dict.fromkeys(keys))
 
 
+def quote_ttl(session: str | None = None) -> float:
+    """Per-code quote TTL. Must outlast the keep-warm gap when the market is closed."""
+    kind = session
+    if kind is None:
+        try:
+            import review_warmup
+            kind = review_warmup.session_kind()
+        except Exception:
+            kind = "closed"
+    if kind == "open":
+        return 5.0
+    if kind == "lunch":
+        return 30.0
+    return 90.0
+
+
 def _quote_cache_get(symbol: str):
     for k in _quote_cache_keys(symbol):
         hit = _QUOTE_CACHE.get(k, _QUOTE_MISS)
@@ -278,6 +298,7 @@ def _quote_cache_set(symbol: str, q: dict | None, ttl: float | None = None) -> N
         if q is None:
             _QUOTE_CACHE.set(k, None, ttl=neg_ttl)
         else:
+            _QUOTE_LAST[k] = q
             _QUOTE_CACHE.set(k, q, ttl=ttl)
 
 
@@ -318,18 +339,39 @@ def gtimg_quotes(prefixed_codes: list[str]) -> dict[str, dict]:
             _put_quote_aliases(out, s, hit)
     if not miss:
         return out
-    parsed: dict[str, dict] = {}
-    for i in range(0, len(miss), 80):
-        parsed.update(parse_gtimg_quotes(_fetch_gtimg(miss[i:i + 80])))
-    parsed_l = {k.lower(): v for k, v in parsed.items()}
-    for s in miss:
-        q = parsed.get(s) or parsed_l.get(s.lower())
-        if q:
-            _quote_cache_set(s, q)
-            _put_quote_aliases(out, s, q)
-        else:
-            _quote_cache_set(s, None, ttl=2.0)
+    with _GTIMG_FETCH_LOCK:
+        still: list[str] = []
+        for s in miss:
+            hit = _quote_cache_get(s)
+            if hit is _QUOTE_MISS:
+                still.append(s)
+            elif hit is not None:
+                _put_quote_aliases(out, s, hit)
+        if still:
+            parsed: dict[str, dict] = {}
+            for i in range(0, len(still), 80):
+                parsed.update(parse_gtimg_quotes(_fetch_gtimg(still[i:i + 80])))
+            parsed_l = {k.lower(): v for k, v in parsed.items()}
+            for s in still:
+                q = parsed.get(s) or parsed_l.get(s.lower())
+                if q:
+                    _quote_cache_set(s, q, ttl=quote_ttl())
+                    _put_quote_aliases(out, s, q)
+                else:
+                    last = _quote_last_get(s)
+                    if last:
+                        _put_quote_aliases(out, s, last)
+                    else:
+                        _quote_cache_set(s, None, ttl=2.0)
     return out
+
+
+def _quote_last_get(symbol: str) -> dict | None:
+    for k in _quote_cache_keys(symbol):
+        hit = _QUOTE_LAST.get(k)
+        if hit:
+            return hit
+    return None
 
 
 def tencent_quote(codes: list[str]) -> dict[str, dict]:
@@ -648,27 +690,43 @@ def _parse_minute_line(line: str, day: str = "") -> dict | None:
     }
 
 
+# Same hosts as trading_calendar: push2his kline/get often resets (FX USDCNH).
+_EM_KLINE_HOSTS = ("push2his.eastmoney.com", "push2delay.eastmoney.com")
+_EM_KLINE_PATH = "/api/qt/stock/kline/get"
+_em_kline_host = [0]
+
+
 def _em_kline_minute(symbol: str, secid: str, name: str, n: int, source: str) -> dict:
     """Eastmoney 1-minute K (FX / US index fallback)."""
-    try:
-        r = em_get(
-            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
-            params={
-                "secid": secid,
-                "fields1": "f1,f2,f3,f4,f5,f6",
-                "fields2": "f51,f52,f53,f54,f55,f56",
-                "klt": "1",
-                "fqt": "1",
-                "beg": "0",
-                "end": "20500101",
-                "lmt": str(n),
-            },
-            headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
-            timeout=8,
-        )
-        data = (r.json() or {}).get("data") or {}
-    except Exception:
-        return {}
+    params = {
+        "secid": secid,
+        "fields1": "f1,f2,f3,f4,f5,f6",
+        "fields2": "f51,f52,f53,f54,f55,f56",
+        "klt": "1",
+        "fqt": "1",
+        "beg": "0",
+        "end": "20500101",
+        "lmt": str(n),
+    }
+    headers = {"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"}
+    n_hosts = len(_EM_KLINE_HOSTS)
+    start = _em_kline_host[0] % n_hosts
+    data: dict = {}
+    for offset in range(n_hosts):
+        idx = (start + offset) % n_hosts
+        try:
+            r = em_get(
+                f"https://{_EM_KLINE_HOSTS[idx]}{_EM_KLINE_PATH}",
+                params=params,
+                headers=headers,
+                timeout=8,
+            )
+            data = (r.json() or {}).get("data") or {}
+        except Exception:
+            data = {}
+        if data.get("klines"):
+            _em_kline_host[0] = idx
+            break
     bars: list[dict] = []
     for row in data.get("klines") or []:
         f = str(row).split(",")

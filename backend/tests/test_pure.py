@@ -85,6 +85,7 @@ def test_light_kline_us_falls_back_to_eastmoney(monkeypatch):
 
     monkeypatch.setattr(astock, "_tencent_json", lambda url: {"data": {}})
     monkeypatch.setattr(astock, "em_get", lambda *_a, **_k: _Resp())
+    astock._em_kline_host[0] = 0
     out = astock.light_kline("usDJI", "1", num=240)
     assert out["symbol"] == "usDJI"
     assert out["source"] == "eastmoney 100.DJIA"
@@ -105,11 +106,45 @@ def test_light_kline_fx_usdcnh(monkeypatch):
             }
 
     monkeypatch.setattr(astock, "em_get", lambda *_a, **_k: _Resp())
+    astock._em_kline_host[0] = 0
     out = astock.light_kline("whUSDCNY", "1", num=240)
     assert out["symbol"] == "whUSDCNY"
     assert out["source"] == "eastmoney USDCNH"
     assert out["prev_close"] == 7.17
     assert [b["close"] for b in out["bars"]] == [7.18, 7.19]
+
+
+def test_em_kline_falls_back_to_push2delay(monkeypatch):
+    calls: list[str] = []
+
+    class _Resp:
+        def json(self):
+            return {
+                "data": {
+                    "preKPrice": 6.74,
+                    "klines": [
+                        "2026-08-17 05:01,6.74,6.75,6.76,6.73,0",
+                        "2026-08-17 05:02,6.75,6.76,6.77,6.74,0",
+                    ],
+                }
+            }
+
+    def fake_get(url, **_k):
+        calls.append(url)
+        if "push2his" in url:
+            raise ConnectionError("reset")
+        return _Resp()
+
+    monkeypatch.setattr(astock, "em_get", fake_get)
+    astock._em_kline_host[0] = 0
+    out = astock.light_kline("whUSDCNY", "1", num=240)
+    assert [b["close"] for b in out["bars"]] == [6.75, 6.76]
+    assert any("push2his" in u for u in calls)
+    assert any("push2delay" in u for u in calls)
+    calls.clear()
+    astock.light_kline("whUSDCNY", "1", num=240)
+    assert calls and all("push2delay" in u for u in calls)
+    astock._em_kline_host[0] = 0
 
 
 def test_calc_peg():
@@ -163,8 +198,49 @@ def test_parse_gtimg_bad_line_ignored():
     assert astock._parse_gtimg("") == {}
 
 
+def test_quote_ttl_closed_outlasts_refresh():
+    assert astock.quote_ttl("open") == 5.0
+    assert astock.quote_ttl("lunch") == 30.0
+    assert astock.quote_ttl("closed") == 90.0
+
+
+def test_gtimg_quotes_single_flight(monkeypatch):
+    import threading
+
+    astock._QUOTE_CACHE.clear()
+    astock._QUOTE_LAST.clear()
+    calls: list[int] = []
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_fetch(_prefixed):
+        calls.append(1)
+        started.set()
+        release.wait(2)
+        return _gtimg_line()
+
+    monkeypatch.setattr(astock, "_fetch_gtimg", fake_fetch)
+    out: list[dict] = []
+
+    def worker():
+        out.append(astock.gtimg_quotes(["sh600519"]))
+
+    t1 = threading.Thread(target=worker)
+    t2 = threading.Thread(target=worker)
+    t1.start()
+    t2.start()
+    assert started.wait(1)
+    release.set()
+    t1.join(2)
+    t2.join(2)
+    assert len(calls) == 1
+    assert len(out) == 2
+    assert all(o["sh600519"]["price"] == 1194.45 for o in out)
+
+
 def test_tencent_quote_short_ttl(monkeypatch):
     astock._QUOTE_CACHE.clear()
+    astock._QUOTE_LAST.clear()
     calls: list[int] = []
 
     def fake_fetch(prefixed):
@@ -190,6 +266,7 @@ def test_is_ashare_stock():
 
 def test_quote_cache_shared_with_cockpit(monkeypatch):
     astock._QUOTE_CACHE.clear()
+    astock._QUOTE_LAST.clear()
     calls: list[list[str]] = []
 
     def fake_fetch(prefixed):
@@ -210,6 +287,7 @@ def test_quote_cache_shared_with_cockpit(monkeypatch):
 
 def test_quote_cache_index_not_aliased_to_bare(monkeypatch):
     astock._QUOTE_CACHE.clear()
+    astock._QUOTE_LAST.clear()
     parts = ["0"] * 40
     parts[1] = "上证指数"
     parts[3] = "3089.12"

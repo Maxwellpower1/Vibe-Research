@@ -80,14 +80,42 @@ def _cached(endpoint: str, code: str, ttl: int, fetch, valid=is_nonempty):
     )
 
 
-def light_kline_ttl(sym: str, res: str) -> int:
-    """Index/FX minute charts stay fresher than single-stock sparks."""
+def _session_kind() -> str:
+    try:
+        import review_warmup
+        return review_warmup.session_kind()
+    except Exception:
+        return "closed"
+
+
+def light_kline_ttl(sym: str, res: str, session: str | None = None) -> int:
+    """Minute TTL outlasts the keep-warm gap so a refresh is a cache hit.
+
+    Open: warmup rewrites every 20s, TTL 45/120. Closed: 960s (full warmup is 900s).
+    """
     if res != "1":
         return 60
+    kind = session if session is not None else _session_kind()
     s = (sym or "").lower()
-    if s.startswith(("sh000", "sz399", "hk", "us", "wh")):
-        return 20
-    return 120
+    index = s.startswith(("sh000", "sz399", "hk", "us", "wh"))
+    if kind == "open":
+        return 45 if index else 120
+    if kind == "lunch":
+        return 180
+    return 960
+
+
+def put_light_kline(sym: str, res: str = "1", num: int = 240) -> dict:
+    """Fetch and write the same key GET /light-kline uses. Warmup only."""
+    resolved = astock.resolve_symbol(sym) or (sym or "").strip()
+    if not resolved:
+        return {}
+    data = astock.light_kline(resolved, res, num=num)
+    key = (f"ashare_light:{res}:{num}", resolved)
+    if isinstance(data, dict) and data:
+        _DC_CACHE.set(key, data, ttl=light_kline_ttl(resolved, res))
+        return data
+    return {}
 
 
 def light_kline_map(codes: list[str], res: str = "1", num: int = 240) -> dict[str, dict | None]:

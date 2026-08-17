@@ -25,7 +25,7 @@ _Avoid_: job list, warmup steps, panel catalog
 _Avoid_: prompt packer, reviewContext.ts, system prompt
 
 **指数目录**:
-驾驶舱那 14 个指数（含中证500 `sh000905`，不含中证1000 `sh000852`）的唯一名单。复盘快照、报价中心、问 AI 工具都认这份。
+驾驶舱那 15 个指数（含中证500 `sh000905`、中证1000 `sh000852`）的唯一名单。复盘快照、报价中心、问 AI 工具都认这份。
 入口: `backend/index_catalog.py`。前端 `frontend/src/config/cockpit.ts` 的 `WORLD_INDEX_DEFS` 必须同序同码。
 `astock.A_INDICES`、`cockpit_live.WORLD_INDICES` 从这里来。
 _Avoid_: A_INDICES, WORLD_INDICES, WORLD_INDEX_DEFS（实现名，不是领域名）

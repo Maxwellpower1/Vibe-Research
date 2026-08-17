@@ -12,6 +12,7 @@ INDEX_CATALOG: tuple[tuple[str, str, str], ...] = (
     ("sh000688", "科创50", "CN"),
     ("sh000300", "沪深300", "CN"),
     ("sh000905", "中证500", "CN"),
+    ("sh000852", "中证1000", "CN"),
     ("hkHSI", "恒生指数", "HK"),
     ("hkHSTECH", "恒生科技", "HK"),
     ("usDJI", "道琼斯", "US"),

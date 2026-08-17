@@ -42,9 +42,42 @@ def test_light_kline_map_accepts_fx():
     assert api_common._validate_symbol("whusdcny") == "whUSDCNY"
 
 
-def test_light_kline_ttl_index_faster_than_stock():
-    assert api_common.light_kline_ttl("sh000001", "1") == 20
-    assert api_common.light_kline_ttl("usIXIC", "1") == 20
-    assert api_common.light_kline_ttl("whUSDCNY", "1") == 20
-    assert api_common.light_kline_ttl("sh600519", "1") == 120
+def test_light_kline_ttl_outlasts_keep_warm():
+    assert api_common.light_kline_ttl("sh000001", "1", session="open") == 45
+    assert api_common.light_kline_ttl("usIXIC", "1", session="open") == 45
+    assert api_common.light_kline_ttl("whUSDCNY", "1", session="open") == 45
+    assert api_common.light_kline_ttl("sh600519", "1", session="open") == 120
+    assert api_common.light_kline_ttl("sh000001", "1", session="lunch") == 180
+    assert api_common.light_kline_ttl("sh000001", "1", session="closed") == 960
     assert api_common.light_kline_ttl("sh000001", "1D") == 60
+
+
+def test_put_light_kline_rewrites_same_key(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        api_common.astock,
+        "light_kline",
+        lambda sym, res, num=240: calls.append(sym) or {"symbol": sym, "bars": [{"close": len(calls)}]},
+    )
+    api_common._DC_CACHE.clear()
+    first = api_common.put_light_kline("sh000001")
+    second = api_common.put_light_kline("sh000001")
+    assert calls == ["sh000001", "sh000001"]
+    assert first["bars"][0]["close"] == 1
+    assert second["bars"][0]["close"] == 2
+    hit = api_common._cached(
+        "ashare_light:1:240",
+        "sh000001",
+        45,
+        lambda: (_ for _ in ()).throw(AssertionError("should be cached")),
+    )
+    assert hit["bars"][0]["close"] == 2
+    api_common.put_light_kline("600519")
+    assert calls[-1] == "sh600519"
+    stock = api_common._cached(
+        "ashare_light:1:240",
+        "sh600519",
+        120,
+        lambda: (_ for _ in ()).throw(AssertionError("6-digit must write sh key")),
+    )
+    assert stock["symbol"] == "sh600519"

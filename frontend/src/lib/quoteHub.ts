@@ -23,6 +23,9 @@ export interface HubQuote {
 
 export const QUOTE_POLL_MS = 5000;
 const CHUNK = 80;
+const STORE_KEY = "vr.quoteHub.v1";
+const STORE_MAX = 120;
+const STORE_MAX_AGE_MS = 12 * 3600_000;
 
 const entries = new Map<string, HubQuote>();
 const refCounts = new Map<string, number>();
@@ -32,6 +35,63 @@ let timer: number | null = null;
 let looping = false;
 let flushTimer: number | null = null;
 let lastFlush = 0;
+let persistTimer: number | null = null;
+
+function storage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function loadStore() {
+  const store = storage();
+  if (!store) return;
+  try {
+    const raw = store.getItem(STORE_KEY) || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem(STORE_KEY) : null);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, HubQuote>;
+    const now = Date.now();
+    for (const [k, v] of Object.entries(parsed || {})) {
+      if (v && Number.isFinite(v.price) && v.price > 0 && now - (v.updated || 0) < STORE_MAX_AGE_MS) {
+        entries.set(k, v);
+      }
+    }
+  } catch {
+    /* ignore broken store */
+  }
+}
+
+function saveStore() {
+  const store = storage();
+  if (!store) return;
+  try {
+    const out: Record<string, HubQuote> = {};
+    let n = 0;
+    for (const [k, v] of entries) {
+      if (n >= STORE_MAX) break;
+      out[k] = v;
+      n += 1;
+    }
+    store.setItem(STORE_KEY, JSON.stringify(out));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function schedulePersist() {
+  if (persistTimer != null) return;
+  persistTimer = window.setTimeout(() => {
+    persistTimer = null;
+    saveStore();
+  }, 300);
+}
+
+loadStore();
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", saveStore);
+}
 
 export function isFuturesCode(code: string): boolean {
   return /^(hf_|nf_)/i.test(code) || code === "BTCUSDT";
@@ -105,7 +165,10 @@ async function tick() {
       if (applyQuote(code, q, now)) changed = true;
     }
   }
-  if (changed) emit();
+  if (changed) {
+    emit();
+    schedulePersist();
+  }
 }
 
 function onVisibility() {
@@ -141,7 +204,9 @@ function maybeStopLoop() {
 
 function scheduleFlush() {
   if (flushTimer != null || document.hidden) return;
-  const wait = Math.max(250, 2000 - (Date.now() - lastFlush));
+  // 0: first paint, after this commit's useEffects so all panels are subscribed.
+  // Later: at most one fetch per 2s when many rows mount.
+  const wait = lastFlush === 0 ? 0 : Math.max(0, 2000 - (Date.now() - lastFlush));
   flushTimer = window.setTimeout(() => {
     flushTimer = null;
     lastFlush = Date.now();
@@ -161,7 +226,6 @@ function useCodes(codes: string[]) {
         const n = (refCounts.get(c) || 1) - 1;
         if (n <= 0) {
           refCounts.delete(c);
-          entries.delete(c);
         } else {
           refCounts.set(c, n);
         }

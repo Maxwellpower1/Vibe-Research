@@ -5,9 +5,10 @@ Cache keys match GET /api/market/* so a warm pass fills 问 AI.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
-from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _cached
+from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _DC_CACHE, _cached, put_light_kline
 from index_catalog import catalog_codes
 
 Job = tuple[str, Callable[[], Any]]
@@ -238,19 +239,6 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
         steps.extend(em_top_jobs()[1:])  # industry only; emotion is warm_market
         steps.extend(em_extra_jobs())
 
-    def _warm_minute(sym: str) -> None:
-        data = _cached(
-            "ashare_light:1:240",
-            sym,
-            120,
-            lambda: astock.light_kline(sym, "1", num=240),
-        )
-        if not data:
-            raise RuntimeError(f"empty minute for {sym}")
-
-    for sym in catalog_codes():
-        steps.append((f"minute:{sym}", lambda s=sym: _warm_minute(s)))
-
     cockpit: list[Job] = [
         ("world_indices", lambda: _cached("world_indices", "live", 20, cockpit_live.world_indices)),
         (
@@ -324,9 +312,93 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
     return steps
 
 
-def run_jobs(jobs: list[Job], bucket: dict[str, Any], errors: list[str], workers: int = 6) -> None:
-    from concurrent.futures import ThreadPoolExecutor
+def _peek_codes(endpoint: str, code: str) -> list[str]:
+    raw = _DC_CACHE.get((endpoint, code))
+    rows = raw if isinstance(raw, list) else (raw.get("rows") if isinstance(raw, dict) else None)
+    if not isinstance(rows, list):
+        return []
+    out: list[str] = []
+    for r in rows:
+        if isinstance(r, dict):
+            c = str(r.get("code") or "").strip()
+            if c:
+                out.append(c)
+    return out
 
+
+def minute_symbols() -> list[str]:
+    """Shared cockpit minutes: index catalog + cached rank / flow (not watchlist)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in (
+        catalog_codes()
+        + _peek_codes("stock_rank", "amount:0:30")
+        + _peek_codes("stock_flow", "all:15")
+    ):
+        key = (raw or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def warm_minutes() -> tuple[int, int, list[dict]]:
+    """Force-refresh shared minute keys so a page refresh is a cache hit."""
+    import cockpit_live
+
+    errors: list[dict] = []
+    ok = 0
+    fail = 0
+    syms = minute_symbols()
+
+    def _one(sym: str) -> tuple[str, bool, str]:
+        try:
+            data = put_light_kline(sym)
+            if not data:
+                return sym, False, f"empty minute for {sym}"
+            return sym, True, ""
+        except Exception as e:
+            return sym, False, str(e)[:160]
+
+    if syms:
+        with ThreadPoolExecutor(max_workers=min(8, len(syms))) as pool:
+            for sym, good, err in pool.map(_one, syms):
+                if good:
+                    ok += 1
+                else:
+                    fail += 1
+                    errors.append({"name": f"minute:{sym}", "error": err})
+
+    try:
+        raw = cockpit_live.DEFAULT_FUTURES
+        data = cockpit_live.future_minutes(
+            [c.strip() for c in raw.split(",") if c.strip()],
+        )
+        if data:
+            _DC_CACHE.set(("commodity_minutes", raw), data, ttl=90)
+            ok += 1
+        else:
+            fail += 1
+            errors.append({"name": "commodity_minutes", "error": "empty"})
+    except Exception as e:
+        fail += 1
+        errors.append({"name": "commodity_minutes", "error": str(e)[:160]})
+
+    try:
+        n = cockpit_live.warm_hub_quotes(syms)
+        if n:
+            ok += 1
+        else:
+            fail += 1
+            errors.append({"name": "quotes", "error": "empty"})
+    except Exception as e:
+        fail += 1
+        errors.append({"name": "quotes", "error": str(e)[:160]})
+    return ok, fail, errors
+
+
+def run_jobs(jobs: list[Job], bucket: dict[str, Any], errors: list[str], workers: int = 6) -> None:
     if not jobs:
         return
 

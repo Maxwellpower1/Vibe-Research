@@ -13,6 +13,7 @@ export const WORLD_INDEX_DEFS: IndexDef[] = [
   { code: "sh000688", label: "科创50", region: "CN" },
   { code: "sh000300", label: "沪深300", region: "CN" },
   { code: "sh000905", label: "中证500", region: "CN" },
+  { code: "sh000852", label: "中证1000", region: "CN" },
   { code: "hkHSI", label: "恒生指数", region: "HK" },
   { code: "hkHSTECH", label: "恒生科技", region: "HK" },
   { code: "usDJI", label: "道琼斯", region: "US" },

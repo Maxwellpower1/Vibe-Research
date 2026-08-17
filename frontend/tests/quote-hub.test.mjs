@@ -25,6 +25,15 @@ test("K-line page and watchlist feed subscribe to the quote hub", () => {
   assert.doesNotMatch(feedSrc, /api\.quote\(/);
 });
 
+test("quote hub keeps last price/pct across refresh", () => {
+  assert.match(quoteSrc, /localStorage/);
+  assert.match(quoteSrc, /vr\.quoteHub\.v1/);
+  assert.match(quoteSrc, /function loadStore/);
+  assert.match(quoteSrc, /pagehide/);
+  assert.doesNotMatch(quoteSrc, /entries\.delete\(c\)/);
+  assert.match(quoteSrc, /lastFlush === 0 \? 0/);
+});
+
 test("quote and minute hubs stretch the interval when A-share is not open", () => {
   assert.match(sessionSrc, /export const HUB_POLL_CLOSED_MS = 60_000/);
   assert.match(sessionSrc, /export function hubPollMs/);

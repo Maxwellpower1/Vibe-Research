@@ -6,11 +6,12 @@ import cockpit_live
 from index_catalog import INDEX_CATALOG, A_INDEX_CODES, catalog_codes
 
 
-def test_catalog_has_csi500_not_csi1000():
+def test_catalog_has_csi500_and_csi1000():
     codes = catalog_codes()
     assert "sh000905" in codes
-    assert "sh000852" not in codes
-    assert len(codes) == 14
+    assert "sh000852" in codes
+    assert codes.index("sh000852") == codes.index("sh000905") + 1
+    assert len(codes) == 15
 
 
 def test_astock_and_cockpit_share_catalog():
@@ -43,6 +44,7 @@ def test_frontend_defs_match_catalog():
     root = Path(__file__).resolve().parents[2]
     text = (root / "frontend" / "src" / "config" / "cockpit.ts").read_text(encoding="utf-8")
     fe = [m.group(1) for m in __import__("re").finditer(r'code:\s*"([^"]+)"', text)]
-    # WORLD_INDEX_DEFS only; skip commodity codes after the first 14.
-    fe = fe[:14]
-    assert fe == catalog_codes()
+    # WORLD_INDEX_DEFS only; skip commodity codes after the catalog.
+    want = catalog_codes()
+    fe = fe[: len(want)]
+    assert fe == want

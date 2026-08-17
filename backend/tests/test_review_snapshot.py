@@ -157,7 +157,8 @@ def test_review_context_route(monkeypatch):
     assert "自选" in body["missing"] or "【自选】" in body["text"]
 
 
-def test_user_busy_skips_warmup():
+def test_user_busy_skips_warmup(monkeypatch):
+    monkeypatch.setattr("review_jobs.warm_minutes", lambda: (0, 0, []))
     with rw.user_fetch():
         out = rw.warm_once()
     assert out.get("skipped") is True

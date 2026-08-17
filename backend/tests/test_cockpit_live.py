@@ -20,6 +20,20 @@ def test_parse_tencent_a_share_index():
     assert q["amount"] == 12345.6
 
 
+def test_warm_hub_quotes_writes_quote_one(monkeypatch):
+    from api_common import _DC_CACHE
+
+    item = {"symbol": "sh000001", "name": "上证指数", "price": 3089.12, "pct": 0.3}
+    monkeypatch.setattr(cl, "quotes_map", lambda _c: {"sh000001": item})
+    monkeypatch.setattr(cl.astock, "quote_ttl", lambda: 90.0)
+    _DC_CACHE.clear()
+    n = cl.warm_hub_quotes(["sh000001"])
+    assert n >= 1
+    hit = _DC_CACHE.get(("quote_one", "sh000001"))
+    assert hit["price"] == 3089.12
+    assert hit["pct"] == 0.3
+
+
 def test_quote_item_pct_follows_price_prev():
     q = {"name": "x", "price": 11.0, "prev": 10.0, "pct": 0.0, "change": 0.0}
     item = cl._quote_item(q, "sz000001")
@@ -350,6 +364,7 @@ def test_quotes_cached_reuses_per_code(monkeypatch):
     import api_common
 
     api_common._DC_CACHE.clear()
+    cl._QUOTE_ONE_LAST.clear()
     calls = []
 
     def fake_map(codes):
@@ -363,6 +378,25 @@ def test_quotes_cached_reuses_per_code(monkeypatch):
     assert b["sh000001"]["price"] == 10.0
     assert calls[0] == ["sh000001", "usIXIC"]
     assert calls[1] == ["sz399001"]
+
+
+def test_quotes_cached_serves_last_when_fresh_expires(monkeypatch):
+    import api_common
+
+    api_common._DC_CACHE.clear()
+    cl._QUOTE_ONE_LAST.clear()
+    calls: list[list[str]] = []
+
+    def fake_map(codes):
+        calls.append(list(codes))
+        return {c: {"symbol": c, "name": c, "price": 10.0, "pct": 0.1} for c in codes}
+
+    monkeypatch.setattr(cl, "quotes_map", fake_map)
+    cl.quotes_cached(["sh000001"])
+    api_common._DC_CACHE.pop(("quote_one", "sh000001"), None)
+    out = cl.quotes_cached(["sh000001"])
+    assert out["sh000001"]["price"] == 10.0
+    assert calls[0] == ["sh000001"]
 
 
 def test_stock_boards_map_aliases_and_skips(monkeypatch):

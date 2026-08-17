@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -324,12 +325,46 @@ def quotes_map(codes: list[str]) -> dict[str, dict]:
     return out
 
 
+_QUOTE_ONE_LAST: dict[str, dict] = {}
+_STALE_LOCK = threading.Lock()
+_STALE_INFLIGHT: set[str] = set()
+
+
+def _remember_quote(key: str, item: dict) -> None:
+    _QUOTE_ONE_LAST[key.lower()] = item
+
+
+def _refresh_stale_quotes(codes: list[str]) -> None:
+    """One Tencent pass for expired keys. 100 tabs share this flight."""
+    from api_common import _DC_CACHE
+
+    with _STALE_LOCK:
+        todo = [c for c in codes if c.lower() not in _STALE_INFLIGHT]
+        for c in todo:
+            _STALE_INFLIGHT.add(c.lower())
+    if not todo:
+        return
+    try:
+        fetched = quotes_map(todo)
+        ttl = astock.quote_ttl()
+        for k, item in fetched.items():
+            if not isinstance(item, dict) or not item.get("price"):
+                continue
+            _DC_CACHE.set(("quote_one", k.lower()), item, ttl=ttl)
+            _remember_quote(k, item)
+    finally:
+        with _STALE_LOCK:
+            for c in todo:
+                _STALE_INFLIGHT.discard(c.lower())
+
+
 def quotes_cached(codes: list[str]) -> dict[str, dict]:
-    """Per-code 5s cache. One Tencent batch for misses so Hub key changes do not bust indices."""
+    """One in-process copy. Fresh hit, else last tick, else fetch. Tabs share it."""
     from api_common import _DC_CACHE
 
     out: dict[str, dict] = {}
-    miss: list[str] = []
+    unseen: list[str] = []
+    stale: list[str] = []
     seen: set[str] = set()
     for raw in codes:
         key = (raw or "").strip()
@@ -339,17 +374,47 @@ def quotes_cached(codes: list[str]) -> dict[str, dict]:
         hit = _DC_CACHE.get(("quote_one", key.lower()))
         if isinstance(hit, dict) and hit.get("price"):
             out[key] = hit
+            _remember_quote(key, hit)
+            continue
+        last = _QUOTE_ONE_LAST.get(key.lower())
+        if isinstance(last, dict) and last.get("price"):
+            out[key] = last
+            stale.append(key)
         else:
-            miss.append(key)
-    if not miss:
-        return out
-    fetched = quotes_map(miss)
+            unseen.append(key)
+    if unseen:
+        fetched = quotes_map(unseen)
+        ttl = astock.quote_ttl()
+        for k, item in fetched.items():
+            if not isinstance(item, dict) or not item.get("price"):
+                continue
+            _DC_CACHE.set(("quote_one", k.lower()), item, ttl=ttl)
+            _remember_quote(k, item)
+            out[k] = item
+    if stale:
+        threading.Thread(
+            target=_refresh_stale_quotes,
+            args=(stale,),
+            name="quote-stale",
+            daemon=True,
+        ).start()
+    return out
+
+
+def warm_hub_quotes(codes: list[str]) -> int:
+    """Force-write quote_one keys used by GET /market/quotes."""
+    from api_common import _DC_CACHE
+
+    fetched = quotes_map(codes)
+    ttl = astock.quote_ttl()
+    n = 0
     for k, item in fetched.items():
         if not isinstance(item, dict) or not item.get("price"):
             continue
-        _DC_CACHE.set(("quote_one", k.lower()), item, ttl=5)
-        out[k] = item
-    return out
+        _DC_CACHE.set(("quote_one", k.lower()), item, ttl=ttl)
+        _remember_quote(k, item)
+        n += 1
+    return n
 
 
 def _vix_from_sina() -> dict | None:

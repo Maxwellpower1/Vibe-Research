@@ -355,7 +355,7 @@ def market_lpr(days: int = Query(365, ge=30, le=2000)):
 def market_quotes(
     codes: str = Query(..., min_length=3, description="comma-separated sh600519,usIXIC,whUSDCNY"),
 ):
-    """Cockpit quote hub. Tencent equities/indices only (per-code 5s cache). Futures use /commodities."""
+    """Cockpit quote hub. Tencent equities/indices only (per-code TTL via quote_ttl). Futures use /commodities."""
     import cockpit_live
     raw = [c.strip() for c in codes.split(",") if c.strip()][:80]
     if not raw:
