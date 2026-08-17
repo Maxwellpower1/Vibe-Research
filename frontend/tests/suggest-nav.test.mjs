@@ -20,4 +20,6 @@ test("skipCode treats 6-digit and prefixed codes as codes", () => {
   assert.equal(CODE_RE.test("600519"), true);
   assert.equal(CODE_RE.test("sh600519"), true);
   assert.equal(CODE_RE.test("茅台"), false);
+  assert.equal(CODE_RE.test("gzmt"), false);
+  assert.equal(CODE_RE.test("payh"), false);
 });

@@ -83,6 +83,61 @@ def test_company_bundle_skips_valuation_stack(monkeypatch):
     assert out["main"]["name"] == "茅台"
 
 
+def test_parse_tencent_hint_pinyin_and_filters():
+    gzmt = r'v_hint="sh~600519~\u8d35\u5dde\u8305\u53f0~gzmt~GP-A"'
+    assert fw.parse_tencent_hint(gzmt) == [{"code": "600519", "name": "贵州茅台"}]
+
+    mixed = (
+        r'v_hint="sz~000001~\u5e73\u5b89\u94f6\u884c~payh~GP-A'
+        r'^us~payh.am~foo~bp~GP^jj~021574~\u5e73\u5b89\u5143~payh~KJ"'
+    )
+    assert fw.parse_tencent_hint(mixed) == [{"code": "000001", "name": "平安银行"}]
+
+    idx_and_stock = (
+        r'v_hint="sh~000001~\u4e0a\u8bc1\u6307\u6570~szzs~ZS'
+        r'^sz~000001~\u5e73\u5b89\u94f6\u884c~payh~GP-A"'
+    )
+    assert fw.parse_tencent_hint(idx_and_stock) == [{"code": "000001", "name": "平安银行"}]
+
+    etf = r'v_hint="sh~510300~\u6caa\u6df1300ETF~hs300etf~ETF"'
+    assert fw.parse_tencent_hint(etf) == [{"code": "510300", "name": "沪深300ETF"}]
+    assert fw.parse_tencent_hint('v_hint="N"') == []
+    assert fw.parse_tencent_hint("") == []
+
+
+def test_suggest_ashare_uses_tencent_then_eastmoney(monkeypatch):
+    class R:
+        def __init__(self, text="", payload=None):
+            self.text = text
+            self._payload = payload
+
+        def json(self):
+            if self._payload is None:
+                raise ValueError("not json")
+            return self._payload
+
+    calls: list[str] = []
+
+    def fake_get(url, params=None, **_k):
+        calls.append(url)
+        if "smartbox" in url:
+            return R(r'v_hint="sh~600519~\u8d35\u5dde\u8305\u53f0~gzmt~GP-A"')
+        raise AssertionError("eastmoney should not run when tencent hits")
+
+    monkeypatch.setattr(fw, "_http_get", fake_get)
+    assert fw.suggest_ashare("gzmt") == [{"code": "600519", "name": "贵州茅台"}]
+    assert calls == ["https://smartbox.gtimg.cn/s3/"]
+
+    def tencent_empty(url, params=None, **_k):
+        if "smartbox" in url:
+            return R('v_hint="N"')
+        return R(payload={"QuotationCodeTable": {"Data": [{"Code": "000858", "Name": "五粮液", "MktNum": "0"}]}})
+
+    monkeypatch.setattr(fw, "_http_get", tencent_empty)
+    assert fw.suggest_ashare("wly") == [{"code": "000858", "name": "五粮液"}]
+    assert fw.suggest_ashare("  ") == []
+
+
 def test_classify_forecast():
     assert fw.classify_forecast("预增", "") == "预增"
     assert fw.classify_forecast("", "预计净利润预减约 20%") == "预减"

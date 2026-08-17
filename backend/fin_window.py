@@ -421,11 +421,62 @@ def company_bundle(code: str) -> dict:
     }
 
 
-def suggest_ashare(q: str, n: int = 8) -> list[dict]:
-    """Eastmoney suggest, A-share only."""
-    q = (q or "").strip()
-    if not q:
+_HINT_RE = re.compile(r'v_hint="(.*)"', re.S)
+_ASHARE_MKT = {"sh", "sz", "bj"}
+
+
+def _unescape_hint(s: str) -> str:
+    """Tencent smartbox names come as JS \\uXXXX."""
+    if "\\u" not in s:
+        return s
+    try:
+        return s.encode("ascii").decode("unicode_escape")
+    except Exception:
+        return s
+
+
+def parse_tencent_hint(text: str, n: int = 8) -> list[dict]:
+    """Parse smartbox `v_hint`. Keep A-share stocks / ETF; drop index / fund / US / HK."""
+    raw = (text or "").strip()
+    m = _HINT_RE.search(raw)
+    body = m.group(1) if m else raw
+    if not body or body == "N":
         return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for part in body.split("^"):
+        bits = part.split("~")
+        if len(bits) < 5:
+            continue
+        mkt, code, name, _py, typ = bits[0], bits[1], bits[2], bits[3], bits[4]
+        if mkt not in _ASHARE_MKT or not re.fullmatch(r"\d{6}", code):
+            continue
+        if not (typ.startswith("GP-A") or typ == "ETF"):
+            continue
+        if code in seen:
+            continue
+        seen.add(code)
+        out.append({"code": code, "name": _unescape_hint(name) or code})
+        if len(out) >= n:
+            break
+    return out
+
+
+def _suggest_tencent(q: str, n: int) -> list[dict]:
+    try:
+        r = _http_get(
+            "https://smartbox.gtimg.cn/s3/",
+            {"q": q, "t": "all"},
+            timeout=6,
+            referer="https://gu.qq.com/",
+        )
+        return parse_tencent_hint(r.text or "", n)
+    except Exception:
+        return []
+
+
+def _suggest_eastmoney(q: str, n: int) -> list[dict]:
+    """Legacy Eastmoney table. Current searchapi often returns guba JSONP, not this."""
     params = {
         "input": q,
         "type": 14,
@@ -451,11 +502,18 @@ def suggest_ashare(q: str, n: int = 8) -> list[dict]:
         if not re.fullmatch(r"\d{6}", code):
             continue
         mkt = str(it.get("MktNum") or "")
-        if mkt not in ("1", "0", "90", "105"):  # SH / SZ / BJ-ish
-            # still accept 6-digit A-share codes
+        if mkt not in ("1", "0", "90", "105"):
             if not code.startswith(("6", "0", "3", "8", "9", "2")):
                 continue
         out.append({"code": code, "name": it.get("Name") or code})
         if len(out) >= n:
             break
     return out
+
+
+def suggest_ashare(q: str, n: int = 8) -> list[dict]:
+    """Name / code / pinyin initials. Tencent smartbox first (quote source); Eastmoney if empty."""
+    q = (q or "").strip()
+    if not q:
+        return []
+    return _suggest_tencent(q, n) or _suggest_eastmoney(q, n)
