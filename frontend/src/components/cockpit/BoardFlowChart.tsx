@@ -127,7 +127,6 @@ export function BoardFlowChart({
             const active = sel == null || sel === l.line.s.code;
             return (
               <g key={l.line.s.code} opacity={active ? 1 : 0.2} style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); toggle(l.line.s.code, l.line.s.name); }}>
-                <line x1={chart.W - END_LABEL_W - PLOT_INSET} y1={l.line.lastY} x2={chart.W - END_LABEL_W} y2={l.labelY} stroke={l.line.color} strokeWidth={0.6} strokeOpacity={0.5} />
                 <text x={chart.W - END_LABEL_W + 2} y={l.labelY + 3} fontSize={8.5} fill={l.line.color} style={TNUM}>
                   {l.line.s.name} {l.line.lastV >= 0 ? "+" : ""}{(l.line.lastV / 1e8).toFixed(0)}
                 </text>

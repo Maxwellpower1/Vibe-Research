@@ -75,4 +75,5 @@ test("board flow chart plots by session time, not point index", async () => {
   const src = await readFile(new URL("../src/components/cockpit/BoardFlowChart.tsx", import.meta.url), "utf8");
   assert.match(src, /ashareSessionIdx/);
   assert.doesNotMatch(src, /i \/ Math\.max\(n - 1/);
+  assert.doesNotMatch(src, /<line[^>]*lastY/);
 });
