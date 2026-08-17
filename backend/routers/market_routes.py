@@ -461,14 +461,14 @@ def market_board_flow_intraday(
 def market_commodities(
     codes: str = Query("", description="hf_GC,nf_AU0,BTCUSDT"),
 ):
-    """大宗商品快照. 缓存 20 秒."""
+    """大宗商品快照. 缓存 5 秒."""
     import cockpit_live
     raw = (codes or "").strip() or cockpit_live.DEFAULT_FUTURES
     try:
         data = _cached(
             "commodities",
             raw,
-            20,
+            5,
             lambda: cockpit_live.futures_quotes(raw),
         )
         return {"data": data}

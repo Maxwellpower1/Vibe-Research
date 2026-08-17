@@ -151,7 +151,7 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
             lambda: _cached(
                 "commodities",
                 cockpit_live.DEFAULT_FUTURES,
-                20,
+                5,
                 lambda: cockpit_live.futures_quotes(cockpit_live.DEFAULT_FUTURES),
             ),
         ),
@@ -258,7 +258,7 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
             lambda: _cached(
                 "commodities",
                 cockpit_live.DEFAULT_FUTURES,
-                20,
+                5,
                 lambda: cockpit_live.futures_quotes(cockpit_live.DEFAULT_FUTURES),
             ),
         ),
