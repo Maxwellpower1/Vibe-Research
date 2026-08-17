@@ -44,11 +44,15 @@ export function useReviewData() {
 
   const topUpdatedLabel = formatClock(topUpdatedAt, { refreshing: topRefreshing });
 
-  const { data: breadth } = usePolling<MarketBreadth>(
+  const { data: breadth, updated: breadthUpdated } = usePolling<MarketBreadth>(
     () => api.marketBreadth(),
     180_000,
     [],
     emoDone,
+  );
+  const breadthLabel = formatClock(
+    breadth?.updated || breadthUpdated || topUpdatedAt,
+    { refreshing: topRefreshing && !breadth },
   );
 
   const applyPaint = useCallback((s: ReviewSnapshot) => {
@@ -170,6 +174,7 @@ export function useReviewData() {
   return {
     emotion,
     breadth,
+    breadthLabel,
     lhb,
     etfFlow,
     etfShares,

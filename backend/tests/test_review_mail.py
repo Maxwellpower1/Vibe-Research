@@ -38,6 +38,20 @@ def test_fmt_yi_and_signed_pct():
     assert rc.fmt_signed_pct(None) == "—"
 
 
+def test_pack_breadth_uses_fetch_time_not_legu_close():
+    text = rc.pack_review_context({
+        "overview": {"sentiment": {
+            "up": 10, "down": 90, "flat": 0, "zt": 5, "zt_real": 4, "dt": 1, "dt_real": 1,
+            "date": "2026-08-14 15:00:00",
+        }},
+        "breadth": {"n": 3, "up": 2, "down": 1, "flat": 0, "avg": 0.5,
+                    "updated": "2026-08-17 09:31:22"},
+    })
+    assert "上涨2 平0 下跌1" in text
+    assert "更新 2026-08-17 09:31:22" in text
+    assert "2026-08-14 15:00:00" not in text
+
+
 def test_pack_includes_watch():
     text = rc.pack_review_context({
         "watch": [{"name": "贵州茅台", "price": 1400, "pct": 1.2}],

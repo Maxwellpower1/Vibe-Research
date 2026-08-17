@@ -10,6 +10,7 @@ import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
@@ -17,6 +18,7 @@ from urllib.request import Request, urlopen
 import astock
 from cache import TTLCache, is_nonempty
 
+BEIJING = timezone(timedelta(hours=8))
 UA = astock.UA
 _UNIVERSE_TTL = 24 * 3600
 
@@ -71,9 +73,14 @@ def quantile(xs: list[float], p: float) -> float | None:
 def compute_percentiles(pcts: list[float]) -> dict[str, Any]:
     xs = sorted(p for p in pcts if p is not None)
     n = len(xs)
+    up = sum(1 for x in xs if x > 0)
+    down = sum(1 for x in xs if x < 0)
     avg = round(sum(xs) / n, 2) if n else None
     return {
         "n": n,
+        "up": up,
+        "down": down,
+        "flat": n - up - down,
         "p10": quantile(xs, 10),
         "p25": quantile(xs, 25),
         "p50": quantile(xs, 50),
@@ -301,6 +308,7 @@ def _build_bundle() -> dict[str, Any]:
     stats = compute_percentiles(vals)
     stats["histogram"] = compute_histogram(vals)
     stats["source"] = source
+    stats["updated"] = datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M:%S")
     return {"stats": stats, "pcts": pcts}
 
 

@@ -28,6 +28,12 @@ test("reviewContext is a thin client of the backend packer", () => {
   assert.match(apiSrc, /\/market\/review-context/);
 });
 
+test("breadth panel clock is last fetch, not legu session close", () => {
+  assert.match(reviewSrc, /breadthLabel/);
+  assert.doesNotMatch(reviewSrc, /sentiment\?\.date/);
+  assert.match(hookSrc, /breadth\?\.updated/);
+});
+
 test("Daily Review and Ask AI send the packed snapshot", () => {
   assert.match(reviewSrc, /collectReviewContext/);
   assert.match(reviewSrc, /api\.reviewContext/);

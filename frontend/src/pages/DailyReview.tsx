@@ -211,7 +211,7 @@ export function DailyReview() {
           mobileH: "h-[380px]",
           right: (
             <span className="text-[10px] tabular-nums text-slate-500">
-              {d.sentiment?.date || d.emotion?.date || ""}
+              {d.breadthLabel}
             </span>
           ),
           body: (

@@ -372,7 +372,7 @@ def market_boards(
     direction: str = Query("0", description="0 down(leaders) / 1 up(laggards)"),
     n: int = Query(40, ge=5, le=200),
 ):
-    """市场板块实时热点. 缓存 20 秒."""
+    """市场板块实时热点. 缓存 10 秒."""
     import cockpit_live
     k = "02" if kind == "02" else "01"
     d = "1" if direction == "1" else "0"
@@ -380,7 +380,7 @@ def market_boards(
         data = _cached(
             "sector_boards",
             f"{k}:{d}:{n}",
-            20,
+            10,
             lambda: cockpit_live.sector_boards(k, d, n),
         )
         return {"data": data}
@@ -393,14 +393,14 @@ def market_board_stocks(
     code: str = Query(..., description="Tencent pt* or BK####"),
     n: int = Query(12, ge=5, le=80),
 ):
-    """板块成分股. 腾讯 pt* 优先, 东财 BK 兜底. 缓存 20 秒."""
+    """板块成分股. 腾讯 pt* 优先, 东财 BK 兜底. 缓存 10 秒."""
     import cockpit_live
     raw = (code or "").strip()
     try:
         data = _cached(
             "board_stocks",
             f"{raw}:{n}",
-            20,
+            10,
             lambda: cockpit_live.board_stocks(raw, n),
         )
         return {"data": data}

@@ -8,7 +8,7 @@ import { sparkFromKline } from "@/lib/lightKline";
 import { useMinutes } from "@/lib/minuteHub";
 import { cn } from "@/lib/utils";
 
-const POLL_MS = 20_000;
+const POLL_MS = 10_000;
 const MAX_STOCK_ROWS = 40;
 
 export type SectorKind = "01" | "02";

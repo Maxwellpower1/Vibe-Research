@@ -200,10 +200,12 @@ export interface LianbanStock {
 }
 export interface MarketBreadth {
   n: number;
+  up?: number; down?: number; flat?: number;
   p10?: number | null; p25?: number | null; p50?: number | null;
   p75?: number | null; p90?: number | null; avg?: number | null;
   histogram?: Array<{ label: string; count: number; pct: number }>;
   source?: string;
+  updated?: string;
 }
 export interface EmotionSeals {
   sealed_up: number; fake_up: number;

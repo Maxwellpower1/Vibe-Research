@@ -146,17 +146,19 @@ def _sentiment(data: dict) -> str | None:
     s = ov.get("sentiment") if isinstance(ov, dict) else None
     b = data.get("breadth") if isinstance(data.get("breadth"), dict) else None
     bits: list[str] = []
-    if isinstance(s, dict) and (s.get("up") or 0) + (s.get("down") or 0) + (s.get("flat") or 0) > 0:
-        bits.append(
-            f"上涨{s.get('up')} 平{s.get('flat')} 下跌{s.get('down')}；"
-            f"涨停{s.get('zt')}(真实{s.get('zt_real')}) 跌停{s.get('dt')}(真实{s.get('dt_real')})"
-        )
-        if s.get("breadth"):
+    counts = b if isinstance(b, dict) and (b.get("up") or 0) + (b.get("down") or 0) + (b.get("flat") or 0) > 0 else s
+    if isinstance(counts, dict) and (counts.get("up") or 0) + (counts.get("down") or 0) + (counts.get("flat") or 0) > 0:
+        line = f"上涨{counts.get('up')} 平{counts.get('flat')} 下跌{counts.get('down')}"
+        if isinstance(s, dict) and (s.get("zt") or s.get("dt")):
+            line += f"；涨停{s.get('zt')}(真实{s.get('zt_real')}) 跌停{s.get('dt')}(真实{s.get('dt_real')})"
+        bits.append(line)
+        if isinstance(s, dict) and s.get("breadth"):
             bits.append(f"广度 {s.get('breadth')}")
-        if s.get("speculation"):
+        if isinstance(s, dict) and s.get("speculation"):
             bits.append(f"投机 {s.get('speculation')}")
-        if s.get("date"):
-            bits.append(f"日期 {s.get('date')}")
+        stamp = (b.get("updated") if isinstance(b, dict) else None) or None
+        if stamp:
+            bits.append(f"更新 {stamp}")
     if isinstance(b, dict) and b.get("n"):
         pcts = []
         for k, label in (("p10", "p10"), ("p25", "p25"), ("p50", "p50"),

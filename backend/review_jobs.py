@@ -96,7 +96,7 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
             lambda: _cached(
                 "sector_boards",
                 f"{kind}:0:80",
-                20,
+                10,
                 lambda: cockpit_live.sector_boards(kind, "0", 80),
             ),
         ),
@@ -105,7 +105,7 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
             lambda: _cached(
                 "sector_boards",
                 f"{kind}:1:80",
-                20,
+                10,
                 lambda: cockpit_live.sector_boards(kind, "1", 80),
             ),
         ),
@@ -267,7 +267,7 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
             lambda: _cached(
                 "sector_boards",
                 "01:0:80",
-                20,
+                10,
                 lambda: cockpit_live.sector_boards("01", "0", 80),
             ),
         ),
@@ -276,7 +276,7 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
             lambda: _cached(
                 "sector_boards",
                 "01:1:80",
-                20,
+                10,
                 lambda: cockpit_live.sector_boards("01", "1", 80),
             ),
         ),

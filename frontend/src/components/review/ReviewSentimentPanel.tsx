@@ -23,14 +23,14 @@ export function ReviewSentimentPanel({
   pending,
   breadth,
 }: Props) {
-  const up = sentiment?.up ?? 0;
-  const down = sentiment?.down ?? 0;
-  const flat = sentiment?.flat ?? 0;
+  const up = breadth?.up ?? sentiment?.up ?? 0;
+  const down = breadth?.down ?? sentiment?.down ?? 0;
+  const flat = breadth?.flat ?? sentiment?.flat ?? 0;
   const total = Math.max(1, up + down + flat);
   const upShare = up / total;
   const downShare = down / total;
   const flatShare = flat / total;
-  const hasCounts = !!sentiment && (up + down + flat) > 0;
+  const hasCounts = (up + down + flat) > 0;
   const hasHist = !!(breadth && breadth.n > 0 && breadth.histogram?.length);
   const ready = hasCounts || hasHist;
 

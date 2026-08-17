@@ -10,6 +10,9 @@ def test_quantile_and_histogram():
     xs = [-6, -4, -2, -0.5, 0.2, 2, 4, 8]
     p = cross_section.compute_percentiles(xs)
     assert p["n"] == 8
+    assert p["up"] == 4
+    assert p["down"] == 4
+    assert p["flat"] == 0
     assert abs((p["p50"] or 0) - (-0.15)) < 1e-9
     assert p["p10"] is not None and p["p90"] is not None
     hist = cross_section.compute_histogram(xs)
