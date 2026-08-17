@@ -11,6 +11,9 @@ export interface DirectQuote {
   prev: number;
   amount: number;
   turnover: number;
+  pe_ttm?: number;
+  pb?: number;
+  mcap_yi?: number;
 }
 
 export interface DirectBoard {
@@ -77,6 +80,7 @@ export function parseTencentQuotes(text: string): Record<string, DirectQuote> {
       out[symbol] = {
         symbol, name: f[1] || symbol, price, change, pct: num(f[13]),
         prev: price - change, amount: 0, turnover: 0,
+        pe_ttm: 0, pb: 0, mcap_yi: 0,
       };
       continue;
     }
@@ -91,6 +95,10 @@ export function parseTencentQuotes(text: string): Record<string, DirectQuote> {
       pct: num(f[32]),
       amount: hasTurnoverAmount(symbol) && rawAmt ? rawAmt * 10000 : 0,
       turnover: f.length > 38 ? num(f[38]) : 0,
+      pe_ttm: f.length > 39 ? num(f[39]) : 0,
+      pb: f.length > 46 ? num(f[46]) : 0,
+      // 45=总市值(亿); 44 is float mcap and can be much smaller on STAR names.
+      mcap_yi: f.length > 45 ? num(f[45]) : 0,
     };
   }
   return out;

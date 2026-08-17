@@ -115,7 +115,8 @@ def _gtimg_line(**overrides) -> str:
     parts[1] = overrides.get("name", "贵州茅台")
     parts[3] = overrides.get("price", "1194.45")
     parts[39] = overrides.get("pe_ttm", "18.05")
-    parts[44] = overrides.get("mcap", "15000")
+    parts[44] = overrides.get("float_mcap", "15000")
+    parts[45] = overrides.get("mcap", "15000")
     parts[46] = overrides.get("pb", "6.41")
     return 'v_sh600519="' + "~".join(parts) + '";'
 
@@ -129,6 +130,15 @@ def test_parse_gtimg():
     assert q["pe_ttm"] == 18.05
     assert q["pb"] == 6.41
     assert q["mcap_yi"] == 15000
+    assert q["float_mcap_yi"] == 15000
+
+
+def test_parse_gtimg_star_total_mcap():
+    # STAR lockup: 44 float != 45 total. 市值(亿) must use total.
+    out = astock._parse_gtimg(_gtimg_line(float_mcap="2708.58", mcap="40228.85"))
+    q = out["600519"]
+    assert q["mcap_yi"] == 40228.85
+    assert q["float_mcap_yi"] == 2708.58
 
 
 def test_parse_gtimg_bad_line_ignored():
@@ -177,6 +187,9 @@ def test_quote_cache_shared_with_cockpit(monkeypatch):
     assert len(calls) == 1
     assert out["sh600519"]["price"] == 1194.45
     assert out["sh600519"]["name"] == "贵州茅台"
+    assert out["sh600519"]["pe_ttm"] == 18.05
+    assert out["sh600519"]["pb"] == 6.41
+    assert out["sh600519"]["mcap_yi"] == 15000
 
 
 def test_quote_cache_index_not_aliased_to_bare(monkeypatch):

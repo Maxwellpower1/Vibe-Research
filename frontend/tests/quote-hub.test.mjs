@@ -8,6 +8,7 @@ const QUOTE = new URL("../src/lib/quoteHub.ts", import.meta.url);
 const MINUTE = new URL("../src/lib/minuteHub.ts", import.meta.url);
 const WORLD = new URL("../src/components/cockpit/WorldIndexPanel.tsx", import.meta.url);
 const SESSION = new URL("../src/lib/ashareSession.ts", import.meta.url);
+const DIRECT = new URL("../src/lib/tencentDirect.ts", import.meta.url);
 
 const chartSrc = await readFile(CHART, "utf8");
 const feedSrc = await readFile(FEED, "utf8");
@@ -15,6 +16,7 @@ const quoteSrc = await readFile(QUOTE, "utf8");
 const minuteSrc = await readFile(MINUTE, "utf8");
 const worldSrc = await readFile(WORLD, "utf8");
 const sessionSrc = await readFile(SESSION, "utf8");
+const directSrc = await readFile(DIRECT, "utf8");
 
 test("K-line page and watchlist feed subscribe to the quote hub", () => {
   assert.match(chartSrc, /useQuotes\(codes\)/);
@@ -34,6 +36,15 @@ test("quote and minute hubs stretch the interval when A-share is not open", () =
   assert.match(minuteSrc, /primeTradingDay/);
   assert.doesNotMatch(quoteSrc, /setInterval/);
   assert.doesNotMatch(minuteSrc, /setInterval/);
+});
+
+test("browser-direct Tencent fallback keeps PE/PB/total mcap", () => {
+  assert.match(directSrc, /pe_ttm/);
+  assert.match(directSrc, /mcap_yi/);
+  assert.match(directSrc, /f\[39\]/);
+  assert.match(directSrc, /f\[45\]/);
+  assert.match(directSrc, /f\[46\]/);
+  assert.match(chartSrc, /selQuote\?\.mcap_yi/);
 });
 
 test("world index minutes subscribe to the minute hub", () => {

@@ -29,6 +29,22 @@ def test_quote_item_pct_follows_price_prev():
     assert flat["pct"] == 0.0
 
 
+def test_quote_item_keeps_valuation():
+    item = cl._quote_item(
+        {
+            "name": "长鑫科技", "price": 60.15, "prev": 55.18,
+            "pe_ttm": 142.68, "pb": 28.87, "mcap_yi": 40228.85,
+            "turnover": 8.48,
+        },
+        "sh688825",
+        turnover=8.48,
+    )
+    assert item["pe_ttm"] == 142.68
+    assert item["pb"] == 28.87
+    assert item["mcap_yi"] == 40228.85
+    assert item["turnover"] == 8.48
+
+
 def test_parse_tencent_forex():
     line = 'v_whUSDCNY="200~美元人民币~USDCNY~7.1800~0~0~7.17~0~7.19~7.16~0~0~0.0200~0.28"'
     q = cl.parse_tencent_quote_line(line)

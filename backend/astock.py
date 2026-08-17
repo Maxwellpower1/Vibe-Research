@@ -212,8 +212,9 @@ def parse_gtimg_line(line: str) -> dict | None:
         "turnover": turn,
         "pe_ttm": n(vals, 39) if len(vals) > 39 else 0.0,
         "amplitude_pct": n(vals, 43) if len(vals) > 43 else 0.0,
-        "mcap_yi": n(vals, 44) if len(vals) > 44 else 0.0,
-        "float_mcap_yi": n(vals, 45) if len(vals) > 45 else 0.0,
+        # 44=流通市值, 45=总市值. 科创板限售会差数倍, 勿对调.
+        "mcap_yi": n(vals, 45) if len(vals) > 45 else 0.0,
+        "float_mcap_yi": n(vals, 44) if len(vals) > 44 else 0.0,
         "pb": n(vals, 46) if len(vals) > 46 else 0.0,
         "limit_up": n(vals, 47) if len(vals) > 47 else 0.0,
         "limit_down": n(vals, 48) if len(vals) > 48 else 0.0,
