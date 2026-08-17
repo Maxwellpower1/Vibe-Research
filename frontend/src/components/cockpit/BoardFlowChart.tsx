@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useElementSize } from "@/hooks/useElementSize";
 import type { BoardFlowIntraday } from "@/lib/api";
+import { ASHARE_SESSION_MIN, ashareSessionIdx } from "@/lib/sparkAxis";
 
 const REDS = ["#fb7185", "#f43f5e", "#fca5a5", "#fb923c", "#fdba74", "#e11d48", "#fecdd3", "#fda4af"];
 const GREENS = ["#34d399", "#10b981", "#6ee7b7", "#059669", "#a7f3d0", "#4ade80", "#22c55e", "#86efac"];
@@ -56,14 +57,15 @@ export function BoardFlowChart({
     const pad = (max - min) * 0.04 || 1;
     min -= pad;
     max += pad;
-    const X = (i: number) => PLOT_LEFT + (i / Math.max(n - 1, 1)) * (W - 40 - END_LABEL_W);
+    const plotW = W - 40 - END_LABEL_W;
+    const X = (sessionI: number) => PLOT_LEFT + (sessionI / ASHARE_SESSION_MIN) * plotW;
     const Y = (v: number) => 8 + (1 - (v - min) / (max - min)) * (chartH - 26);
     let ri = 0;
     let gi = 0;
     const lines = series.map((s) => {
       const color = s.net_in >= 0 ? REDS[ri++ % REDS.length] : GREENS[gi++ % GREENS.length];
       const seg = s.points.slice(0, idx + 1);
-      const pts = seg.map((p, i) => `${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).join(" ");
+      const pts = seg.map((p) => `${X(ashareSessionIdx(p.t)).toFixed(1)},${Y(p.v).toFixed(1)}`).join(" ");
       const last = seg[seg.length - 1];
       return { s, color, pts, lastY: Y(last.v), lastV: last.v };
     });
@@ -82,9 +84,11 @@ export function BoardFlowChart({
       l.labelY = sy;
       sy += gap;
     }
+    const cursorT = series.find((s) => s.points.length > idx)?.points[idx]?.t ?? "";
     return {
-      W, chartH, X, Y, lines, labels, ticks, idx,
-      cursorT: series.find((s) => s.points.length > idx)?.points[idx]?.t ?? "",
+      W, chartH, X, Y, lines, labels, ticks,
+      cursorT,
+      cursorX: X(ashareSessionIdx(cursorT) || 0),
     };
   }, [flows, size, progress]);
 
@@ -132,8 +136,8 @@ export function BoardFlowChart({
           })}
           {progress < 1 && (
             <g>
-              <line x1={chart.X(chart.idx)} y1={8} x2={chart.X(chart.idx)} y2={chart.chartH - 18} stroke={FLAT} strokeWidth={1} strokeDasharray="3 3" />
-              <text x={chart.X(chart.idx)} y={8} fontSize={8} fill="#e2e8f0" textAnchor="middle" style={TNUM}>{chart.cursorT}</text>
+              <line x1={chart.cursorX} y1={8} x2={chart.cursorX} y2={chart.chartH - 18} stroke={FLAT} strokeWidth={1} strokeDasharray="3 3" />
+              <text x={chart.cursorX} y={8} fontSize={8} fill="#e2e8f0" textAnchor="middle" style={TNUM}>{chart.cursorT}</text>
             </g>
           )}
         </svg>

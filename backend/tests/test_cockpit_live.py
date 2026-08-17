@@ -20,6 +20,15 @@ def test_parse_tencent_a_share_index():
     assert q["amount"] == 12345.6
 
 
+def test_quote_item_pct_follows_price_prev():
+    q = {"name": "x", "price": 11.0, "prev": 10.0, "pct": 0.0, "change": 0.0}
+    item = cl._quote_item(q, "sz000001")
+    assert item["pct"] == 10.0
+    assert item["change"] == 1.0
+    flat = cl._quote_item({"name": "y", "price": 10.0, "prev": 10.0, "pct": 9.9}, "sz000001")
+    assert flat["pct"] == 0.0
+
+
 def test_parse_tencent_forex():
     line = 'v_whUSDCNY="200~美元人民币~USDCNY~7.1800~0~0~7.17~0~7.19~7.16~0~0~0.0200~0.28"'
     q = cl.parse_tencent_quote_line(line)

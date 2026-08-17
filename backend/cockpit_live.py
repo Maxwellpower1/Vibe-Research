@@ -240,13 +240,26 @@ def _canon_quote_code(raw: str) -> str:
 
 def _quote_item(q: dict, canon: str, *, amount: float = 0.0, turnover: float = 0.0) -> dict:
     turn = turnover or q.get("turnover") or q.get("turnover_pct") or 0.0
+    price = _num(q.get("price"))
+    prev = _num(q.get("prev") or q.get("last_close"))
+    raw_pct = q.get("pct")
+    if raw_pct is None:
+        raw_pct = q.get("change_pct")
+    # Prefer (price-prev)/prev. Tencent f32 is sometimes still 0 after the last prints.
+    # `or 0` would also swallow a real 0% and is not used here.
+    if prev:
+        pct = _pct(price, prev)
+        change = _change(price, prev)
+    else:
+        pct = _num(raw_pct)
+        change = _num(q.get("change") or q.get("change_amt"))
     return {
         "symbol": canon,
         "name": q.get("name") or canon,
-        "price": q.get("price") or 0.0,
-        "pct": q.get("pct") or 0.0,
-        "change": q.get("change") or 0.0,
-        "prev": q.get("prev") or q.get("last_close") or 0.0,
+        "price": price,
+        "pct": pct,
+        "change": change,
+        "prev": prev,
         "amount": amount,
         "turnover": turn,
         "pe_ttm": q.get("pe_ttm") or 0.0,

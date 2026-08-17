@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 function toMinute(t) {
@@ -45,6 +46,12 @@ function sparkXs(times, n, width, session = "ashare") {
   return xs;
 }
 
+test("ashare morning stays left of the close", () => {
+  const xs = sparkXs(["09:31", "09:32", "09:44"], 3, 242, "ashare");
+  assert.ok(xs[2] < 30);
+  assert.ok(xs[0] < xs[2]);
+});
+
 test("ashare lunch maps 11:30 and 13:00 to the same x", () => {
   const xs = sparkXs(["09:30", "11:30", "13:00", "15:00"], 4, 242, "ashare");
   assert.equal(xs[0], 1);
@@ -62,4 +69,10 @@ test("h24 compresses a multi-hour gap", () => {
 test("toMinute reads datetime and compact hhmm", () => {
   assert.equal(toMinute("2026-08-15 09:31"), 9 * 60 + 31);
   assert.equal(toMinute("0931"), 9 * 60 + 31);
+});
+
+test("board flow chart plots by session time, not point index", async () => {
+  const src = await readFile(new URL("../src/components/cockpit/BoardFlowChart.tsx", import.meta.url), "utf8");
+  assert.match(src, /ashareSessionIdx/);
+  assert.doesNotMatch(src, /i \/ Math\.max\(n - 1/);
 });
