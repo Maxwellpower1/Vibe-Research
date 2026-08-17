@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import * as echarts from "echarts";
-import { Copy, Play, Star, Trash2, Wallet } from "lucide-react";
+import { Copy, Play, RotateCcw, Star, Trash2, Wallet } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -11,13 +11,21 @@ import {
   type BacktestEvent,
   type BacktestResult,
   type BacktestRunSummary,
+  type BacktestIndexPoolDef,
+  type BacktestStoreCover,
   type BacktestStrategy,
+  type BacktestSymbolRow,
 } from "@/lib/api";
 import { loadWatch, parseCodes } from "@/lib/watchlist";
 import { storageGet, storageSet } from "@/lib/storage";
 import { cn } from "@/lib/utils";
+import { FactorPanel } from "@/pages/backtest/FactorPanel";
+import { FALLBACK_INDEX_POOLS, IndexPoolButtons } from "@/pages/backtest/IndexPoolButtons";
+import { Tearsheet } from "@/pages/backtest/Tearsheet";
+import { jobPct, jobText, useBacktestJob } from "@/pages/backtest/useBacktestJob";
 
 const CFG_KEY = "vr-backtest-v1";
+const FALLBACK_MAX = 600;
 const REJECT_LABEL: Record<string, string> = {
   limit_up: "涨停买不进",
   limit_down: "跌停卖不出",
@@ -49,18 +57,23 @@ interface Draft {
   slippageBps: number;
   oosMode: "off" | "30" | "20" | "wf";
   tuneMa: boolean;
+  momWin: number;
+  rebalance: number;
+  stopLossPct: number;
+  maxHoldDays: number;
 }
 
 const STRATS: { id: BacktestStrategy; label: string; hint: string }[] = [
   { id: "hold", label: "买入持有", hint: "第一根可买日开仓, 拿到结束" },
   { id: "ma_cross", label: "均线金叉死叉", hint: "短均线上穿长均线买, 下穿卖" },
   { id: "dates", label: "指定买卖日", hint: "一行一条: 600519 buy 2024-03-01" },
+  { id: "rank_mom", label: "动量轮动", hint: "静态池近 N 日收益取前 K, 每 M 日再平衡. 不是全 A 每天重选" },
 ];
 
 function defaultDraft(): Draft {
   const watch = loadWatch();
   return {
-    codes: watch.slice(0, 20).join(" ") || "600519",
+    codes: watch.slice(0, FALLBACK_MAX).join(" ") || "600519",
     lookback: "2y",
     strategy: "hold",
     shortWin: 5,
@@ -75,6 +88,10 @@ function defaultDraft(): Draft {
     slippageBps: 5,
     oosMode: "30",
     tuneMa: true,
+    momWin: 20,
+    rebalance: 20,
+    stopLossPct: 0,
+    maxHoldDays: 0,
   };
 }
 
@@ -86,6 +103,63 @@ function loadDraft(): Draft {
   } catch {
     return defaultDraft();
   }
+}
+
+function bareCode(sym: string) {
+  return sym.replace(/^(sh|sz|bj)/i, "");
+}
+
+function lookbackFromSpan(start?: string, end?: string): Lookback {
+  if (!start || !end) return "2y";
+  const a = Date.parse(start);
+  const b = Date.parse(end);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return "2y";
+  const days = (b - a) / 86400000;
+  if (days > 800) return "3y";
+  if (days > 400) return "2y";
+  return "1y";
+}
+
+function draftFromResult(result: BacktestResult, base: Draft): Draft {
+  const cfg = result.config || {};
+  const matcher = cfg.matcher || {};
+  const rawCodes = (cfg.codes && cfg.codes.length ? cfg.codes : result.universe?.symbols) || [];
+  const codes = rawCodes.map((c) => bareCode(String(c))).filter(Boolean).join(" ");
+  const name = String(result.strategy?.name || cfg.strategy || base.strategy);
+  const strategy = (STRATS.some((s) => s.id === name) ? name : base.strategy) as BacktestStrategy;
+  let oosMode: Draft["oosMode"] = "off";
+  if (cfg.walk_forward) oosMode = "wf";
+  else if (Number(cfg.oos_frac) === 0.2) oosMode = "20";
+  else if (Number(cfg.oos_frac) === 0.3 || result.oos) oosMode = "30";
+  const events = Array.isArray(cfg.events)
+    ? cfg.events
+        .map((e) => `${bareCode(String(e.code || ""))} ${e.side} ${e.date}`)
+        .filter((line) => /\d{6}\s+(buy|sell)\s+\d{4}-\d{2}-\d{2}/i.test(line))
+        .join("\n")
+    : base.events;
+  const fill = (cfg.fill || matcher.fill || base.fill) as Draft["fill"];
+  return {
+    ...base,
+    codes: codes || base.codes,
+    lookback: lookbackFromSpan(cfg.start || result.universe?.start, cfg.end || result.universe?.end),
+    strategy,
+    shortWin: Number(cfg.short_win ?? result.strategy?.short_win ?? base.shortWin),
+    longWin: Number(cfg.long_win ?? result.strategy?.long_win ?? base.longWin),
+    momWin: Number(cfg.mom_win ?? result.strategy?.mom_win ?? base.momWin),
+    rebalance: Number(cfg.rebalance ?? result.strategy?.rebalance ?? base.rebalance),
+    events,
+    fill: fill === "close_t" ? "close_t" : "open_t+1",
+    capital: Number(matcher.initial_capital ?? base.capital),
+    maxPositions: Number(matcher.max_positions ?? result.strategy?.top_k ?? base.maxPositions),
+    commissionPct: Number(matcher.commission_pct ?? 0.00025) * 100,
+    commissionMin: Number(matcher.commission_min ?? base.commissionMin),
+    stampTaxPct: Number(matcher.stamp_tax_pct ?? 0.0005) * 100,
+    slippageBps: Number(matcher.slippage_bps ?? base.slippageBps),
+    oosMode,
+    tuneMa: Boolean(cfg.tune_ma),
+    stopLossPct: Number(matcher.stop_loss_pct ?? 0) * 100,
+    maxHoldDays: Number(matcher.max_hold_days ?? 0),
+  };
 }
 
 function parseEvents(raw: string): BacktestEvent[] {
@@ -134,6 +208,9 @@ function buildCopy(result: BacktestResult, codes: string[]) {
       ? `滚动切窗 ${result.walk_forward.summary.folds} 折 · 平均夏普 ${result.walk_forward.summary.mean_sharpe.toFixed(2)}`
       : "",
     `成交 ${s.trades} 笔 · 完成回合 ${s.round_trips} · 胜率 ${fmtPct(s.win_rate)}`,
+    ...(result.by_symbol || []).slice(0, 3).map((r, i) =>
+      `${i === 0 ? "分标的盈亏前3: " : "  "}${bareCode(r.symbol)} ${fmtNum(r.pnl, 0)} · 胜率 ${fmtPct(r.win_rate)}`,
+    ),
     result.run_id ? `实验 ${result.run_id} · 数据哈希 ${result.data_hash || "?"}` : "",
     result.data_hash_match === false
       ? `行情已变, 实验哈希 ${result.data_hash || "?"} 现在 ${result.data_hash_now || "?"}`
@@ -146,7 +223,7 @@ function buildCopy(result: BacktestResult, codes: string[]) {
   return lines.filter(Boolean).join("\n");
 }
 
-function EquityChart({ result }: { result: BacktestResult }) {
+function EquityChart({ result, compare }: { result: BacktestResult; compare?: BacktestResult | null }) {
   const elRef = useRef<HTMLDivElement>(null);
   const instRef = useRef<echarts.ECharts | null>(null);
 
@@ -172,6 +249,11 @@ function EquityChart({ result }: { result: BacktestResult }) {
     const dd = result.drawdown_curve.map((p) => p.drawdown * 100);
     const benchMap = new Map((result.benchmark?.curve || []).map((p) => [p.date, p.equity]));
     const bench = dates.map((d) => benchMap.get(d) ?? null);
+    const cmpMap = new Map((compare?.equity_curve || []).map((p) => [p.date, p.equity]));
+    const cmp = dates.map((d) => cmpMap.get(d) ?? null);
+    const cmpName = compare
+      ? `对照 ${compare.strategy?.name || compare.run_id?.slice(0, 8) || "run"}`
+      : "";
     inst.setOption({
       backgroundColor: "transparent",
       animation: false,
@@ -237,6 +319,17 @@ function EquityChart({ result }: { result: BacktestResult }) {
           showSymbol: false,
           lineStyle: { color: "#f59e0b", width: 1.2, type: "dashed" },
         },
+        ...(compare
+          ? [{
+              name: cmpName,
+              type: "line" as const,
+              xAxisIndex: 0,
+              yAxisIndex: 0,
+              data: cmp,
+              showSymbol: false,
+              lineStyle: { color: "#a78bfa", width: 1.3, type: "dotted" as const },
+            }]
+          : []),
         {
           name: "回撤",
           type: "line",
@@ -248,9 +341,9 @@ function EquityChart({ result }: { result: BacktestResult }) {
           areaStyle: { color: "rgba(52,211,153,0.12)" },
         },
       ],
-    });
+    }, { replaceMerge: ["series"] });
     inst.resize();
-  }, [result]);
+  }, [result, compare]);
 
   return <div ref={elRef} className="h-[320px] w-full" />;
 }
@@ -263,11 +356,18 @@ export function Backtest() {
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [runs, setRuns] = useState<BacktestRunSummary[]>([]);
+  const [maxCodes, setMaxCodes] = useState(FALLBACK_MAX);
+  const [cover, setCover] = useState<BacktestStoreCover | null>(null);
+  const [compare, setCompare] = useState<BacktestResult | null>(null);
+  const [tab, setTab] = useState<"account" | "factor">("account");
+  const job = useBacktestJob(running);
+  const [indexPools, setIndexPools] = useState<BacktestIndexPoolDef[]>(FALLBACK_INDEX_POOLS);
+  const [poolNote, setPoolNote] = useState("");
   const boot = useRef(false);
 
   async function refreshRuns() {
     try {
-      setRuns(await api.backtestRuns(20));
+      setRuns(await api.backtestRuns(20, "account"));
     } catch {
       setRuns([]);
     }
@@ -279,18 +379,41 @@ export function Backtest() {
 
   useEffect(() => {
     void refreshRuns();
+    void api.backtestMeta().then((m) => {
+      const n = Number(m.limits?.max_codes);
+      if (Number.isFinite(n) && n > 0) setMaxCodes(n);
+      if (m.index_pools?.length) setIndexPools(m.index_pools);
+    }).catch(() => undefined);
   }, []);
 
-  const codes = useMemo(() => parseCodes(draft.codes).slice(0, 20), [draft.codes]);
+  const parsed = useMemo(() => parseCodes(draft.codes), [draft.codes]);
+  const codes = useMemo(() => parsed.slice(0, maxCodes), [parsed, maxCodes]);
+  const overflow = parsed.length > maxCodes;
+
+  useEffect(() => {
+    if (!codes.length) {
+      setCover(null);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      void api.backtestCover(codes, draft.lookback).then(setCover).catch(() => setCover(null));
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [codes, draft.lookback]);
 
   const patch = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
 
   async function runWith(next: Draft) {
-    const list = parseCodes(next.codes).slice(0, 20);
-    if (!list.length) {
+    const all = parseCodes(next.codes);
+    if (!all.length) {
       setError("先填至少 1 个 6 位 A 股代码");
       return;
     }
+    if (all.length > maxCodes) {
+      setError(`一次最多 ${maxCodes} 只`);
+      return;
+    }
+    const list = all;
     setRunning(true);
     setError("");
     try {
@@ -308,10 +431,14 @@ export function Backtest() {
         slippage_bps: next.slippageBps,
         short_win: next.shortWin,
         long_win: next.longWin,
+        mom_win: next.momWin,
+        rebalance: next.rebalance,
         events: next.strategy === "dates" ? parseEvents(next.events) : [],
         oos_frac: next.oosMode === "20" ? 0.2 : next.oosMode === "30" ? 0.3 : undefined,
-        tune_ma: oosOn && next.tuneMa && next.strategy === "ma_cross",
+        tune_ma: oosOn && next.tuneMa && (next.strategy === "ma_cross" || next.strategy === "rank_mom"),
         walk_forward: next.oosMode === "wf",
+        stop_loss_pct: next.stopLossPct > 0 ? next.stopLossPct / 100 : 0,
+        max_hold_days: next.maxHoldDays > 0 ? next.maxHoldDays : 0,
       };
       const out = await api.backtestRun(body);
       setResult(out);
@@ -332,19 +459,29 @@ export function Backtest() {
     if (boot.current) return;
     const q = params.get("codes");
     if (!q) return;
-    const parsed = parseCodes(q).slice(0, 20);
+    const parsed = parseCodes(q).slice(0, maxCodes);
     if (!parsed.length) return;
     boot.current = true;
     const next: Draft = {
       ...loadDraft(),
       codes: parsed.join(" "),
-      maxPositions: Math.min(20, Math.max(parsed.length, 1)),
+      maxPositions: Math.min(maxCodes, Math.max(parsed.length, 1)),
       strategy: params.get("from") === "portfolio" ? "hold" : loadDraft().strategy,
       oosMode: "30",
     };
     setDraft(next);
     if (params.get("autostart") === "1") void runWith(next);
   }, [params]);
+
+  function applyResult(src: BacktestResult) {
+    setDraft(draftFromResult(src, draft));
+  }
+
+  async function rerunResult(src: BacktestResult) {
+    const next = draftFromResult(src, draft);
+    setDraft(next);
+    await runWith(next);
+  }
 
   async function copySummary() {
     if (!result) return;
@@ -365,19 +502,47 @@ export function Backtest() {
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
       <PageHeader
         title="回测"
-        subtitle="A 股日线账户模拟. 信号日不等于成交日, 默认次日开盘. 研究用, 不荐股、不预测."
+        subtitle={tab === "factor"
+          ? "因子研究: Rank IC / 五档 / 多空. 从本机日 K 现场算, 不是账户撮合, 不荐股."
+          : "A 股日线账户模拟. 优先读本机近 2 年库存, 缺的再补. 信号日不等于成交日, 默认次日开盘. 研究用, 不荐股、不预测."}
         actions={
-          <button
-            type="button"
-            onClick={() => void run()}
-            disabled={running}
-            className="inline-flex items-center gap-1.5 rounded border border-cyan-500/40 bg-cyan-500/15 px-3 py-1 text-[12px] font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50"
-          >
-            <Play className="h-3.5 w-3.5" />
-            {running ? "在跑…" : "跑回测"}
-          </button>
+          tab === "account" ? (
+            <button
+              type="button"
+              onClick={() => void run()}
+              disabled={running}
+              className="inline-flex items-center gap-1.5 rounded border border-cyan-500/40 bg-cyan-500/15 px-3 py-1 text-[12px] font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {running ? jobText(job, "在跑…") : "跑回测"}
+            </button>
+          ) : null
         }
       />
+      <div className="mb-3 flex gap-1">
+        {([["account", "账户"], ["factor", "因子"]] as const).map(([k, lab]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTab(k)}
+            className={cn(
+              "rounded border px-2.5 py-1 text-[11px]",
+              tab === k ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-200" : "border-slate-700 text-slate-400 hover:text-slate-200",
+            )}
+          >
+            {lab}
+          </button>
+        ))}
+      </div>
+      {tab === "factor" && (
+        <FactorPanel
+          codes={draft.codes}
+          lookback={draft.lookback}
+          onCodes={(codes) => patch({ codes })}
+        />
+      )}
+      {tab === "account" && (
+      <>
 
       <div className="mb-3 rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-100/80">
         一笔共享现金 · T+1 · 整手 100 · 佣金双边 · 印花税只卖 · 涨跌停看成交价对昨收.
@@ -389,6 +554,7 @@ export function Backtest() {
         <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
           {runs.map((r) => {
             const active = result?.run_id === r.id;
+            const overlay = compare?.run_id === r.id;
             const name = typeof r.strategy === "string" ? r.strategy : r.strategy?.name;
             return (
               <button
@@ -401,11 +567,28 @@ export function Backtest() {
                 }}
                 className={cn(
                   "shrink-0 rounded border px-2 py-1 text-left text-[10px]",
-                  active ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-100" : "border-slate-700 text-slate-400 hover:text-slate-200",
+                  active ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-100" : overlay ? "border-violet-500/50 bg-violet-500/10 text-violet-100" : "border-slate-700 text-slate-400 hover:text-slate-200",
                 )}
               >
                 <div className="flex items-center gap-2">
                   <span className="font-mono">{r.id.slice(0, 15)}</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className={cn("hover:text-violet-200", overlay ? "text-violet-300" : "text-slate-600")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (overlay || r.id === result?.run_id) {
+                        setCompare(null);
+                        return;
+                      }
+                      void api.backtestRunGet(r.id).then(setCompare).catch((err) => {
+                        setError(err instanceof ApiError ? err.message : "读对照失败");
+                      });
+                    }}
+                  >
+                    对照
+                  </span>
                   <span
                     role="button"
                     tabIndex={0}
@@ -414,6 +597,7 @@ export function Backtest() {
                       e.stopPropagation();
                       void api.backtestRunDelete(r.id).then(() => {
                         if (result?.run_id === r.id) setResult(null);
+                        if (compare?.run_id === r.id) setCompare(null);
                         void refreshRuns();
                       });
                     }}
@@ -434,12 +618,12 @@ export function Backtest() {
         <GlassCard className="h-fit space-y-3 lg:sticky lg:top-2">
           <label className="block">
             <div className="mb-1 flex items-center justify-between text-[11px] text-slate-400">
-              <span>标的 (最多 20)</span>
+              <span>标的 (最多 {maxCodes})</span>
               <span className="flex gap-2">
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-200"
-                  onClick={() => patch({ codes: loadWatch().slice(0, 20).join(" ") })}
+                  onClick={() => patch({ codes: loadWatch().slice(0, maxCodes).join(" ") })}
                 >
                   <Star className="h-3 w-3" />
                   自选
@@ -450,13 +634,26 @@ export function Backtest() {
                   onClick={() => {
                     void api.portfolio().then((p) => {
                       const got = (p.holdings || []).map((h) => h.code).filter(Boolean);
-                      if (got.length) patch({ codes: got.slice(0, 20).join(" ") });
+                      if (got.length) patch({ codes: got.slice(0, maxCodes).join(" ") });
                     }).catch(() => setError("持仓没取到"));
                   }}
                 >
                   <Wallet className="h-3 w-3" />
                   持仓
                 </button>
+                <IndexPoolButtons
+                  pools={indexPools}
+                  cap={maxCodes}
+                  onFill={(codes, note) => {
+                    setError("");
+                    setPoolNote(note);
+                    patch({ codes });
+                  }}
+                  onError={(msg) => {
+                    setPoolNote("");
+                    setError(msg);
+                  }}
+                />
               </span>
             </div>
             <textarea
@@ -466,7 +663,30 @@ export function Backtest() {
               className="w-full resize-y rounded border border-slate-700 bg-slate-950/60 px-2 py-1.5 font-mono text-[12px] text-slate-100 outline-none focus:border-cyan-500/50"
               placeholder="600519 000858 300750"
             />
-            <p className="mt-1 text-[10px] text-slate-500">已识别 {codes.length} 只</p>
+            <p className="mt-1 text-[10px] text-slate-500">
+              已识别 {parsed.length} 只
+              {overflow ? ` · 一次最多 ${maxCodes}` : ""}
+              {cover?.probe
+                ? ` · 库存覆盖 ${cover.probe.covered}/${cover.probe.asked}${
+                    cover.probe.missing.length + cover.probe.partial.length
+                      ? ` · ${cover.probe.missing.length + cover.probe.partial.length} 只会现拉`
+                      : " · 齐"
+                  }`
+                : ""}
+              {cover?.universe
+                ? ` · 标的池 ${cover.universe.covered}/${cover.universe.codes}`
+                : ""}
+              {" · "}
+              <Link to="/data" className="text-cyan-400 hover:text-cyan-200">
+                去数据页补齐
+              </Link>
+            </p>
+            {poolNote && (
+              <p className="mt-1 text-[10px] text-amber-200/80">{poolNote}</p>
+            )}
+            {draft.lookback === "3y" && (
+              <p className="mt-1 text-[10px] text-amber-200/80">库存是近 2 年, 3y 缺的段会现拉.</p>
+            )}
           </label>
 
           <div>
@@ -514,14 +734,14 @@ export function Backtest() {
                 </button>
               ))}
             </div>
-            {draft.oosMode !== "off" && draft.strategy === "ma_cross" && (
+            {draft.oosMode !== "off" && (draft.strategy === "ma_cross" || draft.strategy === "rank_mom") && (
               <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                 <input
                   type="checkbox"
                   checked={draft.tuneMa}
                   onChange={(e) => patch({ tuneMa: e.target.checked })}
                 />
-                只在样本内选均线, 样本外冻结
+                {draft.strategy === "rank_mom" ? "只在样本内选动量窗口, 样本外冻结" : "只在样本内选均线, 样本外冻结"}
               </label>
             )}
             <p className={cn("mt-1 text-[10px]", draft.oosMode === "wf" && draft.lookback === "1y" ? "text-amber-200/80" : "text-slate-500")}>
@@ -560,6 +780,12 @@ export function Backtest() {
               <NumField label="长均线" value={draft.longWin} onChange={(v) => patch({ longWin: v })} />
             </div>
           )}
+          {draft.strategy === "rank_mom" && (
+            <div className="grid grid-cols-2 gap-2">
+              <NumField label="动量窗口" value={draft.momWin} onChange={(v) => patch({ momWin: v })} />
+              <NumField label="再平衡(日)" value={draft.rebalance} onChange={(v) => patch({ rebalance: v })} />
+            </div>
+          )}
           {draft.strategy === "dates" && (
             <textarea
               value={draft.events}
@@ -573,6 +799,8 @@ export function Backtest() {
           <div className="grid grid-cols-2 gap-2">
             <NumField label="本金" value={draft.capital} onChange={(v) => patch({ capital: v })} />
             <NumField label="最大持仓" value={draft.maxPositions} onChange={(v) => patch({ maxPositions: v })} />
+            <NumField label="止损 %" value={draft.stopLossPct} step={0.5} onChange={(v) => patch({ stopLossPct: v })} />
+            <NumField label="最长持有(日)" value={draft.maxHoldDays} onChange={(v) => patch({ maxHoldDays: v })} />
           </div>
 
           <details className="rounded border border-slate-800 bg-slate-950/40 px-2 py-1.5">
@@ -609,13 +837,17 @@ export function Backtest() {
             <GlassCard>
               <EmptyState
                 title="还没有跑过"
-                description="左边填自选或持仓代码, 选策略, 点跑回测. 第一次会拉日 K 落到本机, 之后同一段会快很多."
+                description="左边填自选或持仓代码, 选策略, 点跑回测. 库存齐了直接读仓. 动量轮动只在这批静态池里排, 不是全 A 每天重选. 实验条点对照可叠一条净值."
               />
             </GlassCard>
           )}
           {running && (
-            <GlassCard>
-              <EmptyState title="在算" loading />
+            <GlassCard className="space-y-2 p-3">
+              <p className="text-[12px] text-cyan-100">{jobText(job, "在跑…")}</p>
+              {job?.note ? <p className="text-[10px] text-slate-500">{job.note}</p> : null}
+              <div className="h-1.5 overflow-hidden rounded bg-slate-800">
+                <div className="h-full bg-cyan-500/80 transition-[width]" style={{ width: `${jobPct(job)}%` }} />
+              </div>
             </GlassCard>
           )}
           {result && (
@@ -661,18 +893,53 @@ export function Backtest() {
                       <span className="text-amber-300"> · 行情已变</span>
                     ) : null}
                     {result.closed_end ? ` · 已收盘至 ${result.closed_end}` : ""}
+                    {compare
+                      ? ` · 对照 ${compare.strategy?.name || compare.run_id?.slice(0, 8) || "run"} ${fmtPct(compare.stats.total_return)}`
+                      : ""}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => void copySummary()}
-                    className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-200"
-                  >
-                    <Copy className="h-3 w-3" />
-                    {copied ? "已复制" : "复制给 AI"}
-                  </button>
+                  <span className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => applyResult(result)}
+                      className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-200"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      填回表单
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void rerunResult(result)}
+                      disabled={running}
+                      className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-200 disabled:opacity-50"
+                    >
+                      <Play className="h-3 w-3" />
+                      按这组再跑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void copySummary()}
+                      className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-200"
+                    >
+                      <Copy className="h-3 w-3" />
+                      {copied ? "已复制" : "复制给 AI"}
+                    </button>
+                  </span>
                 </div>
-                <EquityChart result={result} />
+                <EquityChart result={result} compare={compare} />
               </GlassCard>
+
+              {result.tearsheet && result.tearsheet.monthly.length > 0 && (
+                <Tearsheet sheet={result.tearsheet} drawdown={result.drawdown_curve} />
+              )}
+
+              {compare && (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <Stat label="本笔收益" value={fmtPct(result.stats.total_return)} className={tone(result.stats.total_return)} />
+                  <Stat label="对照收益" value={fmtPct(compare.stats.total_return)} className={tone(compare.stats.total_return)} />
+                  <Stat label="本笔夏普" value={result.stats.sharpe.toFixed(2)} />
+                  <Stat label="对照夏普" value={compare.stats.sharpe.toFixed(2)} />
+                </div>
+              )}
 
               {rejects.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -725,6 +992,40 @@ export function Backtest() {
                 </ul>
               )}
 
+              {(result.by_symbol || []).length > 0 && (
+                <GlassCard className="overflow-x-auto p-0">
+                  <p className="px-2 py-1.5 text-[11px] text-slate-400">
+                    分标的 {result.by_symbol!.length} 只 · 按已完成卖出盈亏排序
+                  </p>
+                  <table className="w-full min-w-[560px] text-left text-[11px]">
+                    <thead className="text-slate-500">
+                      <tr className="border-b border-slate-800">
+                        {["代码", "买入", "卖出", "盈亏", "胜率", "均持有"].map((h) => (
+                          <th key={h} className="px-2 py-1.5 font-medium">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.by_symbol!.map((row: BacktestSymbolRow) => (
+                        <tr key={row.symbol} className="border-b border-slate-800/70">
+                          <td className="px-2 py-1 font-mono">
+                            {bareCode(row.symbol)}
+                            {row.name ? <span className="ml-1 text-slate-500">{row.name}</span> : null}
+                          </td>
+                          <td className="px-2 py-1 font-mono tabular-nums">{row.buys}</td>
+                          <td className="px-2 py-1 font-mono tabular-nums">{row.sells}</td>
+                          <td className={cn("px-2 py-1 font-mono tabular-nums", tone(row.pnl))}>{fmtNum(row.pnl, 2)}</td>
+                          <td className="px-2 py-1 font-mono tabular-nums">{fmtPct(row.win_rate)}</td>
+                          <td className="px-2 py-1 font-mono tabular-nums text-slate-400">
+                            {row.avg_hold != null ? row.avg_hold.toFixed(1) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </GlassCard>
+              )}
+
               <GlassCard className="overflow-x-auto p-0">
                 <table className="w-full min-w-[720px] text-left text-[11px]">
                   <thead className="text-slate-500">
@@ -768,6 +1069,8 @@ export function Backtest() {
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

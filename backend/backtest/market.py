@@ -183,10 +183,12 @@ def write_fundamentals(symbol: str, rows: list[dict]) -> int:
 def _scan_bars_polars(symbols: list[str], start: str, end: str):
     p = _need_pl()
     root = market_root() / "bars"
-    files = list(root.glob("symbol=*/year=*.parquet"))
     if symbols:
-        want = {f"symbol={_safe(s)}" for s in symbols}
-        files = [f for f in files if f.parent.name in want]
+        files = []
+        for s in symbols:
+            files.extend((root / f"symbol={_safe(s)}").glob("year=*.parquet"))
+    else:
+        files = list(root.glob("symbol=*/year=*.parquet"))
     if not files:
         return p.DataFrame(schema={"symbol": p.String, "date": p.String, "open": p.Float64,
                                    "high": p.Float64, "low": p.Float64, "close": p.Float64,
@@ -206,8 +208,16 @@ def _scan_bars_polars(symbols: list[str], start: str, end: str):
 
 
 def query_bars(symbols: list[str], start: str, end: str) -> list[dict]:
-    """In-memory scan. DuckDB if installed, else Polars. No .db file."""
+    """Read only the asked symbol folders. Do not scan the whole hive per name."""
     root = market_root() / "bars"
+    if symbols:
+        files = []
+        for s in symbols:
+            files.extend((root / f"symbol={_safe(s)}").glob("year=*.parquet"))
+        if not files:
+            return []
+        df = _scan_bars_polars(symbols, start, end)
+        return df.to_dicts() if df is not None else []
     if not list(root.glob("symbol=*/year=*.parquet")):
         return []
     try:
@@ -217,14 +227,9 @@ def query_bars(symbols: list[str], start: str, end: str) -> list[dict]:
             "SELECT * FROM read_parquet(?, hive_partitioning=true, union_by_name=true) "
             "WHERE date >= ? AND date <= ?"
         )
-        params: list = [pattern, start, end]
-        if symbols:
-            marks = ",".join("?" * len(symbols))
-            sql += f" AND symbol IN ({marks})"
-            params.extend(symbols)
         con = duckdb.connect(":memory:")
         try:
-            rows = con.execute(sql, params).fetchdf().to_dict("records")
+            rows = con.execute(sql, [pattern, start, end]).fetchdf().to_dict("records")
             return [{k: (None if v != v else v) for k, v in r.items()} for r in rows]
         finally:
             con.close()
@@ -248,23 +253,29 @@ def query_adj(symbol: str, start: str, end: str) -> dict[str, float]:
     return out
 
 
-def members_on(index: str, asof: str) -> list[str]:
-    """Members of the latest snapshot on or before asof."""
+def members_asof(index: str, asof: str) -> tuple[str, list[str]]:
+    """Latest snapshot date and members on or before asof."""
     p = _need_pl()
     day = norm_date(asof)
     root = market_root() / "members" / f"index={_safe(index)}"
     files = list(root.glob("year=*.parquet"))
     if not files or not day:
-        return []
+        return "", []
     frames = [_read_parquet(f) for f in files]
     frames = [f for f in frames if f is not None]
     if not frames:
-        return []
+        return "", []
     df = p.concat(frames, how="diagonal_relaxed").filter(p.col("date") <= day)
     if df.is_empty():
-        return []
-    latest = df.select(p.col("date").max()).item()
-    return sorted(df.filter(p.col("date") == latest)["symbol"].to_list())
+        return "", []
+    latest = str(df.select(p.col("date").max()).item())
+    return latest, sorted(df.filter(p.col("date") == latest)["symbol"].to_list())
+
+
+def members_on(index: str, asof: str) -> list[str]:
+    """Members of the latest snapshot on or before asof."""
+    _day, symbols = members_asof(index, asof)
+    return symbols
 
 
 def fundamental_asof(symbol: str, field: str, asof: str) -> float | None:
@@ -379,17 +390,22 @@ def inventory() -> dict:
             if child.is_dir() and not child.name.startswith(".") and (child / "meta.json").is_file()
         )
     cal = tc.status()
+    preview = 80
+    from backtest.universe_sync import portrait
+
+    uni = portrait()
     return {
         "root": str(data_root()),
         "closed_end": last_closed_iso(),
         "bytes": {"market": _tree_bytes(market_root()), "runs": _tree_bytes(run_root)},
         "calendar": cal,
-        "bars": {"count": len(symbols), "symbols": symbols},
+        "bars": {"count": len(symbols), "symbols": symbols[:preview], "preview": min(preview, len(symbols))},
+        "universe": uni,
         "members": members,
         "fundamentals": funds,
         "runs": {"count": run_count, "recent": list_runs(8)},
         "legacy_kline": legacy,
-        "note": "只读本机 parquet / 日历 / 实验, 不拉上游. 日 K 在回测跑的时候写入.",
+        "note": "本机日历 / 日 K / 实验. 标的池近 2 年可点补齐, 只写已收盘 bar, 不算 enriched, 不清库.",
     }
 
 

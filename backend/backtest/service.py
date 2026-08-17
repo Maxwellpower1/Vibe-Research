@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 import astock
 import trading_calendar as tc
 from backtest.archive import new_run_id, write_run
-from backtest.matcher import run_match
+from backtest.matcher import run_match, tearsheet
 from backtest.oos import (
     OosError,
     oos_fresh,
@@ -17,6 +17,7 @@ from backtest.oos import (
     run_walk_forward,
     segment_stats,
     tune_ma,
+    tune_mom,
 )
 from backtest.panel import Panel, build_panel, norm_date
 from backtest.rules import FILL_MODES, FILL_OPEN_T1, MatcherConfig
@@ -25,7 +26,7 @@ from backtest.store import ensure_bars, fetch_daily_bars
 
 BENCH_SYMBOL = "sh000300"
 
-MAX_CODES = 20
+MAX_CODES = 600
 LOOKBACKS = {"1y": 365, "2y": 730, "3y": 1095}
 
 DISCLAIMER = (
@@ -34,6 +35,7 @@ DISCLAIMER = (
     "净值只来自现金加市值, 不用持有期去乘年化。"
     "ST 5% 涨跌停从代码看不出来, 按板块默认带宽。"
     "原始价和复权因子分开; 只写已收盘 bar。"
+    "优先读本机近 2 年库存, 缺的再补。"
     "自选不是按日成分, 有幸存者偏差。"
 )
 
@@ -98,7 +100,7 @@ def _attach_benchmark(out: dict, start: str, end: str, capital: float, fetch_fn,
         out.setdefault("warnings", []).append(pack["error"])
 
 
-def resolve_codes(raw: list[str] | str) -> list[str]:
+def resolve_codes(raw: list[str] | str, *, limit: int | None = None) -> list[str]:
     if isinstance(raw, str):
         parts = [p.strip() for p in raw.replace("，", ",").split(",")]
     else:
@@ -121,8 +123,9 @@ def resolve_codes(raw: list[str] | str) -> list[str]:
         raise BacktestError(f"无法解析的代码: {', '.join(bad[:8])}")
     if not symbols:
         raise BacktestError("至少需要 1 个 A 股代码")
-    if len(symbols) > MAX_CODES:
-        raise BacktestError(f"一次最多 {MAX_CODES} 只")
+    cap = MAX_CODES if limit is None else int(limit)
+    if len(symbols) > cap:
+        raise BacktestError(f"一次最多 {cap} 只")
     return symbols
 
 
@@ -142,6 +145,8 @@ def _cfg_from_body(body: dict) -> MatcherConfig:
             lot_size=int(body.get("lot_size", 100)),
             t_plus=int(body.get("t_plus", 1)),
             exposure=float(body.get("exposure", 1)),
+            stop_loss_pct=float(body.get("stop_loss_pct") or 0),
+            max_hold_days=int(body.get("max_hold_days") or 0),
         )
     except ValueError as e:
         raise BacktestError(str(e)) from e
@@ -160,16 +165,22 @@ def load_panel(
     names: dict[str, str] | None = None,
     fetch_fn=None,
     use_cache: bool = True,
-) -> tuple[Panel, list[str], dict[str, str]]:
+) -> tuple[Panel, list[str], dict[str, str], dict[str, int]]:
     warnings: list[str] = []
     name_map = dict(names or {})
     fetch = fetch_fn or fetch_daily_bars
+    store_n = 0
+    fetch_n = 0
+    from backtest.progress import bump, mark
+
+    mark(step="load", done=0, total=len(symbols))
     if bars_by_symbol is None:
         fetched: dict[str, dict] = {}
-        workers = min(4, len(symbols))
+        workers = min(8, len(symbols))
         if workers <= 1:
             for sym in symbols:
                 fetched[sym] = _load_one(sym, start, end, fetch, use_cache)
+                bump(current=sym)
         else:
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futs = {
@@ -181,10 +192,15 @@ def load_panel(
                         fetched[sym] = futs[sym].result()
                     except Exception as e:  # noqa: BLE001
                         fetched[sym] = {"symbol": sym, "bars": [], "error": str(e)}
+                    bump(current=sym)
         bars_by_symbol = {}
         for sym in symbols:
             pack = fetched.get(sym) or {}
             rows = pack.get("bars") or []
+            if pack.get("from_store"):
+                store_n += 1
+            elif rows:
+                fetch_n += 1
             if pack.get("name"):
                 name_map[sym] = str(pack["name"])
             if not rows:
@@ -194,10 +210,14 @@ def load_panel(
             if len(avail) == 2 and (avail[0] > start or avail[1] < end):
                 warnings.append(f"{sym} 日 K 只覆盖到 {avail[0]} ~ {avail[1]}")
             bars_by_symbol[sym] = rows
+        if fetch_n:
+            warnings.append(f"{store_n} 只读库存, {fetch_n} 只现拉并写入")
+        elif store_n:
+            warnings.append(f"{store_n} 只全部读库存, 未打上游")
     panel = build_panel(bars_by_symbol, name_map)
     if panel.T < 2 or panel.S < 1:
         raise BacktestError("日 K 不够: 至少 2 个交易日、1 只标的有数据")
-    return panel, warnings, name_map
+    return panel, warnings, name_map, {"from_store": store_n, "fetched": fetch_n}
 
 
 def run_backtest(
@@ -214,6 +234,8 @@ def run_backtest(
         raise BacktestError(f"strategy 仅支持 {list(STRATEGIES)}")
     short_win = int(body.get("short_win") or 5)
     long_win = int(body.get("long_win") or 20)
+    mom_win = int(body.get("mom_win") or 20)
+    rebalance = int(body.get("rebalance") or 20)
     events = body.get("events") if isinstance(body.get("events"), list) else []
     tune = bool(body.get("tune_ma"))
     walk = bool(body.get("walk_forward"))
@@ -221,7 +243,44 @@ def run_backtest(
     oos_date = body.get("oos_date")
     want_oos = (not walk) and (oos_frac not in (None, "", 0, 0.0, "0") or bool(oos_date))
     cfg = _cfg_from_body(body)
-    panel, warnings, _names = load_panel(
+    from backtest.progress import begin, finish
+
+    begin(kind="account", step="load", total=len(symbols), note=f"{len(symbols)} 只")
+    try:
+        return _run_backtest_body(
+            body, symbols, start, end, strategy, short_win, long_win, mom_win,
+            rebalance, events, tune, walk, oos_frac, oos_date, want_oos, cfg,
+            bars_by_symbol=bars_by_symbol, fetch_fn=fetch_fn, use_cache=use_cache,
+        )
+    finally:
+        finish()
+
+
+def _run_backtest_body(
+    body: dict,
+    symbols: list[str],
+    start: str,
+    end: str,
+    strategy: str,
+    short_win: int,
+    long_win: int,
+    mom_win: int,
+    rebalance: int,
+    events: list,
+    tune: bool,
+    walk: bool,
+    oos_frac,
+    oos_date,
+    want_oos: bool,
+    cfg,
+    *,
+    bars_by_symbol: dict[str, list[dict]] | None,
+    fetch_fn,
+    use_cache: bool,
+) -> dict:
+    from backtest.progress import mark
+
+    panel, warnings, _names, src = load_panel(
         symbols,
         start,
         end,
@@ -243,6 +302,8 @@ def run_backtest(
                 short_win=short_win,
                 long_win=long_win,
                 events=events,
+                mom_win=mom_win,
+                rebalance=rebalance,
             )
         elif want_oos:
             split_idx = resolve_split(
@@ -254,8 +315,12 @@ def run_backtest(
             if tune and strategy == "ma_cross":
                 short_win, long_win, tune_grid = tune_ma(panel.slice(0, split_idx), cfg)
                 warnings.append(f"均线在样本内选定 {short_win}/{long_win}, 样本外冻结")
+            if tune and strategy == "rank_mom":
+                mom_win, tune_grid = tune_mom(panel.slice(0, split_idx), cfg, rebalance)
+                warnings.append(f"动量窗口在样本内选定 {mom_win}, 样本外冻结")
     except OosError as e:
         raise BacktestError(str(e)) from e
+    mark(step="signals", done=len(symbols), total=len(symbols))
     try:
         entries, exits, sig_notes = build_signals(
             panel,
@@ -263,11 +328,16 @@ def run_backtest(
             short_win=short_win,
             long_win=long_win,
             events=events,
+            mom_win=mom_win,
+            rebalance=rebalance,
+            top_k=cfg.max_positions,
         )
     except ValueError as e:
         raise BacktestError(str(e)) from e
     warnings.extend(sig_notes)
+    mark(step="match")
     out = run_match(panel, entries, exits, cfg)
+    out["tearsheet"] = tearsheet(out.get("equity_curve") or [])
     out["universe"] = {
         "symbols": panel.symbols,
         "names": panel.names,
@@ -276,11 +346,16 @@ def run_backtest(
         "bars": panel.T,
         "requested_start": start,
         "requested_end": end,
+        "from_store": src["from_store"],
+        "fetched": src["fetched"],
     }
     out["strategy"] = {
         "name": strategy,
         "short_win": short_win,
         "long_win": long_win,
+        "mom_win": mom_win,
+        "rebalance": rebalance,
+        "top_k": cfg.max_positions,
         "events": len(events),
         "tuned": bool(tune_grid),
         "tune_grid": tune_grid,
@@ -300,6 +375,9 @@ def run_backtest(
             short_win=short_win,
             long_win=long_win,
             events=events,
+            mom_win=mom_win,
+            rebalance=rebalance,
+            top_k=cfg.max_positions,
         )
         out["oos"] = {
             "split": split_date,
@@ -333,22 +411,27 @@ def run_backtest(
     out["warnings"] = warnings
     out["disclaimer"] = DISCLAIMER
     run_id = new_run_id()
+    cfg_payload = {
+        "codes": symbols,
+        "start": start,
+        "end": end,
+        "strategy": strategy,
+        "short_win": short_win,
+        "long_win": long_win,
+        "mom_win": mom_win,
+        "rebalance": rebalance,
+        "events": events,
+        "matcher": asdict(cfg),
+        "oos_frac": oos_frac,
+        "oos_date": oos_date,
+        "tune_ma": tune,
+        "walk_forward": walk,
+    }
+    out["config"] = cfg_payload
+    mark(step="write")
     write_run(
         run_id,
-        config={
-            "codes": symbols,
-            "start": start,
-            "end": end,
-            "strategy": strategy,
-            "short_win": short_win,
-            "long_win": long_win,
-            "events": events,
-            "matcher": asdict(cfg),
-            "oos_frac": oos_frac,
-            "oos_date": oos_date,
-            "tune_ma": tune,
-            "walk_forward": walk,
-        },
+        config=cfg_payload,
         trades=out.get("trades") or [],
         equity={
             "equity_curve": out.get("equity_curve") or [],
@@ -357,6 +440,7 @@ def run_backtest(
         },
         meta={
             "id": run_id,
+            "kind": "account",
             "created": datetime.now(timezone.utc).isoformat(),
             "data_hash": out["data_hash"],
             "closed_end": out["universe"]["closed_end"],
@@ -384,11 +468,14 @@ def meta() -> dict:
             {"id": "hold", "label": "买入持有", "hint": "第一根可买日开仓, 拿到结束"},
             {"id": "ma_cross", "label": "均线金叉死叉", "hint": "短均线上穿长均线买, 下穿卖"},
             {"id": "dates", "label": "指定买卖日", "hint": "你给出 code / side / date, 按信号日撮合"},
+            {"id": "rank_mom", "label": "动量轮动", "hint": "静态池里按近 N 日收益取前 K, 每 M 日再平衡. 不是全 A 每天重选"},
         ],
         "fills": list(FILL_MODES),
         "lookbacks": list(LOOKBACKS),
         "defaults": asdict(MatcherConfig()),
-        "limits": {"max_codes": MAX_CODES, "max_bars": 1000},
+        "limits": {"max_codes": MAX_CODES, "max_bars": 1000, "factor_max_codes": MAX_CODES},
+        "factors": _factor_meta(),
+        "index_pools": _index_pool_meta(),
         "disclaimer": DISCLAIMER,
         "notes": [
             "信号日不等于成交日, 默认次日开盘",
@@ -401,5 +488,22 @@ def meta() -> dict:
             "成分股按日存; 财务用 (start, end) + 公告日。自选仍是静态池",
             "作业先同步写 run, 要排队再加 jobs.json, 不上 SQLite",
             "样本外: 参数只在切点前选; 另开一笔钱验后半段. 滚动切窗每折新开账户, 不再叠单点切窗",
+            "优先读全 A 库存近 2 年; 缺的现拉并写入. 中证500 能一次进完. 不是无上限, 防全 A 同步打挂. 库存不齐会现拉, 会慢. 3y 会超出库存窗口",
+            "动量轮动只在这次填的静态池里排, 前 K = 最大持仓. 不是按日全 A 重选",
+            "止损和最长持有在撮合里执行, 仍受 T+1 / 跌停拦住",
+            "因子页: Rank IC / 五档 / 多空, 可改方向 / 分层 / 权重. 对照最多 6 个因子",
+            "一键导入是最新成分快照, 填进表单后仍是静态池, 不是按日 PIT, 有幸存者偏差",
         ],
     }
+
+
+def _index_pool_meta() -> list[dict]:
+    from backtest.index_pool import pool_meta
+
+    return pool_meta()
+
+
+def _factor_meta() -> list[dict]:
+    from backtest.factor import factor_catalog
+
+    return factor_catalog()

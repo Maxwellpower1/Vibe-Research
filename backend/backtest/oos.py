@@ -16,6 +16,7 @@ from backtest.rules import MatcherConfig
 from backtest.signals import build_signals
 
 MA_GRID = ((5, 20), (5, 30), (10, 20), (10, 30), (10, 60))
+MOM_WINS = (10, 20, 60)
 MIN_LEG = 20
 
 
@@ -84,6 +85,27 @@ def tune_ma(panel: Panel, cfg: MatcherConfig) -> tuple[int, int, list[dict]]:
     return best[1], best[2], rows
 
 
+def tune_mom(panel: Panel, cfg: MatcherConfig, rebalance: int = 20) -> tuple[int, list[dict]]:
+    """Pick momentum window on this panel only. Caller must pass IS bars."""
+    best: tuple[float, int] | None = None
+    rows: list[dict] = []
+    for win in MOM_WINS:
+        if panel.T < win + 5:
+            continue
+        entries, exits, _ = build_signals(
+            panel, "rank_mom", mom_win=win, rebalance=rebalance, top_k=cfg.max_positions
+        )
+        stats = run_match(panel, entries, exits, cfg)["stats"]
+        row = {"mom_win": win, "sharpe": stats["sharpe"], "total_return": stats["total_return"]}
+        rows.append(row)
+        score = float(stats["sharpe"])
+        if best is None or score > best[0]:
+            best = (score, win)
+    if best is None:
+        return 20, rows
+    return best[1], rows
+
+
 def mask_before(flags: np.ndarray, idx: int) -> np.ndarray:
     out = np.array(flags, copy=True)
     if idx > 0:
@@ -134,6 +156,8 @@ def run_walk_forward(
     short_win: int,
     long_win: int,
     events: list[dict] | None = None,
+    mom_win: int = 20,
+    rebalance: int = 20,
     train: int = 252,
     test: int = 63,
     step: int = 63,
@@ -145,11 +169,22 @@ def run_walk_forward(
         window = panel.slice(is_start, oos_end)
         rel = is_end - is_start
         s, l = short_win, long_win
+        mw = mom_win
         grid: list[dict] = []
         if tune and strategy == "ma_cross":
             s, l, grid = tune_ma(window.slice(0, rel), cfg)
+        if tune and strategy == "rank_mom":
+            mw, grid = tune_mom(window.slice(0, rel), cfg, rebalance)
         entries, exits = oos_flags(
-            window, rel, strategy, short_win=s, long_win=l, events=events or [],
+            window,
+            rel,
+            strategy,
+            short_win=s,
+            long_win=l,
+            events=events or [],
+            mom_win=mw,
+            rebalance=rebalance,
+            top_k=cfg.max_positions,
         )
         out = run_match(window, entries, exits, cfg)
         ret = float(out["stats"]["total_return"])
@@ -161,6 +196,7 @@ def run_walk_forward(
             "oos_end": window.dates[-1],
             "short_win": s,
             "long_win": l,
+            "mom_win": mw,
             "tune_grid": grid,
             "stats": out["stats"],
         })

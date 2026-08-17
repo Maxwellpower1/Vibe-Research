@@ -1,6 +1,7 @@
-"""V1 signal builders: hold / ma_cross / dates.
+"""V1 signal builders: hold / ma_cross / dates / rank_mom.
 
 Signals sit on the bar they are known. The matcher shifts them for open_t+1.
+rank_mom rotates inside a static pool. It is not a daily full-A rescreen.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import numpy as np
 from backtest.panel import Panel, norm_date
 
 
-STRATEGIES = ("hold", "ma_cross", "dates")
+STRATEGIES = ("hold", "ma_cross", "dates", "rank_mom")
 
 
 def _empty(panel: Panel) -> tuple[np.ndarray, np.ndarray]:
@@ -94,6 +95,45 @@ def signal_dates(panel: Panel, events: list[dict]) -> tuple[np.ndarray, np.ndarr
     return entries, exits, warnings
 
 
+def signal_rank_mom(
+    panel: Panel,
+    lookback: int = 20,
+    rebalance: int = 20,
+    top_k: int = 10,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Buy top-k by lookback return on rebalance bars; exit the rest.
+
+    Uses adj_close. Static pool only: membership does not change by day.
+    """
+    if lookback < 2:
+        raise ValueError("动量窗口至少 2 根")
+    if rebalance < 1:
+        raise ValueError("再平衡间隔至少 1 根")
+    if top_k < 1:
+        raise ValueError("动量轮动至少取 1 只")
+    entries, exits = _empty(panel)
+    first = lookback
+    if first >= panel.T:
+        return entries, exits
+    for i in range(first, panel.T):
+        if (i - first) % rebalance != 0:
+            continue
+        scores: list[tuple[float, int]] = []
+        for j in range(panel.S):
+            now = panel.adj_close[i, j]
+            prev = panel.adj_close[i - lookback, j]
+            if np.isfinite(now) and np.isfinite(prev) and float(prev) > 0:
+                scores.append((float(now / prev - 1.0), j))
+        scores.sort(key=lambda x: (-x[0], x[1]))
+        winners = {j for _, j in scores[:top_k]}
+        for j in range(panel.S):
+            if j in winners:
+                entries[i, j] = True
+            else:
+                exits[i, j] = True
+    return entries, exits
+
+
 def build_signals(
     panel: Panel,
     strategy: str,
@@ -101,6 +141,9 @@ def build_signals(
     short_win: int = 5,
     long_win: int = 20,
     events: list[dict] | None = None,
+    mom_win: int = 20,
+    rebalance: int = 20,
+    top_k: int = 10,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     name = (strategy or "hold").strip().lower()
     if name not in STRATEGIES:
@@ -112,6 +155,12 @@ def build_signals(
         entries, exits = signal_ma_cross(panel, short_win, long_win)
         if panel.T < long_win:
             notes.append(f"日 K 只有 {panel.T} 根, 长均线 {long_win} 可能不够")
+    elif name == "rank_mom":
+        entries, exits = signal_rank_mom(panel, mom_win, rebalance, top_k)
+        if panel.T <= mom_win:
+            notes.append(f"日 K 只有 {panel.T} 根, 动量窗口 {mom_win} 不够, 不会开仓")
+        notes.append("动量轮动只在这次填的静态池里排, 不是按日全 A 重选, 有幸存者偏差")
+        notes.append("续持会计入已持有, 不是没买进")
     else:
         entries, exits, notes = signal_dates(panel, events or [])
         if not events:

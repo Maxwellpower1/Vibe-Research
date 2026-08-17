@@ -6,7 +6,8 @@ import astock
 
 def test_get_prefix():
     assert astock.get_prefix("600519") == "sh"
-    assert astock.get_prefix("900001") == "sh"   # 9 开头也是沪
+    assert astock.get_prefix("900001") == "sh"   # 900 沪 B
+    assert astock.get_prefix("920010") == "bj"   # 920 北交所
     assert astock.get_prefix("000001") == "sz"
     assert astock.get_prefix("300750") == "sz"
     assert astock.get_prefix("832000") == "bj"   # 8 开头北交所
@@ -35,6 +36,21 @@ def test_tencent_minute_url():
     assert "usMinute" in astock.tencent_minute_url("usDJI")
     assert "/minute/query" in astock.tencent_minute_url("sh000001")
     assert "usMinute" not in astock.tencent_minute_url("hkHSI")
+
+
+def test_tencent_daily_falls_back_host(monkeypatch):
+    calls: list[str] = []
+
+    def fake(url: str):
+        calls.append(url)
+        if "web.ifzq" in url:
+            raise OSError("501")
+        return {"data": {"sh600519": {"day": [["2026-08-14", "1", "1", "1", "1", "1"]]}}}
+
+    monkeypatch.setattr(astock, "_tencent_json", fake)
+    out = astock._tencent_daily("sh600519", 10, "none")
+    assert len(out["bars"]) == 1
+    assert any("web.ifzq" not in u and "fqkline/get" in u for u in calls)
 
 
 def test_light_kline_us_minute(monkeypatch):

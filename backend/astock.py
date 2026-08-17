@@ -49,8 +49,10 @@ def is_ashare_stock(symbol: str) -> bool:
 def get_prefix(code: str) -> str:
     """6 位代码 → 交易所前缀。5 开头是沪市基金/ETF（51/56/58 等），深市基金 15/16 开头走默认 sz。
 
-    注意: 000001 走 sz（平安银行）。上证指数须显式传 sh000001，勿用裸 000001。
+    920 是北交所新代码; 900 仍是沪 B。000001 走 sz（平安银行）。上证须显式传 sh000001。
     """
+    if code.startswith("920"):
+        return "bj"
     if code.startswith(("6", "9", "5")):
         return "sh"
     if code.startswith("8"):
@@ -590,13 +592,26 @@ def _parse_tencent_daily_rows(rows: object, n: int) -> list[dict]:
     return bars[-n:]
 
 
+_FQKLINE_URLS = (
+    "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
+    "https://ifzq.gtimg.cn/appstock/app/fqkline/get",
+    "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get",
+)
+
+
 def _tencent_daily(symbol: str, n: int, adjust: str = "qfq") -> dict:
     """One Tencent fqkline daily fetch. light_kline 1D and daily_bars share this."""
     adj = "qfq" if (adjust or "qfq").strip().lower() == "qfq" else "none"
     param = f"{symbol},day,,,{n},qfq" if adj == "qfq" else f"{symbol},day,,,{n},"
-    try:
-        d = _tencent_json(f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={param}")
-    except Exception:
+    d: dict = {}
+    for base in _FQKLINE_URLS:
+        try:
+            d = _tencent_json(f"{base}?param={param}")
+        except Exception:
+            d = {}
+        if isinstance(d, dict) and (d.get("data") or {}).get(symbol):
+            break
+    if not d:
         return {}
     block = ((d.get("data") or {}).get(symbol) or {})
     rows = (block.get("qfqday") if adj == "qfq" else None) or block.get("day") or []

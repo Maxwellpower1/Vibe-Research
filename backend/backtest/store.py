@@ -117,6 +117,31 @@ def _to_panel_rows(symbol: str, start: str, end: str) -> list[dict]:
     return rows
 
 
+def probe_symbols(symbols: list[str], start: str, end: str) -> dict:
+    """Local coverage for a backtest pool. No network."""
+    closed = last_closed_iso()
+    end = min(end, closed)
+    covered: list[str] = []
+    missing: list[str] = []
+    partial: list[dict] = []
+    for sym in symbols:
+        cov = coverage(sym)
+        if not cov:
+            missing.append(sym)
+        elif cov[0] <= start and cov[1] >= end:
+            covered.append(sym)
+        else:
+            partial.append({"symbol": sym, "from": cov[0], "to": cov[1]})
+    return {
+        "start": start,
+        "end": end,
+        "asked": len(symbols),
+        "covered": len(covered),
+        "missing": missing,
+        "partial": partial,
+    }
+
+
 def panel_hash(symbols: list[str], start: str, end: str) -> str | None:
     """Hash the parquet panel only. No network, do not rewrite a run."""
     from backtest.panel import build_panel
@@ -148,6 +173,7 @@ def ensure_bars(
     rows = _to_panel_rows(symbol, start, end) if use_cache else []
     cov = coverage(symbol) if use_cache else None
     covered = bool(rows) and cov and cov[0] <= start and cov[1] >= end
+    from_store = bool(covered)
     name = ""
     if not covered:
         fetch = fetch_fn or fetch_daily_bars
@@ -171,6 +197,7 @@ def ensure_bars(
         "name": name,
         "adjust": "raw+factor",
         "source": "parquet",
+        "from_store": from_store,
         "bars": rows,
         "available": list(cov) if cov else [rows[0]["datetime"], rows[-1]["datetime"]],
         "closed_end": closed,

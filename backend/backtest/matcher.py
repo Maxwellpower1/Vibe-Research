@@ -47,6 +47,8 @@ class _Book:
         "no_next_bar": 0,
         "already_held": 0,
         "end_forced": 0,
+        "stop": 0,
+        "max_hold": 0,
     })
     trades: list[dict] = field(default_factory=list)
     pending_exits: set[int] = field(default_factory=set)
@@ -82,6 +84,133 @@ def _shift_flags(flags: np.ndarray, shifted: bool, rejects: dict[str, int]) -> n
     if leftover:
         rejects["no_next_bar"] += leftover
     return out
+
+
+def rollup_trades(trades: list[dict]) -> list[dict]:
+    """Per-symbol PnL from completed sells. Old runs can recompute this from trades."""
+    acc: dict[str, dict] = {}
+    for t in trades or []:
+        if not isinstance(t, dict):
+            continue
+        sym = str(t.get("symbol") or "")
+        if not sym:
+            continue
+        row = acc.setdefault(sym, {
+            "symbol": sym,
+            "name": "",
+            "buys": 0,
+            "sells": 0,
+            "pnl": 0.0,
+            "wins": 0,
+            "trips": 0,
+            "hold_days": 0,
+        })
+        if t.get("name") and not row["name"]:
+            row["name"] = str(t.get("name") or "")
+        side = str(t.get("side") or "")
+        if side == "buy":
+            row["buys"] += 1
+            continue
+        if side != "sell":
+            continue
+        row["sells"] += 1
+        try:
+            pnl = float(t.get("pnl") or 0)
+        except (TypeError, ValueError):
+            pnl = 0.0
+        row["pnl"] += pnl
+        row["trips"] += 1
+        try:
+            row["hold_days"] += int(t.get("hold_days") or 0)
+        except (TypeError, ValueError):
+            pass
+        if pnl > 0:
+            row["wins"] += 1
+    out: list[dict] = []
+    for row in acc.values():
+        trips = int(row["trips"])
+        out.append({
+            "symbol": row["symbol"],
+            "name": row["name"],
+            "buys": int(row["buys"]),
+            "sells": int(row["sells"]),
+            "pnl": round(float(row["pnl"]), 2),
+            "wins": int(row["wins"]),
+            "trips": trips,
+            "win_rate": (int(row["wins"]) / trips) if trips else 0.0,
+            "avg_hold": (float(row["hold_days"]) / trips) if trips else 0.0,
+        })
+    out.sort(key=lambda r: (-float(r["pnl"]), str(r["symbol"])))
+    return out
+
+
+def tearsheet(equity_curve: list[dict]) -> dict:
+    """Monthly returns and the largest closed drawdowns. From the equity curve only."""
+    pts = [(str(p.get("date") or ""), float(p.get("equity") or 0)) for p in equity_curve or []]
+    pts = [(d, eq) for d, eq in pts if len(d) >= 7 and eq > 0]
+    monthly: list[dict] = []
+    by_m: dict[str, list[tuple[str, float]]] = {}
+    for day, eq in pts:
+        by_m.setdefault(day[:7], []).append((day, eq))
+    prev_end: float | None = None
+    for ym in sorted(by_m):
+        last = by_m[ym][-1][1]
+        first = by_m[ym][0][1]
+        base = prev_end if prev_end is not None else first
+        monthly.append({"month": ym, "return": round(last / base - 1.0, 4) if base else 0.0})
+        prev_end = last
+    yearly: dict[str, float] = {}
+    for row in monthly:
+        y = row["month"][:4]
+        yearly[y] = (1.0 + yearly.get(y, 0.0)) * (1.0 + float(row["return"])) - 1.0
+    years = [{"year": y, "return": round(v, 4)} for y, v in yearly.items()]
+    dds: list[dict] = []
+    peak = None
+    peak_date = ""
+    trough = None
+    trough_date = ""
+    start = ""
+    for day, eq in pts:
+        if peak is None or eq >= peak:
+            if start and trough is not None and peak and trough < peak:
+                dds.append({
+                    "start": start,
+                    "trough": trough_date,
+                    "end": day,
+                    "depth": round(trough / peak - 1.0, 4),
+                    "days": 0,
+                })
+            peak = eq
+            peak_date = day
+            start = ""
+            trough = None
+            continue
+        if not start:
+            start = peak_date
+            trough = eq
+            trough_date = day
+        elif trough is None or eq < trough:
+            trough = eq
+            trough_date = day
+    if start and trough is not None and peak and trough < peak:
+        dds.append({
+            "start": start,
+            "trough": trough_date,
+            "end": pts[-1][0] if pts else start,
+            "depth": round(trough / peak - 1.0, 4),
+            "days": 0,
+        })
+    by_date = {d: i for i, (d, _) in enumerate(pts)}
+    for row in dds:
+        a = by_date.get(row["start"], 0)
+        b = by_date.get(row["end"], a)
+        row["days"] = max(0, b - a)
+    dds.sort(key=lambda r: float(r["depth"]))
+    return {
+        "monthly": monthly,
+        "yearly": years,
+        "drawdowns": dds[:5],
+    }
 
 
 def compute_stats(equity: list[float], trades: list[dict], initial: float) -> dict:
@@ -197,7 +326,7 @@ def run_match(
         day = panel.dates[t]
         last = t == panel.T - 1
 
-        def _try_exit(j: int) -> None:
+        def _try_exit(j: int, reason: str = "signal") -> None:
             pos = positions.get(j)
             if pos is None:
                 return
@@ -215,7 +344,9 @@ def run_match(
                 book.pending_exits.add(j)
                 book.rejects["limit_down"] += 1
                 return
-            _sell(t, j, reason="signal", px=px)
+            if reason in book.rejects:
+                book.rejects[reason] += 1
+            _sell(t, j, reason=reason, px=px)
 
         to_exit = set(book.pending_exits)
         book.pending_exits = set()
@@ -229,6 +360,16 @@ def run_match(
                 orphans.append(j)
         for j in sorted(to_exit):
             _try_exit(j)
+
+        for j, pos in list(positions.items()):
+            held = t - pos.entry_idx
+            if cfg.max_hold_days and held >= cfg.max_hold_days:
+                _try_exit(j, "max_hold")
+                continue
+            if cfg.stop_loss_pct > 0:
+                mark = float(raw_px[t, j])
+                if _finite(mark) and pos.entry_px > 0 and mark / pos.entry_px - 1.0 <= -cfg.stop_loss_pct:
+                    _try_exit(j, "stop")
 
         candidates: list[int] = []
         for j in range(panel.S):
@@ -331,6 +472,7 @@ def run_match(
         "equity_curve": curve,
         "drawdown_curve": dd_curve,
         "trades": book.trades,
+        "by_symbol": rollup_trades(book.trades),
         "stats": stats,
         "execution": {
             "fills": sum(1 for t in book.trades if t.get("reason") != "end"),
@@ -347,5 +489,7 @@ def run_match(
             "max_positions": cfg.max_positions,
             "lot_size": cfg.lot_size,
             "t_plus": cfg.t_plus,
+            "stop_loss_pct": cfg.stop_loss_pct,
+            "max_hold_days": cfg.max_hold_days,
         },
     }

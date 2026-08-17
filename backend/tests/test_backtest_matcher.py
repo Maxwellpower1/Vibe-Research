@@ -6,10 +6,10 @@ from datetime import date, timedelta
 
 import numpy as np
 
-from backtest.matcher import compute_stats, run_match
+from backtest.matcher import compute_stats, rollup_trades, run_match
 from backtest.panel import build_panel
 from backtest.rules import MatcherConfig, limit_pct
-from backtest.signals import build_signals, rolling_mean, signal_ma_cross
+from backtest.signals import build_signals, rolling_mean, signal_ma_cross, signal_rank_mom
 from backtest.service import BacktestError, run_backtest
 
 
@@ -57,6 +57,47 @@ def test_limit_pct_by_board():
     assert limit_pct("300001") == 0.20
     assert limit_pct("688001") == 0.20
     assert limit_pct("830001") == 0.30
+
+
+def test_stop_loss_sells_after_t1():
+    panel = _panel([10, 10, 9.1, 9.1, 9.1, 9.1, 9.1])
+    entries = np.zeros((panel.T, 1), dtype=bool)
+    exits = np.zeros((panel.T, 1), dtype=bool)
+    entries[0, 0] = True
+    out = run_match(panel, entries, exits, _cfg(stop_loss_pct=0.08))
+    sells = [t for t in out["trades"] if t["side"] == "sell" and t["reason"] == "stop"]
+    assert sells
+    assert sells[0]["date"] == panel.dates[2]
+
+
+def test_max_hold_sells():
+    panel = _panel([10] * 8)
+    entries = np.zeros((panel.T, 1), dtype=bool)
+    exits = np.zeros((panel.T, 1), dtype=bool)
+    entries[0, 0] = True
+    out = run_match(panel, entries, exits, _cfg(max_hold_days=2))
+    sells = [t for t in out["trades"] if t["side"] == "sell" and t["reason"] == "max_hold"]
+    assert sells
+    assert sells[0]["hold_days"] >= 2
+
+
+def test_tearsheet_monthly_and_drawdown():
+    from backtest.matcher import tearsheet
+
+    curve = [
+        {"date": "2024-01-02", "equity": 100},
+        {"date": "2024-01-31", "equity": 110},
+        {"date": "2024-02-01", "equity": 110},
+        {"date": "2024-02-28", "equity": 99},
+        {"date": "2024-03-01", "equity": 99},
+        {"date": "2024-03-29", "equity": 120},
+    ]
+    sheet = tearsheet(curve)
+    months = {r["month"]: r["return"] for r in sheet["monthly"]}
+    assert months["2024-01"] > 0
+    assert months["2024-02"] < 0
+    assert sheet["drawdowns"]
+    assert sheet["drawdowns"][0]["depth"] < 0
 
 
 def test_t1_blocks_same_day_sell():
@@ -247,6 +288,8 @@ def test_run_backtest_injected_panel_no_network():
     assert "不荐股" in out["disclaimer"]
     assert out["run_id"]
     assert out["data_hash"]
+    assert out["by_symbol"]
+    assert out["config"]["strategy"] == "hold"
 
 
 def test_run_backtest_bad_code():
@@ -256,6 +299,91 @@ def test_run_backtest_bad_code():
         assert "无法解析" in str(e)
     else:
         raise AssertionError("expected BacktestError")
+
+
+def test_rollup_trades_sorts_by_pnl():
+    rows = rollup_trades([
+        {"symbol": "sh600000", "name": "浦发", "side": "buy"},
+        {"symbol": "sh600000", "name": "浦发", "side": "sell", "pnl": 80, "hold_days": 4},
+        {"symbol": "sz000001", "side": "buy"},
+        {"symbol": "sz000001", "side": "sell", "pnl": -20, "hold_days": 2},
+        {"symbol": "sz000001", "side": "sell", "pnl": 10, "hold_days": 2},
+    ])
+    assert [r["symbol"] for r in rows] == ["sh600000", "sz000001"]
+    assert rows[0]["pnl"] == 80
+    assert rows[0]["trips"] == 1
+    assert rows[1]["pnl"] == -10
+    assert rows[1]["wins"] == 1
+    assert rows[1]["trips"] == 2
+    assert abs(rows[1]["win_rate"] - 0.5) < 1e-9
+
+
+def test_rank_mom_picks_winner():
+    days = _weekdays(12)
+    def pack(closes: list[float]) -> list[dict]:
+        return [
+            {"datetime": d, "open": c, "high": c, "low": c, "close": c, "adj_close": c, "volume": 1}
+            for d, c in zip(days, closes)
+        ]
+    panel = build_panel({
+        "sh600000": pack([10 + i for i in range(12)]),
+        "sz000001": pack([20 - i for i in range(12)]),
+    })
+    entries, exits = signal_rank_mom(panel, lookback=3, rebalance=3, top_k=1)
+    assert entries[3, 0] and not entries[3, 1]
+    assert exits[3, 1] and not exits[3, 0]
+    assert entries[6, 0] and exits[6, 1]
+    assert not entries[4].any()
+
+
+def test_rank_mom_rotates_when_leader_flips():
+    days = _weekdays(10)
+    def pack(closes: list[float]) -> list[dict]:
+        return [
+            {"datetime": d, "open": c, "high": c, "low": c, "close": c, "adj_close": c, "volume": 1}
+            for d, c in zip(days, closes)
+        ]
+    panel = build_panel({
+        "sh600000": pack([10, 11, 12, 13, 10, 9, 8, 7, 6, 5]),
+        "sz000001": pack([10, 9, 8, 7, 10, 12, 14, 16, 18, 20]),
+    })
+    entries, exits = signal_rank_mom(panel, lookback=3, rebalance=3, top_k=1)
+    assert entries[3, 0] and exits[3, 1]
+    assert entries[6, 1] and exits[6, 0]
+
+
+def test_run_backtest_rank_mom_injected():
+    days = _weekdays(16)
+    def pack(closes: list[float]) -> list[dict]:
+        return [
+            {"datetime": d, "open": c, "high": c, "low": c, "close": c, "volume": 1000}
+            for d, c in zip(days, closes)
+        ]
+    out = run_backtest(
+        {
+            "codes": ["600000", "000001"],
+            "start": days[0],
+            "end": days[-1],
+            "strategy": "rank_mom",
+            "mom_win": 3,
+            "rebalance": 4,
+            "commission_pct": 0,
+            "commission_min": 0,
+            "stamp_tax_pct": 0,
+            "slippage_bps": 0,
+            "initial_capital": 100000,
+            "max_positions": 1,
+        },
+        bars_by_symbol={
+            "sh600000": pack([10 + i * 0.4 for i in range(16)]),
+            "sz000001": pack([20 - i * 0.3 for i in range(16)]),
+        },
+    )
+    buys = [t for t in out["trades"] if t["side"] == "buy"]
+    assert buys
+    assert all(t["symbol"] == "sh600000" for t in buys)
+    assert out["strategy"]["name"] == "rank_mom"
+    assert any("静态池" in w for w in out["warnings"])
 
 
 def test_dates_strategy_exact_match():

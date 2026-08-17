@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from backtest.oos import resolve_split, tune_ma, walk_folds
+from backtest.oos import resolve_split, tune_ma, tune_mom, walk_folds
 from backtest.rules import MatcherConfig
 from backtest.service import run_backtest
 from backtest.signals import build_signals

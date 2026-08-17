@@ -27,6 +27,7 @@ export function Data() {
   const [peekSym, setPeekSym] = useState("");
   const [peek, setPeek] = useState<BacktestStorePeek | null>(null);
   const [peeking, setPeeking] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -44,6 +45,27 @@ export function Data() {
   useEffect(() => {
     void load();
   }, []);
+
+  const uni = store?.universe;
+  const syncState = uni?.sync?.state;
+  useEffect(() => {
+    if (syncState !== "running") return;
+    const t = window.setInterval(() => { void load(); }, 3000);
+    return () => window.clearInterval(t);
+  }, [syncState]);
+
+  async function fillUniverse() {
+    setSyncing(true);
+    setError("");
+    try {
+      await api.backtestStoreSync();
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "补齐没启动");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function openPeek(symbol: string) {
     setPeekSym(symbol);
@@ -65,16 +87,26 @@ export function Data() {
     <div className="mx-auto max-w-6xl px-3 py-3 sm:px-4">
       <PageHeader
         title="本机数据"
-        subtitle="只看已经落到磁盘上的日历、日 K、实验。不拉上游，也没有 TickFlow 那种全量同步。"
+        subtitle="看本机日历、标的池日 K 覆盖、实验。可补齐近 2 年已收盘日 K，不算 enriched，不清库。"
         actions={
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:text-slate-100"
-          >
-            <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
-            刷新
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void fillUniverse()}
+              disabled={syncing || syncState === "running"}
+              className="inline-flex items-center gap-1 rounded border border-cyan-700/60 px-2 py-1 text-[11px] text-cyan-200 hover:text-cyan-100 disabled:opacity-50"
+            >
+              {syncState === "running" ? "补齐中…" : "补齐近2年"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:text-slate-100"
+            >
+              <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
+              刷新
+            </button>
+          </div>
         }
       />
 
@@ -106,7 +138,11 @@ export function Data() {
             <Stat
               label="日 K"
               value={`${store.bars.count} 只`}
-              hint="回测跑过才会写入 parquet"
+              hint={
+                store.universe
+                  ? `标的池 ${store.universe.covered}/${store.universe.codes} 覆盖 ${store.universe.start} ~ ${store.universe.end}`
+                  : "回测或补齐后写入 parquet"
+              }
             />
             <Stat
               label="实验"
@@ -120,6 +156,15 @@ export function Data() {
             />
           </div>
 
+          {uni?.sync && (uni.sync.state === "running" || uni.sync.error) && (
+            <p className="mb-2 text-[11px] text-slate-400">
+              {uni.sync.state === "running"
+                ? `补齐 ${uni.sync.done || 0}/${uni.sync.universe || 0}`
+                  + (uni.sync.current ? ` · ${uni.sync.current}` : "")
+                : uni.sync.error}
+            </p>
+          )}
+
           {store.legacy_kline > 0 && (
             <p className="mb-2 text-[11px] text-amber-200/80">
               还有 {store.legacy_kline} 个旧版 kline/*.json, 回测已经不读它们。
@@ -131,7 +176,7 @@ export function Data() {
               {symbols.length === 0 ? (
                 <EmptyState
                   title="还没有日 K"
-                  description="去回测页跑一次, 标的的已收盘日 K 会落到本机。"
+                  description="点「补齐近2年」拉标的池, 或去回测页跑几只。"
                 />
               ) : (
                 <table className="w-full min-w-[560px] text-left text-[11px]">
@@ -211,7 +256,7 @@ export function Data() {
                           {r.id}
                         </Link>
                         <span className="ml-2 text-[10px] text-slate-500">
-                          {(r.symbols || []).slice(0, 3).join(" ")}
+                          {r.kind === "factor" ? (r.factor_label || r.factor || "因子") : ((r.symbols || []).slice(0, 3).join(" ") || "账户")}
                         </span>
                       </li>
                     ))}

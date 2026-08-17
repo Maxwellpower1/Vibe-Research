@@ -1603,13 +1603,29 @@ export const api = {
     return get<Research13f>(`/research/13f?${p}`);
   },
   backtestMeta: () => get<BacktestMeta>("/backtest/meta"),
+  backtestProgress: () => get<BacktestProgress>("/backtest/progress"),
   backtestRun: (body: BacktestRunBody) => request<BacktestResult>("/backtest/run", "POST", body),
-  backtestRuns: (limit = 40) => get<BacktestRunSummary[]>(`/backtest/runs?limit=${limit}`),
+  backtestRuns: (limit = 40, kind?: "account" | "factor") =>
+    get<BacktestRunSummary[]>(`/backtest/runs?limit=${limit}${kind ? `&kind=${kind}` : ""}`),
   backtestRunGet: (id: string) => get<BacktestResult>(`/backtest/runs/${encodeURIComponent(id)}`),
   backtestRunDelete: (id: string) => request<{ ok: boolean; id: string }>(`/backtest/runs/${encodeURIComponent(id)}`, "DELETE"),
   backtestStore: () => get<BacktestStore>("/backtest/store"),
+  backtestCover: (codes: string[], lookback?: string) => {
+    const p = new URLSearchParams();
+    p.set("codes", codes.join(","));
+    if (lookback) p.set("lookback", lookback);
+    return get<BacktestStoreCover>(`/backtest/store?${p}`);
+  },
+  backtestStoreSync: () => request<BacktestStoreSync>("/backtest/store/sync", "POST"),
   backtestStorePeek: (symbol: string, n = 30) =>
     get<BacktestStorePeek>(`/backtest/store/${encodeURIComponent(symbol)}?n=${n}`),
+  backtestFactor: (body: BacktestFactorBody) => request<BacktestFactorResult>("/backtest/factor", "POST", body),
+  backtestFactorCompare: (body: BacktestFactorCompareBody) =>
+    request<BacktestFactorCompare>("/backtest/factor/compare", "POST", body),
+  backtestIndexPool: (index: string, refresh = false) =>
+    get<BacktestIndexPool>(
+      `/backtest/index-pool?index=${encodeURIComponent(index)}${refresh ? "&refresh=1" : ""}`,
+    ),
   openRouterUsage: () => get<OrUsageDay[]>("/ai-watch/openrouter-usage"),
   spendIndex: () => get<SpendIndexResp>("/ai-watch/spend-index"),
   aaModels: () => get<AaModelsResp>("/ai-watch/aa-models"),
@@ -1781,7 +1797,7 @@ export interface Research13f {
   note?: string;
 }
 
-export type BacktestStrategy = "hold" | "ma_cross" | "dates";
+export type BacktestStrategy = "hold" | "ma_cross" | "dates" | "rank_mom";
 
 export interface BacktestEvent {
   code: string;
@@ -1797,6 +1813,8 @@ export interface BacktestRunBody {
   end?: string;
   short_win?: number;
   long_win?: number;
+  mom_win?: number;
+  rebalance?: number;
   events?: BacktestEvent[];
   fill?: "open_t+1" | "close_t";
   initial_capital?: number;
@@ -1809,6 +1827,18 @@ export interface BacktestRunBody {
   oos_date?: string;
   tune_ma?: boolean;
   walk_forward?: boolean;
+}
+
+export interface BacktestSymbolRow {
+  symbol: string;
+  name?: string;
+  buys: number;
+  sells: number;
+  pnl: number;
+  wins: number;
+  trips: number;
+  win_rate: number;
+  avg_hold?: number;
 }
 
 export interface BacktestTrade {
@@ -1866,11 +1896,44 @@ export interface BacktestResult {
     start?: string;
     end?: string;
     bars?: number;
+    from_store?: number;
+    fetched?: number;
   };
-  strategy?: { name: string; short_win?: number; long_win?: number };
+  strategy?: { name: string; short_win?: number; long_win?: number; mom_win?: number; rebalance?: number; top_k?: number };
   warnings?: string[];
   disclaimer?: string;
-  config?: Record<string, number | string>;
+  config?: {
+    codes?: string[];
+    start?: string;
+    end?: string;
+    strategy?: BacktestStrategy | string;
+    short_win?: number;
+    long_win?: number;
+    mom_win?: number;
+    rebalance?: number;
+    events?: BacktestEvent[];
+    fill?: "open_t+1" | "close_t";
+    walk_forward?: boolean;
+    tune_ma?: boolean;
+    oos_frac?: number | string | null;
+    matcher?: {
+      fill?: "open_t+1" | "close_t";
+      commission_pct?: number;
+      commission_min?: number;
+      stamp_tax_pct?: number;
+      slippage_bps?: number;
+      initial_capital?: number;
+      max_positions?: number;
+      stop_loss_pct?: number;
+      max_hold_days?: number;
+    };
+  };
+  tearsheet?: {
+    monthly: { month: string; return: number }[];
+    yearly: { year: string; return: number }[];
+    drawdowns: { start: string; trough: string; end: string; depth: number; days: number }[];
+  };
+  by_symbol?: BacktestSymbolRow[];
   run_id?: string;
   data_hash?: string;
   data_hash_now?: string | null;
@@ -1908,15 +1971,19 @@ export interface BacktestResult {
 
 export interface BacktestRunSummary {
   id: string;
+  kind?: "account" | "factor" | string;
   created?: string;
   data_hash?: string;
   strategy?: { name?: string } | string;
+  factor?: string;
+  factor_label?: string;
   symbols?: string[];
   start?: string;
   end?: string;
   total_return?: number | null;
   sharpe?: number | null;
   excess_return?: number | null;
+  ic_mean?: number | null;
 }
 
 export interface BacktestStoreSymbol {
@@ -1928,10 +1995,54 @@ export interface BacktestStoreSymbol {
   adj: number;
 }
 
+export interface BacktestStoreSync {
+  state: string;
+  lookback?: string;
+  start?: string;
+  end?: string;
+  universe?: number;
+  done?: number;
+  ok?: number;
+  skip?: number;
+  fail?: number;
+  current?: string;
+  error?: string;
+  updated?: string;
+}
+
+export interface BacktestStoreUniverse {
+  lookback: string;
+  start: string;
+  end: string;
+  codes: number;
+  on_disk: number;
+  covered: number;
+  window_match?: boolean;
+  sync?: BacktestStoreSync;
+}
+
+export interface BacktestStoreProbe {
+  start: string;
+  end: string;
+  asked: number;
+  covered: number;
+  missing: string[];
+  partial: { symbol: string; from: string; to: string }[];
+}
+
+export interface BacktestStoreCover {
+  root: string;
+  closed_end?: string;
+  universe?: BacktestStoreUniverse;
+  probe: BacktestStoreProbe;
+  note?: string;
+}
+
 export interface BacktestStore {
   root: string;
   closed_end?: string;
   bytes: { market: number; runs: number };
+  probe?: BacktestStoreProbe;
   calendar: {
     loaded: boolean;
     count: number;
@@ -1941,7 +2052,8 @@ export interface BacktestStore {
     trading_day?: boolean;
     fallback?: boolean;
   };
-  bars: { count: number; symbols: BacktestStoreSymbol[] };
+  bars: { count: number; symbols: BacktestStoreSymbol[]; preview?: number };
+  universe?: BacktestStoreUniverse;
   members: { index: string; rows: number; snapshots: number; from?: string | null; to?: string | null }[];
   fundamentals: { symbol: string; rows: number; from?: string | null; to?: string | null }[];
   runs: { count: number; recent: BacktestRunSummary[] };
@@ -1964,12 +2076,136 @@ export interface BacktestStorePeek {
   }[];
 }
 
+export interface BacktestFactorDef {
+  id: string;
+  label: string;
+  win: number;
+  kind: string;
+  group?: string;
+}
+
+export interface BacktestFactorBody {
+  codes?: string[];
+  pool?: "codes" | "store";
+  factor?: string;
+  lookback?: "1y" | "2y" | "3y";
+  start?: string;
+  end?: string;
+  rebalance?: "daily" | "weekly" | "monthly";
+  n_groups?: number;
+  direction?: "high" | "low";
+  weight?: "equal" | "factor_weight";
+  ls_fee?: number;
+  factors?: string[];
+}
+
+export interface BacktestFactorCompareBody extends BacktestFactorBody {
+  factors: string[];
+}
+
+export interface BacktestFactorCompare {
+  factors: string[];
+  rows: {
+    id: string;
+    label: string;
+    group?: string;
+    ic_mean: number | null;
+    ir: number | null;
+    ic_win_rate: number | null;
+    ls_return: number | null;
+    q_spread: number | null;
+  }[];
+  ic_corr: (number | null)[][];
+  n_symbols: number;
+  warnings?: string[];
+}
+
+export interface BacktestFactorResult {
+  run_id?: string;
+  created?: string;
+  data_hash?: string;
+  config?: BacktestFactorBody & Record<string, unknown>;
+  factor: BacktestFactorDef;
+  rebalance: string;
+  direction?: "high" | "low";
+  weight?: string;
+  ls_fee?: number;
+  n_groups: number;
+  n_symbols: number;
+  n_dates: number;
+  n_periods: number;
+  ic_mean: number | null;
+  ic_std: number | null;
+  ir: number | null;
+  ic_win_rate: number | null;
+  ic_series: { date: string; ic: number }[];
+  group_stats: {
+    group: number;
+    label: string;
+    total_return: number;
+    sharpe: number;
+    max_drawdown: number;
+    win_rate: number;
+  }[];
+  group_nav: Record<string, string | number>[];
+  long_short_nav: { date: string; value: number }[];
+  long_short_stats: {
+    total_return: number;
+    sharpe: number;
+    max_drawdown: number;
+    win_rate: number;
+    top_group?: string;
+    bottom_group?: string;
+  };
+  warnings?: string[];
+  disclaimer?: string;
+  universe?: {
+    symbols: string[];
+    start?: string;
+    end?: string;
+    bars?: number;
+    from_store?: number;
+    fetched?: number;
+    pool?: string;
+    n_requested?: number;
+  };
+}
+
+export interface BacktestProgress {
+  state: "idle" | "running" | "done" | string;
+  kind: string;
+  step: string;
+  label: string;
+  done: number;
+  total: number;
+  current: string;
+  note: string;
+}
+
+export interface BacktestIndexPoolDef {
+  id: string;
+  label: string;
+}
+
+export interface BacktestIndexPool {
+  id: string;
+  label: string;
+  asof: string;
+  codes: string[];
+  n: number;
+  stored: boolean;
+  source: string;
+  note: string;
+}
+
 export interface BacktestMeta {
   strategies: { id: BacktestStrategy; label: string; hint: string }[];
   fills: string[];
   lookbacks: string[];
   defaults: BacktestRunBody & Record<string, unknown>;
-  limits: { max_codes: number; max_bars: number };
+  limits: { max_codes: number; max_bars: number; factor_max_codes?: number };
+  factors?: BacktestFactorDef[];
+  index_pools?: BacktestIndexPoolDef[];
   disclaimer: string;
   notes: string[];
 }

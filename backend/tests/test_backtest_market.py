@@ -91,6 +91,10 @@ def test_members_asof_latest_snapshot(tmp_path, monkeypatch):
     assert members_on("sh000300", "2024-03-01") == ["sh600000", "sh600519"]
     assert members_on("sh000300", "2024-06-01") == ["sh600519", "sz000858"]
     assert members_on("sh000300", "2023-12-31") == []
+    from backtest.market import members_asof
+    day, syms = members_asof("sh000300", "2024-03-01")
+    assert day == "2024-01-02"
+    assert syms == ["sh600000", "sh600519"]
 
 
 def test_fundamental_needs_announce_date(tmp_path, monkeypatch):
@@ -153,6 +157,32 @@ def test_read_run_checks_data_hash(tmp_path, monkeypatch):
     got2 = result_from_run(read_run("h1"))
     assert got2["data_hash_match"] is False
     assert any("行情已变" in w for w in got2["warnings"])
+
+
+def test_wide_account_run_skips_hash(monkeypatch, tmp_path):
+    monkeypatch.setenv("VR_DATA_DIR", str(tmp_path))
+
+    def boom(*_a, **_k):
+        raise AssertionError("panel_hash should not run for wide account runs")
+
+    monkeypatch.setattr("backtest.store.panel_hash", boom)
+    write_run(
+        "wide",
+        config={"codes": [f"sh{600000 + i}" for i in range(50)]},
+        trades=[],
+        equity={"equity_curve": []},
+        meta={
+            "id": "wide",
+            "kind": "account",
+            "data_hash": "abc",
+            "symbols": [f"sh{600000 + i}" for i in range(50)],
+            "start": "2024-01-02",
+            "end": "2024-12-31",
+        },
+    )
+    got = result_from_run(read_run("wide"))
+    assert got["data_hash_match"] is None
+    assert any("未重算" in w for w in got["warnings"])
 
 
 def test_ma_uses_adj_close_not_raw_split():
