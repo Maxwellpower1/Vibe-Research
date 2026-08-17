@@ -364,7 +364,6 @@ def test_quotes_cached_reuses_per_code(monkeypatch):
     import api_common
 
     api_common._DC_CACHE.clear()
-    cl._QUOTE_ONE_LAST.clear()
     calls = []
 
     def fake_map(codes):
@@ -384,7 +383,6 @@ def test_quotes_cached_serves_last_when_fresh_expires(monkeypatch):
     import api_common
 
     api_common._DC_CACHE.clear()
-    cl._QUOTE_ONE_LAST.clear()
     calls: list[list[str]] = []
 
     def fake_map(codes):
@@ -393,10 +391,10 @@ def test_quotes_cached_serves_last_when_fresh_expires(monkeypatch):
 
     monkeypatch.setattr(cl, "quotes_map", fake_map)
     cl.quotes_cached(["sh000001"])
-    api_common._DC_CACHE.pop(("quote_one", "sh000001"), None)
+    api_common._DC_CACHE.expire(("quote_one", "sh000001"))
     out = cl.quotes_cached(["sh000001"])
     assert out["sh000001"]["price"] == 10.0
-    assert calls[0] == ["sh000001"]
+    assert calls == [["sh000001"]]
 
 
 def test_stock_boards_map_aliases_and_skips(monkeypatch):
@@ -418,7 +416,9 @@ def test_stock_boards_map_aliases_and_skips(monkeypatch):
 def test_turnover_top_prefers_sina(monkeypatch):
     import market
 
-    market._CACHE.clear()
+    from api_common import _DC_CACHE
+
+    _DC_CACHE.clear()
     monkeypatch.setattr(cl, "sina_amount_rank", lambda n: [{
         "code": "600519", "name": "茅台", "price": 1400.0, "pct": 1.2,
         "amount": 1e9, "mcap": 2e12, "float_cap": 2e12, "industry": "",

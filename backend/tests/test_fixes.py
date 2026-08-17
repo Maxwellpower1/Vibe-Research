@@ -157,23 +157,6 @@ def test_emotion_dirty_amount(monkeypatch):
     assert "breadth" not in out
 
 
-# ── 缓存：数据源故障的空结果不缓存 5 分钟 ───────────────────────────
-
-def test_cached_skips_empty():
-    market._CACHE.pop("k_test", None)
-    calls = []
-
-    def flaky():
-        calls.append(1)
-        return {} if len(calls) == 1 else {"ok": 1}
-
-    assert market._cached("k_test", flaky) == {}
-    assert market._cached("k_test", flaky) == {"ok": 1}  # 空结果没被缓存 → 下次重试成功
-    assert market._cached("k_test", flaky) == {"ok": 1}  # 非空已缓存，不再调用
-    assert len(calls) == 2
-    market._CACHE.pop("k_test", None)
-
-
 # ── akshare 未安装：market 降级返回空，不挡服务 ─────────────────────
 
 def test_market_degrades_without_akshare(monkeypatch):

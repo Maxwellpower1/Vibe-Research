@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 import fin_window
-from api_common import _cached
+from api_common import _cached, _read
 
 router = APIRouter(tags=["fin"])
 
@@ -37,7 +37,7 @@ def fin_company(code: str = Query(..., description="6-digit or sh600519")):
     if not raw:
         raise HTTPException(400, "代码须为 6 位数字")
     try:
-        data = _cached("fin_company", raw, 1800, lambda: fin_window.company_bundle(raw))
+        data = _read("fin_company", raw, 1800, lambda: fin_window.company_bundle(raw))
         return {"data": data}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e

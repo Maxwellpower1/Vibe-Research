@@ -325,19 +325,24 @@ def quotes_map(codes: list[str]) -> dict[str, dict]:
     return out
 
 
-_QUOTE_ONE_LAST: dict[str, dict] = {}
 _STALE_LOCK = threading.Lock()
 _STALE_INFLIGHT: set[str] = set()
 
 
-def _remember_quote(key: str, item: dict) -> None:
-    _QUOTE_ONE_LAST[key.lower()] = item
+def _store_quotes(fetched: dict[str, dict], ttl: float) -> int:
+    from api_common import _put
+
+    n = 0
+    for k, item in fetched.items():
+        if not isinstance(item, dict) or not item.get("price"):
+            continue
+        _put("quote_one", k.lower(), item, ttl)
+        n += 1
+    return n
 
 
 def _refresh_stale_quotes(codes: list[str]) -> None:
     """One Tencent pass for expired keys. 100 tabs share this flight."""
-    from api_common import _DC_CACHE
-
     with _STALE_LOCK:
         todo = [c for c in codes if c.lower() not in _STALE_INFLIGHT]
         for c in todo:
@@ -345,17 +350,21 @@ def _refresh_stale_quotes(codes: list[str]) -> None:
     if not todo:
         return
     try:
-        fetched = quotes_map(todo)
-        ttl = astock.quote_ttl()
-        for k, item in fetched.items():
-            if not isinstance(item, dict) or not item.get("price"):
-                continue
-            _DC_CACHE.set(("quote_one", k.lower()), item, ttl=ttl)
-            _remember_quote(k, item)
+        _store_quotes(quotes_map(todo), astock.quote_ttl())
     finally:
         with _STALE_LOCK:
             for c in todo:
                 _STALE_INFLIGHT.discard(c.lower())
+
+
+def _clock_quote(key: str) -> bool:
+    """Index catalog (and resolved alias) is clock-fed. Watchlist stays first-ask."""
+    from api_common import is_catalog_symbol
+
+    if is_catalog_symbol(key):
+        return True
+    resolved = astock.resolve_symbol(key) or ""
+    return bool(resolved) and is_catalog_symbol(resolved)
 
 
 def quotes_cached(codes: list[str]) -> dict[str, dict]:
@@ -371,26 +380,20 @@ def quotes_cached(codes: list[str]) -> dict[str, dict]:
         if not key or key in seen:
             continue
         seen.add(key)
-        hit = _DC_CACHE.get(("quote_one", key.lower()))
-        if isinstance(hit, dict) and hit.get("price"):
-            out[key] = hit
-            _remember_quote(key, hit)
-            continue
-        last = _QUOTE_ONE_LAST.get(key.lower())
+        slot = ("quote_one", key.lower())
+        last = _DC_CACHE.get_last(slot)
         if isinstance(last, dict) and last.get("price"):
             out[key] = last
-            stale.append(key)
+            if slot not in _DC_CACHE and not _clock_quote(key):
+                stale.append(key)
         else:
             unseen.append(key)
     if unseen:
         fetched = quotes_map(unseen)
-        ttl = astock.quote_ttl()
+        _store_quotes(fetched, astock.quote_ttl())
         for k, item in fetched.items():
-            if not isinstance(item, dict) or not item.get("price"):
-                continue
-            _DC_CACHE.set(("quote_one", k.lower()), item, ttl=ttl)
-            _remember_quote(k, item)
-            out[k] = item
+            if isinstance(item, dict) and item.get("price"):
+                out[k] = item
     if stale:
         threading.Thread(
             target=_refresh_stale_quotes,
@@ -403,18 +406,7 @@ def quotes_cached(codes: list[str]) -> dict[str, dict]:
 
 def warm_hub_quotes(codes: list[str]) -> int:
     """Force-write quote_one keys used by GET /market/quotes."""
-    from api_common import _DC_CACHE
-
-    fetched = quotes_map(codes)
-    ttl = astock.quote_ttl()
-    n = 0
-    for k, item in fetched.items():
-        if not isinstance(item, dict) or not item.get("price"):
-            continue
-        _DC_CACHE.set(("quote_one", k.lower()), item, ttl=ttl)
-        _remember_quote(k, item)
-        n += 1
-    return n
+    return _store_quotes(quotes_map(codes), astock.quote_ttl())
 
 
 def _vix_from_sina() -> dict | None:

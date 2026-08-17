@@ -109,3 +109,56 @@ def test_none_can_be_negative_cached():
     assert c.get_or_set("X", lambda: calls.append(1) or None, valid=lambda v: v is not None) is None
     assert c.get_or_set("X", lambda: calls.append(1) or {"code": "X"}, valid=lambda v: v is not None) is None
     assert calls == [1]
+
+
+def test_get_last_survives_ttl():
+    c = TTLCache(maxsize=8, default_ttl=0.15, name="t")
+    c.set("k", "v")
+    time.sleep(0.2)
+    assert c.get("k") is None
+    assert c.get_last("k") == "v"
+
+
+def test_expire_keeps_last():
+    c = TTLCache(maxsize=8, default_ttl=60, name="t")
+    c.set("k", "v")
+    assert c.expire("k") is True
+    assert c.get("k") is None
+    assert c.get_last("k") == "v"
+    assert c.expire("missing") is False
+
+
+def test_serve_last_skips_fetch_after_expire():
+    c = TTLCache(maxsize=8, default_ttl=60, name="t")
+    calls: list[int] = []
+    assert c.get_or_set("k", lambda: calls.append(1) or "v", serve_last=True) == "v"
+    c.expire("k")
+    assert c.get_or_set("k", lambda: calls.append(1) or "v2", serve_last=True) == "v"
+    assert calls == [1]
+
+
+def test_refetch_keeps_last_when_fetch_raises():
+    c = TTLCache(maxsize=8, default_ttl=60, name="t")
+    c.set("k", "v")
+    c.expire("k")
+
+    def boom():
+        raise RuntimeError("up")
+
+    try:
+        c.get_or_set("k", boom)
+    except RuntimeError as e:
+        assert str(e) == "up"
+    else:
+        raise AssertionError("expected fetch error")
+    assert c.get_last("k") == "v"
+
+
+def test_negative_expire_does_not_become_last():
+    c = TTLCache(maxsize=8, default_ttl=60, negative_ttl=0.15, name="t")
+    calls: list[int] = []
+    assert c.get_or_set("k", lambda: calls.append(1) or []) == []
+    time.sleep(0.2)
+    assert c.get_last("k") is None
+    assert c.get_or_set("k", lambda: calls.append(1) or [{"ok": 1}]) == [{"ok": 1}]
+    assert calls == [1, 1]

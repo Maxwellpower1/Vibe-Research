@@ -7,9 +7,8 @@
 
 设计:
 - 只读, 无状态, 客观呈现公开数据, 不推荐 / 不预测 / 不评分.
-- 全站共享一份缓存 (TTL 默认 5 分钟), 多用户多次打开只抓一次,
-  盘中 5 分钟刷新足够, 也避免对 openvlab 服务器造成压力.
-- 数据源故障的空结果不缓存, 下次请求直接重试.
+- 全站共享一份缓存 (TTL 默认 5 分钟), 多用户多次打开只抓一次.
+  过期读上一笔, 不再出网. 空结果不缓存, 下次请求直接重试.
 - requests 惰性导入: 缺失时对应函数抛 DependencyMissing, app 层转 501 + 安装提示.
 """
 
@@ -81,10 +80,10 @@ _CACHE = TTLCache(maxsize=256, default_ttl=_TTL, negative_ttl=0, name="ovlab")
 
 
 def _cached(key: str, fn, valid=is_nonempty, ttl: float | None = None):
-    """TTL 缓存. 数据源故障的空结果不缓存 (valid 判否), 下次请求直接重试.
-    ttl: 自定义缓存秒数, 默认用全局 _TTL.
+    """First fill then last-good. Empty upstream is not stored, next call retries.
+    ttl: custom seconds, default _TTL.
     """
-    return _CACHE.get_or_set(key, fn, ttl=ttl, valid=valid, negative_ttl=0)
+    return _CACHE.get_or_set(key, fn, ttl=ttl, valid=valid, negative_ttl=0, serve_last=True)
 
 
 def _get(path: str, params: dict[str, Any] | None = None, timeout: float = 20.0) -> Any:

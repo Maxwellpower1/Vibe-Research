@@ -11,16 +11,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 
 import astock
-from cache import TTLCache, is_nonempty
 
 BEIJING = timezone(timedelta(hours=8))
-_TTL = 300  # 5 分钟；全站共享，省数据源压力
-_CACHE = TTLCache(maxsize=128, default_ttl=_TTL, negative_ttl=0, name="market")
-
-
-def _cached(key: str, fn, valid=is_nonempty):
-    """TTL 缓存。数据源故障的空结果不缓存（valid 判否），下次请求直接重试。"""
-    return _CACHE.get_or_set(key, fn, ttl=_TTL, valid=valid, negative_ttl=0)
+_TTL = 300
 
 
 def _num(v) -> int:
@@ -82,15 +75,30 @@ def _sectors() -> list[dict]:
     return out
 
 
+def _overview_payload() -> dict:
+    return {
+        "sentiment": _sentiment(),
+        "sectors": _sectors(),
+        "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M"),
+    }
+
+
+def _overview_ok(v) -> bool:
+    return bool(isinstance(v, dict) and (v.get("sentiment") or v.get("sectors")))
+
+
 def get_overview() -> dict:
-    """市场情绪 + 板块资金（含缓存）。"""
-    def build():
-        return {
-            "sentiment": _sentiment(),
-            "sectors": _sectors(),
-            "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M"),
-        }
-    return _cached("overview", build, valid=lambda v: bool(v.get("sentiment") or v.get("sectors")))
+    """市场情绪 + 板块资金. 与预热同一把 _DC_CACHE 钥匙."""
+    from api_common import _read
+
+    return _read("overview", "live", _TTL, _overview_payload, valid=_overview_ok)
+
+
+def put_overview() -> dict:
+    """Warmup force-write. Same key get_overview reads."""
+    from api_common import put_fetch
+
+    return put_fetch("overview", "live", _TTL, _overview_payload, valid=_overview_ok)
 
 
 def _emotion() -> dict:
@@ -230,8 +238,17 @@ def _seal_counts(zt: list, dt: list) -> dict:
 
 
 def get_short_term_emotion() -> dict:
-    """短线情绪（含缓存，5 分钟）。"""
-    return _cached("emotion", _emotion)
+    """短线情绪. 与预热同一把 _DC_CACHE 钥匙."""
+    from api_common import _read
+
+    return _read("emotion", "live", _TTL, _emotion)
+
+
+def put_emotion() -> dict:
+    """Warmup force-write. Same key get_short_term_emotion reads."""
+    from api_common import put_fetch
+
+    return put_fetch("emotion", "live", _TTL, _emotion)
 
 
 def get_turnover_top() -> dict:
@@ -247,12 +264,14 @@ def get_turnover_top() -> dict:
             "stocks": stocks,
             "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M"),
         }
-    return _cached("turnover_top", build, valid=lambda v: bool(v.get("stocks")))
+    from api_common import _cached
+
+    return _cached("turnover_top", "live", _TTL, build, valid=lambda v: bool(v.get("stocks")))
 
 
 def get_global_indices() -> list[dict]:
     """全球指数快照. 与复盘清单同一条 _DC_CACHE 键 (world_indices / 20s)。"""
-    from api_common import _cached as dc_cached
+    from api_common import _read
     import cockpit_live
 
-    return dc_cached("world_indices", "live", 20, cockpit_live.world_indices)
+    return _read("world_indices", "live", 20, cockpit_live.world_indices)

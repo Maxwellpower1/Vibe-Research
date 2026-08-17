@@ -261,6 +261,7 @@ def resolve_symbol(query: str) -> dict | None:
         _fetch,
         valid=lambda v: v is not None,
         negative_ttl=120,
+        serve_last=True,
     )
 
 

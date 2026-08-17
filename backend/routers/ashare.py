@@ -4,14 +4,12 @@ from fastapi import APIRouter, HTTPException, Query
 
 import astock
 from api_common import (
-    _ANN_CACHE,
-    _FIN_CACHE,
-    _PCT_CACHE,
     _cached,
+    _read,
     _validate,
     _validate_symbol,
     light_kline_map,
-    light_kline_ttl,
+    serve_light_kline,
 )
 
 router = APIRouter(tags=["ashare"])
@@ -22,7 +20,7 @@ def stock_basic(code: str = Query(...)):
     import astock_boards
     code = _validate(code)
     try:
-        data = _cached(
+        data = _read(
             "stock_basic",
             code,
             1800,
@@ -54,9 +52,7 @@ def valuation_percentile(code: str = Query(...)):
     """PE-TTM / PB 历史分位（近5年）。全站缓存 30 分钟/代码（历史序列日频、变化慢）。"""
     code = _validate(code)
     try:
-        data = _PCT_CACHE.get_or_set(
-            code, lambda: astock.valuation_percentile(code), ttl=1800
-        )
+        data = _read("pct", code, 1800, lambda: astock.valuation_percentile(code))
         return {"data": data}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
@@ -69,7 +65,7 @@ def announcements(code: str = Query(...)):
     """个股近期公告（东财，仅 requests）。缓存 15 分钟/代码。"""
     code = _validate(code)
     try:
-        data = _ANN_CACHE.get_or_set(code, lambda: astock.announcements(code), ttl=900)
+        data = _read("ann", code, 900, lambda: astock.announcements(code))
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"公告源异常：{e}") from e
@@ -80,7 +76,7 @@ def financials(code: str = Query(...)):
     """财务关键指标（同花顺财务摘要，最新报告期）。缓存 30 分钟/代码。"""
     code = _validate(code)
     try:
-        data = _FIN_CACHE.get_or_set(code, lambda: astock.financials(code), ttl=1800)
+        data = _read("fin", code, 1800, lambda: astock.financials(code))
         return {"data": data}
     except astock.DependencyMissing as e:
         raise HTTPException(501, str(e)) from e
@@ -145,13 +141,7 @@ def astock_light_kline(
     if res not in ("1", "5", "1D"):
         raise HTTPException(400, "resolution 仅支持 1 / 5 / 1D")
     try:
-        ttl = light_kline_ttl(code, res)
-        data = _cached(
-            f"ashare_light:{res}:{num}",
-            code,
-            ttl,
-            lambda: astock.light_kline(code, res, num=num),
-        )
+        data = serve_light_kline(code, res, num)
         if not data:
             raise HTTPException(404, f"未取到「{code}」的 K 线")
         return {"data": data}
@@ -186,7 +176,7 @@ def margin(code: str = Query(...)):
     code = _validate(code)
     try:
         return {
-            "data": _cached("margin", code, 1800, lambda: astock.margin_trading(code))
+            "data": _read("margin", code, 1800, lambda: astock.margin_trading(code))
         }
     except Exception as e:
         raise HTTPException(502, f"融资融券异常：{e}") from e
@@ -197,7 +187,7 @@ def block_trade(code: str = Query(...)):
     """大宗交易（东财）。缓存 30 分钟。"""
     code = _validate(code)
     try:
-        return {"data": _cached("block", code, 1800, lambda: astock.block_trade(code))}
+        return {"data": _read("block", code, 1800, lambda: astock.block_trade(code))}
     except Exception as e:
         raise HTTPException(502, f"大宗交易异常：{e}") from e
 
@@ -208,7 +198,7 @@ def holders(code: str = Query(...)):
     code = _validate(code)
     try:
         return {
-            "data": _cached(
+            "data": _read(
                 "holders", code, 1800, lambda: astock.holder_num_change(code)
             )
         }
@@ -222,7 +212,7 @@ def dividend(code: str = Query(...)):
     code = _validate(code)
     try:
         return {
-            "data": _cached(
+            "data": _read(
                 "dividend", code, 1800, lambda: astock.dividend_history(code)
             )
         }
@@ -237,7 +227,7 @@ def fund_flow(code: str = Query(...)):
     code = _validate(code)
     try:
         return {
-            "data": _cached(
+            "data": _read(
                 "fundflow", code, 900, lambda: astock.stock_fund_flow_120d(code)
             )
         }
@@ -283,9 +273,10 @@ def shareholder_changes(
         c = _validate(c)
     ct = change_type if change_type in ("all", "增持", "减持") else "all"
     try:
-        rows = _cached(
+        key = f"{c or 'ALL'}:{ct}:{limit}"
+        rows = _read(
             "sh_chg",
-            f"{c or 'ALL'}:{ct}:{limit}",
+            key,
             600,
             lambda: astock.shareholder_changes(c, ct, limit),
         )
@@ -308,7 +299,7 @@ def dragon_tiger(code: str = Query(...)):
     code = _validate(code)
     try:
         return {
-            "data": _cached("dt", code, 1800, lambda: astock.dragon_tiger_board(code))
+            "data": _read("dt", code, 1800, lambda: astock.dragon_tiger_board(code))
         }
     except Exception as e:
         raise HTTPException(502, f"龙虎榜异常：{e}") from e
@@ -323,7 +314,7 @@ def dragon_tiger_daily(
     """全市场龙虎榜（东财公开榜单）。缓存 10 分钟。客观呈现，不附推荐。"""
     try:
         key = f"{date or 'auto'}:{top}:{min_net_buy if min_net_buy is not None else 'all'}"
-        data = _cached(
+        data = _read(
             "dt_daily",
             key,
             600,
@@ -340,7 +331,7 @@ def lockup(code: str = Query(...)):
     code = _validate(code)
     try:
         return {
-            "data": _cached("lockup", code, 1800, lambda: astock.lockup_expiry(code))
+            "data": _read("lockup", code, 1800, lambda: astock.lockup_expiry(code))
         }
     except Exception as e:
         raise HTTPException(502, f"解禁日历异常：{e}") from e
@@ -352,7 +343,7 @@ def blocks(code: str = Query(...)):
     code = _validate(code)
     try:
         return {
-            "data": _cached("blocks", code, 1800, lambda: astock.concept_blocks(code))
+            "data": _read("blocks", code, 1800, lambda: astock.concept_blocks(code))
         }
     except Exception as e:
         raise HTTPException(502, f"板块归属异常：{e}") from e
@@ -363,7 +354,7 @@ def hot_concepts(code: str = Query(...)):
     """个股当下被市场归到哪些概念在炒（东财热门概念命中）。缓存 15 分钟。"""
     code = _validate(code)
     try:
-        return {"data": _cached("hotcon", code, 900, lambda: astock.hot_concepts(code))}
+        return {"data": _read("hotcon", code, 900, lambda: astock.hot_concepts(code))}
     except Exception as e:
         raise HTTPException(502, f"热门概念异常：{e}") from e
 
@@ -373,7 +364,7 @@ def investor_qa(code: str = Query(...)):
     """互动易问答（巨潮）：投资者提问 + 公司回复。缓存 15 分钟。"""
     code = _validate(code)
     try:
-        return {"data": _cached("irm", code, 900, lambda: astock.investor_qa(code))}
+        return {"data": _read("irm", code, 900, lambda: astock.investor_qa(code))}
     except Exception as e:
         raise HTTPException(502, f"互动易异常：{e}") from e
 

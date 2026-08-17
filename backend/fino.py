@@ -18,7 +18,7 @@
 
 设计:
 - 只读, 无状态, 客观呈现机构观点统计, 不推荐 / 不预测 / 不评分.
-- 全站共享一份缓存 (TTL 10 分钟), 日报类数据 10 分钟足够, 也避免对上游造成压力.
+- 全站共享一份缓存 (TTL 10 分钟). 过期读上一笔, 不再出网.
 - requests 惰性导入: 缺失时抛 DependencyMissing, app 层转 501 + 安装提示.
 - 数据源故障的空结果不缓存, 下次请求直接重试.
 """
@@ -88,8 +88,8 @@ def _cached(
     valid: Callable[[Any], bool] = is_nonempty,
     ttl: float | None = None,
 ):
-    """TTL 缓存. 数据源故障的空结果不缓存 (valid 判否), 下次请求直接重试."""
-    return _CACHE.get_or_set(key, fn, ttl=ttl, valid=valid, negative_ttl=0)
+    """First fill then last-good. Empty upstream is not stored, next call retries."""
+    return _CACHE.get_or_set(key, fn, ttl=ttl, valid=valid, negative_ttl=0, serve_last=True)
 
 
 def _creds() -> tuple[str, str]:

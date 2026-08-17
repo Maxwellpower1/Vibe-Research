@@ -8,7 +8,7 @@ import review_context
 import review_mail
 import review_snapshot
 import review_warmup
-from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _cached, _DC_CACHE, commodity_quote_ttl
+from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _cached, _DC_CACHE, _dc, commodity_quote_ttl
 
 router = APIRouter(tags=["market"])
 
@@ -171,11 +171,12 @@ def market_stock_flow(
     import astock_boards
     try:
         key = f"{(board or 'all').strip().upper()}:{top}"
-        data = _cached(
+        data = _dc(
             "stock_flow",
             key,
             120,
             lambda: astock_boards.stock_moneyflow(top, board),
+            last=key == "ALL:15",
         )
         return {"data": data}
     except Exception as e:
@@ -187,7 +188,7 @@ def market_hsgt():
     """北向资金分钟流向（同花顺；深股通仅供参考）。缓存 2 分钟。"""
     import astock_boards
     try:
-        data = _cached("hsgt", "live", 120, astock_boards.hsgt_realtime)
+        data = _dc("hsgt", "live", 120, astock_boards.hsgt_realtime, last=True)
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"北向资金异常：{e}") from e
@@ -258,11 +259,12 @@ def iwencai_select(
 def cls_telegraph(limit: int = Query(50, ge=10, le=100)):
     """财联社电报（全市场实时快讯，零 key）。缓存 120 秒，长过整页预热 90 秒。客观呈现，不附推荐。"""
     try:
-        data = _cached(
+        data = _dc(
             "cls_tg",
             str(limit),
             120,
             lambda: astock.cls_telegraph(limit),
+            last=limit == 40,
         )
         if not data:
             raise HTTPException(404, "财联社电报暂无数据")
@@ -285,11 +287,12 @@ def market_etf_shares(
     try:
         if many:
             key = f"{','.join(many)}:{n}"
-            data = _cached(
+            data = _dc(
                 "etf_shares_many",
                 key,
                 600,
                 lambda: etf_shares.etf_shares_many(many, n),
+                last=key == f"{','.join(etf_shares.DEFAULT_CODES)}:80",
             )
         else:
             raw = (code or "").strip()
@@ -314,11 +317,13 @@ def market_etf_flow(
     """ETF 资金流向排行（东财）。金额单位亿元。客观公开榜单。缓存 3 分钟。"""
     sb = sort_by if sort_by in ("net_inflow", "change_pct") else "net_inflow"
     try:
-        rows = _cached(
+        key = f"{sb}:{limit}"
+        rows = _dc(
             "etf_flow",
-            f"{sb}:{limit}",
+            key,
             180,
             lambda: astock.etf_fund_flow(sb, limit),
+            last=key == "net_inflow:40",
         )
         return {
             "data": {
@@ -336,7 +341,7 @@ def market_etf_flow(
 def market_lpr(days: int = Query(365, ge=30, le=2000)):
     """LPR 贷款市场报价利率（全国银行间同业拆借中心）。缓存 1 小时。"""
     try:
-        rows = _cached("lpr", str(days), 3600, lambda: astock.lpr_rates(days))
+        rows = _dc("lpr", str(days), 3600, lambda: astock.lpr_rates(days), last=days == 730)
         latest = rows[0] if rows else None
         return {
             "data": {
@@ -377,11 +382,13 @@ def market_boards(
     k = "02" if kind == "02" else "01"
     d = "1" if direction == "1" else "0"
     try:
-        data = _cached(
+        key = f"{k}:{d}:{n}"
+        data = _dc(
             "sector_boards",
-            f"{k}:{d}:{n}",
+            key,
             10,
             lambda: cockpit_live.sector_boards(k, d, n),
+            last=k == "01" and n == 80,
         )
         return {"data": data}
     except Exception as e:
@@ -418,11 +425,13 @@ def market_rank(
     import cockpit_live
     key = sort if sort in ("amount", "changepercent", "turnoverratio") else "amount"
     try:
-        data = _cached(
+        slot = f"{key}:{asc}:{n}"
+        data = _dc(
             "stock_rank",
-            f"{key}:{asc}:{n}",
+            slot,
             20,
             lambda: cockpit_live.stock_rank(key, asc, n),
+            last=slot == "amount:0:30",
         )
         return {"data": data}
     except Exception as e:
@@ -437,20 +446,23 @@ def market_board_flow_intraday(
     """板块资金流向. curves=0 只回流入/流出榜; curves=1 再补分钟曲线. 120s 缓存."""
     import cockpit_live
     try:
+        last = n == BOARD_FLOW_N
         if curves:
-            data = _cached(
+            data = _dc(
                 "board_flow_intraday",
                 str(n),
                 BOARD_FLOW_TTL,
                 lambda: cockpit_live.board_flow_intraday(n, curves=True),
+                last=last,
             )
         else:
-            data = _cached(
+            data = _dc(
                 "board_flow_ranks",
                 str(n),
                 BOARD_FLOW_TTL,
                 lambda: cockpit_live.board_flow_intraday(n, curves=False),
                 valid=lambda d: isinstance(d, list) and len(d) > 0,
+                last=last,
             )
         return {"data": data}
     except Exception as e:
@@ -465,11 +477,12 @@ def market_commodities(
     import cockpit_live
     raw = (codes or "").strip() or cockpit_live.DEFAULT_FUTURES
     try:
-        data = _cached(
+        data = _dc(
             "commodities",
             raw,
             commodity_quote_ttl(),
             lambda: cockpit_live.futures_quotes(raw),
+            last=raw == cockpit_live.DEFAULT_FUTURES,
         )
         return {"data": data}
     except Exception as e:
@@ -484,11 +497,12 @@ def market_commodity_minutes(
     import cockpit_live
     raw = (codes or "").strip() or cockpit_live.DEFAULT_FUTURES
     try:
-        data = _cached(
+        data = _dc(
             "commodity_minutes",
             raw,
-            60,
+            90,
             lambda: cockpit_live.future_minutes([c.strip() for c in raw.split(",") if c.strip()]),
+            last=raw == cockpit_live.DEFAULT_FUTURES,
         )
         return {"data": data}
     except Exception as e:
@@ -502,11 +516,12 @@ def market_bond_yield(
     """中债国债/政策性金融债收益率曲线。缓存 1 小时。"""
     ct = curve_type if curve_type in ("treasury", "policy") else "treasury"
     try:
-        data = _cached(
+        data = _dc(
             "cn_bond_yield",
             ct,
             3600,
             lambda: astock.bond_yield_curve(ct),
+            last=ct == "treasury",
         )
         return {"data": data}
     except Exception as e:

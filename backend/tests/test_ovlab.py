@@ -42,6 +42,16 @@ def test_cached_empty_not_cached(monkeypatch):
     assert len(calls) == 2
 
 
+def test_cached_serves_last_after_ttl(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ovlab, "_get", lambda *a, **k: calls.append(a) or [{"x": 1}])
+    ovlab.get_market_overview()
+    ovlab._CACHE.expire("ovlab_market")
+    out = ovlab.get_market_overview()
+    assert out == [{"x": 1}]
+    assert len(calls) == 1
+
+
 def test_cached_custom_ttl(monkeypatch):
     """自定义 ttl 生效: 60s 缓存期内不重试."""
     calls = []

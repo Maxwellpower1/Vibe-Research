@@ -4,6 +4,8 @@ Used by app / market / ovlab / fino / gstock to share one concurrency-safe patte
 - hit within TTL -> return cached value (including cached None / empty negatives)
 - miss -> only one thread fetches; others wait (single-flight)
 - invalid / empty (valid() is false) -> not stored, or stored briefly when negative_ttl > 0
+- valid values stay as last-good after TTL; get() is fresh-only, get_last() still returns them
+- get_or_set(serve_last=True) does not fetch again after the first good fill
 """
 
 from __future__ import annotations
@@ -44,7 +46,8 @@ class TTLCache:
         self.default_ttl = float(default_ttl)
         self.negative_ttl = float(negative_ttl)
         self.name = name
-        self._data: OrderedDict[Hashable, tuple[float, Any]] = OrderedDict()
+        # expire_at, value, sticky (keep as last-good after TTL)
+        self._data: OrderedDict[Hashable, tuple[float, Any, bool]] = OrderedDict()
         self._lock = threading.RLock()
         self._inflight: dict[Hashable, threading.Event] = {}
         self._inflight_errors: dict[Hashable, BaseException] = {}
@@ -71,13 +74,35 @@ class TTLCache:
             return len(self._data)
 
     def get(self, key: Hashable, default: Any = None) -> Any:
+        """Fresh hit only. Expired last-good stays in the slot."""
         with self._lock:
             hit = self._get_unlocked(key)
             return default if hit is _MISS else hit
 
+    def get_last(self, key: Hashable, default: Any = None) -> Any:
+        """Fresh hit, else last-good. No fetch."""
+        with self._lock:
+            hit = self._get_unlocked(key, last=True)
+            return default if hit is _MISS else hit
+
+    def expire(self, key: Hashable) -> bool:
+        """Mark key stale in place. Last-good stays. Tests use this instead of pop."""
+        with self._lock:
+            item = self._data.get(key)
+            if item is None:
+                return False
+            _, value, sticky = item
+            self._data[key] = (time.monotonic(), value, sticky)
+            return True
+
     def set(self, key: Hashable, value: Any, ttl: float | None = None) -> None:
         with self._lock:
-            self._set_unlocked(key, value, self.default_ttl if ttl is None else float(ttl))
+            self._set_unlocked(
+                key,
+                value,
+                self.default_ttl if ttl is None else float(ttl),
+                sticky=True,
+            )
 
     def get_or_set(
         self,
@@ -88,8 +113,12 @@ class TTLCache:
         valid: Callable[[Any], bool] = is_nonempty,
         negative_ttl: float | None = None,
         wait_timeout: float = 180.0,
+        serve_last: bool = False,
     ) -> T:
-        """Return cached value or fetch once under single-flight."""
+        """Return cached value or fetch once under single-flight.
+
+        serve_last=True: after the first good fill, expired reads return last-good.
+        """
         eff_ttl = self.default_ttl if ttl is None else float(ttl)
         neg_ttl = self.negative_ttl if negative_ttl is None else float(negative_ttl)
 
@@ -98,6 +127,10 @@ class TTLCache:
                 hit = self._get_unlocked(key)
                 if hit is not _MISS:
                     return hit  # type: ignore[return-value]
+                if serve_last:
+                    last = self._get_unlocked(key, last=True)
+                    if last is not _MISS:
+                        return last  # type: ignore[return-value]
                 if key in self._inflight:
                     ev = self._inflight[key]
                     leader = False
@@ -112,6 +145,10 @@ class TTLCache:
                     hit = self._get_unlocked(key)
                     if hit is not _MISS:
                         return hit  # type: ignore[return-value]
+                    if serve_last:
+                        last = self._get_unlocked(key, last=True)
+                        if last is not _MISS:
+                            return last  # type: ignore[return-value]
                     err = self._inflight_errors.pop(key, None)
                 if err is not None:
                     raise err
@@ -129,35 +166,41 @@ class TTLCache:
 
             with self._lock:
                 if valid(val):
-                    self._set_unlocked(key, val, eff_ttl)
+                    self._set_unlocked(key, val, eff_ttl, sticky=True)
                 elif neg_ttl > 0:
-                    self._set_unlocked(key, val, neg_ttl)
+                    self._set_unlocked(key, val, neg_ttl, sticky=False)
                 self._inflight.pop(key, None)
                 self._inflight_errors.pop(key, None)
                 ev.set()
             return val
 
-    def _get_unlocked(self, key: Hashable) -> Any:
+    def _get_unlocked(self, key: Hashable, *, last: bool = False) -> Any:
         item = self._data.get(key)
         if item is None:
             return _MISS
-        expire_at, value = item
+        expire_at, value, sticky = item
         if time.monotonic() >= expire_at:
-            del self._data[key]
+            if last and sticky:
+                return value
+            if not sticky:
+                del self._data[key]
             return _MISS
         self._data.move_to_end(key)
         return value
 
-    def _set_unlocked(self, key: Hashable, value: Any, ttl: float) -> None:
+    def _set_unlocked(self, key: Hashable, value: Any, ttl: float, *, sticky: bool) -> None:
         expire_at = time.monotonic() + max(0.0, ttl)
         if key in self._data:
             self._data.move_to_end(key)
-        self._data[key] = (expire_at, value)
+        self._data[key] = (expire_at, value, sticky)
         while len(self._data) > self.maxsize:
             self._data.popitem(last=False)
 
     def _purge_expired_unlocked(self) -> None:
         now = time.monotonic()
-        dead = [k for k, (exp, _) in self._data.items() if now >= exp]
+        dead = [
+            k for k, (exp, _, sticky) in self._data.items()
+            if now >= exp and not sticky
+        ]
         for k in dead:
             del self._data[k]

@@ -135,8 +135,8 @@ def warm_market() -> tuple[int, int, list[dict]]:
         return cross_section.market_breadth()
 
     steps = (
-        ("overview", market.get_overview),
-        ("emotion", market.get_short_term_emotion),
+        ("overview", market.put_overview),
+        ("emotion", market.put_emotion),
         ("breadth", _breadth),
     )
     for name, fn in steps:

@@ -13,13 +13,21 @@ from api_common import (
     BOARD_FLOW_TTL,
     _DC_CACHE,
     _cached,
+    _put,
+    _read,
     commodity_quote_ttl,
     put_commodities,
+    put_fetch,
     put_light_kline,
 )
 from index_catalog import catalog_codes
 
 Job = tuple[str, Callable[[], Any]]
+
+
+def _clock(write: bool):
+    return put_fetch if write else _read
+
 
 PAINT_SAFE_COCKPIT = frozenset({
     "world_indices",
@@ -32,7 +40,7 @@ def tencent_jobs() -> list[Job]:
     import astock_boards
 
     return [
-        ("hsgt", lambda: _cached("hsgt", "live", 120, astock_boards.hsgt_realtime)),
+        ("hsgt", lambda: _read("hsgt", "live", 120, astock_boards.hsgt_realtime)),
     ]
 
 
@@ -42,15 +50,16 @@ def overview_jobs() -> list[Job]:
     return [("overview", market.get_overview)]
 
 
-def em_top_jobs() -> list[Job]:
+def em_top_jobs(*, write: bool = False) -> list[Job]:
     import astock
     import market
 
+    op = _clock(write)
     return [
         ("emotion", market.get_short_term_emotion),
         (
             "industry",
-            lambda: _cached(
+            lambda: op(
                 "industry",
                 "20",
                 300,
@@ -61,13 +70,14 @@ def em_top_jobs() -> list[Job]:
     ]
 
 
-def em_extra_jobs() -> list[Job]:
+def em_extra_jobs(*, write: bool = False) -> list[Job]:
     import astock
 
+    op = _clock(write)
     return [
         (
             "lhb",
-            lambda: _cached(
+            lambda: op(
                 "dt_daily",
                 "auto:40:all",
                 600,
@@ -95,10 +105,10 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
         return _cls_tg_40()
 
     return [
-        ("world", lambda: _cached("world_indices", "live", 20, cockpit_live.world_indices)),
+        ("world", lambda: _read("world_indices", "live", 20, cockpit_live.world_indices)),
         (
             "sector_up",
-            lambda: _cached(
+            lambda: _read(
                 "sector_boards",
                 f"{kind}:0:80",
                 10,
@@ -107,7 +117,7 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
         ),
         (
             "sector_down",
-            lambda: _cached(
+            lambda: _read(
                 "sector_boards",
                 f"{kind}:1:80",
                 10,
@@ -116,7 +126,7 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
         ),
         (
             "board_flow",
-            lambda: _cached(
+            lambda: _read(
                 "board_flow_ranks",
                 str(BOARD_FLOW_N),
                 BOARD_FLOW_TTL,
@@ -126,7 +136,7 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
         ),
         (
             "rank_hot",
-            lambda: _cached(
+            lambda: _read(
                 "stock_rank",
                 "amount:0:30",
                 20,
@@ -153,7 +163,7 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
         ),
         (
             "commodities",
-            lambda: _cached(
+            lambda: _read(
                 "commodities",
                 cockpit_live.DEFAULT_FUTURES,
                 commodity_quote_ttl(),
@@ -164,9 +174,9 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
         ("breadth", cross_section.market_breadth),
         (
             "money",
-            lambda: _cached(
+            lambda: _read(
                 "stock_flow",
-                "all:15",
+                "ALL:15",
                 120,
                 lambda: astock_boards.stock_moneyflow(15, None),
             ),
@@ -175,22 +185,24 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
     ]
 
 
-def _cls_tg_40() -> list:
+def _cls_tg_40(*, write: bool = False) -> list:
     import astock
 
-    return _cached("cls_tg", "40", 120, lambda: astock.cls_telegraph(40))
+    op = _clock(write)
+    return op("cls_tg", "40", 120, lambda: astock.cls_telegraph(40))
 
 
-def money_jobs() -> list[Job]:
+def money_jobs(*, write: bool = False) -> list[Job]:
     """Same keys as GET /shareholder-changes and /market/{etf-flow,lpr,bond-yield,etf-shares}."""
     import astock
     import etf_shares
 
+    op = _clock(write)
     share_key = f"{','.join(etf_shares.DEFAULT_CODES)}:80"
     return [
         (
             "etf_flow",
-            lambda: _cached(
+            lambda: op(
                 "etf_flow",
                 "net_inflow:40",
                 180,
@@ -199,17 +211,17 @@ def money_jobs() -> list[Job]:
         ),
         (
             "sh_chg",
-            lambda: _cached(
+            lambda: op(
                 "sh_chg",
                 "ALL:all:40",
                 600,
                 lambda: astock.shareholder_changes("", "all", 40),
             ),
         ),
-        ("lpr", lambda: _cached("lpr", "730", 3600, lambda: astock.lpr_rates(730))),
+        ("lpr", lambda: op("lpr", "730", 3600, lambda: astock.lpr_rates(730))),
         (
             "bond_y",
-            lambda: _cached(
+            lambda: op(
                 "cn_bond_yield",
                 "treasury",
                 3600,
@@ -218,7 +230,7 @@ def money_jobs() -> list[Job]:
         ),
         (
             "etf_shares",
-            lambda: _cached(
+            lambda: op(
                 "etf_shares_many",
                 share_key,
                 600,
@@ -258,16 +270,17 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
 
     steps: list[Job] = []
     if not paint_only:
-        steps.extend(em_top_jobs()[1:])  # industry only; emotion is warm_market
-        steps.extend(em_extra_jobs())
-        steps.extend(money_jobs())
-        steps.append(("cls_tg", _cls_tg_40))
+        steps.extend(em_top_jobs(write=True)[1:])  # industry only; emotion is warm_market
+        steps.extend(em_extra_jobs(write=True))
+        steps.extend(money_jobs(write=True))
+        steps.append(("cls_tg", lambda: _cls_tg_40(write=True)))
+        steps.append(("hsgt", lambda: put_fetch("hsgt", "live", 120, astock_boards.hsgt_realtime)))
 
     cockpit: list[Job] = [
-        ("world_indices", lambda: _cached("world_indices", "live", 20, cockpit_live.world_indices)),
+        ("world_indices", lambda: put_fetch("world_indices", "live", 20, cockpit_live.world_indices)),
         (
             "sector_boards",
-            lambda: _cached(
+            lambda: put_fetch(
                 "sector_boards",
                 "01:0:80",
                 10,
@@ -276,7 +289,7 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
         ),
         (
             "sector_boards",
-            lambda: _cached(
+            lambda: put_fetch(
                 "sector_boards",
                 "01:1:80",
                 10,
@@ -285,7 +298,7 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
         ),
         (
             "stock_rank",
-            lambda: _cached(
+            lambda: put_fetch(
                 "stock_rank",
                 "amount:0:30",
                 20,
@@ -294,16 +307,16 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
         ),
         (
             "stock_flow",
-            lambda: _cached(
+            lambda: put_fetch(
                 "stock_flow",
-                "all:15",
+                "ALL:15",
                 120,
                 lambda: astock_boards.stock_moneyflow(15, None),
             ),
         ),
         (
             "board_flow_ranks",
-            lambda: _cached(
+            lambda: put_fetch(
                 "board_flow_ranks",
                 str(BOARD_FLOW_N),
                 BOARD_FLOW_TTL,
@@ -313,7 +326,7 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
         ),
         (
             "board_flow_intraday",
-            lambda: _cached(
+            lambda: put_fetch(
                 "board_flow_intraday",
                 str(BOARD_FLOW_N),
                 BOARD_FLOW_TTL,
@@ -328,7 +341,7 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
 
 
 def _peek_codes(endpoint: str, code: str) -> list[str]:
-    raw = _DC_CACHE.get((endpoint, code))
+    raw = _DC_CACHE.get_last((endpoint, code))
     rows = raw if isinstance(raw, list) else (raw.get("rows") if isinstance(raw, dict) else None)
     if not isinstance(rows, list):
         return []
@@ -348,7 +361,7 @@ def minute_symbols() -> list[str]:
     for raw in (
         catalog_codes()
         + _peek_codes("stock_rank", "amount:0:30")
-        + _peek_codes("stock_flow", "all:15")
+        + _peek_codes("stock_flow", "ALL:15")
     ):
         key = (raw or "").strip()
         if not key or key in seen:
@@ -401,7 +414,7 @@ def warm_minutes() -> tuple[int, int, list[dict]]:
             [c.strip() for c in raw.split(",") if c.strip()],
         )
         if data:
-            _DC_CACHE.set(("commodity_minutes", raw), data, ttl=90)
+            _put("commodity_minutes", raw, data, 90)
             ok += 1
         else:
             fail += 1

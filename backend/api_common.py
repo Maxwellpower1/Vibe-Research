@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import re
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 import astock
 from cache import TTLCache, is_nonempty
 from fastapi import HTTPException
 
-_CODE_RE = r"^\d{6}$"
 _SYMBOL_RE = re.compile(
     r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|hkhsi|hkhstech|usdji|usixic|usinx|usvix|ussoxx|whusdcny)$",
     re.IGNORECASE,
@@ -38,19 +38,7 @@ def _validate_symbol(code: str) -> str:
     return resolved
 
 
-_PCT_CACHE = TTLCache(maxsize=256, default_ttl=1800, negative_ttl=30, name="pct")
-_ANN_CACHE = TTLCache(maxsize=256, default_ttl=900, negative_ttl=30, name="ann")
-_FIN_CACHE = TTLCache(maxsize=256, default_ttl=1800, negative_ttl=30, name="fin")
-
-
-
-# ---------------------------------------------------------------------------
-# 资金面 / 筹码 / 信号（东财数据中心，v3.3 并入）—— 均为「用户查的那只股」的公开数据。
-# 这些多为日/季级静态数据, 统一走 30 分钟缓存, 降低东财重复拉取.
-# ---------------------------------------------------------------------------
-
-# Daily-review / fund-flow style endpoints. Empty upstream blips use a short
-# negative TTL so warmup + concurrent tabs do not stampede Eastmoney.
+# One process cache for cockpit + F10. Empty upstream uses a short negative TTL.
 _DC_CACHE = TTLCache(maxsize=512, default_ttl=300, negative_ttl=15, name="app_dc")
 
 # Same as marketingdashboard /api/board-flow: 120s Eastmoney cache.
@@ -70,14 +58,66 @@ COCKPIT_WARM_KEYS = (
 )
 
 
-def _cached(endpoint: str, code: str, ttl: int, fetch, valid=is_nonempty):
-    return _DC_CACHE.get_or_set(
+def _put(endpoint: str, code: str, value, ttl: float):
+    """Warmup force-write. Same key HTTP _dc / _read uses."""
+    if is_nonempty(value):
+        _DC_CACHE.set((endpoint, code), value, ttl=ttl)
+    return value
+
+
+def _serve(endpoint: str, code: str, default=None) -> Any:
+    """Fresh slot, else last good. No fetch."""
+    return _DC_CACHE.get_last((endpoint, code), default)
+
+
+def _dc(endpoint: str, code: str, ttl: float, fetch, valid=is_nonempty, *, last: bool = False, default=None) -> Any:
+    """One key. last=True serves last-good after first fill; last=False may refetch."""
+    val = _DC_CACHE.get_or_set(
         (endpoint, code),
         fetch,
         ttl=ttl,
         valid=valid,
         negative_ttl=15,
+        serve_last=last,
     )
+    return default if val is None else val
+
+
+def _cached(endpoint: str, code: str, ttl: float, fetch, valid=is_nonempty):
+    """First-ask keys. TTL expire may fetch again."""
+    return _dc(endpoint, code, ttl, fetch, valid)
+
+
+def _read(endpoint: str, code: str, ttl: float, fetch, valid=is_nonempty, default=None) -> Any:
+    """Last-good after the first fill. Clock force-write via _put."""
+    return _dc(endpoint, code, ttl, fetch, valid, last=True, default=default)
+
+
+def serve_light_kline(sym: str, res: str, num: int):
+    """Catalog 1-min 240: last-good. Watchlist / 5 / 1D stay first-ask."""
+    ep = f"ashare_light:{res}:{num}"
+    return _dc(
+        ep,
+        sym,
+        light_kline_ttl(sym, res),
+        lambda: astock.light_kline(sym, res, num=num),
+        last=res == "1" and int(num) == 240 and is_catalog_symbol(sym),
+    )
+
+
+def put_fetch(endpoint: str, code: str, ttl: float, fetch, valid=is_nonempty):
+    """Warmup: always fetch, then _put."""
+    data = fetch()
+    if valid(data):
+        return _put(endpoint, code, data, ttl)
+    return data
+
+
+def is_catalog_symbol(sym: str) -> bool:
+    from index_catalog import catalog_codes
+
+    s = (sym or "").strip().lower()
+    return bool(s) and s in {c.lower() for c in catalog_codes()}
 
 
 def _session_kind() -> str:
@@ -120,11 +160,14 @@ def put_commodities(codes: str | None = None) -> list:
     import cockpit_live
 
     raw = (codes or "").strip() or cockpit_live.DEFAULT_FUTURES
-    data = cockpit_live.futures_quotes(raw)
-    if isinstance(data, list) and data:
-        _DC_CACHE.set(("commodities", raw), data, ttl=commodity_quote_ttl())
-        return data
-    return []
+    data = put_fetch(
+        "commodities",
+        raw,
+        commodity_quote_ttl(),
+        lambda: cockpit_live.futures_quotes(raw),
+        valid=lambda d: isinstance(d, list) and bool(d),
+    )
+    return data if isinstance(data, list) else []
 
 
 def put_light_kline(sym: str, res: str = "1", num: int = 240) -> dict:
@@ -132,12 +175,14 @@ def put_light_kline(sym: str, res: str = "1", num: int = 240) -> dict:
     resolved = astock.resolve_symbol(sym) or (sym or "").strip()
     if not resolved:
         return {}
-    data = astock.light_kline(resolved, res, num=num)
-    key = (f"ashare_light:{res}:{num}", resolved)
-    if isinstance(data, dict) and data:
-        _DC_CACHE.set(key, data, ttl=light_kline_ttl(resolved, res))
-        return data
-    return {}
+    data = put_fetch(
+        f"ashare_light:{res}:{num}",
+        resolved,
+        light_kline_ttl(resolved, res),
+        lambda: astock.light_kline(resolved, res, num=num),
+        valid=lambda d: isinstance(d, dict) and bool(d),
+    )
+    return data if isinstance(data, dict) else {}
 
 
 def light_kline_map(codes: list[str], res: str = "1", num: int = 240) -> dict[str, dict | None]:
@@ -161,12 +206,7 @@ def light_kline_map(codes: list[str], res: str = "1", num: int = 240) -> dict[st
 
     def _one(pair: tuple[str, str]) -> tuple[str, str, dict | None]:
         raw, sym = pair
-        data = _cached(
-            f"ashare_light:{res}:{num}",
-            sym,
-            light_kline_ttl(sym, res),
-            lambda: astock.light_kline(sym, res, num=num),
-        )
+        data = serve_light_kline(sym, res, num)
         return raw, sym, data if isinstance(data, dict) and data else None
 
     if not jobs:
