@@ -17,7 +17,6 @@ import {
 import { PageFallback } from "@/components/ui/PageFallback";
 import { A_SHARE_TABS, CockpitHeader, PAGE_NAV, parseAShareTab } from "@/components/cockpit/CockpitHeader";
 import { TickerTape } from "@/components/cockpit/TickerTape";
-import { ClsTelegraphBubble } from "@/components/ClsTelegraphBubble";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useTapeQuotes } from "@/hooks/useTapeQuotes";
 import { cn } from "@/lib/utils";
@@ -180,7 +179,6 @@ export function Layout() {
           </button>
         </div>
       </nav>
-      <ClsTelegraphBubble />
     </div>
   );
 }

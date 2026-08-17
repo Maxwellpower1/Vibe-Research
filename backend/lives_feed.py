@@ -1,6 +1,6 @@
 """Sina 7x24 zhibo + Wallstreetcn live (marketingdashboard /api/news).
 
-CLS stays on the floating bubble. This is the extra live wire.
+CLS lives in the review news cell. This is the extra live wire.
 """
 from __future__ import annotations
 
