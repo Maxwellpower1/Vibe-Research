@@ -8,7 +8,7 @@ import review_context
 import review_mail
 import review_snapshot
 import review_warmup
-from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _cached, _DC_CACHE
+from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _cached, _DC_CACHE, commodity_quote_ttl
 
 router = APIRouter(tags=["market"])
 
@@ -256,12 +256,12 @@ def iwencai_select(
 
 @router.get("/api/cls-telegraph")
 def cls_telegraph(limit: int = Query(50, ge=10, le=100)):
-    """财联社电报（全市场实时快讯，零 key）。缓存 60 秒。客观呈现，不附推荐。"""
+    """财联社电报（全市场实时快讯，零 key）。缓存 120 秒，长过整页预热 90 秒。客观呈现，不附推荐。"""
     try:
         data = _cached(
             "cls_tg",
             str(limit),
-            60,
+            120,
             lambda: astock.cls_telegraph(limit),
         )
         if not data:
@@ -461,14 +461,14 @@ def market_board_flow_intraday(
 def market_commodities(
     codes: str = Query("", description="hf_GC,nf_AU0,BTCUSDT"),
 ):
-    """大宗商品快照. 缓存 5 秒."""
+    """大宗商品快照. TTL 随交易时段, 与预热强制重写同一把钥匙."""
     import cockpit_live
     raw = (codes or "").strip() or cockpit_live.DEFAULT_FUTURES
     try:
         data = _cached(
             "commodities",
             raw,
-            5,
+            commodity_quote_ttl(),
             lambda: cockpit_live.futures_quotes(raw),
         )
         return {"data": data}

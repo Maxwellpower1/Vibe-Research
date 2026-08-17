@@ -59,7 +59,7 @@ BOARD_FLOW_TTL = 120
 BOARD_FLOW_N = 20
 
 # Same keys as GET /api/market/{world-indices,boards,rank,stock-flow,board-flow-intraday,commodities}
-# Owned by review_jobs.warm_dc_jobs; listed here so warmup tests can see the contract.
+# world_indices / boards / rank / flow: warm_dc_jobs. commodities: put_commodities in warm_minutes.
 COCKPIT_WARM_KEYS = (
     "world_indices",
     "commodities",
@@ -103,6 +103,28 @@ def light_kline_ttl(sym: str, res: str, session: str | None = None) -> int:
     if kind == "lunch":
         return 180
     return 960
+
+
+def commodity_quote_ttl(session: str | None = None) -> int:
+    """Commodities TTL outlasts keep-warm (20s open / 60s closed). Same key as HTTP."""
+    kind = session if session is not None else _session_kind()
+    if kind == "open":
+        return 45
+    if kind == "lunch":
+        return 180
+    return 90
+
+
+def put_commodities(codes: str | None = None) -> list:
+    """Fetch and write the same key GET /market/commodities uses. Warmup only."""
+    import cockpit_live
+
+    raw = (codes or "").strip() or cockpit_live.DEFAULT_FUTURES
+    data = cockpit_live.futures_quotes(raw)
+    if isinstance(data, list) and data:
+        _DC_CACHE.set(("commodities", raw), data, ttl=commodity_quote_ttl())
+        return data
+    return []
 
 
 def put_light_kline(sym: str, res: str = "1", num: int = 240) -> dict:

@@ -33,7 +33,12 @@ def test_cockpit_warm_keys_cover_first_paint():
     assert "world_indices" in COCKPIT_WARM_KEYS
     assert COCKPIT_WARM_KEYS[-1] == "board_flow_intraday"
     src = inspect.getsource(review_jobs.warm_dc_jobs)
+    mins = inspect.getsource(review_jobs.warm_minutes)
     for key in COCKPIT_WARM_KEYS:
+        if key == "commodities":
+            assert "put_commodities" in mins
+            assert '"commodities"' not in src
+            continue
         assert f'"{key}"' in src
 
 
@@ -65,6 +70,7 @@ def test_warm_minutes_rewrites_catalog_and_cached_rank(monkeypatch):
         lambda sym, res="1", num=240: calls.append(sym) or {"symbol": sym, "bars": [1]},
     )
     monkeypatch.setattr(cockpit_live, "future_minutes", lambda _c: {"hf_GC": {"points": [1]}})
+    monkeypatch.setattr(cockpit_live, "futures_quotes", lambda _c: [{"symbol": "hf_GC", "price": 1}])
     monkeypatch.setattr(cockpit_live, "warm_hub_quotes", lambda _c: 15)
     review_jobs._DC_CACHE.clear()
     review_jobs._DC_CACHE.set(("stock_rank", "amount:0:30"), [{"code": "600519"}], ttl=60)
@@ -74,7 +80,9 @@ def test_warm_minutes_rewrites_catalog_and_cached_rank(monkeypatch):
     assert "sh000001" in calls
     assert "whUSDCNY" in calls
     assert "600519" in calls
-    assert ok >= 17
+    assert ok >= 18
+    hit = review_jobs._DC_CACHE.get(("commodities", cockpit_live.DEFAULT_FUTURES))
+    assert hit[0]["symbol"] == "hf_GC"
 
 
 def test_interval_defaults(monkeypatch):
@@ -85,3 +93,84 @@ def test_interval_defaults(monkeypatch):
     assert rw.minute_interval_for_session("open") == 20
     assert rw.minute_interval_for_session("closed") == 60
     assert rw.minute_interval_for_session("lunch") == 60
+
+
+def test_money_jobs_match_http_keys():
+    import inspect
+    import review_jobs
+
+    src = inspect.getsource(review_jobs.money_jobs)
+    assert '"sh_chg"' in src
+    assert "ALL:all:40" in src
+    assert '"shareholder"' not in src
+    assert "cn_bond_yield" in src
+    assert '"bond_yield"' not in src
+    assert "etf_shares_many" in src
+    assert "DEFAULT_CODES" in src
+    import etf_shares
+    assert ",".join(etf_shares.DEFAULT_CODES) == "510050,510300,510500,588000,159915,159919"
+    warm = inspect.getsource(review_jobs.warm_dc_jobs)
+    assert "money_jobs" in warm
+    assert "cls_tg" in warm
+    live = inspect.getsource(review_jobs.live_jobs)
+    assert "money_jobs" in live
+    assert "_cls_tg_40" in live
+
+
+def test_commodity_quote_ttl_outlasts_keep_warm():
+    import api_common
+
+    assert api_common.commodity_quote_ttl(session="open") == 45
+    assert api_common.commodity_quote_ttl(session="lunch") == 180
+    assert api_common.commodity_quote_ttl(session="closed") == 90
+    assert api_common.commodity_quote_ttl(session="open") > rw.minute_interval_for_session("open")
+    assert api_common.commodity_quote_ttl(session="closed") > rw.minute_interval_for_session("closed")
+
+
+def test_watch_quotes_reads_quote_hub(monkeypatch):
+    import cockpit_live
+    import review_jobs
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        cockpit_live,
+        "quotes_cached",
+        lambda codes: calls.append(list(codes)) or {
+            "600519": {"name": "茅台", "price": 1400.0, "pct": 1.2, "amount": 9},
+        },
+    )
+    monkeypatch.setattr(
+        "astock.gtimg_quotes",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("watch should use quote hub")),
+    )
+    out = review_jobs.watch_quotes(["600519", "bad"])
+    assert calls == [["600519", "bad"]]
+    assert out[0]["name"] == "茅台"
+    assert out[0]["pct"] == 1.2
+    assert out[1] == {"name": "bad"}
+    assert review_jobs.watch_quotes([]) == []
+
+
+def test_put_commodities_rewrites_same_key(monkeypatch):
+    import api_common
+    import cockpit_live
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cockpit_live,
+        "futures_quotes",
+        lambda raw: calls.append(raw) or [{"symbol": "hf_GC", "price": len(calls)}],
+    )
+    api_common._DC_CACHE.clear()
+    first = api_common.put_commodities()
+    second = api_common.put_commodities()
+    assert calls == [cockpit_live.DEFAULT_FUTURES, cockpit_live.DEFAULT_FUTURES]
+    assert first[0]["price"] == 1
+    assert second[0]["price"] == 2
+    hit = api_common._cached(
+        "commodities",
+        cockpit_live.DEFAULT_FUTURES,
+        5,
+        lambda: (_ for _ in ()).throw(AssertionError("should be cached")),
+    )
+    assert hit[0]["price"] == 2

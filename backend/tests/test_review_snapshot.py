@@ -108,6 +108,27 @@ def test_tencent_jobs_skip_index_quote():
     assert "world_indices" in warm
 
 
+def test_query_market_indices_reads_world_indices(monkeypatch):
+    import inspect
+
+    from tools import handlers as th
+
+    src = inspect.getsource(th._market)
+    block = src[src.find('scope == "indices"'):src.find('scope == "global"')]
+    assert "get_global_indices" in block
+    assert "index_quote" not in block
+    monkeypatch.setattr(
+        th.market,
+        "get_global_indices",
+        lambda: [
+            {"symbol": "sh000001", "name": "上证", "region": "CN"},
+            {"symbol": "usIXIC", "name": "纳指", "region": "US"},
+        ],
+    )
+    out = th._market({"scope": "indices"})
+    assert [r["symbol"] for r in out] == ["sh000001"]
+
+
 def test_em_fillers_skip_unused_eastmoney():
     import inspect
     import review_jobs

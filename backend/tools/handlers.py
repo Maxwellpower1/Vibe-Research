@@ -236,7 +236,11 @@ def _investor_qa(args: dict):
 def _market(args: dict):
     scope = str(args.get("scope") or "overview")
     if scope == "indices":
-        return astock.index_quote()
+        from index_catalog import A_INDEX_CODES
+
+        want = set(A_INDEX_CODES)
+        rows = market.get_global_indices()
+        return [r for r in rows if isinstance(r, dict) and r.get("symbol") in want]
     if scope == "global":
         return market.get_global_indices()
     if scope == "emotion":

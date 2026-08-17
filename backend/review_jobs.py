@@ -8,14 +8,21 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
-from api_common import BOARD_FLOW_N, BOARD_FLOW_TTL, _DC_CACHE, _cached, put_light_kline
+from api_common import (
+    BOARD_FLOW_N,
+    BOARD_FLOW_TTL,
+    _DC_CACHE,
+    _cached,
+    commodity_quote_ttl,
+    put_commodities,
+    put_light_kline,
+)
 from index_catalog import catalog_codes
 
 Job = tuple[str, Callable[[], Any]]
 
 PAINT_SAFE_COCKPIT = frozenset({
     "world_indices",
-    "commodities",
     "sector_boards",
     "stock_rank",
 })
@@ -72,7 +79,6 @@ def em_extra_jobs() -> list[Job]:
 
 def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]:
     """Panels outside 复盘快照 that 问 AI / mail still need."""
-    import astock
     import astock_boards
     import cockpit_live
     import cross_section
@@ -83,10 +89,10 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
 
     def _news() -> list:
         if src == "lives":
-            d = lives_feed.market_lives(1, 12)
+            d = _cached("market_lives", "1:40", 8, lambda: lives_feed.market_lives(1, 40))
             items = d.get("items") if isinstance(d, dict) else None
             return items if isinstance(items, list) else []
-        return astock.cls_telegraph(12)
+        return _cls_tg_40()
 
     return [
         ("world", lambda: _cached("world_indices", "live", 20, cockpit_live.world_indices)),
@@ -150,7 +156,7 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
             lambda: _cached(
                 "commodities",
                 cockpit_live.DEFAULT_FUTURES,
-                5,
+                commodity_quote_ttl(),
                 lambda: cockpit_live.futures_quotes(cockpit_live.DEFAULT_FUTURES),
             ),
         ),
@@ -165,21 +171,38 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
                 lambda: astock_boards.stock_moneyflow(15, None),
             ),
         ),
+        *money_jobs(),
+    ]
+
+
+def _cls_tg_40() -> list:
+    import astock
+
+    return _cached("cls_tg", "40", 120, lambda: astock.cls_telegraph(40))
+
+
+def money_jobs() -> list[Job]:
+    """Same keys as GET /shareholder-changes and /market/{etf-flow,lpr,bond-yield,etf-shares}."""
+    import astock
+    import etf_shares
+
+    share_key = f"{','.join(etf_shares.DEFAULT_CODES)}:80"
+    return [
         (
             "etf_flow",
             lambda: _cached(
                 "etf_flow",
                 "net_inflow:40",
-                300,
+                180,
                 lambda: astock.etf_fund_flow("net_inflow", 40),
             ),
         ),
         (
             "sh_chg",
             lambda: _cached(
-                "shareholder",
-                "all:40",
-                300,
+                "sh_chg",
+                "ALL:all:40",
+                600,
                 lambda: astock.shareholder_changes("", "all", 40),
             ),
         ),
@@ -187,36 +210,40 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
         (
             "bond_y",
             lambda: _cached(
-                "bond_yield",
+                "cn_bond_yield",
                 "treasury",
                 3600,
                 lambda: astock.bond_yield_curve("treasury"),
+            ),
+        ),
+        (
+            "etf_shares",
+            lambda: _cached(
+                "etf_shares_many",
+                share_key,
+                600,
+                lambda: etf_shares.etf_shares_many(list(etf_shares.DEFAULT_CODES), 80),
             ),
         ),
     ]
 
 
 def watch_quotes(codes: list[str] | None) -> list[dict]:
-    """Tencent quotes for 自选. Empty codes -> empty list."""
-    import astock
+    """自选价. Same quote_one keys as GET /market/quotes."""
+    import cockpit_live
 
     raw = [str(c).strip() for c in (codes or []) if str(c).strip()][:20]
     if not raw:
         return []
-    parsed = astock.gtimg_quotes(raw)
+    parsed = cockpit_live.quotes_cached(raw)
     out: list[dict] = []
     for c in raw:
         q = parsed.get(c)
-        if q is None:
-            try:
-                q = parsed.get(astock.resolve_symbol(c) or "")
-            except Exception:
-                q = None
-        if isinstance(q, dict):
+        if isinstance(q, dict) and q.get("price"):
             out.append({
                 "name": q.get("name") or c,
                 "price": q.get("price"),
-                "pct": q.get("change_pct") if q.get("change_pct") is not None else q.get("pct"),
+                "pct": q.get("pct"),
                 "amount": q.get("amount"),
             })
         else:
@@ -233,18 +260,11 @@ def warm_dc_jobs(*, paint_only: bool = False) -> list[Job]:
     if not paint_only:
         steps.extend(em_top_jobs()[1:])  # industry only; emotion is warm_market
         steps.extend(em_extra_jobs())
+        steps.extend(money_jobs())
+        steps.append(("cls_tg", _cls_tg_40))
 
     cockpit: list[Job] = [
         ("world_indices", lambda: _cached("world_indices", "live", 20, cockpit_live.world_indices)),
-        (
-            "commodities",
-            lambda: _cached(
-                "commodities",
-                cockpit_live.DEFAULT_FUTURES,
-                5,
-                lambda: cockpit_live.futures_quotes(cockpit_live.DEFAULT_FUTURES),
-            ),
-        ),
         (
             "sector_boards",
             lambda: _cached(
@@ -364,6 +384,16 @@ def warm_minutes() -> tuple[int, int, list[dict]]:
                 else:
                     fail += 1
                     errors.append({"name": f"minute:{sym}", "error": err})
+
+    try:
+        if put_commodities():
+            ok += 1
+        else:
+            fail += 1
+            errors.append({"name": "commodities", "error": "empty"})
+    except Exception as e:
+        fail += 1
+        errors.append({"name": "commodities", "error": str(e)[:160]})
 
     try:
         raw = cockpit_live.DEFAULT_FUTURES
