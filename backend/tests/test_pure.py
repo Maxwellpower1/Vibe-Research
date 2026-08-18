@@ -32,8 +32,6 @@ def test_resolve_symbol():
     assert astock.resolve_symbol("jpn225") == "jpN225"
     assert astock.resolve_symbol("ksKOSPI") == "ksKOSPI"
     assert astock.resolve_symbol("kskospi") == "ksKOSPI"
-    assert astock.resolve_symbol("usUS30Y") == "usUS30Y"
-    assert astock.resolve_symbol("usus30y") == "usUS30Y"
     assert astock.resolve_symbol("bad") == ""
 
 
@@ -74,31 +72,6 @@ def test_light_kline_us_minute(monkeypatch):
     assert out["name"] == "纳斯达克"
     assert out["prev_close"] == 99
     assert [b["close"] for b in out["bars"]] == [100.0, 101.0]
-
-
-def test_light_kline_us30y_uses_eastmoney(monkeypatch):
-    class _Resp:
-        def json(self):
-            return {
-                "data": {
-                    "preKPrice": 5.3,
-                    "klines": [
-                        "2026-08-18 06:02,5.30,5.31,5.31,5.30,0",
-                        "2026-08-18 06:03,5.31,5.32,5.32,5.30,0",
-                    ],
-                }
-            }
-
-    def boom(_url):
-        raise AssertionError("tencent usMinute must not run for usUS30Y")
-
-    monkeypatch.setattr(astock, "_tencent_json", boom)
-    monkeypatch.setattr(astock, "em_get", lambda *_a, **_k: _Resp())
-    astock._em_kline_host[0] = 0
-    out = astock.light_kline("usUS30Y", "1", num=240)
-    assert out["symbol"] == "usUS30Y"
-    assert out["source"] == "eastmoney 171.US30Y"
-    assert [b["close"] for b in out["bars"]] == [5.31, 5.32]
 
 
 def test_light_kline_us_falls_back_to_eastmoney(monkeypatch):

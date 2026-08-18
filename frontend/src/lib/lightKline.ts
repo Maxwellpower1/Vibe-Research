@@ -11,7 +11,6 @@ function toTencentSym(code: string): string {
 }
 
 function canDirectMinute(code: string): boolean {
-  if (/^usUS30Y$/i.test(code)) return false;
   return /^(sh|sz|bj|hk|us)/i.test(code) || /^\d{6}$/.test(code);
 }
 

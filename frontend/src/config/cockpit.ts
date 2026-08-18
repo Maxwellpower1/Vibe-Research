@@ -24,7 +24,6 @@ export const WORLD_INDEX_DEFS: IndexDef[] = [
   { code: "usSOXX", label: "费城半导体", region: "US" },
   { code: "jpN225", label: "日经225", region: "JP", accent: "#22d3ee" },
   { code: "ksKOSPI", label: "韩国KOSPI", region: "KR", accent: "#4ade80" },
-  { code: "usUS30Y", label: "美债30年", region: "US", accent: "#38bdf8" },
   { code: "whUSDCNY", label: "美元/人民币", region: "FX" },
 ];
 
@@ -46,7 +45,7 @@ export const COMMODITIES: CommodityDef[] = [
 
 export const COMMODITY_CODES = COMMODITIES.map((c) => c.code).join(",");
 
-/** HK / JP / KR / 美债30年 stay on 指数目录; the 标的 tab draws them under NQ, then BTC. */
+/** HK / JP / KR stay on 指数目录; the 标的 tab draws them under NQ, then BTC. */
 export const MACRO_INDEX_DEFS = WORLD_INDEX_DEFS.filter(
-  (d) => d.region === "HK" || d.region === "JP" || d.region === "KR" || d.code === "usUS30Y",
+  (d) => d.region === "HK" || d.region === "JP" || d.region === "KR",
 );

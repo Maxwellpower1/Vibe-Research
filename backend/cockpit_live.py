@@ -214,7 +214,6 @@ _QUOTE_CODE_RE = re.compile(
 _EM_INDEX = {
     "jpN225": ("100.N225", "日经225"),
     "ksKOSPI": ("100.KS11", "韩国KOSPI"),
-    "usUS30Y": ("171.US30Y", "美债30年"),
 }
 
 
@@ -338,15 +337,6 @@ def quotes_map(codes: list[str]) -> dict[str, dict]:
             item = _quote_item(q, canon)
             out[raw] = item
             out[canon] = item
-    if any(canon == "usUS30Y" for _raw, canon in wanted) and not (out.get("usUS30Y") or {}).get("price"):
-        y30 = _us30y_from_sina()
-        if y30 and y30.get("price"):
-            item = _quote_item(y30, "usUS30Y")
-            out["usUS30Y"] = item
-            out["usus30y"] = item
-            for raw, canon in wanted:
-                if raw.lower() == "usus30y" or canon == "usUS30Y":
-                    out[raw] = item
     return out
 
 
@@ -434,37 +424,6 @@ def warm_hub_quotes(codes: list[str]) -> int:
     return _store_quotes(quotes_map(codes), astock.quote_ttl())
 
 
-def _us30y_from_sina() -> dict | None:
-    """Sina US30YT daily close. Same page as forex/globalbd/us30yt.html."""
-    try:
-        text = _fetch_text(
-            "https://bond.finance.sina.com.cn/hq/gb/daily?symbol=US30YT",
-            referer="https://stock.finance.sina.com.cn/forex/globalbd/us30yt.html",
-            timeout=8,
-        )
-        payload = json.loads(text)
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, UnicodeError):
-        return None
-    rows = ((payload.get("result") or {}).get("data") or []) if isinstance(payload, dict) else []
-    if not isinstance(rows, list) or not rows:
-        return None
-    last = rows[-1] if isinstance(rows[-1], dict) else {}
-    prev_row = rows[-2] if len(rows) > 1 and isinstance(rows[-2], dict) else {}
-    price = _num(last.get("c"))
-    prev = _num(prev_row.get("c")) if prev_row else _num(last.get("o"))
-    if not price:
-        return None
-    return {
-        "symbol": "usUS30Y",
-        "name": "美债30年",
-        "price": price,
-        "prev": prev,
-        "change": _change(price, prev),
-        "pct": _pct(price, prev),
-        "amount": 0.0,
-    }
-
-
 def _vix_from_sina() -> dict | None:
     try:
         text = _fetch_text(
@@ -541,7 +500,7 @@ def _em_index_quotes(codes: list[str]) -> dict[str, dict]:
 
 
 def world_indices() -> list[dict]:
-    """A / HK / US / JP / KR / FX key indices (Tencent; VIX Sina; JP/KR/US30Y Eastmoney)."""
+    """A / HK / US / JP / KR / FX key indices (Tencent; VIX Sina; JP/KR Eastmoney)."""
     codes = [c for c, _n, _r in WORLD_INDICES]
     quotes: dict[str, dict] = {}
     try:
@@ -556,10 +515,6 @@ def world_indices() -> list[dict]:
     miss = [c for c in codes if c in _EM_INDEX and not (quotes.get(c) or {}).get("price")]
     if miss:
         quotes.update(_em_index_quotes(miss))
-    if "usUS30Y" not in quotes or not (quotes.get("usUS30Y") or {}).get("price"):
-        y30 = _us30y_from_sina()
-        if y30:
-            quotes["usUS30Y"] = y30
 
     out = []
     for code, label, region in WORLD_INDICES:

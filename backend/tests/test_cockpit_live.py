@@ -398,44 +398,14 @@ def test_quotes_map_fills_em_index(monkeypatch):
                     "diff": [
                         {"f2": 68137.94, "f3": -1.56, "f4": -1082.31, "f12": "N225", "f14": "日经225", "f18": 69220.25},
                         {"f2": 6979.7, "f3": 0.03, "f4": 1.76, "f12": "KS11", "f14": "韩国KOSPI", "f18": 6977.94},
-                        {"f2": 5.3071, "f3": 0.12, "f4": 0.0064, "f12": "US30Y", "f14": "美国30年期国债收益率", "f18": 5.3007},
                     ]
                 }
             }
 
     monkeypatch.setattr(cl, "em_get", lambda *a, **k: R())
-    out = cl.quotes_map(["jpN225", "ksKOSPI", "usUS30Y"])
+    out = cl.quotes_map(["jpN225", "ksKOSPI"])
     assert out["jpN225"]["price"] == 68137.94
     assert out["ksKOSPI"]["price"] == 6979.7
-    assert out["usUS30Y"]["price"] == 5.3071
-
-
-def test_quotes_map_us30y_falls_back_to_sina_daily(monkeypatch):
-    monkeypatch.setattr(cl, "_tencent_quotes", lambda codes: {})
-    monkeypatch.setattr(cl, "_em_index_quotes", lambda codes: {})
-    monkeypatch.setattr(cl, "_us30y_from_sina", lambda: {
-        "name": "美债30年", "price": 5.31, "pct": 0.2, "change": 0.01, "prev": 5.3,
-    })
-    out = cl.quotes_map(["usUS30Y"])
-    assert out["usUS30Y"]["price"] == 5.31
-    assert out["usus30y"]["price"] == 5.31
-
-
-def test_us30y_from_sina_reads_last_two_closes(monkeypatch):
-    payload = (
-        '{"result":{"data":[{"d":"2026-08-17","o":"5.20","h":"5.22","l":"5.18","c":"5.21","v":"0"},'
-        '{"d":"2026-08-18","o":"5.21","h":"5.33","l":"5.20","c":"5.3071","v":"0"}]}}'
-    )
-
-    def fake_text(url, **_k):
-        assert "US30YT" in url
-        return payload
-
-    monkeypatch.setattr(cl, "_fetch_text", fake_text)
-    out = cl._us30y_from_sina()
-    assert out["price"] == 5.3071
-    assert out["prev"] == 5.21
-    assert out["name"] == "美债30年"
 
 
 def test_quotes_map_vix_falls_back_to_sina(monkeypatch):

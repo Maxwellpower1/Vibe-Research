@@ -112,7 +112,7 @@ export function CommodityPanel() {
                   name={q?.name || d.label}
                   price={q?.price ?? last}
                   pct={pct}
-                  unit={d.code === "usUS30Y" ? "收益率 %" : d.code}
+                  unit={d.code}
                   closes={closes}
                   times={times}
                   session={sparkSessionForRegion(d.region)}
