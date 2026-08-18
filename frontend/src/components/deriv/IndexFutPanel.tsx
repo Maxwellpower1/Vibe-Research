@@ -150,6 +150,7 @@ export function IndexFutPanel({ d, nightOnly = false, onPickSymbol, onPickProduc
                   height={24}
                   fill
                   className="h-6"
+                  und={String(row.prodUnd ?? "")}
                 />
               </span>
             </button>

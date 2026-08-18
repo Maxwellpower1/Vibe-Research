@@ -224,7 +224,7 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
                 <PctText value={pct} />
                 {!compact && <IvpBar value={prod?.atmv_percentile} />}
               </button>
-              <TrendPreviewCell series={sparks[code]} loading={sparkLoading && !sparks[code]} base={pre} />
+              <TrendPreviewCell series={sparks[code]} loading={sparkLoading && !sparks[code]} base={pre} und={code} />
               <button
                 type="button"
                 onClick={() => save(watch.filter((w) => w !== code))}

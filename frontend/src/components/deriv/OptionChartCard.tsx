@@ -4,6 +4,9 @@ import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
+import {
+  derivMinuteSlots, hmOf, kindOfUnd, lastFiniteIdx, minuteKey, padToSlots, tradingDayOf,
+} from "@/lib/derivMinuteAxis";
 import type { OptionPick } from "./TQuotePanel";
 
 const UP = "#ef4444";
@@ -47,11 +50,23 @@ function preCloseOf(raw: unknown, td: string): number | null {
   return null;
 }
 
-/** 时间序列对齐: [[time, v], ...] -> 按 categories 精确匹配, 缺 null. */
-function alignSeries(pairs: Array<[string, number | null]> | undefined, cats: string[]): Array<number | null> {
-  const m = new Map<string, number | null>();
-  for (const [t, v] of pairs ?? []) m.set(t, v);
-  return cats.map((c) => m.get(c) ?? null);
+/** Align [[time, v], ...] onto categories. loose also matches YYYY-MM-DD HH:MM / HH:MM. */
+function alignSeries(
+  pairs: Array<[string, number | null]> | undefined,
+  cats: string[],
+  loose = false,
+): Array<number | null> {
+  const exact = new Map<string, number | null>();
+  const keys = new Map<string, number | null>();
+  for (const [t, v] of pairs ?? []) {
+    exact.set(t, v);
+    if (loose) {
+      keys.set(minuteKey(t), v);
+      const hm = hmOf(t);
+      if (hm) keys.set(hm, v);
+    }
+  }
+  return cats.map((c) => exact.get(c) ?? (loose ? (keys.get(minuteKey(c)) ?? keys.get(hmOf(c)) ?? null) : null));
 }
 
 /** echarts updateAxisPointer -> 类目下标. 类目轴 value 是字符串, 不能当 number 用. */
@@ -104,21 +119,7 @@ function fmtPx(v: number): string {
   return Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2);
 }
 
-/** 分钟 bar 时间 -> 交易日 (与后端 _trading_day 同口径): 夜盘 >=20点归次交易日; 凌晨 <6点归前一晚的次交易日, 周末顺延. */
-export function tradingDayOf(t: string): string {
-  const d = t.slice(0, 10);
-  const hh = Number(t.slice(11, 13));
-  if (hh >= 6 && hh < 20) return d;
-  const dt = new Date(`${d}T00:00:00`);
-  if (hh < 6) dt.setDate(dt.getDate() - 1);
-  do {
-    dt.setDate(dt.getDate() + 1);
-  } while (dt.getDay() === 0 || dt.getDay() === 6);
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth() + 1).padStart(2, "0");
-  const day = String(dt.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+export { tradingDayOf } from "@/lib/derivMinuteAxis";
 
 /** 期权联动图卡: mode=daily 日K(分钟聚合+量+标的IV日线) / minute 分时(价线+量+合约IV分钟). */
 export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode: "daily" | "minute" }) {
@@ -152,13 +153,26 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
     if (mode !== "minute" || !minute.data || minute.data.code !== pick?.code) return null;
     const { kl, av } = minute.data;
     const all = parseMinute(kl?.data);
-    if (all.length === 0) return { bars: [] as MinBar[], iv: [] as Array<number | null>, pre: null as number | null };
+    const empty = {
+      bars: [] as MinBar[],
+      cats: [] as string[],
+      prices: [] as Array<number | null>,
+      vols: [] as Array<number | null>,
+      iv: [] as Array<number | null>,
+      pre: null as number | null,
+    };
+    if (all.length === 0) return empty;
     const lastTd = tradingDayOf(all[all.length - 1].t);
     const bars = all.filter((b) => tradingDayOf(b.t) === lastTd);
+    const kind = kindOfUnd(pick?.und, bars.map((b) => b.t));
+    const cats = derivMinuteSlots(lastTd, kind);
+    const padded = padToSlots(bars, cats, (b) => b.t);
+    const prices = padded.map((b) => b?.close ?? null);
+    const vols = padded.map((b) => b?.vol ?? null);
     const ivPairs = (av?.data ?? []) as Array<[string, number | null]>;
-    const iv = alignSeries(ivPairs, bars.map((b) => b.t));
-    return { bars, iv, pre: preCloseOf(kl?.data, lastTd) };
-  }, [minute.data, mode, pick?.code]);
+    const iv = alignSeries(ivPairs, cats, true);
+    return { bars, cats, prices, vols, iv, pre: preCloseOf(kl?.data, lastTd) };
+  }, [minute.data, mode, pick?.code, pick?.und]);
 
   const dailyStale = Boolean(daily.data?.code && daily.data.code !== pick?.code);
   const dailyMatch = mode === "daily" && daily.data && daily.data.code === pick?.code ? daily.data : null;
@@ -179,7 +193,7 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
 
   useEffect(() => { setHover(null); }, [pick?.code, mode]);
 
-  catsRef.current = mode === "daily" ? dailyBars.map((b) => b.t) : (minData?.bars.map((b) => b.t) ?? []);
+  catsRef.current = mode === "daily" ? dailyBars.map((b) => b.t) : (minData?.cats ?? []);
 
   useEffect(() => {
     const chart = inst.current;
@@ -260,26 +274,30 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
       return;
     }
 
-    const bars = minData?.bars ?? [];
-    if (bars.length === 0) { chart.clear(); return; }
-    const cats = bars.map((b) => b.t);
-    const prices = bars.map((b) => b.close);
+    const cats = minData?.cats ?? [];
+    const prices = minData?.prices ?? [];
+    const finite = prices.filter((p): p is number => p != null && Number.isFinite(p));
+    if (cats.length === 0 || finite.length === 0) { chart.clear(); return; }
     const pre = minData?.pre ?? null;
-    const baseline = pre !== null && pre > 0 ? pre : prices[0];
-    const pMin = Math.min(...prices, baseline);
-    const pMax = Math.max(...prices, baseline);
+    const lastPx = finite[finite.length - 1];
+    const baseline = pre !== null && pre > 0 ? pre : finite[0];
+    const pMin = Math.min(...finite, baseline);
+    const pMax = Math.max(...finite, baseline);
     const pPad = (pMax - pMin) * 0.06 || Math.abs(baseline) * 0.002 || 1;
-    const up = prices[prices.length - 1] >= baseline;
+    const up = lastPx >= baseline;
     const tone = up ? UP : DN;
     const fade = up ? "239,68,68" : "34,197,94";
     const grad = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
       { offset: 0, color: `rgba(${fade},0.35)` },
       { offset: 1, color: `rgba(${fade},0.02)` },
     ]);
-    const volData = bars.map((b) => ({
-      value: b.vol,
-      itemStyle: { color: b.close >= baseline ? UP : DN },
-    }));
+    const volData = (minData?.vols ?? []).map((v, i) => {
+      const px = prices[i];
+      return {
+        value: v,
+        itemStyle: { color: px != null && px >= baseline ? UP : DN },
+      };
+    });
 
     chart.setOption({
       backgroundColor: "transparent",
@@ -328,7 +346,7 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
       series: [
         {
           name: "价格", type: "line" as const, z: 3,
-          data: prices, showSymbol: false,
+          data: prices, showSymbol: false, connectNulls: false,
           lineStyle: { width: 1.4, color: tone },
           areaStyle: { color: grad },
           markLine: {
@@ -383,20 +401,28 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
         toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-red-400" : "text-emerald-400",
       };
     } else if (mode === "minute" && (minData?.bars.length ?? 0) > 0) {
-      const bars = minData!.bars;
-      const i = hover != null && bars[hover] ? hover : bars.length - 1;
-      const b = bars[i];
-      const pre = minData!.pre;
-      const pct = pre ? ((b.close - pre) / pre) * 100 : null;
-      const iv = minData!.iv[i];
-      head = {
-        label: [
-          `${b.t.slice(11, 16)} ${fmtPx(b.close)}`,
-          pct !== null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` : "",
-          iv != null ? `IV ${iv.toFixed(0)}` : "",
-        ].filter(Boolean).join("  "),
-        toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-red-400" : "text-emerald-400",
-      };
+      const prices = minData!.prices;
+      const i = lastFiniteIdx(prices, hover);
+      if (hover != null && i == null) {
+        const t = minData!.cats[hover] ?? "";
+        head = { label: t.slice(11, 16) || t, toneCls: "text-slate-600" };
+      } else if (i != null) {
+        const px = prices[i];
+        if (px != null) {
+          const pre = minData!.pre;
+          const pct = pre ? ((px - pre) / pre) * 100 : null;
+          const iv = minData!.iv[i];
+          const t = minData!.cats[i] ?? "";
+          head = {
+            label: [
+              `${t.slice(11, 16) || t} ${fmtPx(px)}`,
+              pct !== null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` : "",
+              iv != null ? `IV ${iv.toFixed(0)}` : "",
+            ].filter(Boolean).join("  "),
+            toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-red-400" : "text-emerald-400",
+          };
+        }
+      }
     }
   }
 

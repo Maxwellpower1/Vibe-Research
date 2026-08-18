@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { PageFallback } from "@/components/ui/PageFallback";
-import { A_SHARE_TABS, CockpitHeader, OVL_TABS, PAGE_NAV, parseAShareTab, parseOvlabTab } from "@/components/cockpit/CockpitHeader";
+import { A_SHARE_TABS, CockpitHeader, NAV_RAIL_CLASS, OVL_TABS, PAGE_NAV, navChipClass, parseAShareTab, parseOvlabTab } from "@/components/cockpit/CockpitHeader";
 import { TickerTape } from "@/components/cockpit/TickerTape";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useTapeQuotes } from "@/hooks/useTapeQuotes";
@@ -77,20 +77,13 @@ export function Layout() {
       <TickerTape items={tapeItems} />
       {pathname.startsWith("/a-share") && (
         <nav
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-background px-2 py-1 lg:hidden"
+          className={cn(NAV_RAIL_CLASS, "mx-2 mt-1 shrink-0 lg:hidden")}
           aria-label="A股页签"
         >
           {A_SHARE_TABS.map((t) => {
             const active = t.tab === null ? aTab === "review" : aTab === t.tab;
             return (
-              <Link
-                key={t.label}
-                to={t.to}
-                className={cn(
-                  "shrink-0 rounded px-2 py-0.5 text-[10px]",
-                  active ? "bg-cyan-500/10 text-cyan-300" : "text-slate-500",
-                )}
-              >
+              <Link key={t.label} to={t.to} aria-current={active ? "page" : undefined} className={navChipClass(active)}>
                 {t.label}
               </Link>
             );
@@ -99,20 +92,13 @@ export function Layout() {
       )}
       {pathname.startsWith("/derivatives") && (
         <nav
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-background px-2 py-1 lg:hidden"
+          className={cn(NAV_RAIL_CLASS, "mx-2 mt-1 shrink-0 lg:hidden")}
           aria-label="期权期货页签"
         >
           {OVL_TABS.map((t) => {
             const active = t.tab === null ? oTab === "review" : oTab === t.tab;
             return (
-              <Link
-                key={t.label}
-                to={t.to}
-                className={cn(
-                  "shrink-0 rounded px-2 py-0.5 text-[10px]",
-                  active ? "bg-cyan-500/10 text-cyan-300" : "text-slate-500",
-                )}
-              >
+              <Link key={t.label} to={t.to} aria-current={active ? "page" : undefined} className={navChipClass(active)}>
                 {t.label}
               </Link>
             );
@@ -150,7 +136,7 @@ export function Layout() {
         aria-label="主导航"
       >
         {moreOpen && (
-          <div className="absolute bottom-full left-2 right-2 mb-2 rounded-md border border-border bg-card p-1.5 shadow-lg">
+          <div className="absolute bottom-full left-2 right-2 mb-2 rounded-md border border-white/[0.08] bg-card p-1.5 shadow-lg">
             {MORE_NAV.map((l) => {
               const Icon = NAV_ICONS[l.to];
               const active = l.match(pathname);
@@ -159,8 +145,8 @@ export function Layout() {
                   key={l.to}
                   to={l.to}
                   className={cn(
-                    "flex items-center gap-2 rounded px-3 py-2 text-[13px]",
-                    active ? "bg-cyan-500/10 text-cyan-200" : "text-slate-300",
+                    "flex items-center gap-2 rounded-md px-3 py-2.5 text-[13px] font-medium",
+                    active ? "bg-cyan-400/15 text-cyan-100" : "text-slate-200 hover:bg-white/[0.05]",
                   )}
                 >
                   {Icon ? <Icon className="h-4 w-4" /> : null}
@@ -178,12 +164,18 @@ export function Layout() {
               <Link
                 key={l.to}
                 to={l.to}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex min-w-[56px] flex-col items-center justify-center gap-0.5 py-1 text-[10px]",
-                  active ? "text-cyan-300" : "text-slate-500",
+                  "flex min-w-[52px] flex-col items-center justify-center gap-0.5 py-1 text-[11px] font-medium",
+                  active ? "text-cyan-100" : "text-slate-300",
                 )}
               >
-                {Icon ? <Icon className="h-5 w-5" /> : null}
+                <span className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-lg",
+                  active && "bg-cyan-400/20 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]",
+                )}>
+                  {Icon ? <Icon className="h-[18px] w-[18px]" /> : null}
+                </span>
                 {l.short}
               </Link>
             );
@@ -192,13 +184,18 @@ export function Layout() {
             type="button"
             onClick={() => setMoreOpen((v) => !v)}
             className={cn(
-              "flex min-w-[56px] flex-col items-center justify-center gap-0.5 py-1 text-[10px]",
-              moreOpen || moreActive ? "text-cyan-300" : "text-slate-500",
+              "flex min-w-[52px] flex-col items-center justify-center gap-0.5 py-1 text-[11px] font-medium",
+              moreOpen || moreActive ? "text-cyan-100" : "text-slate-300",
             )}
             aria-expanded={moreOpen}
             aria-label="更多页面"
           >
-            <MoreHorizontal className="h-5 w-5" />
+            <span className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-lg",
+              (moreOpen || moreActive) && "bg-cyan-400/20 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]",
+            )}>
+              <MoreHorizontal className="h-[18px] w-[18px]" />
+            </span>
             更多
           </button>
         </div>

@@ -487,3 +487,34 @@ def test_term_structure_cached(monkeypatch):
     r1 = ovlab.get_term_structure(["AG", "CU"])
     r2 = ovlab.get_term_structure(["CU", "AG"])  # 排序后同钥匙
     assert r1 == r2 and len(calls) == 2
+
+
+# ---------- warehouse receipt ----------
+
+_WH = {
+    "last_update_time": "2026-08-18 17:30:45",
+    "category": ["2026-08-14", "2026-08-15", "2026-08-18"],
+    "value": ["NaN", 1000, 1120],
+    "value2": [0, 0, 120],
+}
+
+
+def test_warehouse_receipt_skips_nan_and_sparks(monkeypatch):
+    """仓单跳过 nan, 最新=最后有效点, spark 不含空档."""
+    monkeypatch.setattr(ovlab, "get_warehouse_history", lambda p: _WH)
+    out = ovlab.get_warehouse_receipt("au")
+    assert out["product"] == "AU"
+    assert out["last"] == 1120.0 and out["chg"] == 120.0
+    assert out["asOf"] == "2026-08-18"
+    assert out["spark"] == [["2026-08-15", 1000.0], ["2026-08-18", 1120.0]]
+
+
+def test_warehouse_receipt_empty():
+    assert ovlab.get_warehouse_receipt("") == {}
+    assert ovlab.get_warehouse_receipt("   ") == {}
+
+
+def test_warehouse_receipt_empty_history(monkeypatch):
+    monkeypatch.setattr(ovlab, "get_warehouse_history", lambda p: {})
+    out = ovlab.get_warehouse_receipt("AU")
+    assert out["product"] == "AU" and out["last"] is None and out["spark"] == []

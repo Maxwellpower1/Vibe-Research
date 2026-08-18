@@ -10,13 +10,13 @@ import remarkGfm from "remark-gfm";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { CockpitLayout, type CockpitRow } from "@/components/cockpit/CockpitLayout";
 import { useDerivData, type DerivData } from "@/hooks/useDerivData";
-import { num } from "@/components/ovlab/shared";
+import { daysToExpiry, num } from "@/components/ovlab/shared";
 import { formatClock } from "@/lib/freshness";
 import { ApiError } from "@/lib/api";
 import { chatStream, hasLlm } from "@/lib/llm";
 import { cn } from "@/lib/utils";
 import { IndexFutPanel } from "@/components/deriv/IndexFutPanel";
-import { AlertPanel } from "@/components/deriv/AlertPanel";
+import { AlertPanel, FLOW_RULE_LABEL } from "@/components/deriv/AlertPanel";
 import { ExpiryCalPanel } from "@/components/deriv/ExpiryCalPanel";
 import { TermStructPanel } from "@/components/deriv/TermStructPanel";
 import { WatchPanel } from "@/components/deriv/WatchPanel";
@@ -71,7 +71,10 @@ function packDerivContext(d: DerivData): string {
   } else {
     lines.push("", `## 最新异动 (前 ${Math.min(15, d.alerts.length)} 条)`);
     for (const a of d.alerts.slice(0, 15)) {
-      lines.push(`- ${String(a.time ?? "").slice(5, 16)} ${a.contract_code ?? "-"} ${a.rule_id ?? ""} ${a.pct_change ?? ""}`);
+      const rid = String(a.rule_id ?? "");
+      const kind = FLOW_RULE_LABEL[rid] ?? rid;
+      const dte = daysToExpiry(a.exp_date);
+      lines.push(`- ${String(a.time ?? "").slice(5, 16)} ${a.contract_code ?? "-"} ${kind} 剩余${dte ?? "-"}天 区间${a.pct_change ?? "-"}`);
     }
   }
   return lines.join("\n");
@@ -186,10 +189,10 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         {
           id: "term-struct",
           title: "期限结构",
-          hint: "远期曲线 · 柱=持仓",
+          hint: "远期曲线 · 仓单",
           icon: <TrendingUp size={14} />,
           accent: "#34d399",
-          defaultW: 0.26,
+          defaultW: 0.22,
           mobileH: "h-[44vh]",
           right: <FreshTag updated={d.marketUpdated} />,
           body: <TermStructPanel d={d} />,
@@ -197,11 +200,12 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         {
           id: "alert",
           title: "异动",
+          hint: "成交 / 走势 / 连续",
           icon: <Zap size={14} />,
           accent: "#f59e0b",
-          defaultW: 0.18,
+          defaultW: 0.22,
           mobileH: "h-[50vh]",
-          right: <FreshTag updated={d.alertUpdated} extra={`${d.alerts?.length ?? 0}条`} />,
+          right: <FreshTag updated={d.alertUpdated} />,
           body: <AlertPanel d={d} />,
         },
       ],

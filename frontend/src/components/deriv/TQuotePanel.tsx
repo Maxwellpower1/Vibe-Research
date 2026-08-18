@@ -6,9 +6,6 @@ import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
 import { CellEmpty } from "./derivShared";
 
-const WINDOW = 8;
-const OI_PAD = 12;
-
 /** 点选的期权合约 (联动日K/分时卡片). */
 export interface OptionPick {
   code: string; // 期权合约代码, 如 AU2609C952
@@ -46,31 +43,6 @@ export function ivOf(s: OvlabTQuoteSide): number | null {
   const a = num(s.ivAsk);
   if (b !== null && a !== null) return (b + a) / 2;
   return num(s.theoIv);
-}
-
-/** ATM 附近切片; 最大购/沽持仓若在 ATM±OI_PAD 内则扩窗带上. */
-export function sliceChain(strikes: OvlabTQuoteStrike[], atm: number | null | undefined, all = false): OvlabTQuoteStrike[] {
-  if (all || strikes.length === 0) return strikes;
-  const atmIdx = atm != null ? strikes.findIndex((s) => s.strike === atm) : -1;
-  const center = atmIdx >= 0 ? atmIdx : strikes.length >> 1;
-  let lo = Math.max(0, center - WINDOW);
-  let hi = Math.min(strikes.length, center + WINDOW + 1);
-  let maxC = -1;
-  let maxP = -1;
-  let iC = -1;
-  let iP = -1;
-  for (let i = 0; i < strikes.length; i++) {
-    const c = num(strikes[i].call.oi) ?? -1;
-    const p = num(strikes[i].put.oi) ?? -1;
-    if (c > maxC) { maxC = c; iC = i; }
-    if (p > maxP) { maxP = p; iP = i; }
-  }
-  for (const i of [iC, iP]) {
-    if (i < 0 || Math.abs(i - center) > OI_PAD) continue;
-    lo = Math.min(lo, i);
-    hi = Math.max(hi, i + 1);
-  }
-  return strikes.slice(lo, hi);
 }
 
 /** 沽虚值 IV - 购虚值 IV; 正=沽更贵 (下行保护需求). */
@@ -236,8 +208,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   }, [prod, products, d.rows, onProduct]);
 
   const [exp, setExp] = useState<string>("");
-  const [showAll, setShowAll] = useState(false);
-  useEffect(() => { setExp(""); setShowAll(false); }, [prod]);
+  useEffect(() => { setExp(""); }, [prod]);
 
   const tq = usePolling(
     () => (prod ? api.ovlabTQuote(prod) : Promise.resolve(null)),
@@ -254,8 +225,9 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
 
   const rows = useMemo(() => {
     if (!cur) return [];
-    return sliceChain(cur.strikes ?? [], cur.atm, showAll);
-  }, [cur, showAll]);
+    // upstream ascending; display high strike on top.
+    return (cur.strikes ?? []).slice().reverse();
+  }, [cur]);
   const oiMax = useMemo(() => maxOiVal(rows), [rows]);
 
   const fwd = num(cur?.forward);
@@ -264,7 +236,6 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   const atmIvChg = cur?.atmIv != null && cur?.atmIvYd != null ? cur.atmIv - cur.atmIvYd : null;
   const skew = useMemo(() => (cur ? ivSkew(cur.strikes ?? [], fwd) : null), [cur, fwd]);
   const move = fmtMove(cur?.moveUp, cur?.moveDn);
-  const hidden = cur ? Math.max(0, (cur.strikes?.length ?? 0) - rows.length) : 0;
 
   const emitPick = (code: string | undefined) => {
     if (!code || !onPickContract) return;
@@ -283,7 +254,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   const atmRowRef = useRef<HTMLTableRowElement | null>(null);
   useEffect(() => {
     atmRowRef.current?.scrollIntoView({ block: "center", inline: "nearest" });
-  }, [prod, cur?.exp, showAll]);
+  }, [prod, cur?.exp]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -316,25 +287,6 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
             </button>
           ))}
         </div>
-        {hidden > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowAll(true)}
-            className="h-6 shrink-0 rounded px-1.5 text-[11px] text-slate-500 hover:text-slate-300"
-            title="显示全部行权价"
-          >
-            全部+{hidden}
-          </button>
-        )}
-        {showAll && (
-          <button
-            type="button"
-            onClick={() => setShowAll(false)}
-            className="h-6 shrink-0 rounded px-1.5 text-[11px] text-cyan-400/80 hover:text-cyan-300"
-          >
-            ATM附近
-          </button>
-        )}
         {cur?.lastTime && (
           <span className="shrink-0 text-[10px] tabular-nums text-slate-600">{cur.lastTime.slice(5, 16)}</span>
         )}

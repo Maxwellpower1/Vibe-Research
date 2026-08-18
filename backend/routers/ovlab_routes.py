@@ -87,7 +87,7 @@ def ovlab_future_ts(
 
 @router.get("/api/ovlab/flow-alert")
 def ovlab_flow_alert():
-    """OpenVlab 异动榜 (flow-alert)：合约/规则/价格/涨跌/持仓量/窗口成交量/权利金。缓存 5 分钟。"""
+    """OpenVlab 异动榜 (flow-alert): 成交/走势/连续成交, 含到期日与区间涨幅. 缓存 5 分钟."""
     return _ovlab_call(ovlab.get_flow_alerts, "异动榜")
 
 
@@ -105,9 +105,19 @@ def ovlab_flow_data(req: FlowDataReq):
 
 @router.post("/api/ovlab/warehouse-history")
 def ovlab_warehouse_history(req: WarehouseHistoryReq):
-    """OpenVlab 单品种多年持仓历史 (warehouse/history, POST)。缓存 5 分钟。"""
+    """OpenVlab 单品种多年仓单/持仓历史 (warehouse/history, POST)。缓存 5 分钟。"""
     return _ovlab_call(
         lambda: ovlab.get_warehouse_history(req.product.strip()), "持仓历史"
+    )
+
+
+@router.get("/api/ovlab/warehouse-receipt")
+def ovlab_warehouse_receipt(
+    product: str = Query(..., min_length=1, max_length=16, description="品种, 如 AU"),
+):
+    """仓单瘦身: 最新/日变/近90日. 复用 warehouse/history 缓存, 对齐 /future/warehouse-receipt."""
+    return _ovlab_call(
+        lambda: ovlab.get_warehouse_receipt(product.strip()), "仓单"
     )
 
 

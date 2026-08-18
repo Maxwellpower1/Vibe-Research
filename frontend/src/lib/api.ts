@@ -1109,12 +1109,23 @@ export interface OvlabFlowAlert {
   rule_id?: string; side?: string; price?: number | string;
   ctn?: string; open_interest?: number; window_volume?: number;
   window_premium?: number; pct_change?: string;
+  exp_date?: string; fill_type?: string;
+  price_start?: number; price_end?: number;
   [k: string]: unknown;
 }
 export interface OvlabWarehouseHistory {
   last_update_time?: string; value?: unknown; category?: string;
   ratioData?: unknown;
   [k: string]: unknown;
+}
+/** 仓单瘦身 (warehouse/history): 最新 + 日变 + 近90日. */
+export interface OvlabWarehouseReceipt {
+  product: string;
+  asOf?: string;
+  last?: number | null;
+  chg?: number | null;
+  updated?: string;
+  spark?: Array<[string, number]>;
 }
 // 异动资金流 (flow-data)
 export interface OvlabFlowDataRow {
@@ -1612,6 +1623,8 @@ export const api = {
     request<OvlabFlowData>("/ovlab/flow-data", "POST", { product: product?.trim() || null, page, page_size: pageSize }),
   ovlabWarehouseHistory: (product: string) =>
     request<OvlabWarehouseHistory>("/ovlab/warehouse-history", "POST", { product }),
+  ovlabWarehouseReceipt: (product: string) =>
+    get<OvlabWarehouseReceipt>(`/ovlab/warehouse-receipt?product=${encodeURIComponent(product)}`),
   ovlabProductExps: (prodUnd?: string) =>
     get<OvlabProductExp[]>(`/ovlab/product-exps${prodUnd ? `?prod_und=${encodeURIComponent(prodUnd)}` : ""}`),
   ovlabExchangeInfo: () => get<OvlabExchangeInfo[]>("/ovlab/exchange-info"),

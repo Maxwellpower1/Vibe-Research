@@ -381,7 +381,8 @@ def _ovlab_flow_alert(args: dict) -> dict:
     if not rows:
         return {"error": "异动榜暂无数据"}
     keys = ("time", "instrument", "contract_code", "rule_id", "side", "price",
-            "ctn", "open_interest", "window_volume", "window_premium", "pct_change")
+            "ctn", "open_interest", "window_volume", "window_premium", "pct_change",
+            "exp_date", "fill_type", "price_start", "price_end")
     items = [{k: r.get(k) for k in keys} for r in rows if isinstance(r, dict)]
     # 按规则计数, 看哪种异动最多
     rule_count = Counter(r.get("rule_id") for r in items if r.get("rule_id"))

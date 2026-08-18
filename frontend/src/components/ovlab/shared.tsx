@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, CircleHelp, Loader2 } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { cn } from "@/lib/utils";
+import { derivSessionIdx, derivSessionSpan, kindOfUnd } from "@/lib/derivMinuteAxis";
 import type { OvlabMarketRow, OvlabPriceVolSeriesItem } from "@/lib/api";
 
 export function num(v: unknown): number | null {
@@ -345,7 +346,7 @@ export function toSparkMap(items: OvlabPriceVolSeriesItem[] | null | undefined):
 
 /** Dual-line SVG spark: price vs base (prev close, fallback first print), A股 MinuteSpark palette; IV in violet. */
 export function TrendSparkSvg({
-  prices, volatilities, base, width = 88, height = 36, className, fill = false,
+  prices, volatilities, base, width = 88, height = 36, className, fill = false, und,
 }: {
   prices: Array<[string, number]>;
   volatilities: Array<[string, number]>;
@@ -356,12 +357,20 @@ export function TrendSparkSvg({
   className?: string;
   /** Stretch to container width (MinuteSpark style): CSS controls size, strokes stay 1:1. */
   fill?: boolean;
+  /** Underlying root (IF / AU / 510050). Picks session template. */
+  und?: string;
 }) {
   const pad = 2;
   const uid = useId().replace(/:/g, "");
 
-  const priceVals = prices.map((p) => Number(p[1])).filter((n) => Number.isFinite(n));
-  const volVals = volatilities.map((p) => Number(p[1])).filter((n) => Number.isFinite(n));
+  const pricePtsRaw = prices
+    .map((p) => ({ t: String(p[0] ?? ""), v: Number(p[1]) }))
+    .filter((p) => Number.isFinite(p.v));
+  const volPtsRaw = volatilities
+    .map((p) => ({ t: String(p[0] ?? ""), v: Number(p[1]) }))
+    .filter((p) => Number.isFinite(p.v));
+  const priceVals = pricePtsRaw.map((p) => p.v);
+  const volVals = volPtsRaw.map((p) => p.v);
 
   const boxProps = fill
     ? { preserveAspectRatio: "none" as const, className: cn("block w-full", className) }
@@ -377,13 +386,19 @@ export function TrendSparkSvg({
 
   const innerW = width - pad * 2;
   const innerH = height - pad * 2;
+  const kind = kindOfUnd(und, [...pricePtsRaw.map((p) => p.t), ...volPtsRaw.map((p) => p.t)]);
+  const span = derivSessionSpan(kind);
+  const xAtT = (t: string) => {
+    const idx = derivSessionIdx(t, kind);
+    if (!Number.isFinite(idx) || span <= 0) return pad;
+    return pad + (idx / span) * innerW;
+  };
 
   // Baseline = prev close when given, else first print; scale includes it so the line stays visible
   const zero = base != null && Number.isFinite(base) && base > 0 ? base : (priceVals[0] ?? 0);
   const pMin = priceVals.length ? Math.min(...priceVals, zero) : 0;
   const pMax = priceVals.length ? Math.max(...priceVals, zero) : 1;
   const pSpan = pMax - pMin || 1;
-  const xAt = (i: number, n: number) => pad + (n <= 1 ? 0 : (i / (n - 1)) * innerW);
   const yPrice = (v: number) => pad + (1 - (v - pMin) / pSpan) * innerH;
   const zeroY = yPrice(zero);
 
@@ -391,7 +406,7 @@ export function TrendSparkSvg({
   const lastP = priceVals.length ? priceVals[priceVals.length - 1] : null;
   const tone = lastP === null || zero <= 0 ? SPARK_FLAT : lastP > zero ? SPARK_UP : lastP < zero ? SPARK_DOWN : SPARK_FLAT;
 
-  const pricePts = priceVals.map((v, i) => ({ x: xAt(i, priceVals.length), y: yPrice(v) }));
+  const pricePts = pricePtsRaw.map((p) => ({ x: xAtT(p.t), y: yPrice(p.v) }));
   const priceLine = pricePts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
   // Area closes down to the bottom edge, gradient fades out (MinuteSpark style)
   const priceArea = pricePts.length >= 2
@@ -404,9 +419,9 @@ export function TrendSparkSvg({
     const vMin = Math.min(...volVals);
     const vMax = Math.max(...volVals);
     const vSpan = vMax - vMin || 1;
-    volLine = volVals.map((v, i) => {
-      const x = xAt(i, volVals.length);
-      const y = pad + (1 - (v - vMin) / vSpan) * innerH;
+    volLine = volPtsRaw.map((p, i) => {
+      const x = xAtT(p.t);
+      const y = pad + (1 - (p.v - vMin) / vSpan) * innerH;
       return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(" ");
   }
@@ -444,7 +459,9 @@ export function TrendSparkSvg({
 }
 
 /** Inline spark + hover enlarged overlay (price + IV), like openvlab.cn/market TrendPreviewCell. */
-export function TrendPreviewCell({ series, loading, base }: { series?: PreviewSeries; loading?: boolean; base?: number | null }) {
+export function TrendPreviewCell({ series, loading, base, und }: {
+  series?: PreviewSeries; loading?: boolean; base?: number | null; und?: string;
+}) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -495,7 +512,7 @@ export function TrendPreviewCell({ series, loading, base }: { series?: PreviewSe
       )}>
         {empty
           ? <span className="text-xs text-muted-foreground/40">-</span>
-          : <TrendSparkSvg prices={prices} volatilities={vols} base={base} />}
+          : <TrendSparkSvg prices={prices} volatilities={vols} base={base} und={und} />}
       </div>
       {hover && !empty && pos && createPortal(
         <div
@@ -513,7 +530,7 @@ export function TrendPreviewCell({ series, loading, base }: { series?: PreviewSe
               <span className="inline-flex items-center gap-1"><span className="h-1.5 w-3 rounded-full bg-violet-400" />隐波</span>
             </span>
           </div>
-          <TrendSparkSvg prices={prices} volatilities={vols} base={base} width={256} height={96} />
+          <TrendSparkSvg prices={prices} volatilities={vols} base={base} width={256} height={96} und={und} />
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] tabular-nums">
             <div>
               <div className="text-muted-foreground">价格</div>

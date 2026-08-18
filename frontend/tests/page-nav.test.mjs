@@ -17,6 +17,9 @@ test("desktop header and phone bar share PAGE_NAV", () => {
   assert.match(layout, /"\/backtest"/);
   assert.match(header, /to: "\/data"/);
   assert.match(layout, /"\/data"/);
+  assert.match(header, /navChipClass/);
+  assert.match(header, /text-\[12px\]/);
+  assert.match(header, /NAV_RAIL_CLASS/);
 });
 
 test("/derivatives sits right after /a-share and is primary", () => {
@@ -37,9 +40,8 @@ test("/derivatives sits right after /a-share and is primary", () => {
   const ovlab = readFileSync(join(root, "src/pages/Ovlab.tsx"), "utf8");
   assert.match(ovlab, /DerivCockpit/);
   assert.match(ovlab, /DerivLightChart/);
-  assert.match(ovlab, /VolSurfacePanel/);
-  assert.match(ovlab, /FlowAlertPanel/);
   assert.doesNotMatch(ovlab, /CtpPortfolio/);
+  assert.doesNotMatch(ovlab, /VolSurfacePanel|FlowAlertPanel/);
 });
 
 test("brand link returns to current section home", () => {

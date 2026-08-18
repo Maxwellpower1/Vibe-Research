@@ -146,7 +146,7 @@ TOOLS: list[dict] = [
        {"scope": {"type": "string", "enum": ["all", "single"], "description": "all=全品种汇总, single=单品种"},
         "prod_und": {"type": "string", "description": "scope=single 时必填, 标的代码如 MA"}}),
     _t("query_ovlab_flow_alert",
-       "查期权异动榜(OpenVlab flow-alert): 近期异动合约清单, 含合约/触发规则/价格/涨跌/持仓量/窗口成交量/权利金。看市场情绪突变用。"),
+       "查期权异动榜(OpenVlab flow-alert): 近期异动合约清单. 规则 r001_single_trade=成交异动(3秒单笔手数) / r002_1m_pct_move=走势异动(1分钟涨幅) / r003_repeated_aggressive_burst=连续成交(2秒同向单调). 含合约/到期日/区间涨幅/窗口成交量/权利金."),
     _t("query_ovlab_warehouse_history",
        "查单品种多年持仓历史(OpenVlab warehouse/history): product 如 MA。返回当前持仓 + year2013~2026 各年持仓 + ratioData + category。仓差/资金面/季节性分析用。",
        {"product": {"type": "string", "description": "品种代码, 如 MA / CU / RB"}},

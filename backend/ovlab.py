@@ -233,7 +233,7 @@ def get_future_term_structure(prod_und: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def get_flow_alerts() -> list[dict[str, Any]]:
-    """异动榜 (flow-alert): 合约/规则/价格/涨跌/持仓量/窗口成交量/权利金等.
+    """异动榜 (flow-alert): 成交异动/走势异动/连续成交, 含到期日/区间涨幅/窗口量额.
 
     数据量较大 (数百条), 含缓存 5 分钟.
     """
@@ -290,6 +290,56 @@ def get_warehouse_seasonal_history_all(
         lambda: _post("warehouse/seasonal-history-all", body=body),
         valid=lambda v: isinstance(v, dict) and bool(v),
     )
+
+
+SPARK_N = 90  # cockpit receipt spark: last N trading days
+
+
+def get_warehouse_receipt(product: str) -> dict[str, Any]:
+    """仓单瘦身: 最新/日变/近90日. 复用 warehouse/history 同一把钥匙, 不另缓存.
+
+    对齐 openvlab.cn/future/warehouse-receipt. 空品种归 {}; 有品种无点仍带回 product, 避免前端一直转圈.
+    """
+    p = (product or "").strip().upper()
+    if not p:
+        return {}
+    raw = get_warehouse_history(p)
+    if not isinstance(raw, dict):
+        raw = {}
+    empty = {
+        "product": p,
+        "asOf": "",
+        "last": None,
+        "chg": None,
+        "updated": str(raw.get("last_update_time") or "") if raw else "",
+        "spark": [],
+    }
+    if not raw:
+        return empty
+    cat, val, chg = raw.get("category"), raw.get("value"), raw.get("value2")
+    dates: list[Any] = cat if isinstance(cat, list) else []
+    vals: list[Any] = val if isinstance(val, list) else []
+    chgs: list[Any] = chg if isinstance(chg, list) else []
+    series: list[tuple[str, float, float | None]] = []
+    n = min(len(dates), len(vals))
+    for i in range(n):
+        fv = _sfloat(vals[i])
+        if fv is None:
+            continue
+        cg = _sfloat(chgs[i]) if i < len(chgs) else None
+        series.append((str(dates[i])[:10], fv, cg))
+    if not series:
+        return empty
+    last_t, last_v, last_chg = series[-1]
+    spark = series[-SPARK_N:]
+    return {
+        "product": p,
+        "asOf": last_t,
+        "last": last_v,
+        "chg": last_chg,
+        "updated": str(raw.get("last_update_time") or ""),
+        "spark": [[t, v] for t, v, _ in spark],
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -61,6 +61,20 @@ export function parseOvlabTab(raw: string | null): string {
   return raw === "kline" ? "kline" : "review";
 }
 
+/** Recessed rail for page nav and 复盘/K线. */
+export const NAV_RAIL_CLASS =
+  "flex min-w-0 items-center gap-px overflow-x-auto rounded-md bg-black/40 p-[3px] ring-1 ring-white/[0.08] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+
+/** 12px chip: idle slate-300 (readable), active cyan fill. */
+export function navChipClass(active: boolean): string {
+  return cn(
+    "relative shrink-0 rounded-[5px] px-2.5 py-[5px] text-[12px] font-medium leading-none transition-colors duration-150",
+    active
+      ? "bg-cyan-400/20 text-cyan-50 shadow-[0_0_0_1px_rgba(34,211,238,0.5),0_0_14px_rgba(34,211,238,0.14)]"
+      : "text-slate-300 hover:bg-white/[0.07] hover:text-white",
+  );
+}
+
 export function CockpitHeader({
   isFullscreen,
   onToggleFullscreen,
@@ -86,20 +100,20 @@ export function CockpitHeader({
   const week = ["日", "一", "二", "三", "四", "五", "六"][now.getDay()];
 
   return (
-    <header className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-background px-2 sm:gap-3 sm:px-3">
+    <header className="flex h-11 shrink-0 items-center gap-2 border-b border-white/[0.07] bg-background px-2 sm:gap-2.5 sm:px-3">
       <Link to={brand.to} title="返回本区首页" className="flex shrink-0 items-center gap-2">
-        <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] bg-cyan-500/15 text-[11px] font-bold text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.35)]">
+        <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-cyan-400/20 text-[12px] font-bold text-cyan-200 shadow-[0_0_14px_rgba(34,211,238,0.4)]">
           V
         </span>
-        <h1 className="text-[13px] font-bold tracking-wider text-slate-100">
+        <h1 className="text-[14px] font-semibold tracking-wide text-slate-50">
           {brand.title}
-          <span className="ml-2 hidden text-[8px] font-medium tracking-[0.2em] text-cyan-500/80 sm:inline">
+          <span className="ml-2 hidden text-[9px] font-medium tracking-[0.18em] text-cyan-400/70 xl:inline">
             {brand.subtitle}
           </span>
         </h1>
       </Link>
-      <div className="mx-0.5 hidden h-4 w-px bg-slate-700 md:block" />
-      <nav className="hidden items-center gap-1.5 md:flex">
+      <div className="mx-0.5 hidden h-5 w-px bg-white/[0.08] md:block" />
+      <nav className={cn(NAV_RAIL_CLASS, "hidden flex-1 md:flex")} aria-label="主导航">
         {PAGE_NAV.map((l) => {
           const active = l.match(pathname);
           return (
@@ -107,12 +121,8 @@ export function CockpitHeader({
               key={l.to}
               to={l.to}
               prefetch={l.to === "/fin" ? "render" : "intent"}
-              className={cn(
-                "rounded border px-2 py-0.5 text-[10px] transition-colors",
-                active
-                  ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-200"
-                  : "border-slate-700/60 bg-slate-800/40 text-slate-400 hover:border-cyan-500/50 hover:text-cyan-300",
-              )}
+              aria-current={active ? "page" : undefined}
+              className={navChipClass(active)}
             >
               {l.label}
             </Link>
@@ -120,18 +130,11 @@ export function CockpitHeader({
         })}
       </nav>
       {onAShare && (
-        <nav className="hidden items-center gap-1 lg:flex">
+        <nav className={cn(NAV_RAIL_CLASS, "hidden shrink-0 lg:flex")} aria-label="A股页签">
           {A_SHARE_TABS.map((t) => {
             const active = t.tab === null ? aTab === "review" : aTab === t.tab;
             return (
-              <Link
-                key={t.label}
-                to={t.to}
-                className={cn(
-                  "px-1.5 text-[10px] transition-colors",
-                  active ? "text-cyan-300" : "text-slate-500 hover:text-slate-300",
-                )}
-              >
+              <Link key={t.label} to={t.to} aria-current={active ? "page" : undefined} className={navChipClass(active)}>
                 {t.label}
               </Link>
             );
@@ -139,38 +142,31 @@ export function CockpitHeader({
         </nav>
       )}
       {onOvlab && (
-        <nav className="hidden items-center gap-1 lg:flex">
+        <nav className={cn(NAV_RAIL_CLASS, "hidden shrink-0 lg:flex")} aria-label="期权期货页签">
           {OVL_TABS.map((t) => {
             const active = t.tab === null ? oTab === "review" : oTab === t.tab;
             return (
-              <Link
-                key={t.label}
-                to={t.to}
-                className={cn(
-                  "px-1.5 text-[10px] transition-colors",
-                  active ? "text-cyan-300" : "text-slate-500 hover:text-slate-300",
-                )}
-              >
+              <Link key={t.label} to={t.to} aria-current={active ? "page" : undefined} className={navChipClass(active)}>
                 {t.label}
               </Link>
             );
           })}
         </nav>
       )}
-      <div className="ml-auto flex items-center gap-2 sm:gap-3">
+      <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
         <div id="cockpit-header-actions" className="flex items-center gap-1.5" />
         {extra}
-        <span className="hidden items-center gap-1.5 text-[10px] text-emerald-400 sm:flex">
+        <span className="hidden items-center gap-1.5 text-[11px] font-medium text-emerald-400 sm:flex">
           <span className="relative flex h-1.5 w-1.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
           </span>
           实时
         </span>
-        <span className="hidden text-[10px] tabular-nums text-slate-400 md:inline">
+        <span className="hidden text-[11px] tabular-nums text-slate-400 lg:inline">
           {dateStr} 星期{week}
         </span>
-        <span className="rounded border border-slate-700/60 bg-slate-800/40 px-2 py-px font-mono text-[12px] font-bold text-cyan-300">
+        <span className="rounded-md border border-white/[0.08] bg-black/30 px-2 py-0.5 font-mono text-[12px] font-bold text-cyan-200">
           {hh}:{mm}
           <span className="text-cyan-600">:{ss}</span>
         </span>
@@ -178,9 +174,9 @@ export function CockpitHeader({
           type="button"
           onClick={onToggleFullscreen}
           title={isFullscreen ? "退出全屏" : "全屏显示"}
-          className="flex h-[22px] w-[22px] items-center justify-center rounded border border-slate-700/60 bg-slate-800/40 text-slate-400 hover:border-cyan-500/60 hover:text-cyan-300"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-black/30 text-slate-300 hover:border-cyan-400/50 hover:text-cyan-200"
         >
-          {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+          {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>
       </div>
     </header>

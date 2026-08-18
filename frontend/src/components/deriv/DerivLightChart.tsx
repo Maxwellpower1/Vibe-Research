@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import * as echarts from "echarts";
 import { AlertCircle, Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils";
 import { storageGet, storageSet } from "@/lib/storage";
 import { usePolling } from "@/hooks/usePolling";
 import { derivSession } from "@/components/deriv/derivShared";
+import {
+  derivMinuteSlots, kindOfUnd, padToSlots, tradingDayOf, undRootOf,
+} from "@/lib/derivMinuteAxis";
 
 const UP = "#ef4444";
 const DN = "#22c55e";
@@ -169,8 +172,30 @@ export function DerivLightChart() {
   const chartRef = useRef<HTMLDivElement>(null);
   const echartRef = useRef<echarts.ECharts | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const barsRef = useRef(bars);
-  barsRef.current = bars;
+  const plot = useMemo(() => {
+    if (resolution !== "1" || bars.length === 0) return { bars, atm };
+    const lastTd = tradingDayOf(bars[bars.length - 1].datetime);
+    const idxs = bars.map((b, i) => (tradingDayOf(b.datetime) === lastTd ? i : -1)).filter((i) => i >= 0);
+    const dayBars = idxs.map((i) => bars[i]);
+    const dayAtm = idxs.map((i) => atm[i] ?? null);
+    const kind = kindOfUnd(undRootOf(selected), dayBars.map((b) => b.datetime));
+    const slots = derivMinuteSlots(lastTd, kind);
+    const padded = padToSlots(dayBars, slots, (b) => b.datetime);
+    const viewBars: Bar[] = padded.map((b, i) => b ?? {
+      datetime: slots[i],
+      open: NaN, close: NaN, low: NaN, high: NaN,
+      volume: null, oi: null,
+    });
+    const viewAtm = padded.map((b) => {
+      if (!b) return null;
+      const j = dayBars.indexOf(b);
+      return j >= 0 ? dayAtm[j] : null;
+    });
+    return { bars: viewBars, atm: viewAtm };
+  }, [bars, atm, resolution, selected]);
+
+  const barsRef = useRef(plot.bars);
+  barsRef.current = plot.bars;
   // Guard against out-of-order responses when switching 分时/5日/日线 quickly
   const loadSeq = useRef(0);
   // Per-symbol / per-resolution memory cache: switch tabs instantly, then refresh on demand
@@ -369,7 +394,8 @@ export function DerivLightChart() {
         return;
       }
       if (val != null) {
-        const i = list.findIndex((b) => b.datetime === String(val));
+        const s = String(val);
+        const i = list.findIndex((b) => b.datetime === s || b.datetime.slice(11, 16) === s);
         if (i >= 0) setHoverIdx(i);
       }
     });
@@ -392,7 +418,7 @@ export function DerivLightChart() {
 
   useEffect(() => {
     if (!echartRef.current) return;
-    if (bars.length === 0) {
+    if (plot.bars.length === 0) {
       echartRef.current.clear();
       return;
     }
@@ -404,10 +430,12 @@ export function DerivLightChart() {
     const cAxis = cssHsl("--chart-axis", "#475569");
     const cGrid = cssHsl("--chart-grid", "#334155");
     const cPtr = cssHsl("--primary", "#22d3ee");
-    const dates = bars.map((b) => b.datetime);
+    const plotBars = plot.bars;
+    const plotAtm = plot.atm;
+    const dates = plotBars.map((b) => b.datetime);
     const isDaily = resolution === "1D";
     // 分时: 昨结为基准; 5日: 首笔为基准 (与 A股轻量图同口径)
-    const priceVals = bars.map((b) => b.close);
+    const priceVals = plotBars.map((b) => b.close);
     const finitePx = priceVals.filter((v) => Number.isFinite(v));
     const baseline = (resolution === "1" && preClose != null && preClose > 0)
       ? preClose
@@ -417,13 +445,13 @@ export function DerivLightChart() {
     const pPad = (pMax - pMin) * 0.06 || Math.abs(baseline) * 0.002 || 1;
 
     // 成交量柱: 日线按 close>=open; 分时/5日按 close>=基准 (与 A股轻量图同口径)
-    const volData = bars.map((b) => {
+    const volData = plotBars.map((b) => {
       const up = isDaily ? b.close >= b.open : b.close >= baseline;
-      return { value: b.volume, itemStyle: { color: up ? UP : DN } };
+      return { value: Number.isFinite(b.close) ? b.volume : null, itemStyle: { color: up ? UP : DN } };
     });
 
-    const zoomStart = isDaily && bars.length > VIEW_DAYS
-      ? (1 - VIEW_DAYS / bars.length) * 100
+    const zoomStart = isDaily && plotBars.length > VIEW_DAYS
+      ? (1 - VIEW_DAYS / plotBars.length) * 100
       : 0;
 
     // Same custom paint as AShareLightChart: red above / green below zero axis
@@ -523,7 +551,7 @@ export function DerivLightChart() {
       ? [{
           name: "K线",
           type: "candlestick" as const,
-          data: bars.map((b) => [b.open, b.close, b.low, b.high]),
+          data: plotBars.map((b) => [b.open, b.close, b.low, b.high]),
           itemStyle: { color: UP, color0: DN, borderColor: UP, borderColor0: DN },
           emphasis: { focus: "none" as const },
           blur: { itemStyle: { opacity: 1 } },
@@ -666,7 +694,7 @@ export function DerivLightChart() {
         ...mainSeries,
         {
           name: "ATM隐波", type: "line" as const, yAxisIndex: 1, z: 5,
-          data: atm,
+          data: plotAtm,
           connectNulls: false,
           showSymbol: false,
           lineStyle: { width: 1.3, color: IV_COLOR },
@@ -681,7 +709,7 @@ export function DerivLightChart() {
         },
         {
           name: "持仓量", type: "line" as const, xAxisIndex: 1, yAxisIndex: 2, z: 5,
-          data: bars.map((b) => b.oi),
+          data: plotBars.map((b) => b.oi),
           connectNulls: false,
           showSymbol: false,
           lineStyle: { width: 1.3, color: OI_COLOR },
@@ -690,22 +718,37 @@ export function DerivLightChart() {
         },
       ],
     }, { notMerge: true });
-  }, [bars, atm, resolution, preClose]);
+  }, [plot, resolution, preClose]);
 
-  const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : (bars.length ? bars.length - 1 : -1);
-  const bar = activeIdx >= 0 ? bars[activeIdx] : null;
-  const prevBar = activeIdx > 0 ? bars[activeIdx - 1] : null;
+  const plotBars = plot.bars;
+  const plotAtm = plot.atm;
+  const lastPxIdx = (() => {
+    for (let i = plotBars.length - 1; i >= 0; i--) {
+      if (Number.isFinite(plotBars[i].close)) return i;
+    }
+    return plotBars.length ? plotBars.length - 1 : -1;
+  })();
+  const slotHover = hoverIdx != null && plotBars[hoverIdx] != null;
+  const hovering = slotHover && Number.isFinite(plotBars[hoverIdx!].close);
+  const emptyHover = slotHover && !hovering;
+  const activeIdx = hovering || emptyHover ? hoverIdx! : lastPxIdx;
+  const bar = activeIdx >= 0 ? plotBars[activeIdx] : null;
+  const prevBar = activeIdx > 0 ? plotBars[activeIdx - 1] : null;
   const base = resolution === "1D"
     ? (prevBar?.close ?? null)
     : preClose;
-  const chg = bar && base != null ? bar.close - base : null;
+  const pxOk = bar != null && Number.isFinite(bar.close);
+  const chg = pxOk && base != null && Number.isFinite(base) ? bar.close - base : null;
   const chgPct = chg != null && base ? (chg / base) * 100 : null;
-  const hovering = hoverIdx != null && bars[hoverIdx] != null;
   const selQuote = selected ? quotes[selected] : undefined;
-  const quoteChgPct = chgPct ?? (selQuote?.pre_close ? ((selQuote.close - selQuote.pre_close) / selQuote.pre_close) * 100 : null);
-  const quoteChgAmt = chg ?? (selQuote?.pre_close != null ? selQuote.close - selQuote.pre_close : null);
+  const quoteChgPct = emptyHover
+    ? null
+    : (chgPct ?? (selQuote?.pre_close ? ((selQuote.close - selQuote.pre_close) / selQuote.pre_close) * 100 : null));
+  const quoteChgAmt = emptyHover
+    ? null
+    : (chg ?? (selQuote?.pre_close != null ? selQuote.close - selQuote.pre_close : null));
   const selName = codes.find((x) => x.c === selected)?.n ?? "";
-  const curAtm = activeIdx >= 0 ? atm[activeIdx] : null;
+  const curAtm = activeIdx >= 0 ? plotAtm[activeIdx] : null;
 
   const fmtBarTime = (raw: string) => {
     if (!raw) return "";
@@ -847,9 +890,9 @@ export function DerivLightChart() {
                 </span>
                 <span className={cn(
                   "rounded px-1.5 py-0.5 text-[10px]",
-                  hovering ? "bg-primary/15 text-primary" : "bg-muted/40 text-muted-foreground",
+                  slotHover ? "bg-primary/15 text-primary" : "bg-muted/40 text-muted-foreground",
                 )}>
-                  {hovering ? "十字光标" : "最新"}
+                  {slotHover ? "十字光标" : "最新"}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -927,13 +970,15 @@ export function DerivLightChart() {
                     "mt-2 font-mono text-2xl font-bold tabular-nums",
                     quoteChgPct != null && quoteChgPct > 0 ? "text-danger" : quoteChgPct != null && quoteChgPct < 0 ? "text-success" : "text-foreground",
                   )}>
-                    {fmtPrice(bar?.close ?? selQuote?.close)}
+                    {fmtPrice(emptyHover ? null : (bar?.close ?? selQuote?.close))}
                   </p>
                   <p className={cn(
                     "mt-0.5 text-sm tabular-nums",
                     quoteChgPct != null && quoteChgPct > 0 ? "text-danger" : quoteChgPct != null && quoteChgPct < 0 ? "text-success" : "text-muted-foreground",
                   )}>
-                    {quoteChgAmt != null ? `${quoteChgAmt > 0 ? "+" : ""}${quoteChgAmt.toFixed(2)}` : "—"}
+                    {quoteChgAmt != null && Number.isFinite(quoteChgAmt)
+                      ? `${quoteChgAmt > 0 ? "+" : ""}${quoteChgAmt.toFixed(2)}`
+                      : "—"}
                     <span className="ml-1.5">({fmtPct(quoteChgPct)})</span>
                   </p>
                 </div>
