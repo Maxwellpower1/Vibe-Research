@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { KlineLink } from "@/components/cockpit/QuoteLine";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { ShortTermEmotion } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -77,10 +77,10 @@ export function ReviewShortPanel({ emotion, emoDone, updatedLabel, pending }: Pr
                   {emotion.lianban_stocks.slice(0, 12).map((s) => (
                     <tr key={s.code}>
                       <td>
-                        <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-primary">
+                        <KlineLink code={s.code} className="hover:text-primary">
                           <span className="font-medium">{s.name}</span>{" "}
                           <span className="text-muted-foreground/50">{s.code}</span>
-                        </Link>
+                        </KlineLink>
                       </td>
                       <td className="num font-bold text-primary">{s.boards}</td>
                       <td className="num"><span className="pct-chip up">+{s.pct}%</span></td>

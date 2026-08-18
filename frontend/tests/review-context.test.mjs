@@ -28,6 +28,18 @@ test("reviewContext is a thin client of the backend packer", () => {
   assert.match(apiSrc, /\/market\/review-context/);
 });
 
+test("phone review stock names do not jump to kline", async () => {
+  const ql = await readFile(new URL("../src/components/cockpit/QuoteLine.tsx", import.meta.url), "utf8");
+  const ladder = await readFile(new URL("../src/components/review/LimitLadderView.tsx", import.meta.url), "utf8");
+  const money = await readFile(new URL("../src/components/review/ReviewMoneySeg.tsx", import.meta.url), "utf8");
+  assert.match(ql, /min-width: 1024px/);
+  assert.match(ql, /function KlineLink/);
+  assert.match(ladder, /KlineLink/);
+  assert.doesNotMatch(ladder, /tab=kline/);
+  assert.match(money, /KlineLink/);
+  assert.doesNotMatch(money, /tab=kline/);
+});
+
 test("limit-up card polls review snapshot top while A-share is open", () => {
   assert.match(hookSrc, /TOP_POLL_MS = 90_000/);
   assert.match(hookSrc, /getAShareSession\(\)\.kind !== "open"/);

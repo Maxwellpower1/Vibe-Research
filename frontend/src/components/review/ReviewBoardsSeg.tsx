@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { KlineLink } from "@/components/cockpit/QuoteLine";
 import { PctChip } from "@/components/review/PctChip";
 import { fmt, pctColor } from "@/components/review/format";
 import { reviewPending } from "@/components/review/reviewPending";
@@ -38,10 +38,10 @@ export function ReviewBoardsSeg({ lhb, lhbDone }: Props) {
                   <tr key={`${s.code}-${s.reason}-${i}`}>
                     <td className="num text-muted-foreground/50">{i + 1}</td>
                     <td>
-                      <Link to={`/a-share?tab=kline&code=${s.code}`} className="hover:text-cyan-300">
+                      <KlineLink code={s.code} className="hover:text-cyan-300">
                         <span className="font-medium">{s.name}</span>{" "}
                         <span className="text-slate-500">{s.code}</span>
-                      </Link>
+                      </KlineLink>
                     </td>
                     <td className="num"><PctChip pct={s.change_pct} /></td>
                     <td className={cn("num font-mono", pctColor(s.net_buy_wan))}>

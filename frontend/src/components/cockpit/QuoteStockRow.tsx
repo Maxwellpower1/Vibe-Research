@@ -10,7 +10,7 @@ import { useQuote } from "@/lib/quoteHub";
 import { boardLineParts, useStockBoards } from "@/lib/stockBoardsHub";
 import { cn } from "@/lib/utils";
 import { watchDigits } from "@/lib/watchlist";
-import { klineHref } from "@/components/cockpit/QuoteLine";
+import { klineHref, useAllowKlineJump } from "@/components/cockpit/QuoteLine";
 
 const COMPACT_W = 400;
 const KLINE_MS = 60_000;
@@ -131,7 +131,8 @@ export function QuoteStockRow({
   const closes = ownSpark?.closes ?? [];
   const times = ownSpark?.times;
   const prevClose = ownSpark?.prevClose;
-  const href = link ? klineHref(code) : undefined;
+  const allowJump = useAllowKlineJump();
+  const href = link && allowJump ? klineHref(code) : undefined;
   const hasAmt = liveAmt != null && liveAmt > 0;
   const hasTurn = liveTurn != null && liveTurn > 0;
   const ratioBar = liveMainPct != null ? Math.min(100, Math.abs(liveMainPct) * 2) : 0;

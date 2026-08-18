@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { KlineLink } from "@/components/cockpit/QuoteLine";
 import { reviewPending } from "@/components/review/reviewPending";
 import type { LianbanStock, ShortTermEmotion } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -130,15 +130,15 @@ export function LimitLadderView({
                   {t.stocks.map((s) => {
                     const tag = boardTag(s.code);
                     return (
-                      <Link
+                      <KlineLink
                         key={s.code || s.name}
-                        to={`/a-share?tab=kline&code=${s.code}`}
+                        code={s.code}
                         title={s.industry || s.code}
                         className="inline-flex max-w-[5.5rem] items-baseline gap-0.5 rounded px-0.5 py-px text-[11px] text-slate-200 hover:bg-slate-800/70 hover:text-cyan-200"
                       >
                         <span className="truncate">{s.name}</span>
                         {tag && <span className={cn("shrink-0 text-[9px]", tag.cls)}>{tag.label}</span>}
-                      </Link>
+                      </KlineLink>
                     );
                   })}
                 </div>

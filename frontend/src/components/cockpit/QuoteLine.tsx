@@ -1,9 +1,53 @@
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { MinuteSpark } from "@/components/review/MinuteSpark";
 import { PctChip } from "@/components/review/PctChip";
 import { bgChg, fmt, fmtAmt, fmtAmtInt, fmtPrice, pctColor } from "@/components/review/format";
 import type { SparkSession } from "@/lib/sparkAxis";
 import { cn } from "@/lib/utils";
+
+/** Same cut as the A-share tab strip (`lg:hidden`). Phone keeps tabs, no kline jump. */
+const LG_UP = "(min-width: 1024px)";
+
+export function useAllowKlineJump() {
+  const [ok, setOk] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia(LG_UP).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(LG_UP);
+    const sync = () => setOk(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return ok;
+}
+
+export function KlineLink({
+  code,
+  className,
+  title,
+  children,
+}: {
+  code: string;
+  className?: string;
+  title?: string;
+  children: ReactNode;
+}) {
+  const href = useAllowKlineJump() ? klineHref(code) : undefined;
+  if (href) {
+    return (
+      <Link to={href} className={className} title={title}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <span className={className} title={title}>
+      {children}
+    </span>
+  );
+}
 
 function Spark({
   closes,
@@ -148,8 +192,9 @@ export function QuoteLine({
     : cn(
       "relative grid grid-cols-[minmax(4.5rem,1fr)_minmax(3rem,1.2fr)_4.2rem_3.1rem] items-center gap-1.5 rounded px-1.5 py-0.5 hover:bg-slate-800/40",
     );
-  if (href) {
-    return <Link to={href} className={cls}>{bar}{inner}</Link>;
+  const jump = useAllowKlineJump() ? href : undefined;
+  if (jump) {
+    return <Link to={jump} className={cls}>{bar}{inner}</Link>;
   }
   return <div className={cls}>{bar}{inner}</div>;
 }

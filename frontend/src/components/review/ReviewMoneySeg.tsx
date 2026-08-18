@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
 import * as echarts from "echarts";
+import { KlineLink } from "@/components/cockpit/QuoteLine";
 import { Activity, ShieldAlert, TrendingUp } from "lucide-react";
 import { SectionHeader, ChipGroup, Chip } from "@/components/ui/SectionHeader";
 import { PctChip } from "@/components/review/PctChip";
@@ -143,7 +143,7 @@ export function ReviewMoneySeg({
                     <tr key={r.code}>
                       <td className="num text-muted-foreground/50">{i + 1}</td>
                       <td className="font-mono text-xs">
-                        <Link to={`/a-share?tab=kline&code=${r.code}`} className="hover:text-cyan-300">{r.code}</Link>
+                        <KlineLink code={r.code} className="hover:text-cyan-300">{r.code}</KlineLink>
                       </td>
                       <td className="font-medium">{r.name}</td>
                       <td className="num"><PctChip pct={r.change_pct} /></td>
@@ -280,7 +280,7 @@ export function ReviewMoneySeg({
                     <tr key={`${r.code}-${r.date}-${r.person}-${i}`}>
                       <td className="font-mono text-xs text-muted-foreground">{r.date}</td>
                       <td className="font-mono text-xs">
-                        <Link to={`/a-share?tab=kline&code=${r.code}`} className="hover:text-cyan-300">{r.code}</Link>
+                        <KlineLink code={r.code} className="hover:text-cyan-300">{r.code}</KlineLink>
                       </td>
                       <td className="font-medium">{r.name}</td>
                       <td className="max-w-[6rem] truncate">{r.person || "—"}</td>
