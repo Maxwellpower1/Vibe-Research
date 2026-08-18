@@ -234,7 +234,30 @@ def test_board_flow_ranks_peek_cached_kline(monkeypatch):
 
 def test_sanitize_future_codes():
     codes = cl._sanitize_future_codes("hf_GC,nf_AU0,BTCUSDT,../etc,hf_TOOLONGSYMBOLXXXX,hf_CL")
-    assert codes == ["hf_GC", "nf_AU0", "BTCUSDT", "hf_CL"]
+    assert codes == ["hf_GC", "nf_AU0", "hf_CL"]
+    assert "hf_NQ" in cl.DEFAULT_FUTURES.split(",")
+    assert "hf_BTC" in cl.DEFAULT_FUTURES.split(",")
+    assert "hf_GC" not in cl.DEFAULT_FUTURES.split(",")
+    assert "nf_AU0" not in cl.DEFAULT_FUTURES.split(",")
+    assert "BTCUSDT" not in cl.DEFAULT_FUTURES.split(",")
+    assert cl.DEFAULT_FUTURES.endswith("hf_BTC")
+
+
+def test_future_minutes_filled_rejects_empty_points():
+    assert not cl.future_minutes_filled({})
+    assert not cl.future_minutes_filled({"hf_BTC": {"points": []}})
+    assert cl.future_minutes_filled({"hf_BTC": {"points": [{"t": "06:01", "p": 1.0}]}})
+
+
+def test_parse_sina_hf_btc():
+    text = (
+        'var hq_str_hf_BTC="64180.000,,64165.000,64185.000,64685.000,64180.000,'
+        '10:45:15,64410.000,64495.000,0,5,1,2026-08-18,比特币期货,0";'
+    )
+    out = cl.parse_sina_hf(text)
+    assert out["hf_BTC"]["name"] == "比特币期货"
+    assert out["hf_BTC"]["price"] == 64180.0
+    assert out["hf_BTC"]["prev"] == 64410.0
 
 
 def test_parse_sina_amount_rows_converts_wan_yuan():
@@ -343,11 +366,46 @@ def test_quotes_map_skips_futures(monkeypatch):
     })
     called = []
     monkeypatch.setattr(cl, "futures_quotes", lambda raw: called.append(raw) or {})
-    out = cl.quotes_map(["600519", "hf_CL", "BTCUSDT", "nf_AU0"])
+    out = cl.quotes_map(["600519", "hf_CL", "nf_AU0"])
     assert out["600519"]["price"] == 1400.0
     assert "hf_CL" not in out
-    assert "BTCUSDT" not in out
+    assert "nf_AU0" not in out
     assert called == []
+
+
+def test_futures_quotes_sina_fills_tencent_miss(monkeypatch):
+    def fake_text(url, **_k):
+        if "qt.gtimg.cn" in url:
+            return 'v_hf_GC="1,0,1,1,1,1,10:00:00,1,1,0,1,1,2026-08-18,黄金";'
+        if "sinajs" in url:
+            return 'hq_str_hf_NQ="10,,10,10,11,9,10:00:00,9,9,0,1,1,2026-08-18,纳斯达克指数期货,0";'
+        return ""
+
+    monkeypatch.setattr(cl, "_fetch_text", fake_text)
+    out = cl.futures_quotes("hf_GC,hf_NQ")
+    assert out["hf_GC"]["price"] == 1
+    assert out["hf_NQ"]["price"] == 10
+    assert out["hf_NQ"]["name"] == "纳斯达克指数期货"
+
+
+def test_quotes_map_fills_em_index(monkeypatch):
+    monkeypatch.setattr(cl, "_tencent_quotes", lambda codes: {})
+
+    class R:
+        def json(self):
+            return {
+                "data": {
+                    "diff": [
+                        {"f2": 68137.94, "f3": -1.56, "f4": -1082.31, "f12": "N225", "f14": "日经225", "f18": 69220.25},
+                        {"f2": 6979.7, "f3": 0.03, "f4": 1.76, "f12": "KS11", "f14": "韩国KOSPI", "f18": 6977.94},
+                    ]
+                }
+            }
+
+    monkeypatch.setattr(cl, "em_get", lambda *a, **k: R())
+    out = cl.quotes_map(["jpN225", "ksKOSPI"])
+    assert out["jpN225"]["price"] == 68137.94
+    assert out["ksKOSPI"]["price"] == 6979.7
 
 
 def test_quotes_map_vix_falls_back_to_sina(monkeypatch):

@@ -464,7 +464,7 @@ def market_board_flow_intraday(
 
 @router.get("/api/market/commodities")
 def market_commodities(
-    codes: str = Query("", description="hf_GC,nf_AU0,BTCUSDT"),
+    codes: str = Query("", description="hf_XAU,hf_CL,hf_BTC"),
 ):
     """大宗商品快照. TTL 随交易时段, 与预热强制重写同一把钥匙."""
     import cockpit_live
@@ -483,7 +483,7 @@ def market_commodities(
 
 @router.get("/api/market/commodity-minutes")
 def market_commodity_minutes(
-    codes: str = Query("", description="comma-separated hf_/nf_/BTCUSDT"),
+    codes: str = Query("", description="comma-separated hf_/nf_"),
 ):
     """大宗商品分钟线. 缓存 60 秒."""
     import cockpit_live
@@ -494,6 +494,7 @@ def market_commodity_minutes(
             raw,
             90,
             lambda: cockpit_live.future_minutes([c.strip() for c in raw.split(",") if c.strip()]),
+            valid=cockpit_live.future_minutes_filled,
         )
         return {"data": data}
     except Exception as e:

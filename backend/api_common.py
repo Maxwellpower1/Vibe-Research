@@ -13,10 +13,10 @@ from cache import TTLCache, is_nonempty
 from fastapi import HTTPException
 
 _SYMBOL_RE = re.compile(
-    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|hkhsi|hkhstech|usdji|usixic|usinx|usvix|ussoxx|whusdcny)$",
+    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|hkhsi|hkhstech|usdji|usixic|usinx|usvix|ussoxx|jpn225|kskospi|whusdcny)$",
     re.IGNORECASE,
 )
-_SYMBOL_HINT = "代码须为 6 位数字、sh/sz/bj+6 位、hkHSI/hkHSTECH、usIXIC 等美股指数或 whUSDCNY"
+_SYMBOL_HINT = "代码须为 6 位数字、sh/sz/bj+6 位、hkHSI/hkHSTECH、usIXIC / jpN225 / ksKOSPI 或 whUSDCNY"
 
 
 def _validate(code: str) -> str:
@@ -137,7 +137,7 @@ def light_kline_ttl(sym: str, res: str, session: str | None = None) -> int:
         return 60
     kind = session if session is not None else _session_kind()
     s = (sym or "").lower()
-    index = s.startswith(("sh000", "sz399", "hk", "us", "wh"))
+    index = s.startswith(("sh000", "sz399", "hk", "us", "wh", "jp", "ks"))
     if kind == "open":
         return 45 if index else 120
     if kind == "lunch":

@@ -22,7 +22,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "corr", label: "相关性" },
   { id: "etf", label: "ETF 穿透" },
   { id: "f13", label: "13F 环比" },
-  { id: "kline", label: "加密·韩股 K" },
+  { id: "kline", label: "扩展日 K" },
 ];
 
 const CORR_KEY = "vr-research-corr";
@@ -59,7 +59,7 @@ export function Research() {
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
       <PageHeader
         title="研究桌"
-        subtitle="Stooq / Baostock / OKX·Binance / pykrx · 相关热力图 · ETF 穿透 · 13F 环比。只呈现公开披露, 不推荐不预测。"
+        subtitle="Stooq / Baostock / pykrx · 相关热力图 · ETF 穿透 · 13F 环比。只呈现公开披露, 不推荐不预测。"
         actions={
           <div className="flex rounded-lg bg-muted/40 p-0.5 text-xs">
             {TABS.map((t) => (
@@ -87,7 +87,7 @@ export function Research() {
 }
 
 function CorrPanel() {
-  const [input, setInput] = useState(() => storageGet(CORR_KEY) || "510300,600519,AAPL,00700.HK,BTC-USDT");
+  const [input, setInput] = useState(() => storageGet(CORR_KEY) || "510300,600519,AAPL,00700.HK");
   const [windowN, setWindowN] = useState(60);
   const [data, setData] = useState<ResearchCorrelation | null>(null);
   const [loading, setLoading] = useState(false);
@@ -192,7 +192,7 @@ function CorrPanel() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           className="min-w-[220px] flex-1 rounded border border-slate-700/70 bg-slate-900/60 px-2 py-1 text-[12px] text-slate-200"
-          placeholder="510300,600519,AAPL,00700.HK,BTC-USDT"
+          placeholder="510300,600519,AAPL,00700.HK"
         />
         <select
           value={windowN}
@@ -512,7 +512,7 @@ function ThirteenFPanel() {
 }
 
 function KlinePanel({ sources }: { sources: ResearchSources | null }) {
-  const [input, setInput] = useState(() => storageGet(KL_KEY) || "BTC-USDT");
+  const [input, setInput] = useState(() => storageGet(KL_KEY) || "AAPL");
   const [source, setSource] = useState("auto");
   const [data, setData] = useState<ResearchKline | null>(null);
   const [loading, setLoading] = useState(false);
@@ -594,14 +594,14 @@ function KlinePanel({ sources }: { sources: ResearchSources | null }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           className="w-40 rounded border border-slate-700/70 bg-slate-900/60 px-2 py-1 text-[12px] text-slate-200"
-          placeholder="BTC-USDT / 005930.KS"
+          placeholder="AAPL / 005930.KS"
         />
         <select
           value={source}
           onChange={(e) => setSource(e.target.value)}
           className="rounded border border-slate-700/70 bg-slate-900/60 px-2 py-1 text-[12px] text-slate-300"
         >
-          {["auto", "okx", "binance", "ccxt", "pykrx", "stooq", "baostock"].map((s) => (
+          {["auto", "pykrx", "stooq", "baostock"].map((s) => (
             <option key={s} value={s}>
               {s}
             </option>

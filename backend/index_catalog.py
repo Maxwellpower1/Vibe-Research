@@ -20,12 +20,14 @@ INDEX_CATALOG: tuple[tuple[str, str, str], ...] = (
     ("usINX", "标普500", "US"),
     ("usVIX", "恐慌指数", "US"),
     ("usSOXX", "费城半导体", "US"),
+    ("jpN225", "日经225", "JP"),
+    ("ksKOSPI", "韩国KOSPI", "KR"),
     ("whUSDCNY", "美元/人民币", "FX"),
 )
 
 
 def catalog_codes(*regions: str) -> list[str]:
-    """All codes, or only the given regions (CN / HK / US / FX)."""
+    """All codes, or only the given regions (CN / HK / US / JP / KR / FX)."""
     if not regions:
         return [c for c, _n, _r in INDEX_CATALOG]
     want = set(regions)

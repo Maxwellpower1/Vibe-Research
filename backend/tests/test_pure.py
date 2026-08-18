@@ -28,6 +28,10 @@ def test_resolve_symbol():
     assert astock.resolve_symbol("usDJI") == "usDJI"
     assert astock.resolve_symbol("whUSDCNY") == "whUSDCNY"
     assert astock.resolve_symbol("whusdcny") == "whUSDCNY"
+    assert astock.resolve_symbol("jpN225") == "jpN225"
+    assert astock.resolve_symbol("jpn225") == "jpN225"
+    assert astock.resolve_symbol("ksKOSPI") == "ksKOSPI"
+    assert astock.resolve_symbol("kskospi") == "ksKOSPI"
     assert astock.resolve_symbol("bad") == ""
 
 

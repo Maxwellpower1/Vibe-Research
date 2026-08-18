@@ -18,8 +18,6 @@ def test_infer_market():
     assert ext_feeds.infer_market("600519.SH") == "a_share"
     assert ext_feeds.infer_market("00700.HK") == "hk"
     assert ext_feeds.infer_market("700") == "hk"
-    assert ext_feeds.infer_market("BTC-USDT") == "crypto"
-    assert ext_feeds.infer_market("BTCUSDT") == "crypto"
     assert ext_feeds.infer_market("005930.KS") == "kr"
     assert ext_feeds.infer_market("005930") == "a_share"  # bare 6-digit is A-share
 
@@ -54,35 +52,6 @@ def test_stooq_csv_parse(monkeypatch):
     assert out["source"] == "stooq"
     assert out["bars"][-1]["close"] == 2.0
     assert out["bars"][0]["volume"] == 10
-
-
-def test_okx_binance_parse(monkeypatch):
-    class _R:
-        def __init__(self, payload):
-            self._p = payload
-
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return self._p
-
-    okx = {"code": "0", "data": [["1700000000000", "1", "2", "0.5", "1.5", "9"]]}
-    bnc = [[1700000000000, "1", "2", "0.5", "1.5", "9"]]
-
-    def fake_get(url, params=None, headers=None, timeout=20):
-        if "okx.com" in url:
-            return _R(okx)
-        return _R(bnc)
-
-    monkeypatch.setattr(ext_feeds, "_get", fake_get)
-    ext_feeds._CACHE.clear()
-    o = ext_feeds.okx_kline("BTC-USDT", num=20)
-    assert o["source"] == "okx"
-    assert o["bars"][0]["close"] == 1.5
-    b = ext_feeds.binance_kline("BTCUSDT", num=20)
-    assert b["source"] == "binance"
-    assert b["code"] == "BTCUSDT"
 
 
 def test_pearson_and_matrix(monkeypatch):
@@ -262,6 +231,14 @@ def test_light_kline_falls_back_to_baostock(monkeypatch):
 
 def test_available_sources_shape():
     src = ext_feeds.available_sources()
-    for key in ("stooq", "okx", "binance", "baostock", "pykrx", "ccxt"):
+    for key in ("stooq", "baostock", "pykrx"):
         assert key in src
         assert "ok" in src[key]
+    assert "okx" not in src
+    assert "binance" not in src
+    assert "ccxt" not in src
+
+
+def test_fetch_kline_rejects_removed_source():
+    out = ext_feeds.fetch_kline("AAPL", source="okx")
+    assert "error" in out

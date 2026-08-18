@@ -1,19 +1,26 @@
 import { useState } from "react";
 import { QuoteLine } from "@/components/cockpit/QuoteLine";
-import { COMMODITIES, COMMODITY_CODES } from "@/config/cockpit";
+import { COMMODITIES, COMMODITY_CODES, MACRO_INDEX_DEFS } from "@/config/cockpit";
 import { usePolling } from "@/hooks/usePolling";
 import { api, type FutureDaily } from "@/lib/api";
+import { useMinutes } from "@/lib/minuteHub";
 import { useQuotes } from "@/lib/quoteHub";
+import { sparkSessionForRegion } from "@/lib/sparkAxis";
 import { cn } from "@/lib/utils";
 
 const MINUTE_MS = 60_000;
 const SPOT_MS = 8 * 3600_000;
 const DAILY_MS = 3600_000;
 const FUT_CODES = COMMODITIES.map((c) => c.code);
+const MACRO_CODES = MACRO_INDEX_DEFS.map((d) => d.code);
+const NQ_AT = COMMODITIES.findIndex((c) => c.code === "hf_NQ");
+const FUT_HEAD = NQ_AT >= 0 ? COMMODITIES.slice(0, NQ_AT + 1) : COMMODITIES;
+const FUT_TAIL = NQ_AT >= 0 ? COMMODITIES.slice(NQ_AT + 1) : [];
 
 export function CommodityPanel() {
   const [tab, setTab] = useState<"fut" | "spot" | "daily">("fut");
-  const hub = useQuotes(FUT_CODES);
+  const hub = useQuotes([...FUT_CODES, ...MACRO_CODES]);
+  const indexMinutes = useMinutes(MACRO_CODES);
   const { data: minutes, error } = usePolling(() => api.commodityMinutes(COMMODITY_CODES), MINUTE_MS, []);
   const { data: spot, error: spotErr } = usePolling(() => api.spotTable(), SPOT_MS, [], tab === "spot");
   const { data: chem } = usePolling(
@@ -36,11 +43,32 @@ export function CommodityPanel() {
     return out;
   }, DAILY_MS, [], tab === "daily");
 
+  const futLine = (c: (typeof COMMODITIES)[number]) => {
+    const q = hub[c.code];
+    const m = minutes?.[c.code];
+    const closes = (m?.points || []).map((p) => p.p).filter((n) => Number.isFinite(n) && n > 0);
+    const times = (m?.points || []).map((p) => p.t);
+    return (
+      <QuoteLine
+        key={c.code}
+        name={c.label}
+        price={q?.price}
+        pct={q?.pct}
+        unit={c.unit}
+        accent={c.accent}
+        closes={closes}
+        times={times}
+        session="h24"
+        prevClose={m?.prec ?? q?.prev}
+      />
+    );
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 gap-1 px-2 py-1">
         {([
-          ["fut", "期货"],
+          ["fut", "标的"],
           ["spot", "现期"],
           ["daily", "日K"],
         ] as const).map(([k, label]) => (
@@ -60,31 +88,33 @@ export function CommodityPanel() {
       <div className="min-h-0 flex-1 overflow-y-auto p-1 pt-0">
         {tab === "fut" && (
           <>
-            {!FUT_CODES.some((code) => hub[code]?.price) && (
+            {![...FUT_CODES, ...MACRO_CODES].some((code) => hub[code]?.price) && (
               <p className="py-6 text-center text-[11px] text-slate-600">
                 {error ? "商品行情未接通, 自动重试中" : "加载中…"}
               </p>
             )}
-            {COMMODITIES.map((c) => {
-              const q = hub[c.code];
-              const m = minutes?.[c.code];
-              const closes = (m?.points || []).map((p) => p.p).filter((n) => Number.isFinite(n) && n > 0);
-              const times = (m?.points || []).map((p) => p.t);
+            {FUT_HEAD.map(futLine)}
+            {MACRO_INDEX_DEFS.map((d) => {
+              const q = hub[d.code];
+              const kl = indexMinutes[d.code];
+              const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+              const times = (kl?.bars || []).map((b) => b.datetime);
               return (
                 <QuoteLine
-                  key={c.code}
-                  name={c.label}
+                  key={d.code}
+                  name={q?.name || d.label}
                   price={q?.price}
                   pct={q?.pct}
-                  unit={c.unit}
-                  accent={c.accent}
+                  unit={d.code}
                   closes={closes}
                   times={times}
-                  session="h24"
-                  prevClose={m?.prec ?? q?.prev}
+                  session={sparkSessionForRegion(d.region)}
+                  accent={d.accent}
+                  prevClose={kl?.prev_close ?? q?.prev}
                 />
               );
             })}
+            {FUT_TAIL.map(futLine)}
           </>
         )}
         {tab === "daily" && (
@@ -94,27 +124,6 @@ export function CommodityPanel() {
             )}
             {COMMODITIES.map((c) => {
               const q = hub[c.code];
-              if (c.code === "BTCUSDT") {
-                const m = minutes?.[c.code];
-                const closes = (m?.points || []).map((p) => p.p).filter((n) => Number.isFinite(n) && n > 0);
-                const times = (m?.points || []).map((p) => p.t);
-                return (
-                  <div key={c.code}>
-                    <p className="px-1 text-[9px] text-slate-600">BTC 走分钟线, 无新浪日K</p>
-                    <QuoteLine
-                      name={c.label}
-                      price={q?.price}
-                      pct={q?.pct}
-                      unit={c.unit}
-                      accent={c.accent}
-                      closes={closes}
-                      times={times}
-                      session="h24"
-                      prevClose={m?.prec ?? q?.prev}
-                    />
-                  </div>
-                );
-              }
               const pts = daily?.[c.code]?.points ?? [];
               const closes = pts.map((p) => p.c).filter((n) => Number.isFinite(n) && n > 0);
               const times = pts.map((p) => p.t);

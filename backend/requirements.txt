@@ -21,4 +21,3 @@ duckdb  # 回测行情: 分区 parquet, 内存查, 不建 .db
 # 研究桌可选源（未装时对应端点 501 + 安装提示）
 # baostock          # A 股日 K 兜底
 # pykrx             # 韩股日 K
-# ccxt              # 加密所统一适配（OKX/Binance 公开 REST 已内置, 不必装）

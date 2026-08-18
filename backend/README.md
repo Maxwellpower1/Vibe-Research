@@ -57,7 +57,7 @@ python3 -m venv .venv
 | `GET /api/global/earnings-calendar` | Nasdaq 财报日历 | requests |
 | `GET /api/global/us/kline?symbol=` | 美股日 K（新浪） | requests |
 | `GET /api/research/sources` | 研究桌可选包是否已装 | — |
-| `GET /api/research/kline?symbol=&source=` | Stooq / Baostock / OKX / Binance / CCXT / pykrx | 可选包 |
+| `GET /api/research/kline?symbol=&source=` | Stooq / Baostock / pykrx | 可选包 |
 | `GET /api/research/correlation?codes=` | 日收益 Pearson 矩阵, 最多 12 只 | 各市场 K 线 |
 | `GET /api/research/etf-holdings?symbol=` | ETF 穿透（东财 / N-PORT） | requests；美股需 VR_SEC_CONTACT |
 | `GET /api/research/13f?manager=` | 13F 持仓 + 两季环比；`ticker=` 列持有人 | VR_SEC_CONTACT |

@@ -413,7 +413,7 @@ def warm_minutes() -> tuple[int, int, list[dict]]:
         data = cockpit_live.future_minutes(
             [c.strip() for c in raw.split(",") if c.strip()],
         )
-        if data:
+        if cockpit_live.future_minutes_filled(data):
             _put("commodity_minutes", raw, data, 90)
             ok += 1
         else:

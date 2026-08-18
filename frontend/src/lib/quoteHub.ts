@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 
 /**
  * Cockpit quote hub: 5s when A-share is open, 60s when closed/lunch/holiday.
- * Equities/indices and futures are fetched in parallel so a slow Sina/Binance
+ * Equities/indices and futures are fetched in parallel so a slow Sina
  * tick cannot stall index prices.
  */
 
@@ -94,7 +94,7 @@ if (typeof window !== "undefined") {
 }
 
 export function isFuturesCode(code: string): boolean {
-  return /^(hf_|nf_)/i.test(code) || code === "BTCUSDT";
+  return /^(hf_|nf_)/i.test(code);
 }
 
 function emit() {

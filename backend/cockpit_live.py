@@ -25,7 +25,7 @@ _SINA_RANK_SORT = {"changepercent", "amount", "turnoverratio"}
 
 WORLD_INDICES: tuple[tuple[str, str, str], ...] = INDEX_CATALOG
 
-DEFAULT_FUTURES = "hf_GC,hf_XAU,nf_AU0,hf_SI,hf_CAD,hf_CL,BTCUSDT"
+DEFAULT_FUTURES = "hf_XAU,hf_SI,hf_CAD,hf_CL,hf_NQ,hf_BTC"
 
 
 def _num(v) -> float:
@@ -208,14 +208,18 @@ def _tencent_quotes(codes: list[str]) -> dict[str, dict]:
 
 
 _QUOTE_CODE_RE = re.compile(
-    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|us[A-Za-z]{2,8}|hk[A-Za-z]{2,8}|wh[A-Za-z]{3,8})$",
+    r"^(?:(?:sh|sz|bj)\d{6}|\d{6}|(?:us|hk|wh|jp|ks)[A-Za-z0-9]{2,8})$",
     re.I,
 )
+_EM_INDEX = {
+    "jpN225": ("100.N225", "日经225"),
+    "ksKOSPI": ("100.KS11", "韩国KOSPI"),
+}
 
 
 def _is_future_code(symbol: str) -> bool:
     s = (symbol or "").strip()
-    return s == "BTCUSDT" or bool(_HF_RE.fullmatch(s))
+    return bool(_HF_RE.fullmatch(s))
 
 
 _ASHARE_MKT_RE = re.compile(r"^(?:sh|sz|bj)\d{6}$", re.I)
@@ -238,7 +242,7 @@ def _canon_quote_code(raw: str) -> str:
     resolved = astock.resolve_symbol(s)
     if resolved:
         return resolved
-    if re.fullmatch(r"(?:us|hk|wh)[A-Za-z]{2,8}", s, re.I):
+    if re.fullmatch(r"(?:us|hk|wh|jp|ks)[A-Za-z0-9]{2,8}", s, re.I):
         return s
     return ""
 
@@ -296,8 +300,9 @@ def quotes_map(codes: list[str]) -> dict[str, dict]:
         if len(seen_canon) >= 80:
             break
     out: dict[str, dict] = {}
+    tencent_codes = [c for c in seen_canon if c not in _EM_INDEX]
+    fetched = _tencent_quotes(tencent_codes) if tencent_codes else {}
     if seen_canon:
-        fetched = _tencent_quotes(list(seen_canon))
         for raw, canon in wanted:
             q = fetched.get(canon)
             if not q or not q.get("price"):
@@ -322,6 +327,16 @@ def quotes_map(codes: list[str]) -> dict[str, dict]:
             for raw, canon in wanted:
                 if raw.lower() == "usvix" or canon.lower() == "usvix":
                     out[raw] = item
+    miss = [canon for _raw, canon in wanted if canon in _EM_INDEX and not (out.get(canon) or {}).get("price")]
+    if miss:
+        extra = _em_index_quotes(miss)
+        for raw, canon in wanted:
+            q = extra.get(canon)
+            if not q or not q.get("price"):
+                continue
+            item = _quote_item(q, canon)
+            out[raw] = item
+            out[canon] = item
     return out
 
 
@@ -434,12 +449,62 @@ def _vix_from_sina() -> dict | None:
     }
 
 
+def _em_index_quotes(codes: list[str]) -> dict[str, dict]:
+    """Eastmoney ulist for catalog indices Tencent does not carry (Nikkei / KOSPI)."""
+    want: list[str] = []
+    by_code: dict[str, tuple[str, str]] = {}
+    for c in codes:
+        hit = _EM_INDEX.get(c)
+        if not hit:
+            continue
+        secid, name = hit
+        want.append(secid)
+        by_code[secid.split(".", 1)[-1].upper()] = (c, name)
+    if not want:
+        return {}
+    try:
+        r = em_get(
+            "https://push2.eastmoney.com/api/qt/ulist.np/get",
+            params={
+                "fltt": "2",
+                "invt": "2",
+                "secids": ",".join(want),
+                "fields": "f2,f3,f4,f12,f14,f18",
+            },
+            headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
+            timeout=8,
+        )
+        diff = ((r.json() or {}).get("data") or {}).get("diff") or []
+    except Exception:
+        return {}
+    out: dict[str, dict] = {}
+    for row in diff:
+        mapped = by_code.get(str(row.get("f12") or "").upper())
+        if not mapped:
+            continue
+        canon, name = mapped
+        price = _num(row.get("f2"))
+        if not price:
+            continue
+        prev = _num(row.get("f18"))
+        out[canon] = {
+            "symbol": canon,
+            "name": row.get("f14") or name,
+            "price": price,
+            "prev": prev,
+            "change": _num(row.get("f4")),
+            "pct": _num(row.get("f3")),
+            "amount": 0.0,
+        }
+    return out
+
+
 def world_indices() -> list[dict]:
-    """A / HK / US / FX key indices in one list (Tencent; VIX falls back to Sina)."""
+    """A / HK / US / JP / KR / FX key indices (Tencent; VIX Sina; JP/KR Eastmoney)."""
     codes = [c for c, _n, _r in WORLD_INDICES]
     quotes: dict[str, dict] = {}
     try:
-        quotes = _tencent_quotes(codes)
+        quotes = _tencent_quotes([c for c in codes if c not in _EM_INDEX])
     except (urllib.error.URLError, TimeoutError, OSError, UnicodeError):
         quotes = {}
 
@@ -447,6 +512,9 @@ def world_indices() -> list[dict]:
         vix = _vix_from_sina()
         if vix:
             quotes["usVIX"] = vix
+    miss = [c for c in codes if c in _EM_INDEX and not (quotes.get(c) or {}).get("price")]
+    if miss:
+        quotes.update(_em_index_quotes(miss))
 
     out = []
     for code, label, region in WORLD_INDICES:
@@ -858,66 +926,15 @@ def _sanitize_future_codes(raw: str) -> list[str]:
     codes = []
     for part in str(raw or DEFAULT_FUTURES).split(","):
         s = part.strip()
-        if s == "BTCUSDT" or _HF_RE.fullmatch(s):
+        if _HF_RE.fullmatch(s):
             codes.append(s)
         if len(codes) >= 20:
             break
     return codes
 
 
-def _fetch_btc() -> dict | None:
-    try:
-        text = _fetch_text(
-            "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT",
-            referer="https://www.binance.com/",
-            timeout=8,
-        )
-        j = json.loads(text)
-        price = _num(j.get("lastPrice"))
-        prev = _num(j.get("prevClosePrice"))
-        return {
-            "symbol": "BTCUSDT",
-            "name": "BTC/USDT",
-            "price": price,
-            "prev": prev,
-            "open": _num(j.get("openPrice")),
-            "high": _num(j.get("highPrice")),
-            "low": _num(j.get("lowPrice")),
-            "change": _num(j.get("priceChange")),
-            "pct": _num(j.get("priceChangePercent")),
-            "time": "",
-        }
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
-        pass
-    try:
-        text = _fetch_text(
-            "https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT",
-            referer="https://www.okx.com/",
-            timeout=8,
-        )
-        d = (json.loads(text).get("data") or [None])[0]
-        if not d:
-            return None
-        price = _num(d.get("last"))
-        prev = _num(d.get("open24h"))
-        return {
-            "symbol": "BTCUSDT",
-            "name": "BTC/USDT",
-            "price": price,
-            "prev": prev,
-            "open": prev,
-            "high": _num(d.get("high24h")),
-            "low": _num(d.get("low24h")),
-            "change": _change(price, prev),
-            "pct": _pct(price, prev),
-            "time": "",
-        }
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
-        return None
-
-
 def futures_quotes(raw_list: str | None = None) -> dict[str, dict]:
-    """Gold / silver / copper / oil / SHFE gold / BTC snapshot."""
+    """Gold / silver / copper / oil / NQ / BTC CFD snapshot."""
     codes = _sanitize_future_codes(raw_list or DEFAULT_FUTURES)
     out: dict[str, dict] = {}
     hf = [c for c in codes if c.startswith("hf_")]
@@ -933,10 +950,11 @@ def futures_quotes(raw_list: str | None = None) -> dict[str, dict]:
             parsed = parse_sina_hf(raw.replace("v_", "hq_str_"))
         except (urllib.error.URLError, TimeoutError, OSError):
             parsed = {}
-        if len(parsed) < min(2, len(hf)):
+        missing = [c for c in hf if c not in parsed]
+        if missing:
             try:
                 text = _fetch_text(
-                    "https://hq.sinajs.cn/list=" + ",".join(hf),
+                    "https://hq.sinajs.cn/list=" + ",".join(missing),
                     referer="https://finance.sina.com.cn/futures/quotes/CL.shtml",
                     encoding="gbk",
                     timeout=10,
@@ -956,43 +974,17 @@ def futures_quotes(raw_list: str | None = None) -> dict[str, dict]:
             out.update(parse_sina_nf(text))
         except (urllib.error.URLError, TimeoutError, OSError):
             pass
-    if "BTCUSDT" in codes:
-        btc = _fetch_btc()
-        if btc:
-            out["BTCUSDT"] = btc
     return out
 
 
 def future_minute(code: str) -> dict:
-    """Intraday minute series for hf_ / nf_ / BTCUSDT."""
+    """Intraday minute series for hf_ / nf_."""
     c = (code or "").strip()
-    if c == "BTCUSDT":
-        return _btc_minute()
     if c.startswith("hf_") and _HF_RE.fullmatch(c):
         return _hf_minute(c)
     if c.startswith("nf_") and _HF_RE.fullmatch(c):
         return _nf_minute(c)
     raise ValueError(f"bad future code: {c}")
-
-
-def _btc_minute() -> dict:
-    klines = json.loads(_fetch_text(
-        "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=240",
-        referer="https://www.binance.com/",
-        timeout=10,
-    ))
-    ticker = json.loads(_fetch_text(
-        "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT",
-        referer="https://www.binance.com/",
-        timeout=8,
-    ))
-    pts = []
-    for k in klines:
-        ts = int(k[0]) // 1000
-        hh = (ts // 3600) % 24
-        mm = (ts // 60) % 60
-        pts.append({"t": f"{hh:02d}:{mm:02d}", "p": _num(k[4])})
-    return {"code": "BTCUSDT", "prec": _num(ticker.get("prevClosePrice")), "points": pts}
 
 
 def _hf_minute(code: str) -> dict:
@@ -1057,6 +1049,16 @@ def future_minutes(codes: list[str]) -> dict[str, dict | None]:
         for c, data in pool.map(_one, uniq):
             out[c] = data
     return out
+
+
+def future_minutes_filled(data) -> bool:
+    """True if one series has enough points. Empty-points dict must not stick."""
+    if not isinstance(data, dict):
+        return False
+    return any(
+        isinstance(row, dict) and len(row.get("points") or []) >= 1
+        for row in data.values()
+    )
 
 
 def future_daily(code: str, n: int = 400) -> dict:

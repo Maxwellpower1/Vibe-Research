@@ -25,7 +25,7 @@ def research_kline(
     interval: str = Query("1D"),
 ):
     src = (source or "auto").lower()
-    allowed = {"auto", "stooq", "baostock", "okx", "binance", "ccxt", "pykrx"}
+    allowed = {"auto", "stooq", "baostock", "pykrx"}
     if src not in allowed:
         raise HTTPException(400, f"source 仅支持 {sorted(allowed)}")
     try:

@@ -76,13 +76,19 @@ _US_INDEX_SYMBOLS = {
     "usvix": "usVIX",
     "ussoxx": "usSOXX",
 }
-# Eastmoney 1-min fallback when Tencent usMinute is empty (common on cloud IPs).
+_APAC_INDEX_SYMBOLS = {
+    "jpn225": "jpN225",
+    "kskospi": "ksKOSPI",
+}
+# Eastmoney 1-min fallback when Tencent minute is empty (US cloud IPs / JP / KR).
 _US_EM_MINUTE = {
     "usDJI": ("100.DJIA", "道琼斯"),
     "usIXIC": ("100.IXIC", "纳斯达克"),
     "usINX": ("100.SPX", "标普500"),
     "usVIX": ("100.VIX", "恐慌指数"),
     "usSOXX": ("100.SOXX", "费城半导体"),
+    "jpN225": ("100.N225", "日经225"),
+    "ksKOSPI": ("100.KS11", "韩国KOSPI"),
 }
 _FX_SYMBOLS = {
     "whusdcny": "whUSDCNY",
@@ -92,11 +98,11 @@ FX_INDICES = list(_FX_SYMBOLS.values())
 
 
 def resolve_symbol(code: str) -> str:
-    """Normalize to tencent symbol: sh600519 / sz000001 / sh000001 / hkHSI / usIXIC / whUSDCNY.
+    """Normalize to tencent/catalog symbol: sh600519 / hkHSI / usIXIC / jpN225 / ksKOSPI / whUSDCNY.
 
     Accepts bare 6-digit (uses get_prefix), explicit sh|sz|bj + 6 digits,
     HK indices hkHSI / hkHSTECH, US indices usDJI / usIXIC / usINX / usVIX / usSOXX,
-    or FX whUSDCNY (case-insensitive input, canonical case out).
+    JP/KR jpN225 / ksKOSPI, or FX whUSDCNY (case-insensitive input, canonical case out).
     Indices like 上证 must be passed as sh000001 (bare 000001 = 平安银行).
     """
     raw = (code or "").strip()
@@ -106,6 +112,9 @@ def resolve_symbol(code: str) -> str:
     us = _US_INDEX_SYMBOLS.get(raw.lower())
     if us:
         return us
+    apac = _APAC_INDEX_SYMBOLS.get(raw.lower())
+    if apac:
+        return apac
     fx = _FX_SYMBOLS.get(raw.lower())
     if fx:
         return fx

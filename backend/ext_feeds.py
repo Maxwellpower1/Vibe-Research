@@ -1,7 +1,7 @@
 """Extra market-data feeds ported from Vibe-Trading loaders.
 
-Stooq / OKX / Binance: plain HTTP, no extra package.
-Baostock / pykrx / CCXT: lazy import; missing package -> empty + hint.
+Stooq: plain HTTP, no extra package.
+Baostock / pykrx: lazy import; missing package -> empty + hint.
 
 Bars are always [{date, open, high, low, close, volume}].
 """
@@ -25,9 +25,6 @@ _UA = "Mozilla/5.0 (compatible; Vibe-Research/0.3; +https://viberesearch.wiki)"
 _BJ = timezone(timedelta(hours=8))
 _CACHE = TTLCache(maxsize=256, default_ttl=3600, negative_ttl=60, name="ext_feeds")
 
-_CRYPTO_RE = re.compile(
-    r"^([A-Z0-9]{2,12})[-/]?(USDT|USDC|USD|BTC|ETH)$", re.I
-)
 _KR_RE = re.compile(r"^(\d{6})(?:\.(?:KS|KQ))?$", re.I)
 _A_RE = re.compile(r"^(?:(?:sh|sz|bj)\.)?(\d{6})(?:\.(?:SH|SZ|BJ))?$", re.I)
 
@@ -36,9 +33,6 @@ def available_sources() -> dict[str, dict[str, Any]]:
     """Which optional packages are installed. HTTP sources are always on."""
     return {
         "stooq": {"ok": True, "need": None, "markets": ["us"]},
-        "okx": {"ok": True, "need": None, "markets": ["crypto"]},
-        "binance": {"ok": True, "need": None, "markets": ["crypto"]},
-        "ccxt": {"ok": _has("ccxt"), "need": "pip install ccxt", "markets": ["crypto"]},
         "baostock": {"ok": _has("baostock"), "need": "pip install baostock", "markets": ["a_share"]},
         "pykrx": {"ok": _has("pykrx"), "need": "pip install pykrx", "markets": ["kr"]},
     }
@@ -203,161 +197,6 @@ def _baostock_fetch(bs_code: str, num: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# OKX / Binance public REST (no CCXT required)
-# ---------------------------------------------------------------------------
-
-def _crypto_inst(symbol: str) -> tuple[str, str] | None:
-    """BTC-USDT / BTCUSDT / BTC/USDT -> (BTC, USDT)."""
-    raw = (symbol or "").strip().upper().replace("/", "-")
-    m = _CRYPTO_RE.match(raw.replace("-", ""))
-    if not m:
-        m = _CRYPTO_RE.match(raw)
-    if not m:
-        return None
-    return m.group(1).upper(), m.group(2).upper()
-
-
-def okx_kline(symbol: str, num: int = 180, interval: str = "1D") -> dict:
-    """OKX public history-candles. interval: 1D / 1H / 4H / 1m."""
-    pair = _crypto_inst(symbol)
-    if not pair:
-        return {}
-    inst = f"{pair[0]}-{pair[1]}"
-    bar = {"1d": "1D", "1D": "1D", "1h": "1H", "1H": "1H", "4h": "4H", "4H": "4H",
-           "1m": "1m", "5m": "5m"}.get(interval, "1D")
-    key = f"okx:{inst}:{bar}:{num}"
-    return _CACHE.get_or_set(key, lambda: _okx_fetch(inst, bar, num), ttl=300) or {}
-
-
-def _okx_fetch(inst: str, bar: str, num: int) -> dict:
-    url = "https://www.okx.com/api/v5/market/history-candles"
-    want = max(20, min(int(num or 180), 300))
-    data = _get(url, params={"instId": inst, "bar": bar, "limit": str(want)}, timeout=20).json()
-    if str(data.get("code") or "") not in ("0", "0.0"):
-        return {}
-    bars: list[dict] = []
-    for row in data.get("data") or []:
-        if not isinstance(row, (list, tuple)) or len(row) < 6:
-            continue
-        try:
-            ts = int(row[0]) / 1000.0
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-            if bar.endswith("H") or bar.endswith("m"):
-                dt = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
-            bars.append(_bar(dt, float(row[1]), float(row[2]), float(row[3]),
-                             float(row[4]), float(row[5])))
-        except (TypeError, ValueError, IndexError):
-            continue
-    bars = _trim(bars, num)
-    if not bars:
-        return {}
-    return {
-        "code": inst, "name": inst, "market": "CRYPTO",
-        "source": "okx", "adjust": "none", "bars": bars,
-    }
-
-
-def binance_kline(symbol: str, num: int = 180, interval: str = "1D") -> dict:
-    """Binance public klines. interval: 1D / 1H / 4H / 1m."""
-    pair = _crypto_inst(symbol)
-    if not pair:
-        return {}
-    inst = f"{pair[0]}{pair[1]}"
-    iv = {"1d": "1d", "1D": "1d", "1h": "1h", "1H": "1h", "4h": "4h", "4H": "4h",
-          "1m": "1m", "5m": "5m"}.get(interval, "1d")
-    key = f"binance:{inst}:{iv}:{num}"
-    return _CACHE.get_or_set(key, lambda: _binance_fetch(inst, iv, num), ttl=300) or {}
-
-
-def _binance_fetch(inst: str, interval: str, num: int) -> dict:
-    url = "https://api.binance.com/api/v3/klines"
-    want = max(20, min(int(num or 180), 1000))
-    data = _get(url, params={"symbol": inst, "interval": interval, "limit": want}, timeout=20).json()
-    if not isinstance(data, list):
-        return {}
-    bars: list[dict] = []
-    for row in data:
-        if not isinstance(row, (list, tuple)) or len(row) < 6:
-            continue
-        try:
-            ts = int(row[0]) / 1000.0
-            fmt = "%Y-%m-%d" if interval.endswith("d") else "%Y-%m-%d %H:%M"
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc).strftime(fmt)
-            bars.append(_bar(dt, float(row[1]), float(row[2]), float(row[3]),
-                             float(row[4]), float(row[5])))
-        except (TypeError, ValueError, IndexError):
-            continue
-    bars = _trim(bars, num)
-    if not bars:
-        return {}
-    return {
-        "code": inst, "name": inst, "market": "CRYPTO",
-        "source": "binance", "adjust": "none", "bars": bars,
-    }
-
-
-def ccxt_kline(symbol: str, num: int = 180, interval: str = "1D",
-               exchange: str = "binance") -> dict:
-    """Optional CCXT path for exchanges beyond OKX/Binance."""
-    if not _has("ccxt"):
-        return {"error": "ccxt 未安装: pip install ccxt", "need": "ccxt"}
-    pair = _crypto_inst(symbol)
-    if not pair:
-        return {}
-    inst = f"{pair[0]}/{pair[1]}"
-    ex_name = re.sub(r"[^a-z0-9]", "", (exchange or "binance").lower()) or "binance"
-    tf = {"1d": "1d", "1D": "1d", "1h": "1h", "1H": "1h", "4h": "4h", "4H": "4h",
-          "1m": "1m"}.get(interval, "1d")
-    key = f"ccxt:{ex_name}:{inst}:{tf}:{num}"
-    return _CACHE.get_or_set(
-        key, lambda: _ccxt_fetch(ex_name, inst, tf, num), ttl=300
-    ) or {}
-
-
-def _ccxt_fetch(ex_name: str, inst: str, timeframe: str, num: int) -> dict:
-    import ccxt  # type: ignore
-
-    cls = getattr(ccxt, ex_name, None)
-    if cls is None:
-        return {"error": f"ccxt 不支持交易所 {ex_name}"}
-    ex = cls({"enableRateLimit": True, "timeout": 20000})
-    want = max(20, min(int(num or 180), 500))
-    raw = ex.fetch_ohlcv(inst, timeframe=timeframe, limit=want)
-    bars: list[dict] = []
-    for row in raw or []:
-        if len(row) < 6:
-            continue
-        ts = int(row[0]) / 1000.0
-        fmt = "%Y-%m-%d" if timeframe.endswith("d") else "%Y-%m-%d %H:%M"
-        dt = datetime.fromtimestamp(ts, tz=timezone.utc).strftime(fmt)
-        bars.append(_bar(dt, float(row[1]), float(row[2]), float(row[3]),
-                         float(row[4]), float(row[5])))
-    bars = _trim(bars, num)
-    if not bars:
-        return {}
-    return {
-        "code": inst, "name": inst, "market": "CRYPTO",
-        "source": f"ccxt:{ex_name}", "adjust": "none", "bars": bars,
-    }
-
-
-def crypto_kline(symbol: str, num: int = 180, interval: str = "1D",
-                 source: str = "auto") -> dict:
-    """Crypto daily/intraday. auto = OKX then Binance."""
-    src = (source or "auto").lower()
-    if src == "okx":
-        return okx_kline(symbol, num, interval)
-    if src == "binance":
-        return binance_kline(symbol, num, interval)
-    if src == "ccxt":
-        return ccxt_kline(symbol, num, interval)
-    out = okx_kline(symbol, num, interval)
-    if out.get("bars"):
-        return out
-    return binance_kline(symbol, num, interval)
-
-
-# ---------------------------------------------------------------------------
 # pykrx (KRX daily, optional package; Naver-adjusted)
 # ---------------------------------------------------------------------------
 
@@ -430,8 +269,6 @@ def _pykrx_fetch(code: str, num: int) -> dict:
 
 def infer_market(symbol: str) -> str:
     raw = (symbol or "").strip().upper()
-    if _crypto_inst(raw):
-        return "crypto"
     if raw.endswith((".KS", ".KQ")):
         return "kr"
     if raw.endswith((".SH", ".SZ", ".BJ")) or (raw.isdigit() and len(raw) == 6):
@@ -450,13 +287,11 @@ def fetch_kline(symbol: str, num: int = 180, source: str = "auto",
         return stooq_kline(symbol, num)
     if src == "baostock":
         return baostock_kline(symbol, num)
-    if src in ("okx", "binance", "ccxt"):
-        return crypto_kline(symbol, num, interval, src)
     if src == "pykrx":
         return pykrx_kline(symbol, num)
+    if src != "auto":
+        return {"error": f"source 仅支持 auto / stooq / baostock / pykrx"}
 
-    if market == "crypto":
-        return crypto_kline(symbol, num, interval, "auto")
     if market == "kr":
         return pykrx_kline(symbol, num)
     if market == "a_share":

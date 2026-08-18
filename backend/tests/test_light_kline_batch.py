@@ -45,6 +45,8 @@ def test_light_kline_map_accepts_fx():
 def test_light_kline_ttl_outlasts_keep_warm():
     assert api_common.light_kline_ttl("sh000001", "1", session="open") == 45
     assert api_common.light_kline_ttl("usIXIC", "1", session="open") == 45
+    assert api_common.light_kline_ttl("jpN225", "1", session="open") == 45
+    assert api_common.light_kline_ttl("ksKOSPI", "1", session="open") == 45
     assert api_common.light_kline_ttl("whUSDCNY", "1", session="open") == 45
     assert api_common.light_kline_ttl("sh600519", "1", session="open") == 120
     assert api_common.light_kline_ttl("sh000001", "1", session="lunch") == 180

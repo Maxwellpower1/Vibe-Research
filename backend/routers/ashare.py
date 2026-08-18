@@ -125,7 +125,7 @@ def news(code: str = Query(...), limit: int = Query(20, ge=1, le=50)):
 
 @router.get("/api/astock/light-kline")
 def astock_light_kline(
-    code: str = Query(..., min_length=5, max_length=8, description="6位 / sh000001 / hkHSI / usIXIC / whUSDCNY"),
+    code: str = Query(..., min_length=5, max_length=8, description="6位 / sh000001 / hkHSI / usIXIC / jpN225 / ksKOSPI / whUSDCNY"),
     resolution: str = Query("1D", description="1=分时 / 5=五日 / 1D=日K前复权"),
     num: int = Query(365, ge=20, le=1000),
 ):
@@ -134,7 +134,7 @@ def astock_light_kline(
 
     指数：sh000001 上证 / sz399006 创业板 / sh000688 科创50 / sh000852 中证1000 /
     hkHSI 恒生 / hkHSTECH 恒生科技 / usIXIC 纳斯达克等美股指数 (usMinute) /
-    whUSDCNY 美元人民币 (东财离岸 USDCNH 1 分钟 K)。
+    jpN225 日经 / ksKOSPI 韩国 (东财) / whUSDCNY 美元人民币 (东财离岸 USDCNH 1 分钟 K)。
     """
     code = _validate_symbol(code)
     res = resolution.strip()

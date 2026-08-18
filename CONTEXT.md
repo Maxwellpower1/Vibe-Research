@@ -25,7 +25,7 @@ _Avoid_: job list, warmup steps, panel catalog
 _Avoid_: prompt packer, reviewContext.ts, system prompt
 
 **指数目录**:
-驾驶舱那 15 个指数（含中证500 `sh000905`、中证1000 `sh000852`）的唯一名单。复盘快照、报价中心、问 AI 工具都认这份。
+驾驶舱那 17 个指数（含中证500 `sh000905`、中证1000 `sh000852`、日经225 `jpN225`、韩国KOSPI `ksKOSPI`）的唯一名单。复盘快照、报价中心、问 AI 工具都认这份。恒生 / 恒科 / 日经 / KOSPI 画在宏观观察「标的」格、纳指期货下面，不另开名单。纳指期货 NQ 是 `hf_NQ`，比特币是新浪 `hf_BTC`（期货 CFD），都不进指数目录。
 入口: `backend/index_catalog.py`。前端 `frontend/src/config/cockpit.ts` 的 `WORLD_INDEX_DEFS` 必须同序同码。
 `astock.A_INDICES`、`cockpit_live.WORLD_INDICES` 从这里来。
 _Avoid_: A_INDICES, WORLD_INDICES, WORLD_INDEX_DEFS（实现名，不是领域名）

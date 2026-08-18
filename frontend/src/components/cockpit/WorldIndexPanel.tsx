@@ -2,19 +2,23 @@ import { QuoteLine } from "@/components/cockpit/QuoteLine";
 import { WORLD_INDEX_DEFS } from "@/config/cockpit";
 import { useMinutes } from "@/lib/minuteHub";
 import { useQuotes } from "@/lib/quoteHub";
+import { sparkSessionForRegion } from "@/lib/sparkAxis";
 
-const INDEX_CODES = WORLD_INDEX_DEFS.map((d) => d.code);
-const KLINE_SYMS = WORLD_INDEX_DEFS
-  .filter((d) => /^(sh|sz|hk|us|wh)/i.test(d.code))
+const PANEL_DEFS = WORLD_INDEX_DEFS.filter(
+  (d) => d.region === "CN" || d.region === "US" || d.region === "FX",
+);
+const INDEX_CODES = PANEL_DEFS.map((d) => d.code);
+const KLINE_SYMS = PANEL_DEFS
+  .filter((d) => /^(sh|sz|us|wh)/i.test(d.code))
   .map((d) => d.code);
 
-/** A + HK + US + FX. Prices from the quote hub; minutes from the minute hub. */
+/** A + US + FX. HK / JP / KR draw in 宏观观察 标的. */
 export function WorldIndexPanel() {
   const hub = useQuotes(INDEX_CODES);
   const minutes = useMinutes(KLINE_SYMS);
   const groups = [
-    { name: "A股", defs: WORLD_INDEX_DEFS.filter((d) => d.region === "CN") },
-    { name: "港股 · 美股 · 汇率", defs: WORLD_INDEX_DEFS.filter((d) => d.region !== "CN") },
+    { name: "A股", defs: PANEL_DEFS.filter((d) => d.region === "CN") },
+    { name: "美股 · 汇率", defs: PANEL_DEFS.filter((d) => d.region !== "CN") },
   ];
 
   return (
@@ -41,7 +45,7 @@ export function WorldIndexPanel() {
                 amount={d.region !== "US" ? h?.amount : undefined}
                 closes={closes}
                 times={times}
-                session={d.region === "CN" ? "ashare" : "h24"}
+                session={sparkSessionForRegion(d.region)}
                 prevClose={kl?.prev_close}
               />
             );

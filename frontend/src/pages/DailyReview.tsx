@@ -194,7 +194,7 @@ export function DailyReview() {
         },
         {
           id: "goods",
-          title: "大宗商品",
+          title: "宏观观察",
           icon: <Diamond size={14} />,
           accent: "#f5c542",
           defaultW: 0.18,

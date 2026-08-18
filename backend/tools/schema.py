@@ -198,14 +198,14 @@ TOOLS: list[dict] = [
 
     # —— 研究桌：扩展行情 / 相关 / ETF 穿透 / 13F ——
     _t("query_ext_kline",
-       "查扩展行情日 K: Stooq 美股 / Baostock A股 / OKX·Binance 加密 / pykrx 韩股。source=auto 按代码推断。只客观呈现历史 K, 不预测。",
-       {"symbol": {"type": "string", "description": "AAPL / 600519 / BTC-USDT / 005930.KS"},
-        "source": {"type": "string", "enum": ["auto", "stooq", "baostock", "okx", "binance", "ccxt", "pykrx"],
+       "查扩展行情日 K: Stooq 美股 / Baostock A股 / pykrx 韩股。source=auto 按代码推断。只客观呈现历史 K, 不预测。",
+       {"symbol": {"type": "string", "description": "AAPL / 600519 / 005930.KS"},
+        "source": {"type": "string", "enum": ["auto", "stooq", "baostock", "pykrx"],
                    "description": "默认 auto"},
         "num": {"type": "integer", "description": "根数, 默认 60, 最大 250"}},
        ["symbol"]),
     _t("query_correlation",
-       "查多标的日收益 Pearson 相关矩阵(最多 12 只)。代码用逗号: 600519,AAPL,00700.HK,BTC-USDT。客观统计, 非预测。",
+       "查多标的日收益 Pearson 相关矩阵(最多 12 只)。代码用逗号: 600519,AAPL,00700.HK。客观统计, 非预测。",
        {"codes": {"type": "string", "description": "逗号分隔代码"},
         "window": {"type": "integer", "description": "回看交易日, 默认 60"}},
        ["codes"]),
