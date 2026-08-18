@@ -75,6 +75,7 @@ _US_INDEX_SYMBOLS = {
     "usinx": "usINX",
     "usvix": "usVIX",
     "ussoxx": "usSOXX",
+    "usus30y": "usUS30Y",
 }
 _APAC_INDEX_SYMBOLS = {
     "jpn225": "jpN225",
@@ -89,6 +90,7 @@ _US_EM_MINUTE = {
     "usSOXX": ("100.SOXX", "费城半导体"),
     "jpN225": ("100.N225", "日经225"),
     "ksKOSPI": ("100.KS11", "韩国KOSPI"),
+    "usUS30Y": ("171.US30Y", "美债30年"),
 }
 _FX_SYMBOLS = {
     "whusdcny": "whUSDCNY",
@@ -101,7 +103,7 @@ def resolve_symbol(code: str) -> str:
     """Normalize to tencent/catalog symbol: sh600519 / hkHSI / usIXIC / jpN225 / ksKOSPI / whUSDCNY.
 
     Accepts bare 6-digit (uses get_prefix), explicit sh|sz|bj + 6 digits,
-    HK indices hkHSI / hkHSTECH, US indices usDJI / usIXIC / usINX / usVIX / usSOXX,
+    HK indices hkHSI / hkHSTECH, US indices usDJI / usIXIC / usINX / usVIX / usSOXX / usUS30Y,
     JP/KR jpN225 / ksKOSPI, or FX whUSDCNY (case-insensitive input, canonical case out).
     Indices like 上证 must be passed as sh000001 (bare 000001 = 平安银行).
     """
@@ -818,6 +820,9 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
     n = max(20, min(int(num or 365), 1000))
     if symbol.startswith("wh") and res == "1":
         return _em_fx_minute(symbol, n)
+    # Tencent usMinute has no US30Y (returns a 0-point). Same EM path as JP/KR.
+    if symbol == "usUS30Y" and res == "1":
+        return _em_us_minute(symbol, n) or {}
 
     name = None
     prev_close = None
@@ -884,6 +889,8 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
     except Exception:
         bars = []
 
+    if res == "1" and not any((b.get("close") or 0) > 0 for b in bars):
+        bars = []
     if not bars and res == "1" and symbol in _US_EM_MINUTE:
         em = _em_us_minute(symbol, n)
         if em:

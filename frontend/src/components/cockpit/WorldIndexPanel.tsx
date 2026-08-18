@@ -5,14 +5,14 @@ import { useQuotes } from "@/lib/quoteHub";
 import { sparkSessionForRegion } from "@/lib/sparkAxis";
 
 const PANEL_DEFS = WORLD_INDEX_DEFS.filter(
-  (d) => d.region === "CN" || d.region === "US" || d.region === "FX",
+  (d) => (d.region === "CN" || d.region === "US" || d.region === "FX") && d.code !== "usUS30Y",
 );
 const INDEX_CODES = PANEL_DEFS.map((d) => d.code);
 const KLINE_SYMS = PANEL_DEFS
   .filter((d) => /^(sh|sz|us|wh)/i.test(d.code))
   .map((d) => d.code);
 
-/** A + US + FX. HK / JP / KR draw in 宏观观察 标的. */
+/** A + US + FX. HK / JP / KR / 美债30年 draw in 宏观观察 标的. */
 export function WorldIndexPanel() {
   const hub = useQuotes(INDEX_CODES);
   const minutes = useMinutes(KLINE_SYMS);

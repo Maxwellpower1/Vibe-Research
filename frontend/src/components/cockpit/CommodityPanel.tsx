@@ -99,20 +99,25 @@ export function CommodityPanel() {
             {MACRO_INDEX_DEFS.map((d) => {
               const q = hub[d.code];
               const kl = indexMinutes[d.code];
-              const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n));
+              const closes = (kl?.bars || []).map((b) => b.close).filter((n) => Number.isFinite(n) && n > 0);
               const times = (kl?.bars || []).map((b) => b.datetime);
+              const last = closes.length ? closes[closes.length - 1] : undefined;
+              const prev = kl?.prev_close ?? q?.prev;
+              const pct = q?.pct ?? (
+                last != null && prev ? ((last - prev) / prev) * 100 : undefined
+              );
               return (
                 <QuoteLine
                   key={d.code}
                   name={q?.name || d.label}
-                  price={q?.price}
-                  pct={q?.pct}
-                  unit={d.code}
+                  price={q?.price ?? last}
+                  pct={pct}
+                  unit={d.code === "usUS30Y" ? "收益率 %" : d.code}
                   closes={closes}
                   times={times}
                   session={sparkSessionForRegion(d.region)}
                   accent={d.accent}
-                  prevClose={kl?.prev_close ?? q?.prev}
+                  prevClose={prev}
                 />
               );
             })}

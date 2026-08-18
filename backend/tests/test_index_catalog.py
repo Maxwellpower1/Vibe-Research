@@ -13,9 +13,11 @@ def test_catalog_has_csi500_and_csi1000():
     assert codes.index("sh000852") == codes.index("sh000905") + 1
     assert "jpN225" in codes
     assert "ksKOSPI" in codes
+    assert "usUS30Y" in codes
     assert codes.index("jpN225") == codes.index("usSOXX") + 1
     assert codes.index("ksKOSPI") == codes.index("jpN225") + 1
-    assert len(codes) == 17
+    assert codes.index("usUS30Y") == codes.index("ksKOSPI") + 1
+    assert len(codes) == 18
 
 
 def test_astock_and_cockpit_share_catalog():

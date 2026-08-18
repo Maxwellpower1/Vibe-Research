@@ -22,6 +22,7 @@ INDEX_CATALOG: tuple[tuple[str, str, str], ...] = (
     ("usSOXX", "费城半导体", "US"),
     ("jpN225", "日经225", "JP"),
     ("ksKOSPI", "韩国KOSPI", "KR"),
+    ("usUS30Y", "美债30年", "US"),
     ("whUSDCNY", "美元/人民币", "FX"),
 )
 
