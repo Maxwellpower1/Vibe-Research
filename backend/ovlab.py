@@ -19,7 +19,7 @@ import json
 import logging
 import math
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from cache import TTLCache, is_nonempty
@@ -567,7 +567,7 @@ def _norm_cdf(x: float) -> float:
 
 
 def black76(fwd: float, strike: float, vol_pct: float, t: float, is_call: bool) -> float | None:
-    """Black-76 期货期权理论价 (无贴现, 与盘面报价口径一致). vol_pct 百分数隐波, t 年化期限."""
+    """Black-76 期货期权理论价 (无贴现, 与盘面报价口径一致). vol_pct 百分数隐波, t 年化期限. 发散结果归 None."""
     if fwd <= 0 or strike <= 0 or vol_pct <= 0 or t <= 0:
         return None
     sig = vol_pct / 100.0
@@ -575,20 +575,25 @@ def black76(fwd: float, strike: float, vol_pct: float, t: float, is_call: bool) 
     d1 = (math.log(fwd / strike) + 0.5 * sig * sig * t) / sq
     d2 = d1 - sq
     if is_call:
-        return fwd * _norm_cdf(d1) - strike * _norm_cdf(d2)
-    return strike * _norm_cdf(-d2) - fwd * _norm_cdf(-d1)
+        v = fwd * _norm_cdf(d1) - strike * _norm_cdf(d2)
+    else:
+        v = strike * _norm_cdf(-d2) - fwd * _norm_cdf(-d1)
+    return v if math.isfinite(v) else None
 
 
 def _sfloat(v: Any) -> float | None:
-    """surface 标量都是 str: 转 float, 空串/非法归 None."""
+    """surface 标量都是 str: 转 float, 空串/非法/nan/inf 归 None (防 JSON 序列化 500)."""
+    f: float | None = None
     if isinstance(v, (int, float)):
-        return float(v)
-    if isinstance(v, str):
+        f = float(v)
+    elif isinstance(v, str):
         try:
-            return float(v.strip())
+            f = float(v.strip())
         except ValueError:
             return None
-    return None
+    if f is None or not math.isfinite(f):
+        return None
+    return f
 
 
 def _sjson(v: Any) -> Any:
@@ -657,12 +662,15 @@ def _build_tquote(product: str) -> dict[str, Any]:
         oid_c = _oi_map(blk.get("strike_oid_c"))
         oid_p = _oi_map(blk.get("strike_oid_p"))
 
+        exp_str = str(blk.get("exp") or exp_key)
         strikes: list[dict[str, Any]] = []
         for k in sorted(theo.keys()):
             theo_iv = theo.get(k)
             can_price = bool(fwd and t and theo_iv)
             strikes.append({
                 "strike": k,
+                "callCode": option_code(product, exp_str, "C", k),
+                "putCode": option_code(product, exp_str, "P", k),
                 "call": {
                     "price": black76(fwd, k, theo_iv, t, True) if can_price else None,  # type: ignore[arg-type]
                     "ivBid": iv_cb.get(k), "ivAsk": iv_ca.get(k), "theoIv": theo_iv,
@@ -675,9 +683,13 @@ def _build_tquote(product: str) -> dict[str, Any]:
                 },
             })
 
-        atm = min(theo.keys(), key=lambda k: abs(k - fwd)) if fwd else None
+        atm: float | None = None
+        if fwd:
+            f = float(fwd)
+            atm = min(theo.keys(), key=lambda k: abs(k - f))
         expiries.append({
-            "exp": str(blk.get("exp") or exp_key),
+            "exp": exp_str,
+            "und": und_code(product, exp_str),
             "expiryDate": str(blk.get("expiry_date") or ""),
             "dte": _sfloat(blk.get("days_to_expiry")),
             "forward": fwd,
@@ -706,6 +718,105 @@ def get_tquote(product: str) -> dict[str, Any]:
         lambda: _build_tquote(p),
         valid=lambda v: isinstance(v, dict) and bool(v.get("expiries")),
         ttl=120,
+    )
+
+
+def option_code(prod_und: str, exp: str, cp: str, strike: float) -> str:
+    """OpenVlab 期权合约代码: {prod}{exp[2:]}{C/P}{strike} (整数行权价去小数点).
+    实测通用: SHFE/INE/DCE/CZCE/CFFEX/GFEX 期货期权 + ETF 期权 (5103002608C4.7)."""
+    ym = exp[2:] if len(exp) >= 6 else exp
+    return f"{prod_und}{ym}{cp.upper()}{strike:g}"
+
+
+def und_code(product: str, exp: str) -> str:
+    """IV 历史用的标的码: ETF 期权 (纯数字品种) 用基金代码本身, 期货期权用 {prod}{exp[2:]}."""
+    if product.isdigit():
+        return product
+    ym = exp[2:] if len(exp) >= 6 else exp
+    return f"{product}{ym}"
+
+
+# ---------------------------------------------------------------------------
+# 期权日K (分钟线聚合交易日 OHLCV + 标的平值隐波日线)
+# ---------------------------------------------------------------------------
+
+def _trading_day(ts: str) -> str:
+    """分钟 bar 时间 -> 交易日: 夜盘 (>=20点) 归次交易日; 凌晨 (<6点) 是昨夜盘尾巴, 归前一晚的次交易日 (周末顺延). 节假日不判."""
+    dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+    if 6 <= dt.hour < 20:
+        return dt.strftime("%Y-%m-%d")  # 日盘
+    base = dt if dt.hour >= 20 else dt - timedelta(days=1)  # 夜盘起点晚
+    nxt = base + timedelta(days=1)
+    while nxt.weekday() >= 5:
+        nxt += timedelta(days=1)
+    return nxt.strftime("%Y-%m-%d")
+
+
+def _build_option_daily(code: str, und: str) -> dict[str, Any]:
+    now = int(time.time())
+    minute = get_kline_history(code, "1", now - 200 * 86400, now)
+    bars_in = minute.get("data") if isinstance(minute, dict) else None
+    if not isinstance(bars_in, list) or not bars_in:
+        return {}
+    # 分钟 bar: [time, close, pct, vol, open, high, low, ?]
+    days: dict[str, dict[str, Any]] = {}
+    for b in bars_in:
+        if not isinstance(b, (list, tuple)) or len(b) < 7:
+            continue
+        close = _sfloat(b[1])
+        if close is None:
+            continue
+        vol = _sfloat(b[3]) or 0.0
+        op = _sfloat(b[4])
+        hi = _sfloat(b[5])
+        lo = _sfloat(b[6])
+        td = _trading_day(str(b[0]))
+        d = days.get(td)
+        if d is None:
+            days[td] = {
+                "t": td,
+                "open": op if op is not None else close,
+                "high": hi if hi is not None else close,
+                "low": lo if lo is not None else close,
+                "close": close,
+                "vol": vol,
+            }
+        else:
+            if hi is not None:
+                d["high"] = max(d["high"], hi)
+            if lo is not None:
+                d["low"] = min(d["low"], lo)
+            d["close"] = close
+            d["vol"] += vol
+    bars = [days[k] for k in sorted(days.keys())]
+    if not bars:
+        return {}
+    # 标的平值隐波日线 (ETF 无则空)
+    iv: list[list[Any]] = []
+    if und:
+        try:
+            av = get_atmvol_history(und, "1D", now - 200 * 86400, now)
+            arr = av.get("data") if isinstance(av, dict) else None
+            if isinstance(arr, list):
+                iv = [[str(x[0]), _sfloat(x[1])] for x in arr
+                      if isinstance(x, (list, tuple)) and len(x) >= 2]
+        except Exception:
+            logger.warning("option-daily %s atmvol %s failed", code, und)
+            iv = []
+    return {"code": code, "und": und, "bars": bars, "iv": iv}
+
+
+def get_option_daily(code: str, und: str = "") -> dict[str, Any]:
+    """期权合约日K: 分钟线聚合交易日 OHLCV + 标的平值隐波日线. 缓存 5 分钟, 休市冻结."""
+    c = (code or "").strip()
+    if not c:
+        return {}
+    u = (und or "").strip()
+    return _cached(
+        f"ovlab_optdaily::{c.upper()}::{u.upper()}",
+        lambda: _build_option_daily(c, u),
+        valid=lambda v: isinstance(v, dict) and bool(v.get("bars")),
+        ttl=300,
     )
 
 

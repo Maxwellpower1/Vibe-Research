@@ -1146,11 +1146,16 @@ export interface OvlabTQuoteSide {
 }
 export interface OvlabTQuoteStrike {
   strike: number;
+  /** 期权合约代码 (OpenVlab), 如 AU2609C952. */
+  callCode?: string;
+  putCode?: string;
   call: OvlabTQuoteSide;
   put: OvlabTQuoteSide;
 }
 export interface OvlabTQuoteExpiry {
   exp: string;
+  /** 标的码 (IV 日线用): 期货期权 {prod}{ym}, ETF 期权为基金代码. */
+  und?: string;
   expiryDate?: string;
   dte?: number | null;
   forward?: number | null;
@@ -1169,6 +1174,22 @@ export interface OvlabTQuoteExpiry {
 export interface OvlabTQuote {
   product: string;
   expiries: OvlabTQuoteExpiry[];
+}
+
+/** 期权日K (分钟聚合): 交易日 OHLCV + 标的平值隐波日线. */
+export interface OvlabOptionDailyBar {
+  t: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  vol: number;
+}
+export interface OvlabOptionDaily {
+  code: string;
+  und: string;
+  bars: OvlabOptionDailyBar[];
+  iv: Array<[string, number | null]>;
 }
 
 /** Market hover preview: price + IV intraday series (price-volatility-series) */
@@ -1602,6 +1623,9 @@ export const api = {
   /** T 型报价: 行权价链 (IV/Delta/持仓) + Black-76 理论价. 服务端缓存 2min, 休市冻结. */
   ovlabTQuote: (product: string) =>
     get<OvlabTQuote>(`/ovlab/tquote?product=${encodeURIComponent(product)}`),
+  /** 期权日K: 分钟线聚合交易日 OHLCV + 标的平值隐波日线. 服务端缓存 5min, 休市冻结. */
+  ovlabOptionDaily: (code: string, und: string) =>
+    get<OvlabOptionDaily>(`/ovlab/option-daily?code=${encodeURIComponent(code)}&und=${encodeURIComponent(und)}`),
   ovlabSkewmap: (selectedExpiries?: Record<string, unknown>) =>
     request<OvlabSkewmap>("/ovlab/skewmap", "POST", { selectedExpiries: selectedExpiries ?? {} }),
   ovlabSurfacemap: (product?: string) =>

@@ -37,9 +37,11 @@ function PctText({ value }: { value: number | null }) {
 /** 自选合约: local deriv.watch (具体合约代码, 如 IM2609). 旧品种条目自动迁到主力合约.
  *  行情: last-bar 60s 轮询; 分时: kline-history 1m 近 20h, 5min 轮询 (纯价格线, 不叠 IV).
  *  注: OpenVlab 无期权合约级行情接口, 搜索仅索引期货合约. */
-export function WatchPanel({ d, onPickSymbol }: {
+export function WatchPanel({ d, onPickSymbol, compact = false }: {
   d: DerivData;
   onPickSymbol?: (sym: string) => void;
+  /** 窄列模式 (嵌进主板卡第三列): 隐藏别名与 IVP 列. */
+  compact?: boolean;
 }) {
   const [watch, setWatch] = useState<string[]>(loadWatch);
   const [kw, setKw] = useState("");
@@ -190,20 +192,26 @@ export function WatchPanel({ d, onPickSymbol }: {
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
                 <span className="shrink-0 text-[11px] font-medium tabular-nums text-cyan-300/90">{code}</span>
-                <span className="min-w-0 flex-1 truncate text-[10px] text-slate-500">
-                  {prod ? String(prod.product_alias ?? "") : ""}
-                </span>
+                {compact ? (
+                  <span className="min-w-0 flex-1" />
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-[10px] text-slate-500">
+                    {prod ? String(prod.product_alias ?? "") : ""}
+                  </span>
+                )}
                 <NightMoon show={Number(prod?.has_night_trading) === 1} />
                 <span className="text-[11px] tabular-nums text-slate-400">
                   {close !== null ? Number(close.toFixed(2)).toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "-"}
                 </span>
                 <PctText value={pct} />
-                <span className={cn(
-                  "w-[2rem] text-right text-[10px] tabular-nums",
-                  ivp !== null && ivp >= 90 ? "text-red-400" : ivp !== null && ivp <= 10 ? "text-emerald-400" : "text-slate-500",
-                )} title="品种隐波百分位">
-                  {ivp !== null ? ivp.toFixed(0) : "-"}
-                </span>
+                {!compact && (
+                  <span className={cn(
+                    "w-[2rem] text-right text-[10px] tabular-nums",
+                    ivp !== null && ivp >= 90 ? "text-red-400" : ivp !== null && ivp <= 10 ? "text-emerald-400" : "text-slate-500",
+                  )} title="品种隐波百分位">
+                    {ivp !== null ? ivp.toFixed(0) : "-"}
+                  </span>
+                )}
               </button>
               <TrendPreviewCell series={sparks[code]} loading={sparkLoading && !sparks[code]} base={pre} />
               <button

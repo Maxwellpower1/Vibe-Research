@@ -2,8 +2,8 @@ import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import {
-  Activity, AlertCircle, Layers, LineChart, ListOrdered,
-  Loader2, PieChart, RefreshCw, Sparkles, Star, Table, TrendingUp, Users, X, Zap,
+  Activity, AlertCircle, CandlestickChart, Layers, LineChart, ListOrdered,
+  Loader2, PieChart, RefreshCw, Sparkles, Table, TrendingUp, Users, X, Zap,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -25,7 +25,8 @@ import { TermStructPanel } from "@/components/deriv/TermStructPanel";
 import { CommodityCell } from "@/components/deriv/CommodityCell";
 import { WatchPanel } from "@/components/deriv/WatchPanel";
 import { PositionCell } from "@/components/deriv/PositionCell";
-import { TQuotePanel } from "@/components/deriv/TQuotePanel";
+import { TQuotePanel, type OptionPick } from "@/components/deriv/TQuotePanel";
+import { OptionChartCard } from "@/components/deriv/OptionChartCard";
 import { FreshTag, NightOnlySwitch, SessionBadge } from "@/components/deriv/derivShared";
 
 /** Pack the visible cells in-browser for Ask AI; missing cells say 未取到. */
@@ -60,6 +61,14 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [rankMetric, setRankMetric] = useState<RankKey>("ctn");
   const [nightOnly, setNightOnly] = useState(false);
+  // T 型报价联动: 品种 (各面板点品种行) + 点选的期权合约 (日K/分时卡)
+  const [tqProd, setTqProd] = useState("");
+  const [optPick, setOptPick] = useState<OptionPick | null>(null);
+  const pickProduct = (p: string) => {
+    if (!p) return;
+    setTqProd(p);
+    setOptPick(null); // 换品种清掉旧合约
+  };
   const [review, setReview] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewErr, setReviewErr] = useState<string | null>(null);
@@ -99,15 +108,15 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
 
   const rows: CockpitRow[] = [
     {
-      defaultH: 0.34,
+      defaultH: 0.29,
       panels: [
         {
           id: "main-board",
-          title: "股指 · 商品主力",
+          title: "股指 · 商品 · 自选",
           hint: "紫色线为平值隐波",
           icon: <LineChart size={14} />,
           accent: "#38bdf8",
-          defaultW: 0.44,
+          defaultW: 0.56,
           mobileH: "h-[64vh]",
           right: (
             <span className="flex items-center gap-2">
@@ -118,10 +127,13 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
           body: (
             <div className="flex h-full min-h-0 flex-col sm:flex-row">
               <div className="min-h-0 min-w-0 flex-1 overflow-y-auto border-b border-slate-800/60 sm:border-b-0 sm:border-r">
-                <IndexFutPanel d={d} nightOnly={nightOnly} onPickSymbol={onPickSymbol} />
+                <IndexFutPanel d={d} nightOnly={nightOnly} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />
+              </div>
+              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto border-b border-slate-800/60 sm:border-b-0 sm:border-r">
+                <CommodityCell d={d} nightOnly={nightOnly} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />
               </div>
               <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-                <CommodityCell d={d} nightOnly={nightOnly} onPickSymbol={onPickSymbol} />
+                <WatchPanel d={d} onPickSymbol={onPickSymbol} compact />
               </div>
             </div>
           ),
@@ -132,7 +144,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
           hint: "同帧按板块聚合",
           icon: <Layers size={14} />,
           accent: "#2dd4bf",
-          defaultW: 0.30,
+          defaultW: 0.24,
           mobileH: "h-[46vh]",
           right: <FreshTag updated={d.marketUpdated} extra={`${sectorCount}板块`} />,
           body: <SectorHotPanel d={d} onPickSymbol={onPickSymbol} />,
@@ -142,7 +154,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
           title: "异动 / 到期",
           icon: <Zap size={14} />,
           accent: "#f59e0b",
-          defaultW: 0.26,
+          defaultW: 0.20,
           mobileH: "h-[50vh]",
           right: <FreshTag updated={d.alertUpdated} extra={`${d.alerts?.length ?? 0}条`} />,
           body: <AlertPanel d={d} />,
@@ -150,7 +162,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
       ],
     },
     {
-      defaultH: 0.34,
+      defaultH: 0.27,
       panels: [
         {
           id: "iv",
@@ -160,7 +172,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
           defaultW: 0.26,
           mobileH: "h-[46vh]",
           right: <FreshTag updated={d.marketUpdated} />,
-          body: <IvPanel d={d} onPickSymbol={onPickSymbol} />,
+          body: <IvPanel d={d} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />,
         },
         {
           id: "rank",
@@ -170,7 +182,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
           defaultW: 0.28,
           mobileH: "h-[46vh]",
           right: <RankMetricBar metric={rankMetric} onMetric={setRankMetric} />,
-          body: <RankPanel d={d} metric={rankMetric} onPickSymbol={onPickSymbol} />,
+          body: <RankPanel d={d} metric={rankMetric} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />,
         },
         {
           id: "breadth",
@@ -197,35 +209,58 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
       ],
     },
     {
-      defaultH: 0.32,
+      defaultH: 0.27,
       panels: [
         {
           id: "tquote",
           title: "T 型报价",
-          hint: "理论价=Black-76",
+          hint: "理论价=Black-76 · 点合约出图",
           icon: <Table size={14} />,
           accent: "#e879f9",
-          defaultW: 0.38,
+          defaultW: 0.36,
           mobileH: "h-[56vh]",
-          body: <TQuotePanel d={d} />,
+          body: (
+            <TQuotePanel
+              d={d}
+              product={tqProd}
+              onProduct={pickProduct}
+              pick={optPick}
+              onPickContract={setOptPick}
+            />
+          ),
         },
         {
-          id: "watch",
-          title: "自选合约",
-          icon: <Star size={14} />,
-          accent: "#22d3ee",
-          defaultW: 0.34,
-          mobileH: "h-[46vh]",
-          right: <FreshTag updated={d.marketUpdated} extra="60s" />,
-          body: <WatchPanel d={d} onPickSymbol={onPickSymbol} />,
+          id: "opt-daily",
+          title: "期权日K",
+          hint: optPick ? optPick.name : "联动 T 型报价",
+          icon: <CandlestickChart size={14} />,
+          accent: "#f472b6",
+          defaultW: 0.32,
+          mobileH: "h-[44vh]",
+          body: <OptionChartCard pick={optPick} mode="daily" />,
         },
+        {
+          id: "opt-minute",
+          title: "期权分时",
+          hint: optPick ? optPick.name : "联动 T 型报价",
+          icon: <Activity size={14} />,
+          accent: "#c084fc",
+          defaultW: 0.32,
+          mobileH: "h-[44vh]",
+          body: <OptionChartCard pick={optPick} mode="minute" />,
+        },
+      ],
+    },
+    {
+      defaultH: 0.17,
+      panels: [
         {
           id: "position",
           title: "持仓排名",
           hint: "净多/净空第一",
           icon: <Users size={14} />,
           accent: "#fb7185",
-          defaultW: 0.28,
+          defaultW: 1,
           mobileH: "h-[44vh]",
           right: <FreshTag updated={d.marketUpdated} />,
           body: <PositionCell d={d} />,

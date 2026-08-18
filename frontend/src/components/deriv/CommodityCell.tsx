@@ -25,11 +25,13 @@ const absCtn = (r: OvlabMarketRow) => {
   return v === null ? -1 : Math.abs(v);
 };
 
-/** 商品主力: 全市场国内商品 (不限目录), 按 |涨跌| 排序. 非目录品种分时按可见码补拉. */
-export function CommodityCell({ d, nightOnly = false, onPickSymbol }: {
+/** 商品主力: 全市场国内商品 (不限目录), 按 |涨跌| 排序. 非目录品种分时按可见码补拉.
+ *  行点击 -> onPickProduct (联动 T 型报价); 合约码点击 -> onPickSymbol (K线). */
+export function CommodityCell({ d, nightOnly = false, onPickSymbol, onPickProduct }: {
   d: DerivData;
   nightOnly?: boolean;
   onPickSymbol?: (sym: string) => void;
+  onPickProduct?: (prodUnd: string) => void;
 }) {
   const shown = useMemo(
     () => commodityRowsOf(d.rows)
@@ -75,21 +77,30 @@ export function CommodityCell({ d, nightOnly = false, onPickSymbol }: {
           const pc = previewCode(r);
           const spark = d.sparks[pc] ?? extraSparks[pc];
           const price = num(r.price);
+          const prodUnd = String(r.prodUnd ?? r.product);
           return (
             <button
               key={`${r.product}-${r.exp ?? ""}`}
               type="button"
-              onClick={sym && onPickSymbol ? () => onPickSymbol(sym) : undefined}
+              onClick={onPickProduct
+                ? () => onPickProduct(prodUnd)
+                : sym && onPickSymbol ? () => onPickSymbol(sym) : undefined}
               className={cn(
                 "flex w-full items-center gap-1.5 rounded px-1.5 py-[3px] text-left transition-colors",
-                onPickSymbol && sym && "hover:bg-slate-800/40",
+                (onPickProduct || (onPickSymbol && sym)) && "hover:bg-slate-800/40",
               )}
-              title={sym ? `看 ${sym} K线` : undefined}
+              title={onPickProduct ? `调出 ${String(r.product_alias ?? r.product)} T 型报价` : sym ? `看 ${sym} K线` : undefined}
             >
               <NightMoon show={Number(r.has_night_trading) === 1} />
               <span className="w-[3.8rem] shrink-0 leading-tight">
                 <span className="block truncate text-[11px] text-slate-200">{String(r.product_alias ?? r.product)}</span>
-                <span className="block truncate font-mono text-[9px] text-cyan-500/70">{code || "-"}</span>
+                <span
+                  className={cn("block truncate font-mono text-[9px] text-cyan-500/70", sym && onPickSymbol && "hover:text-cyan-300")}
+                  onClick={sym && onPickSymbol ? (e) => { e.stopPropagation(); onPickSymbol(sym); } : undefined}
+                  title={sym ? `看 ${sym} K线` : undefined}
+                >
+                  {code || "-"}
+                </span>
               </span>
               <span className="w-[3.8rem] shrink-0 text-right text-[11px] tabular-nums text-slate-300">
                 {price !== null ? Number(price.toFixed(2)).toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "-"}

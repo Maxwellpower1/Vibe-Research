@@ -26,11 +26,13 @@ export function RankMetricBar({ metric, onMetric }: { metric: RankKey; onMetric:
   );
 }
 
-/** 涨跌榜: domestic rows ranked by ctn / valphaT / atmv_1dchg. */
-export function RankPanel({ d, metric, onPickSymbol }: {
+/** 涨跌榜: domestic rows ranked by ctn / valphaT / atmv_1dchg.
+ *  提供 onPickProduct 时行点击联动 T 型报价, 否则跳 K线. */
+export function RankPanel({ d, metric, onPickSymbol, onPickProduct }: {
   d: DerivData;
   metric: RankKey;
   onPickSymbol?: (sym: string) => void;
+  onPickProduct?: (prodUnd: string) => void;
 }) {
   const key = metric;
 
@@ -74,7 +76,10 @@ export function RankPanel({ d, metric, onPickSymbol }: {
       <button
         key={`${r.product}-${r.exp ?? ""}`}
         type="button"
-        onClick={sym && onPickSymbol ? () => onPickSymbol(sym) : undefined}
+        onClick={onPickProduct
+          ? () => onPickProduct(String(r.prodUnd ?? r.product))
+          : sym && onPickSymbol ? () => onPickSymbol(sym) : undefined}
+        title={onPickProduct ? `调出 ${String(r.product_alias ?? r.product)} T 型报价` : undefined}
         className="flex w-full items-center gap-2 rounded px-1.5 py-[2.5px] text-left hover:bg-slate-800/40"
       >
         <span className="min-w-0 flex-1 truncate text-[11px] text-slate-300">{String(r.product_alias ?? r.product)}</span>

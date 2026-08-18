@@ -251,6 +251,19 @@ def ovlab_tquote(
     return _ovlab_call(lambda: ovlab.get_tquote(product.strip()), "T型报价")
 
 
+@router.get("/api/ovlab/option-daily")
+def ovlab_option_daily(
+    code: str = Query(
+        ..., min_length=1, max_length=40, description="期权合约代码, 如 AU2609C952"
+    ),
+    und: str = Query("", description="标的代码 (IV 日线用), 如 AU2609; ETF 期权传基金代码"),
+):
+    """OpenVlab 期权日K: 分钟线聚合交易日 OHLCV + 标的平值隐波日线。缓存 5 分钟。"""
+    return _ovlab_call(
+        lambda: ovlab.get_option_daily(code.strip(), und.strip()), "期权日K"
+    )
+
+
 @router.post("/api/ovlab/skewmap")
 def ovlab_skewmap(req: SkewmapReq):
     """OpenVlab 偏度图 (skewmap, POST)。不缓存。"""

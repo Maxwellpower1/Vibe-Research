@@ -328,6 +328,32 @@ def test_get_tquote_empty_product():
     assert ovlab.get_tquote("   ") == {}
 
 
+def test_sfloat_rejects_nan_inf():
+    """surface 里 "nan"/"inf" 字符串必须归 None, 否则响应 JSON 序列化 500."""
+    assert ovlab._sfloat("nan") is None
+    assert ovlab._sfloat("NaN") is None
+    assert ovlab._sfloat("inf") is None
+    assert ovlab._sfloat("-inf") is None
+    assert ovlab._sfloat(float("nan")) is None
+    assert ovlab._sfloat("12.5") == 12.5
+    assert ovlab._sfloat("") is None
+
+
+def test_build_tquote_nan_fields(monkeypatch):
+    """含 nan 字符串的 surface 不产生 NaN 输出 (EG 实盘踩过)."""
+    import json as _json
+    blk = dict(_SURFACE["202609"])
+    blk["delta_tday_call"] = '[[952.0, "nan"], [960.0, 0.422002]]'
+    blk["atmvol_tday"] = "nan"
+    monkeypatch.setattr(ovlab, "get_volatility_surface", lambda p: {"202609": blk})
+    out = ovlab._build_tquote("AU")
+    exp = out["expiries"][0]
+    assert exp["atmIv"] is None
+    assert exp["strikes"][0]["call"]["delta"] is None
+    assert exp["strikes"][1]["call"]["delta"] is not None
+    _json.dumps(out, allow_nan=False)  # 不抛即过
+
+
 def test_get_tquote_cached(monkeypatch):
     calls = []
     monkeypatch.setattr(ovlab, "deriv_market_open", lambda: True)
@@ -336,3 +362,82 @@ def test_get_tquote_cached(monkeypatch):
     r1 = ovlab.get_tquote("AU")
     r2 = ovlab.get_tquote("AU")
     assert r1 == r2 and len(calls) == 1
+
+
+# ---------- option_code / und_code / option-daily ----------
+
+def test_option_code_formats():
+    """期权代码: {prod}{exp[2:]}{C/P}{strike:g}, 整数行权价去小数, ETF 同样规则."""
+    assert ovlab.option_code("AU", "202609", "C", 952.0) == "AU2609C952"
+    assert ovlab.option_code("SC", "202610", "P", 570.0) == "SC2610P570"
+    assert ovlab.option_code("MA", "202610", "C", 2800.0) == "MA2610C2800"
+    assert ovlab.option_code("510300", "202608", "C", 4.7) == "5103002608C4.7"
+    assert ovlab.option_code("IF", "202608", "P", 4700.0) == "IF2608P4700"
+
+
+def test_und_code():
+    """IV 历史标的码: 期货期权 {prod}{ym}, ETF 用基金代码本身."""
+    assert ovlab.und_code("AU", "202609") == "AU2609"
+    assert ovlab.und_code("510300", "202608") == "510300"
+
+
+def test_tquote_contains_codes(monkeypatch):
+    """tquote 每档带 callCode/putCode, 每个到期月带 und."""
+    monkeypatch.setattr(ovlab, "get_volatility_surface", lambda p: _SURFACE)
+    out = ovlab._build_tquote("AU")
+    exp = out["expiries"][0]
+    assert exp["und"] == "AU2609"
+    s0 = exp["strikes"][0]
+    assert s0["callCode"] == "AU2609C952"
+    assert s0["putCode"] == "AU2609P952"
+
+
+def test_trading_day_night_session():
+    """交易日分组: 夜盘归次交易日, 凌晨段归前一晚的次交易日, 周末顺延."""
+    assert ovlab._trading_day("2026-08-18 10:30:00") == "2026-08-18"  # 周二日盘
+    assert ovlab._trading_day("2026-08-17 21:05:00") == "2026-08-18"  # 周一夜盘 -> 周二
+    assert ovlab._trading_day("2026-08-18 01:30:00") == "2026-08-18"  # 周二凌晨 (周一夜盘尾巴) -> 周二
+    assert ovlab._trading_day("2026-08-14 21:05:00") == "2026-08-17"  # 周五夜盘 -> 周一
+    assert ovlab._trading_day("2026-08-15 01:30:00") == "2026-08-17"  # 周六凌晨 (周五夜盘尾巴) -> 周一
+    assert ovlab._trading_day("2026-08-15 22:00:00") == "2026-08-17"  # 周六晚(异常数据) -> 周一
+
+
+_MIN_BARS = [
+    # 夜盘 (归 8-18): open 11.0, high 12.0, low 10.5
+    ["2026-08-17 21:00:00", 11.5, "0%", 100, 11.0, 11.5, 11.0, 0],
+    ["2026-08-17 22:00:00", 11.8, "0%", 200, 11.5, 12.0, 10.5, 0],
+    # 日盘 (8-18): close 12.2
+    ["2026-08-18 09:30:00", 12.0, "0%", 300, 11.8, 12.1, 11.7, 0],
+    ["2026-08-18 15:00:00", 12.2, "0%", 150, 12.0, 12.2, 11.9, 0],
+    # 次日
+    ["2026-08-19 09:30:00", 12.5, "0%", 80, 12.3, 12.6, 12.2, 0],
+]
+
+
+def test_build_option_daily_aggregates(monkeypatch):
+    """分钟 -> 日K: 夜盘并入次日, OHLCV 聚合正确, IV 日线带上."""
+    monkeypatch.setattr(ovlab, "get_kline_history",
+                        lambda *a, **k: {"data": _MIN_BARS})
+    monkeypatch.setattr(ovlab, "get_atmvol_history",
+                        lambda *a, **k: {"data": [["2026-08-18", 20.03]]})
+    out = ovlab._build_option_daily("AU2609C952", "AU2609")
+    assert out["code"] == "AU2609C952"
+    bars = out["bars"]
+    assert [b["t"] for b in bars] == ["2026-08-18", "2026-08-19"]
+    d1 = bars[0]
+    assert d1["open"] == pytest.approx(11.0)   # 夜盘第一根 open
+    assert d1["high"] == pytest.approx(12.2)
+    assert d1["low"] == pytest.approx(10.5)
+    assert d1["close"] == pytest.approx(12.2)  # 日盘最后一根 close
+    assert d1["vol"] == pytest.approx(750.0)   # 100+200+300+150
+    assert out["iv"] == [["2026-08-18", 20.03]]
+
+
+def test_build_option_daily_no_data(monkeypatch):
+    monkeypatch.setattr(ovlab, "get_kline_history", lambda *a, **k: {"data": []})
+    assert ovlab._build_option_daily("XX", "") == {}
+
+
+def test_get_option_daily_empty_code():
+    assert ovlab.get_option_daily("") == {}
+    assert ovlab.get_option_daily("   ") == {}

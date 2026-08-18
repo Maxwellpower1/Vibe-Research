@@ -13,9 +13,11 @@ const COLS: { key: keyof OvlabMarketRow; label: string; cls?: string; sortable?:
 ];
 
 /** 隐波/溢价: 全部国内品种一张表, 点列头排序 (默认 IVP 降序). */
-export function IvPanel({ d, onPickSymbol }: {
+export function IvPanel({ d, onPickSymbol, onPickProduct }: {
   d: DerivData;
   onPickSymbol?: (sym: string) => void;
+  /** 提供时行点击联动 T 型报价, 不再跳 K线. */
+  onPickProduct?: (prodUnd: string) => void;
 }) {
   const [sort, setSort] = useState<SortState<OvlabMarketRow>>({ key: "atmv_percentile", dir: "desc" });
 
@@ -43,8 +45,11 @@ export function IvPanel({ d, onPickSymbol }: {
             return (
               <tr
                 key={`${r.product}-${r.exp ?? ""}`}
-                onClick={sym && onPickSymbol ? () => onPickSymbol(sym) : undefined}
-                className={cn(onPickSymbol && sym && "cursor-pointer")}
+                onClick={onPickProduct
+                  ? () => onPickProduct(String(r.prodUnd ?? r.product))
+                  : sym && onPickSymbol ? () => onPickSymbol(sym) : undefined}
+                className={cn((onPickProduct || (onPickSymbol && sym)) && "cursor-pointer")}
+                title={onPickProduct ? `调出 ${String(r.product_alias ?? r.product)} T 型报价` : undefined}
               >
                 <td className="name text-slate-200">{String(r.product_alias ?? r.product)}</td>
                 <td className="num text-slate-300">{iv !== null ? iv.toFixed(2) : <span className="nil">-</span>}</td>

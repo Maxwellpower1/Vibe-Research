@@ -8,6 +8,18 @@ import { CellEmpty } from "./derivShared";
 
 const WINDOW = 6; // ATM 上下各 6 档
 
+/** 点选的期权合约 (联动日K/分时卡片). */
+export interface OptionPick {
+  code: string; // 期权合约代码, 如 AU2609C952
+  und: string;  // 标的码 (日K IV 叠加用)
+  name: string; // 展示名, 如 AU2609购952
+}
+
+/** 代码转展示名: AU2609C952 -> AU2609购952. 锚定末尾 C/P+行权价, 防品种码本身含 C/P (玉米 C / PP / ZC). */
+export function optionName(code: string): string {
+  return code.replace(/C(\d+(?:\.\d+)?)$/, "购$1").replace(/P(\d+(?:\.\d+)?)$/, "沽$1");
+}
+
 function fmtPrice(v: number | null | undefined): string {
   if (v === null || v === undefined) return "-";
   return Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2);
@@ -31,35 +43,44 @@ function ivOf(s: OvlabTQuoteSide): number | null {
   return num(s.theoIv);
 }
 
-/** 单侧 4 格: call 侧右对齐 (价 IV Δ 持仓), put 侧左对齐反向 (持仓 Δ IV 价). */
-function SideCells({ s, itm, side }: { s: OvlabTQuoteSide; itm: boolean; side: "call" | "put" }) {
+/** 单侧 4 格: call 侧右对齐 (价 IV Δ 持仓), put 侧左对齐反向 (持仓 Δ IV 价). 整侧可点选. */
+function SideCells({ s, itm, side, selected, onPick }: {
+  s: OvlabTQuoteSide;
+  itm: boolean;
+  side: "call" | "put";
+  selected?: boolean;
+  onPick?: () => void;
+}) {
   const iv = ivOf(s);
   const delta = num(s.delta);
   const oi = num(s.oi);
   const oiChg = num(s.oiChg);
-  const bg = itm ? "bg-slate-800/40" : undefined;
+  const bg = selected ? "bg-violet-500/15" : itm ? "bg-slate-800/40" : undefined;
   const alignCls = side === "call" ? "num" : "text-left tabular-nums";
+  const pickCls = onPick ? "cursor-pointer hover:bg-violet-500/10" : undefined;
   const priceTd = (
-    <td key="price" className={cn(alignCls, "text-slate-200", bg)}>{fmtPrice(s.price)}</td>
+    <td key="price" onClick={onPick} className={cn(alignCls, "text-slate-200", bg, pickCls)}>{fmtPrice(s.price)}</td>
   );
   const ivTd = (
     <td
       key="iv"
-      className={cn(alignCls, "text-violet-300/90", bg)}
+      onClick={onPick}
+      className={cn(alignCls, "text-violet-300/90", bg, pickCls)}
       title={`买IV ${num(s.ivBid)?.toFixed(1) ?? "-"} / 卖IV ${num(s.ivAsk)?.toFixed(1) ?? "-"}`}
     >
       {iv !== null ? iv.toFixed(1) : <span className="nil">-</span>}
     </td>
   );
   const deltaTd = (
-    <td key="delta" className={cn(alignCls, "text-slate-400", bg)}>
+    <td key="delta" onClick={onPick} className={cn(alignCls, "text-slate-400", bg, pickCls)}>
       {delta !== null ? delta.toFixed(2) : "-"}
     </td>
   );
   const oiTd = (
     <td
       key="oi"
-      className={cn(alignCls, "text-slate-400", bg)}
+      onClick={onPick}
+      className={cn(alignCls, "text-slate-400", bg, pickCls)}
       title={oiChg !== null ? `持仓变化 ${oiChg > 0 ? "+" : ""}${Math.round(oiChg)}` : undefined}
     >
       {fmtOi(oi)}
@@ -75,8 +96,15 @@ function SideCells({ s, itm, side }: { s: OvlabTQuoteSide; itm: boolean; side: "
     : <>{oiTd}{deltaTd}{ivTd}{priceTd}</>;
 }
 
-/** T 型报价: 行权价链 (理论价/IV/Delta/持仓) x 到期月. 数据 OpenVlab volatility-surface + Black-76. */
-export function TQuotePanel({ d }: { d: DerivData }) {
+/** T 型报价: 行权价链 (理论价/IV/Delta/持仓) x 到期月. 数据 OpenVlab volatility-surface + Black-76.
+ *  品种受控于驾驶舱 (点品种行联动); 点单侧格子发出 onPickContract 联动日K/分时卡. */
+export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
+  d: DerivData;
+  product?: string;
+  onProduct?: (prod: string) => void;
+  pick?: OptionPick | null;
+  onPickContract?: (p: OptionPick) => void;
+}) {
   const products = useMemo(() => {
     const seen = new Set<string>();
     const out: Array<{ code: string; alias: string }> = [];
@@ -89,12 +117,13 @@ export function TQuotePanel({ d }: { d: DerivData }) {
     return out;
   }, [d.rows]);
 
-  const [prod, setProd] = useState<string>("");
+  const prod = product ?? "";
+  // 默认品种: 第一个有隐波数据的
   useEffect(() => {
-    if (prod || products.length === 0) return;
+    if (prod || products.length === 0 || !onProduct) return;
     const preferred = d.rows?.find((r) => num(r.atmv_current) !== null);
-    setProd(String(preferred?.prodUnd ?? products[0].code));
-  }, [prod, products, d.rows]);
+    onProduct(String(preferred?.prodUnd ?? products[0].code));
+  }, [prod, products, d.rows, onProduct]);
 
   const [exp, setExp] = useState<string>("");
   useEffect(() => { setExp(""); }, [prod]); // 换品种回到最近月
@@ -120,13 +149,18 @@ export function TQuotePanel({ d }: { d: DerivData }) {
   const fwd = num(cur?.forward);
   const atmIvChg = cur?.atmIv != null && cur?.atmIvYd != null ? cur.atmIv - cur.atmIvYd : null;
 
+  const emitPick = (code: string | undefined) => {
+    if (!code || !onPickContract) return;
+    onPickContract({ code, und: cur?.und ?? "", name: optionName(code) });
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 品种 + 到期月选择 */}
       <div className="flex shrink-0 flex-wrap items-center gap-1 px-1.5 pt-1">
         <select
           value={prod}
-          onChange={(e) => setProd(e.target.value)}
+          onChange={(e) => onProduct?.(e.target.value)}
           className="h-5 max-w-[7.5rem] rounded border border-slate-700/60 bg-slate-900 px-1 text-[10px] text-slate-300 outline-none"
           title="品种"
         >
@@ -202,7 +236,13 @@ export function TQuotePanel({ d }: { d: DerivData }) {
                 const putItm = fwd !== null && s.strike > fwd;
                 return (
                   <tr key={s.strike} className={cn(isAtm && "bg-cyan-500/10")}>
-                    <SideCells s={s.call} itm={callItm} side="call" />
+                    <SideCells
+                      s={s.call}
+                      itm={callItm}
+                      side="call"
+                      selected={pick?.code != null && pick.code === s.callCode}
+                      onPick={s.callCode && onPickContract ? () => emitPick(s.callCode) : undefined}
+                    />
                     <td className={cn(
                       "text-center font-medium tabular-nums",
                       isAtm ? "text-cyan-300" : "text-slate-400",
@@ -210,7 +250,13 @@ export function TQuotePanel({ d }: { d: DerivData }) {
                       {fmtStrike(s.strike)}
                       {isAtm && <span className="ml-0.5 text-[8px] text-cyan-500/80">ATM</span>}
                     </td>
-                    <SideCells s={s.put} itm={putItm} side="put" />
+                    <SideCells
+                      s={s.put}
+                      itm={putItm}
+                      side="put"
+                      selected={pick?.code != null && pick.code === s.putCode}
+                      onPick={s.putCode && onPickContract ? () => emitPick(s.putCode) : undefined}
+                    />
                   </tr>
                 );
               })}
