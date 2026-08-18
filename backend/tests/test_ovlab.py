@@ -80,6 +80,36 @@ def test_cached_open_failure_falls_back_to_last(monkeypatch):
     assert ovlab.get_market_overview() == [{"x": 1}]
 
 
+def test_cached_open_failure_does_not_refresh_ttl(monkeypatch):
+    """失败回落不重盖 TTL, 下次过期请求继续试上游."""
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: True)
+    calls = []
+    monkeypatch.setattr(ovlab, "_get", lambda *a, **k: calls.append("ok") or [{"x": 1}])
+    ovlab.get_market_overview()
+    ovlab._CACHE.expire("ovlab_market")
+
+    def boom(*a, **k):
+        calls.append("boom")
+        raise RuntimeError("upstream down")
+    monkeypatch.setattr(ovlab, "_get", boom)
+    assert ovlab.get_market_overview() == [{"x": 1}]
+    assert ovlab.get_market_overview() == [{"x": 1}]
+    assert calls.count("boom") == 2
+
+
+def test_flow_alert_ttl_60s(monkeypatch):
+    """异动盘中 60s 缓存, 与驾驶舱轮询对齐."""
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: True)
+    calls = []
+    monkeypatch.setattr(ovlab, "_get", lambda *a, **k: calls.append(a) or [{"t": 1}])
+    assert ovlab.get_flow_alerts() == [{"t": 1}]
+    assert ovlab.get_flow_alerts() == [{"t": 1}]
+    assert len(calls) == 1
+    ovlab._CACHE.expire("ovlab_flow_alert")
+    assert ovlab.get_flow_alerts() == [{"t": 1}]
+    assert len(calls) == 2
+
+
 def test_cached_cold_key_fetches_once_when_closed(monkeypatch):
     """休市冷键 (启动后第一枪): 放行一次出网."""
     calls = []

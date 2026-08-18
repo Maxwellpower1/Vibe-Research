@@ -4,7 +4,7 @@ import type { DerivData } from "@/hooks/useDerivData";
 import { usePolling } from "@/hooks/usePolling";
 import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
-import { CellEmpty } from "./derivShared";
+import { CellEmpty, CtnText, ProdSearchSelect } from "./derivShared";
 
 /** 点选的期权合约 (联动日K/分时卡片). */
 export interface OptionPick {
@@ -180,7 +180,8 @@ function SideCells({ s, itm, side, selected, maxOi, oiMax, atmIv, onPick }: {
 
 /** T 型报价: 行权价链 (理论价/IV/Delta/持仓横条) x 到期月. 数据 OpenVlab volatility-surface + Black-76.
  *  品种受控于驾驶舱 (点品种行联动); 点单侧格子发出 onPickContract 联动日K/分时卡.
- *  换品种/到期月且当前选中不在链上时, 自动点 ATM 购. */
+ *  换品种/到期月且当前选中不在链上时, 自动点 ATM 购.
+ *  标的最新/涨跌挂 d.rows (ovlab_market), 不另开轮询. */
 export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   d: DerivData;
   product?: string;
@@ -230,6 +231,12 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   }, [cur]);
   const oiMax = useMemo(() => maxOiVal(rows), [rows]);
 
+  const mkt = useMemo(
+    () => (d.rows ?? []).find((r) => String(r.prodUnd ?? "").trim() === prod),
+    [d.rows, prod],
+  );
+  const undPx = num(mkt?.price);
+  const undCtn = num(mkt?.ctn);
   const fwd = num(cur?.forward);
   const fwdYd = num(cur?.forwardYd);
   const fwdChg = fwd !== null && fwdYd !== null && fwdYd !== 0 ? ((fwd - fwdYd) / fwdYd) * 100 : null;
@@ -258,17 +265,27 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 px-1.5 pt-1">
-        <select
+      <div className="relative z-20 flex shrink-0 items-center gap-1 px-1.5 pt-1">
+        <ProdSearchSelect
           value={prod}
-          onChange={(e) => onProduct?.(e.target.value)}
-          className="h-6 max-w-[8.5rem] shrink-0 rounded border border-slate-700/60 bg-slate-900 px-1.5 text-[11px] text-slate-200 outline-none"
-          title="品种"
-        >
-          {products.map((p) => (
-            <option key={p.code} value={p.code}>{p.alias} {p.code}</option>
-          ))}
-        </select>
+          options={products.map((p) => ({ value: p.code, label: `${p.alias} ${p.code}` }))}
+          onChange={(v) => onProduct?.(v)}
+        />
+        {undPx !== null && (
+          <span className="flex shrink-0 items-baseline gap-1.5 px-1" title="标的最新价 / 涨跌幅 (与行情观察同一快照)">
+            <span className={cn(
+              "text-[17px] font-semibold tabular-nums leading-none",
+              undCtn != null && undCtn > 0 ? "text-red-400"
+                : undCtn != null && undCtn < 0 ? "text-emerald-400"
+                  : "text-slate-50",
+            )}>
+              {fmtPrice(undPx)}
+            </span>
+            <span className="text-[13px] font-medium leading-none">
+              <CtnText value={mkt?.ctn} />
+            </span>
+          </span>
+        )}
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {expiries.map((e) => (
             <button

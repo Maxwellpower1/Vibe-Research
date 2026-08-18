@@ -14,9 +14,9 @@ export const FLOW_RULE_LABEL: Record<string, string> = {
 };
 
 const RULE_HINT: Record<string, string> = {
-  r001_single_trade: "3秒内的单笔成交手数",
-  r002_1m_pct_move: "1分钟内的价格涨幅",
-  r003_repeated_aggressive_burst: "2秒内连续5次以上同向成交且价格单调变化",
+  r001_single_trade: "3秒内单笔: 区间成交额或手数达标",
+  r002_1m_pct_move: "1分钟涨幅且成交额达标",
+  r003_repeated_aggressive_burst: "2秒内连续同向成交额达标",
 };
 
 const RULE_TONE: Record<string, string> = {
@@ -26,39 +26,82 @@ const RULE_TONE: Record<string, string> = {
 };
 
 const THRESH_KEY = "deriv.alertThresh";
-/** Floor matching live OpenVlab flow-alert (local filter can only tighten). */
-const DEFAULT_THRESH = { lots: 50, pct: 10, prem: 50_000 };
+const THRESH_VER = 2;
 
-type Thresh = { lots: number; pct: number; prem: number };
+type OnMap = { r001: boolean; r002: boolean; r003: boolean };
+type Thresh = {
+  on: OnMap;
+  lots: number;
+  tradePrem: number;
+  pct: number;
+  movePrem: number;
+  burstPrem: number;
+};
 
-function clampThresh(t: Thresh): Thresh {
+/** Hard floors. Defaults may sit above these; local filter cannot go below. */
+const FLOOR: Omit<Thresh, "on"> = {
+  lots: 50,
+  tradePrem: 10_000,
+  pct: 0,
+  movePrem: 1_000,
+  burstPrem: 50_000,
+};
+
+const DEFAULT_THRESH: Thresh = {
+  on: { r001: true, r002: true, r003: true },
+  lots: 100,
+  tradePrem: 100_000,
+  pct: 20,
+  movePrem: 10_000,
+  burstPrem: 50_000,
+};
+
+function cloneThresh(t: Thresh): Thresh {
+  return { ...t, on: { ...t.on } };
+}
+
+export function clampThresh(t: Thresh): Thresh {
+  const n = (v: unknown, floor: number) => {
+    const x = Number(v);
+    return Number.isFinite(x) ? Math.max(floor, x) : floor;
+  };
   return {
-    lots: Math.max(DEFAULT_THRESH.lots, t.lots),
-    pct: Math.max(DEFAULT_THRESH.pct, t.pct),
-    prem: Math.max(DEFAULT_THRESH.prem, t.prem),
+    on: {
+      r001: t.on?.r001 !== false,
+      r002: t.on?.r002 !== false,
+      r003: t.on?.r003 !== false,
+    },
+    lots: n(t.lots, FLOOR.lots),
+    tradePrem: n(t.tradePrem, FLOOR.tradePrem),
+    pct: n(t.pct, FLOOR.pct),
+    movePrem: n(t.movePrem, FLOOR.movePrem),
+    burstPrem: n(t.burstPrem, FLOOR.burstPrem),
   };
 }
 
 function loadThresh(): Thresh {
   try {
-    const o = JSON.parse(storageGet(THRESH_KEY) ?? "null") as Partial<Thresh> | null;
-    if (!o || typeof o !== "object") return { ...DEFAULT_THRESH };
-    const n = (v: unknown, fb: number) => {
-      const x = Number(v);
-      return Number.isFinite(x) && x >= 0 ? x : fb;
-    };
+    const o = JSON.parse(storageGet(THRESH_KEY) ?? "null") as (Partial<Thresh> & { v?: number }) | null;
+    if (!o || typeof o !== "object" || o.v !== THRESH_VER) return cloneThresh(DEFAULT_THRESH);
     return clampThresh({
-      lots: n(o.lots, DEFAULT_THRESH.lots),
-      pct: n(o.pct, DEFAULT_THRESH.pct),
-      prem: n(o.prem, DEFAULT_THRESH.prem),
+      on: {
+        r001: o.on?.r001 !== false,
+        r002: o.on?.r002 !== false,
+        r003: o.on?.r003 !== false,
+      },
+      lots: Number(o.lots),
+      tradePrem: Number(o.tradePrem),
+      pct: Number(o.pct),
+      movePrem: Number(o.movePrem),
+      burstPrem: Number(o.burstPrem),
     });
   } catch {
-    return { ...DEFAULT_THRESH };
+    return cloneThresh(DEFAULT_THRESH);
   }
 }
 
 function saveThresh(t: Thresh) {
-  storageSet(THRESH_KEY, JSON.stringify(t));
+  storageSet(THRESH_KEY, JSON.stringify({ v: THRESH_VER, ...t }));
 }
 
 function alertKey(a: Pick<OvlabFlowAlert, "contract_code" | "time" | "rule_id">): string {
@@ -87,25 +130,35 @@ function fmtAmt(n: number): string {
 function triggerHint(a: OvlabFlowAlert): string {
   const rid = String(a.rule_id ?? "");
   const base = RULE_HINT[rid] ?? "";
-  if (rid === "r001_single_trade") {
-    const v = num(a.window_volume);
-    return v != null ? `${base} ${Math.round(v)}手` : base;
-  }
+  const vol = num(a.window_volume);
+  const prem = num(a.window_premium);
+  const bits = [base];
+  if (vol != null) bits.push(`${Math.round(vol)}手`);
+  if (prem != null) bits.push(fmtAmt(prem));
   if (rid === "r003_repeated_aggressive_burst") {
-    const v = num(a.window_premium);
     const fill = a.fill_type === "descending_fill" ? "下行" : a.fill_type === "ascending_fill" ? "上行" : "";
-    return v != null ? `${base} ${fmtAmt(v)}${fill ? ` ${fill}` : ""}` : base;
+    if (fill) bits.push(fill);
   }
-  return base;
+  return bits.join(" ");
 }
 
 export function passesThresh(a: OvlabFlowAlert, t: Thresh): boolean {
   const rid = String(a.rule_id ?? "");
-  if (!FLOW_RULE_LABEL[rid]) return false;
-  const floor = clampThresh(t);
-  if (rid === "r001_single_trade") return (num(a.window_volume) ?? 0) >= floor.lots;
-  if (rid === "r002_1m_pct_move") return Math.abs(intervalPct(a) ?? 0) >= floor.pct;
-  if (rid === "r003_repeated_aggressive_burst") return (num(a.window_premium) ?? 0) >= floor.prem;
+  const f = clampThresh(t);
+  const vol = num(a.window_volume) ?? 0;
+  const prem = num(a.window_premium) ?? 0;
+  if (rid === "r001_single_trade") {
+    if (!f.on.r001) return false;
+    return prem >= f.tradePrem || vol >= f.lots;
+  }
+  if (rid === "r002_1m_pct_move") {
+    if (!f.on.r002) return false;
+    return Math.abs(intervalPct(a) ?? 0) >= f.pct && prem >= f.movePrem;
+  }
+  if (rid === "r003_repeated_aggressive_burst") {
+    if (!f.on.r003) return false;
+    return prem >= f.burstPrem;
+  }
   return false;
 }
 
@@ -135,7 +188,25 @@ function ThreshField({
   );
 }
 
-/** 异动: flow-alert feed. Columns match OpenVlab option-flow; thresh is local tighten-only. */
+function RuleCheck({
+  on, label, tone, onToggle,
+}: {
+  on: boolean; label: string; tone: string; onToggle: () => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-1.5">
+      <input
+        type="checkbox"
+        checked={on}
+        onChange={onToggle}
+        className="accent-cyan-400"
+      />
+      <span className={cn("text-[11px] font-medium", on ? tone : "text-slate-600")}>{label}</span>
+    </label>
+  );
+}
+
+/** 异动: flow-alert feed. Local thresh + per-rule on/off; no extra poll. */
 export function AlertPanel({ d }: { d: DerivData }) {
   const [thresh, setThresh] = useState<Thresh>(loadThresh);
   const [cfgOpen, setCfgOpen] = useState(false);
@@ -148,6 +219,7 @@ export function AlertPanel({ d }: { d: DerivData }) {
     setThresh(clamped);
     saveThresh(clamped);
   };
+  const toggleOn = (k: keyof OnMap) => setAndSave({ ...thresh, on: { ...thresh.on, [k]: !thresh.on[k] } });
 
   const alerts = useMemo(() => {
     const raw = d.alerts ?? [];
@@ -176,44 +248,106 @@ export function AlertPanel({ d }: { d: DerivData }) {
     <div className="flex h-full flex-col">
       <div className="relative flex shrink-0 items-center justify-end gap-2 border-b border-slate-800/60 px-2 py-0.5">
         <span className="mr-auto tabular-nums text-[11px] text-slate-500">{alerts.length}条</span>
+        <button
+          type="button"
+          onClick={() => toggleOn("r001")}
+          className={cn("text-[11px]", thresh.on.r001 ? "text-amber-400" : "text-slate-600 hover:text-slate-400")}
+          title={thresh.on.r001 ? "成交异动开" : "成交异动关"}
+        >
+          成交
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleOn("r002")}
+          className={cn("text-[11px]", thresh.on.r002 ? "text-sky-400" : "text-slate-600 hover:text-slate-400")}
+          title={thresh.on.r002 ? "走势异动开" : "走势异动关"}
+        >
+          走势
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleOn("r003")}
+          className={cn("text-[11px]", thresh.on.r003 ? "text-fuchsia-400" : "text-slate-600 hover:text-slate-400")}
+          title={thresh.on.r003 ? "连续成交开" : "连续成交关"}
+        >
+          连续
+        </button>
         <div ref={cfgRef} className="relative">
           <button
             type="button"
             onClick={() => setCfgOpen((v) => !v)}
             className={cn("text-[11px]", cfgOpen ? "text-amber-400" : "text-slate-500 hover:text-slate-300")}
-            title="自定义阈值 (只能再收紧上游榜)"
+            title="自定义阈值"
           >
             阈值
           </button>
           {cfgOpen && (
-            <div className="absolute right-0 top-full z-20 mt-1 w-[13.5rem] space-y-1.5 rounded border border-slate-700/80 bg-slate-900 p-2 shadow-lg">
-              <ThreshField
-                label="成交手数"
-                suffix="手"
-                min={DEFAULT_THRESH.lots}
-                value={thresh.lots}
-                onChange={(lots) => setAndSave({ ...thresh, lots })}
-              />
-              <ThreshField
-                label="涨幅阈值"
-                suffix="%"
-                min={DEFAULT_THRESH.pct}
-                value={thresh.pct}
-                onChange={(pct) => setAndSave({ ...thresh, pct })}
-              />
-              <ThreshField
-                label="成交金额"
-                suffix="元"
-                min={DEFAULT_THRESH.prem}
-                value={thresh.prem}
-                onChange={(prem) => setAndSave({ ...thresh, prem })}
-              />
+            <div className="absolute right-0 top-full z-20 mt-1 w-[17.5rem] space-y-2 rounded border border-slate-700/80 bg-slate-900 p-2 shadow-lg">
+              <div className="space-y-1 border-b border-slate-800 pb-1.5">
+                <RuleCheck
+                  on={thresh.on.r001}
+                  label="成交异动"
+                  tone="text-amber-400"
+                  onToggle={() => toggleOn("r001")}
+                />
+                <ThreshField
+                  label="区间成交额"
+                  suffix="元"
+                  min={FLOOR.tradePrem}
+                  value={thresh.tradePrem}
+                  onChange={(tradePrem) => setAndSave({ ...thresh, tradePrem })}
+                />
+                <ThreshField
+                  label="或 成交量"
+                  suffix="手"
+                  min={FLOOR.lots}
+                  value={thresh.lots}
+                  onChange={(lots) => setAndSave({ ...thresh, lots })}
+                />
+              </div>
+              <div className="space-y-1 border-b border-slate-800 pb-1.5">
+                <RuleCheck
+                  on={thresh.on.r002}
+                  label="走势异动"
+                  tone="text-sky-400"
+                  onToggle={() => toggleOn("r002")}
+                />
+                <ThreshField
+                  label="1分钟涨幅"
+                  suffix="%"
+                  min={FLOOR.pct}
+                  value={thresh.pct}
+                  onChange={(pct) => setAndSave({ ...thresh, pct })}
+                />
+                <ThreshField
+                  label="1分钟成交额"
+                  suffix="元"
+                  min={FLOOR.movePrem}
+                  value={thresh.movePrem}
+                  onChange={(movePrem) => setAndSave({ ...thresh, movePrem })}
+                />
+              </div>
+              <div className="space-y-1">
+                <RuleCheck
+                  on={thresh.on.r003}
+                  label="连续成交"
+                  tone="text-fuchsia-400"
+                  onToggle={() => toggleOn("r003")}
+                />
+                <ThreshField
+                  label="2秒成交额"
+                  suffix="元"
+                  min={FLOOR.burstPrem}
+                  value={thresh.burstPrem}
+                  onChange={(burstPrem) => setAndSave({ ...thresh, burstPrem })}
+                />
+              </div>
               <button
                 type="button"
-                onClick={() => setAndSave({ ...DEFAULT_THRESH })}
+                onClick={() => setAndSave(cloneThresh(DEFAULT_THRESH))}
                 className="w-full text-left text-[10px] text-slate-600 hover:text-slate-400"
               >
-                恢复默认 {DEFAULT_THRESH.lots}手 / {DEFAULT_THRESH.pct}% / {fmtAmt(DEFAULT_THRESH.prem)}
+                恢复默认 10万/100手 · 20%/1万 · 5万
               </button>
             </div>
           )}
@@ -228,7 +362,9 @@ export function AlertPanel({ d }: { d: DerivData }) {
         </button>
       </div>
       <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
-        {alerts.length === 0 && <CellEmpty text="暂无异动" />}
+        {alerts.length === 0 && (
+          <CellEmpty text={thresh.on.r001 || thresh.on.r002 || thresh.on.r003 ? "暂无异动" : "未勾选类型"} />
+        )}
         {alerts.length > 0 && (
           <table className="w-full border-collapse text-[11px]">
             <thead>
@@ -238,6 +374,7 @@ export function AlertPanel({ d }: { d: DerivData }) {
                 <th className="sticky top-0 z-[1] bg-card px-1 py-1 text-left font-semibold" title="异动类型">类型</th>
                 <th className="sticky top-0 z-[1] bg-card px-1 py-1 text-right font-semibold" title="剩余天数">剩余</th>
                 <th className="sticky top-0 z-[1] bg-card px-1.5 py-1 text-right font-semibold" title="区间涨幅">区间</th>
+                <th className="sticky top-0 z-[1] bg-card px-1.5 py-1 text-right font-semibold" title="区间成交量">量</th>
               </tr>
             </thead>
             <tbody>
@@ -247,6 +384,7 @@ export function AlertPanel({ d }: { d: DerivData }) {
                 const rid = String(a.rule_id ?? "");
                 const pct = intervalPct(a);
                 const dte = daysToExpiry(a.exp_date);
+                const vol = num(a.window_volume);
                 return (
                   <tr
                     key={k}
@@ -276,6 +414,12 @@ export function AlertPanel({ d }: { d: DerivData }) {
                       pct == null ? "text-slate-600" : pct > 0 ? "text-red-400" : pct < 0 ? "text-emerald-400" : "text-slate-500",
                     )}>
                       {pct == null ? "-" : `${pct > 0 ? "+" : ""}${Math.abs(pct) >= 10 ? pct.toFixed(0) : pct.toFixed(1)}%`}
+                    </td>
+                    <td
+                      className="px-1.5 py-0.5 text-right tabular-nums text-slate-300"
+                      title={vol != null ? `${Math.round(vol)}手` : undefined}
+                    >
+                      {vol == null ? "-" : fmtAmt(vol)}
                     </td>
                   </tr>
                 );

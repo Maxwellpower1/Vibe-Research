@@ -87,7 +87,7 @@ def ovlab_future_ts(
 
 @router.get("/api/ovlab/flow-alert")
 def ovlab_flow_alert():
-    """OpenVlab 异动榜 (flow-alert): 成交/走势/连续成交, 含到期日与区间涨幅. 缓存 5 分钟."""
+    """OpenVlab 异动榜 (flow-alert): 成交/走势/连续成交, 含到期日与区间涨幅. 盘中缓存 60 秒."""
     return _ovlab_call(ovlab.get_flow_alerts, "异动榜")
 
 

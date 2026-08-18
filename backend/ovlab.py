@@ -104,7 +104,7 @@ def _cached(key: str, fn, valid=is_nonempty, ttl: float | None = None):
     """Session-aware cache. Empty upstream is not stored, next call retries.
 
     休市: 有上一笔直接喂, 不出网; 冷键放行一次 (启动后第一枪).
-    盘中: 过期重取, 上游失败回落上一笔.
+    盘中: 过期重取, 上游失败回落上一笔 (不刷新 TTL, 下次请求继续试).
     ttl: custom seconds, default _TTL.
     """
     if not deriv_market_open():
@@ -112,17 +112,14 @@ def _cached(key: str, fn, valid=is_nonempty, ttl: float | None = None):
         if last is not None and valid(last):
             return last
 
-    def _fetch():
-        try:
-            return fn()
-        except Exception:
-            last = _CACHE.get_last(key)
-            if last is not None and valid(last):
-                logger.warning("ovlab %s upstream failed, serve last-good", key)
-                return last
-            raise
-
-    return _CACHE.get_or_set(key, _fetch, ttl=ttl, valid=valid, negative_ttl=0, serve_last=False)
+    try:
+        return _CACHE.get_or_set(key, fn, ttl=ttl, valid=valid, negative_ttl=0, serve_last=False)
+    except Exception:
+        last = _CACHE.get_last(key)
+        if last is not None and valid(last):
+            logger.warning("ovlab %s upstream failed, serve last-good", key)
+            return last
+        raise
 
 
 def _get(path: str, params: dict[str, Any] | None = None, timeout: float = 20.0) -> Any:
@@ -235,12 +232,13 @@ def get_future_term_structure(prod_und: str) -> dict[str, Any]:
 def get_flow_alerts() -> list[dict[str, Any]]:
     """异动榜 (flow-alert): 成交异动/走势异动/连续成交, 含到期日/区间涨幅/窗口量额.
 
-    数据量较大 (数百条), 含缓存 5 分钟.
+    上游秒级更新. 盘中缓存 60s 对齐驾驶舱轮询, 约 1 次/分钟出网, 不另限流.
     """
     return _cached(
         "ovlab_flow_alert",
         lambda: _get("flow-alert"),
         valid=lambda v: isinstance(v, list) and len(v) > 0,
+        ttl=60,
     )
 
 

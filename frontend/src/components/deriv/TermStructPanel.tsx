@@ -5,7 +5,7 @@ import { usePolling } from "@/hooks/usePolling";
 import type { DerivData } from "@/hooks/useDerivData";
 import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
-import { CellEmpty } from "./derivShared";
+import { CellEmpty, ProdSearchSelect } from "./derivShared";
 
 const AXIS = "#475569";
 const SPLIT = "rgba(51,65,85,0.5)";
@@ -383,17 +383,12 @@ export function TermStructPanel({ d }: { d: DerivData }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 px-2 pt-1 text-[12px]">
-        <select
+      <div className="relative z-20 flex shrink-0 items-center gap-2 px-2 pt-1 text-[12px]">
+        <ProdSearchSelect
           value={sel ?? ""}
-          onChange={(e) => setInner(e.target.value)}
-          className="h-6 max-w-[8rem] rounded border border-slate-700/60 bg-slate-900 px-1.5 text-[11px] text-slate-200 outline-none"
-          title="品种"
-        >
-          {withCurve.map((u) => (
-            <option key={u} value={u}>{labelOf(u)} {u}</option>
-          ))}
-        </select>
+          options={withCurve.map((u) => ({ value: u, label: `${labelOf(u)} ${u}` }))}
+          onChange={setInner}
+        />
         <span className="ml-auto text-[11px] text-slate-600">左价 右仓 · 实=今 虚=昨</span>
       </div>
       <ReceiptStrip sel={sel} wr={wr} loading={wrLoading} err={wrPoll.error} />

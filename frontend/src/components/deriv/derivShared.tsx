@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown } from "lucide-react";
 import type { OvlabMarketRow } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { num } from "@/components/ovlab/shared";
@@ -273,5 +273,128 @@ export function IvTriple({ row }: { row: Pick<OvlabMarketRow, "atmv_current" | "
         {carry !== null ? carry.toFixed(1) : "-"}
       </span>
     </>
+  );
+}
+
+export type ProdOption = { value: string; label: string };
+
+/** Filter by code or alias (case-insensitive, ignore spaces). */
+export function filterProdOptions(opts: ProdOption[], q: string): ProdOption[] {
+  const s = q.trim().toLowerCase().replace(/\s+/g, "");
+  if (!s) return opts;
+  return opts.filter((o) => `${o.value}${o.label}`.toLowerCase().replace(/\s+/g, "").includes(s));
+}
+
+/** Compact product combobox: native-select look, search box inside the menu. */
+export function ProdSearchSelect({
+  value,
+  options,
+  onChange,
+  title = "品种",
+  className,
+}: {
+  value: string;
+  options: ProdOption[];
+  onChange: (v: string) => void;
+  title?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [hi, setHi] = useState(0);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const cur = options.find((o) => o.value === value);
+  const hits = useMemo(() => filterProdOptions(options, q), [options, q]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setQ("");
+    setHi(0);
+    const id = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [open]);
+
+  const pick = (v: string) => {
+    onChange(v);
+    setOpen(false);
+  };
+
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHi((n) => Math.min(hits.length - 1, n + 1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHi((n) => Math.max(0, n - 1));
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const hit = hits[hi] ?? hits[0];
+      if (hit) pick(hit.value);
+    }
+  };
+
+  return (
+    <div ref={boxRef} className={cn("relative shrink-0", className)}>
+      <button
+        type="button"
+        title={title}
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-6 w-full max-w-[8.5rem] items-center gap-0.5 rounded border border-slate-700/60 bg-slate-900 px-1.5 text-left text-[11px] text-slate-200 outline-none hover:border-slate-500"
+      >
+        <span className="min-w-0 flex-1 truncate">{cur?.label || title}</span>
+        <ChevronDown className="h-3 w-3 shrink-0 text-slate-500" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-0.5 w-52 overflow-hidden rounded border border-slate-700/70 bg-slate-900 shadow-xl">
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={(e) => { setQ(e.target.value); setHi(0); }}
+            onKeyDown={onKey}
+            placeholder="搜代码 / 名称"
+            className="h-7 w-full border-b border-slate-800 bg-slate-900 px-2 text-[11px] text-slate-200 outline-none placeholder:text-slate-600"
+          />
+          <div className="max-h-56 overflow-y-auto py-0.5">
+            {hits.length === 0 && (
+              <div className="px-2 py-1.5 text-[10px] text-slate-600">无匹配</div>
+            )}
+            {hits.map((o, i) => (
+              <button
+                key={o.value}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(o.value)}
+                className={cn(
+                  "flex w-full px-2 py-1 text-left text-[11px]",
+                  i === hi ? "bg-slate-800 text-slate-100" : "text-slate-300 hover:bg-slate-800/60",
+                  o.value === value && "text-cyan-300",
+                )}
+              >
+                <span className="truncate">{o.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

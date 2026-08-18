@@ -66,6 +66,11 @@ test("TQuotePanel 默认全部档位 / 自动 ATM 购", async () => {
   assert.ok(/IV[\s\S]+Delta[\s\S]+持仓[\s\S]+最新价[\s\S]+最新价[\s\S]+持仓[\s\S]+Delta[\s\S]+IV/.test(hd), "最新价贴行权价两侧");
   assert.ok(src.includes("function OiBar"), "持仓用横向柱");
   assert.ok(src.includes("export function maxOiVal"), "横条标尺按可见档最大仓");
+  assert.ok(src.includes("undPx"), "顶栏标的最新价");
+  assert.ok(src.includes("<CtnText value={mkt?.ctn}"), "顶栏标的涨跌复用行情观察 ctn");
+  assert.ok(src.includes('.trim() === prod'), "标的价对应当前品种, 不新开轮询");
+  assert.ok(src.includes("ProdSearchSelect"), "品种下拉可搜索");
+  assert.ok(!/<select[\s\S]*品种/.test(src), "不再用原生 select 选品种");
 });
 
 test("maxOiVal 取购沽两侧最大值", () => {
