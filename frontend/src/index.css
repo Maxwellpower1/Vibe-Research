@@ -250,15 +250,20 @@
     top: 0;
     z-index: 1;
     background: hsl(var(--muted) / 0.92);
-    color: hsl(var(--muted-foreground));
-    font-weight: 500;
+    color: hsl(var(--foreground) / 0.88);
+    font-weight: 600;
     white-space: nowrap;
     padding: 0.5rem 0.625rem;
     text-align: left;
     border-bottom: 1px solid hsl(var(--border));
   }
+  .data-table thead th.text-center,
+  .data-table td.text-center {
+    text-align: center;
+  }
   .dark .data-table thead th {
     background: hsl(var(--muted) / 0.72);
+    color: hsl(0 0% 90%);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
   }
@@ -307,6 +312,13 @@
   /* Empty / missing values */
   .data-table .nil { color: hsl(var(--muted-foreground) / 0.5); }
   .data-table tbody tr:first-child td { border-top: none; }
+  /* T 型报价: 链上多列, 比通用表更密 */
+  .data-table.dense thead th {
+    padding: 0.28rem 0.4rem;
+  }
+  .data-table.dense td {
+    padding: 0.2rem 0.4rem;
+  }
 
   /* —— 市场概览表: 冻首列 + 稍大字号 —— */
   .market-table {

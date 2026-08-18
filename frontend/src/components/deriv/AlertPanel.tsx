@@ -35,7 +35,7 @@ export function AlertPanel({ d }: { d: DerivData }) {
         <button
           type="button"
           onClick={() => setAutoTop((v) => !v)}
-          className={cn("text-[10px]", autoTop ? "text-cyan-400" : "text-slate-600 hover:text-slate-400")}
+          className={cn("text-[11px]", autoTop ? "text-cyan-400" : "text-slate-600 hover:text-slate-400")}
           title="新异动自动滚到顶"
         >
           滚顶{autoTop ? "开" : "关"}
@@ -51,7 +51,7 @@ export function AlertPanel({ d }: { d: DerivData }) {
             <div
               key={k}
               className={cn(
-                "flex items-center gap-1.5 border-b border-slate-800/40 px-2 py-[3px] text-[11px]",
+                "flex items-center gap-1.5 border-b border-slate-800/40 px-2 py-1 text-[12px]",
                 isNew && "border-l-2 border-l-cyan-400 bg-cyan-500/[0.04]",
               )}
             >
@@ -59,7 +59,7 @@ export function AlertPanel({ d }: { d: DerivData }) {
               <span className="min-w-0 flex-1 truncate text-slate-300" title={String(a.instrument ?? "")}>
                 {String(a.contract_code ?? "-")}
               </span>
-              <span className="shrink-0 text-[10px] text-slate-500">
+              <span className="shrink-0 text-[11px] text-slate-500">
                 {RULE_LABEL[String(a.rule_id ?? "")] ?? String(a.rule_id ?? "异动")}
               </span>
               {pct !== null && (
@@ -68,7 +68,7 @@ export function AlertPanel({ d }: { d: DerivData }) {
                 </span>
               )}
               {isNew && (
-                <span className="shrink-0 rounded-sm bg-cyan-500/20 px-1 py-px text-[9px] leading-none text-cyan-300">NEW</span>
+                <span className="shrink-0 rounded-sm bg-cyan-500/20 px-1 py-px text-[10px] leading-none text-cyan-300">NEW</span>
               )}
             </div>
           );

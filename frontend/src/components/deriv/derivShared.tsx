@@ -50,7 +50,7 @@ export function NightMoon({ show }: { show?: boolean }) {
     <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
       {show ? (
         <span
-          className="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border border-sky-400/50 bg-sky-400/10 text-[9px] leading-none text-sky-400/90"
+          className="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border border-sky-400/50 bg-sky-400/10 text-[10px] leading-none text-sky-400/90"
           aria-label="夜盘"
         >
           夜
@@ -64,7 +64,7 @@ export function NightMoon({ show }: { show?: boolean }) {
 export function NightOnlySwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <span className="flex items-center gap-1">
-      <span className="text-[9px] text-slate-500">仅夜盘</span>
+      <span className="text-[10px] text-slate-500">仅夜盘</span>
       <button
         type="button"
         role="switch"
@@ -116,7 +116,7 @@ export function SessionBadge() {
   }, []);
   const s = derivSession();
   return (
-    <span className={cn("inline-flex h-6 items-center gap-1 rounded border border-slate-700/60 px-2 text-[10px]", s.tone)}>
+    <span className={cn("inline-flex h-6 items-center gap-1 rounded border border-slate-700/60 px-2 text-[11px]", s.tone)}>
       <span className={cn("h-1.5 w-1.5 rounded-full", s.live ? "animate-pulse bg-current" : "bg-slate-600")} />
       {s.label}
     </span>
@@ -209,8 +209,8 @@ export function SortableHd<K extends string>({
       title={title}
       onClick={() => onSort(k)}
       className={cn(
-        "inline-flex shrink-0 items-center gap-0.5 select-none hover:text-slate-300",
-        active ? "text-cyan-400" : "text-slate-600",
+        "inline-flex shrink-0 items-center gap-0.5 select-none hover:text-slate-100",
+        active ? "text-cyan-300" : "text-slate-300",
         className,
       )}
     >
@@ -223,27 +223,31 @@ export function SortableHd<K extends string>({
 }
 
 export const IV_SORT_COLS = [
-  { key: "atmv_current" as const, label: "隐波", cls: "w-[2.4rem] justify-end text-right", title: "平值隐波" },
-  { key: "atmv_percentile" as const, label: "IV分位", cls: "w-[3.8rem] justify-center", title: "隐波百分位, 左便宜 / 右贵" },
-  { key: "carry" as const, label: "溢价", cls: "w-[2.4rem] justify-end text-right", title: "IV溢价 = 隐波 - 实波" },
+  { key: "atmv_current" as const, label: "隐波", cls: "w-[2.7rem] justify-end text-right", title: "平值隐波" },
+  { key: "atmv_percentile" as const, label: "IV分位", cls: "w-[5.4rem] justify-center", title: "隐波百分位, 左便宜 / 右贵" },
+  { key: "carry" as const, label: "溢价", cls: "w-[2.6rem] justify-end text-right", title: "IV溢价 = 隐波 - 实波" },
 ];
 
-/** IV percentile as a spectrum marker: green=cheap, red=expensive. Hover shows the number. */
+/** IV percentile: spectrum marker + number. Green=cheap, red=expensive. */
 export function IvpBar({ value }: { value: unknown }) {
   const n = num(value);
   if (n === null) {
-    return <span className="inline-block w-[3.8rem] shrink-0 text-center text-[10px] text-slate-600">-</span>;
+    return <span className="inline-block w-[5.4rem] shrink-0 text-center text-[11px] text-slate-600">-</span>;
   }
   const pv = Math.max(0, Math.min(100, n));
   const tick = pv >= 90 ? "bg-red-300" : pv <= 10 ? "bg-emerald-300" : "bg-white";
   const left = 3 + pv * 0.94;
+  const numCls = pv >= 90 ? "text-red-400" : pv <= 10 ? "text-emerald-400" : "text-slate-300";
   return (
-    <span className="inline-flex w-[3.8rem] shrink-0 items-center" title={`IV分位 ${pv.toFixed(0)}`}>
-      <span className="relative h-1.5 w-full overflow-visible rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500">
+    <span className="inline-flex w-[5.4rem] shrink-0 items-center gap-1" title={`IV分位 ${pv.toFixed(0)}`}>
+      <span className="relative h-1.5 min-w-0 flex-1 overflow-visible rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500">
         <span
           className={cn("absolute top-1/2 h-2.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-sm shadow-[0_0_4px_rgba(0,0,0,0.8)]", tick)}
           style={{ left: `${left}%` }}
         />
+      </span>
+      <span className={cn("w-[1.55rem] shrink-0 text-right text-[11px] tabular-nums", numCls, (pv >= 90 || pv <= 10) && "font-semibold")}>
+        {pv.toFixed(0)}
       </span>
     </span>
   );
@@ -255,13 +259,13 @@ export function IvTriple({ row }: { row: Pick<OvlabMarketRow, "atmv_current" | "
   const carry = num(row.carry);
   return (
     <>
-      <span className="w-[2.4rem] shrink-0 text-right text-[10px] tabular-nums text-slate-300" title="平值隐波">
+      <span className="w-[2.7rem] shrink-0 text-right text-[11px] tabular-nums text-slate-300" title="平值隐波">
         {iv !== null ? iv.toFixed(2) : "-"}
       </span>
       <IvpBar value={row.atmv_percentile} />
       <span
         className={cn(
-          "w-[2.4rem] shrink-0 text-right text-[10px] tabular-nums",
+          "w-[2.6rem] shrink-0 text-right text-[11px] tabular-nums",
           carry !== null && carry > 0 ? "text-red-400" : carry !== null && carry < 0 ? "text-emerald-400" : "text-slate-400",
         )}
         title="IV溢价 = 隐波 - 实波"

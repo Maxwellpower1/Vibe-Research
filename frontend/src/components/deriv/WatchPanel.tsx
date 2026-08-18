@@ -25,7 +25,7 @@ function PctText({ value }: { value: number | null }) {
   if (value === null) return <span className="text-slate-600">-</span>;
   return (
     <span className={cn(
-      "text-[11px] tabular-nums",
+      "text-[12px] tabular-nums",
       value > 0 ? "text-red-400" : value < 0 ? "text-emerald-400" : "text-slate-400",
       Math.abs(value) >= 3 && "font-bold",
     )}>
@@ -167,7 +167,7 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
           value={kw}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="加自选: 合约代码, 如 IM2609"
-          className="w-full rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-[11px] text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-500/50"
+          className="w-full rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-[12px] text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-500/50"
         />
         {kw.trim() && (
           <div className="absolute inset-x-2 top-full z-20 mt-0.5 overflow-hidden rounded border border-slate-700/70 bg-slate-900 shadow-xl">
@@ -178,7 +178,7 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
                 key={`${h.ticker ?? i}`}
                 type="button"
                 onClick={() => add(String(h.ticker ?? ""))}
-                className="flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] text-slate-300 hover:bg-slate-800/60"
+                className="flex w-full items-center gap-2 px-2 py-1 text-left text-[12px] text-slate-300 hover:bg-slate-800/60"
               >
                 <Plus className="h-3 w-3 shrink-0 text-cyan-400" />
                 <span className="shrink-0 tabular-nums">{String(h.ticker ?? "")}</span>
@@ -188,7 +188,7 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
           </div>
         )}
       </div>
-      <div className="mt-1 flex items-center gap-1.5 px-2 pb-0.5 text-[9px] text-slate-600">
+      <div className="mt-1 flex items-center gap-1.5 px-2 pb-0.5 text-[10px] text-slate-300">
         <SortableHd k="code" label="合约" sort={sort} onSort={(k) => setSort((s) => nextSort(s, k))} className="min-w-0 flex-1 justify-start" />
         <SortableHd k="close" label="最新" sort={sort} onSort={(k) => setSort((s) => nextSort(s, k))} className="justify-end" />
         <SortableHd k="pct" label="涨跌" sort={sort} onSort={(k) => setSort((s) => nextSort(s, k))} className="justify-end" />
@@ -202,23 +202,23 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
           return (
             <div
               key={code}
-              className="group flex w-full items-center gap-2 rounded px-1.5 py-[3px] hover:bg-slate-800/40"
+              className="group flex w-full items-center gap-2 rounded px-1.5 py-1 hover:bg-slate-800/40"
             >
               <button
                 type="button"
                 onClick={onPickSymbol ? () => onPickSymbol(code) : undefined}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                <span className="shrink-0 text-[11px] font-medium tabular-nums text-cyan-300/90">{code}</span>
+                <span className="shrink-0 text-[12px] font-medium tabular-nums text-cyan-300/90">{code}</span>
                 {compact ? (
                   <span className="min-w-0 flex-1" />
                 ) : (
-                  <span className="min-w-0 flex-1 truncate text-[10px] text-slate-500">
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
                     {prod ? String(prod.product_alias ?? "") : ""}
                   </span>
                 )}
                 <NightMoon show={Number(prod?.has_night_trading) === 1} />
-                <span className="text-[11px] tabular-nums text-slate-400">
+                <span className="text-[12px] font-medium tabular-nums text-slate-200">
                   {close !== null ? Number(close.toFixed(2)).toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "-"}
                 </span>
                 <PctText value={pct} />

@@ -9,9 +9,9 @@ import { CellEmpty, cmpVal, contractCode, CtnText, IV_SORT_COLS, IvTriple, kline
 type BoardKey = "product_alias" | "price" | "ctn" | "atmv_current" | "atmv_percentile" | "carry";
 
 const COLS: { key: BoardKey; label: string; cls: string; title?: string }[] = [
-  { key: "product_alias", label: "品种", cls: "w-[3.4rem] justify-start text-left" },
-  { key: "price", label: "最新", cls: "w-[3.2rem] justify-end text-right" },
-  { key: "ctn", label: "涨跌", cls: "w-[3.2rem] justify-end text-right" },
+  { key: "product_alias", label: "品种", cls: "w-[3.8rem] justify-start text-left" },
+  { key: "price", label: "最新", cls: "w-[3.8rem] justify-end text-right" },
+  { key: "ctn", label: "涨跌", cls: "w-[3.6rem] justify-end text-right" },
   ...IV_SORT_COLS,
 ];
 
@@ -87,7 +87,7 @@ export function IndexFutPanel({ d, nightOnly = false, onPickSymbol, onPickProduc
 
   return (
     <div>
-      <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-card/95 px-2 pb-0.5 pt-1 text-[9px] text-slate-600">
+      <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-card/95 px-2 pb-0.5 pt-1 text-[10px] text-slate-300">
         <span className="h-3.5 w-3.5 shrink-0" />
         {COLS.map((c) => (
           <SortableHd
@@ -118,38 +118,38 @@ export function IndexFutPanel({ d, nightOnly = false, onPickSymbol, onPickProduc
                 ? () => onPickProduct(prodUnd)
                 : sym && onPickSymbol ? () => onPickSymbol(sym) : undefined}
               className={cn(
-                "flex w-full items-center gap-1.5 px-2 py-[3px] text-left transition-colors",
+                "flex w-full items-center gap-1.5 px-2 py-1 text-left transition-colors",
                 (onPickProduct || (onPickSymbol && sym)) && "hover:bg-slate-800/40",
               )}
               title={onPickProduct ? `调出 ${label} T 型报价` : sym ? `看 ${sym} K线` : undefined}
             >
               <NightMoon show={Number(row.has_night_trading) === 1} />
-              <span className="w-[3.4rem] shrink-0 leading-tight">
-                <span className="block truncate text-[11px] font-medium text-slate-200">{label}</span>
+              <span className="w-[3.8rem] shrink-0 leading-tight">
+                <span className="block truncate text-[12px] font-medium text-slate-200">{label}</span>
                 <span
-                  className={cn("block truncate font-mono text-[9px] text-cyan-500/70", sym && onPickSymbol && "hover:text-cyan-300")}
+                  className={cn("block truncate font-mono text-[10px] text-cyan-500/70", sym && onPickSymbol && "hover:text-cyan-300")}
                   onClick={sym && onPickSymbol ? (e) => { e.stopPropagation(); onPickSymbol(sym); } : undefined}
                   title={sym ? `看 ${sym} K线` : undefined}
                 >
                   {code || "-"}
                 </span>
               </span>
-              <span className="w-[3.2rem] shrink-0 text-right text-[11px] tabular-nums text-slate-300">
+              <span className="w-[3.8rem] shrink-0 text-right text-[12px] font-medium tabular-nums text-slate-200">
                 {price !== null ? Number(price.toFixed(2)).toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "-"}
               </span>
-              <span className="w-[3.2rem] shrink-0 text-right text-[11px]">
+              <span className="w-[3.6rem] shrink-0 text-right text-[12px]">
                 <CtnText value={row.ctn} boldOver={3} />
               </span>
               <IvTriple row={row} />
-              <span className="flex h-[22px] min-w-0 flex-1 items-center">
+              <span className="flex h-6 min-w-0 flex-1 items-center">
                 <TrendSparkSvg
                   prices={spark?.prices ?? []}
                   volatilities={spark?.volatilities ?? []}
                   base={prevCloseOf(row)}
-                  width={64}
-                  height={22}
+                  width={72}
+                  height={24}
                   fill
-                  className="h-[22px]"
+                  className="h-6"
                 />
               </span>
             </button>

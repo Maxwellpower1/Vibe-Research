@@ -12,6 +12,7 @@ export type CockpitCell = {
   icon?: ReactNode;
   accent?: string;
   right?: ReactNode;
+  bodyClassName?: string;
   body: ReactNode;
 };
 
@@ -52,6 +53,7 @@ export function CockpitLayout({ rows }: { rows: CockpitRow[] }) {
                 icon={panel.icon}
                 accent={panel.accent}
                 right={panel.right}
+                bodyClassName={panel.bodyClassName}
                 panelId={panel.id}
                 isZoomed={isZoomed(panel.id)}
                 onToggleZoom={toggle}

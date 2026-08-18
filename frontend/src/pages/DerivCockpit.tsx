@@ -2,7 +2,7 @@ import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import {
-  Activity, AlertCircle, CalendarDays, CandlestickChart, LineChart,
+  AlertCircle, CalendarDays, CandlestickChart, LineChart,
   Loader2, RefreshCw, Sparkles, Table, TrendingUp, X, Zap,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -125,7 +125,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
 
   const rows: CockpitRow[] = [
     {
-      defaultH: 0.40,
+      defaultH: 0.29,
       panels: [
         {
           id: "main-board",
@@ -133,7 +133,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
           hint: "点列头排序",
           icon: <LineChart size={14} />,
           accent: "#38bdf8",
-          defaultW: 0.34,
+          defaultW: 0.36,
           mobileH: "h-[64vh]",
           right: (
             <span className="flex items-center gap-2">
@@ -153,7 +153,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
                     type="button"
                     onClick={() => setBoardTab(id)}
                     className={cn(
-                      "rounded px-2 py-0.5 text-[10px]",
+                      "rounded px-2 py-0.5 text-[11px]",
                       boardTab === id ? "bg-slate-800 text-slate-200" : "text-slate-500 hover:text-slate-300",
                     )}
                   >
@@ -176,10 +176,9 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         {
           id: "expiry-cal",
           title: "临期期权日历",
-          hint: "当月未过期 · 切月看远月",
           icon: <CalendarDays size={14} />,
           accent: "#2dd4bf",
-          defaultW: 0.16,
+          defaultW: 0.20,
           mobileH: "h-[56vh]",
           right: <FreshTag updated={d.marketUpdated} extra={d.exps ? `${d.exps.length}品种` : undefined} />,
           body: <ExpiryCalPanel d={d} />,
@@ -190,7 +189,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
           hint: "远期曲线 · 柱=持仓",
           icon: <TrendingUp size={14} />,
           accent: "#34d399",
-          defaultW: 0.32,
+          defaultW: 0.26,
           mobileH: "h-[44vh]",
           right: <FreshTag updated={d.marketUpdated} />,
           body: <TermStructPanel d={d} />,
@@ -208,15 +207,16 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
       ],
     },
     {
-      defaultH: 0.60,
+      defaultH: 0.71,
       panels: [
         {
           id: "tquote",
           title: "T 型报价",
-          hint: "理论价=Black-76 · 点合约出图",
+          hint: "理论价=Black-76 · 默认 ATM 购出图",
           icon: <Table size={14} />,
           accent: "#e879f9",
-          defaultW: 0.36,
+          defaultW: 0.78,
+          maxZoomW: 0.92,
           mobileH: "h-[56vh]",
           body: (
             <TQuotePanel
@@ -229,24 +229,24 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
           ),
         },
         {
-          id: "opt-daily",
-          title: "期权日K",
+          id: "opt-charts",
+          title: "日K / 分时",
           hint: optPick ? optPick.name : "联动 T 型报价",
           icon: <CandlestickChart size={14} />,
           accent: "#f472b6",
-          defaultW: 0.32,
-          mobileH: "h-[44vh]",
-          body: <OptionChartCard pick={optPick} mode="daily" />,
-        },
-        {
-          id: "opt-minute",
-          title: "期权分时",
-          hint: optPick ? optPick.name : "联动 T 型报价",
-          icon: <Activity size={14} />,
-          accent: "#c084fc",
-          defaultW: 0.32,
-          mobileH: "h-[44vh]",
-          body: <OptionChartCard pick={optPick} mode="minute" />,
+          defaultW: 0.22,
+          mobileH: "h-[40vh]",
+          bodyClassName: "overflow-hidden",
+          body: (
+            <div className="flex h-full min-h-0 flex-col overflow-hidden">
+              <div className="min-h-0 flex-1 border-b border-slate-800/80">
+                <OptionChartCard pick={optPick} mode="daily" />
+              </div>
+              <div className="min-h-0 flex-1">
+                <OptionChartCard pick={optPick} mode="minute" />
+              </div>
+            </div>
+          ),
         },
       ],
     },
@@ -260,7 +260,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         onClick={d.refresh}
         disabled={d.refreshing}
         className={cn(
-          "inline-flex h-6 items-center gap-1 rounded border border-slate-700/60 px-2 text-[10px] text-slate-400 transition-colors hover:border-cyan-500/50 hover:text-cyan-300 disabled:opacity-50",
+          "inline-flex h-6 items-center gap-1 rounded border border-slate-700/60 px-2 text-[11px] text-slate-400 transition-colors hover:border-cyan-500/50 hover:text-cyan-300 disabled:opacity-50",
         )}
         title="重拉 market / 异动"
       >
@@ -271,7 +271,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         type="button"
         onClick={() => { setAiOpen(true); void runReview(); }}
         disabled={reviewLoading}
-        className="inline-flex h-6 items-center gap-1 rounded border border-cyan-500/40 bg-cyan-500/10 px-2 text-[10px] text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50"
+        className="inline-flex h-6 items-center gap-1 rounded border border-cyan-500/40 bg-cyan-500/10 px-2 text-[11px] text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50"
       >
         {reviewLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
         AI 复盘

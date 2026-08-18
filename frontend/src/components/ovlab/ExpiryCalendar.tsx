@@ -166,12 +166,12 @@ export function ExpiryCalendar({ data }: { data: OvlabProductExp[] }) {
   return (
     <div className="flex h-full min-h-0 flex-col px-1.5 py-1">
       <div className="mb-0.5 flex shrink-0 items-center justify-between gap-1">
-        <span className="text-[10px] tabular-nums text-slate-500">{monthDays} 个到期日</span>
+        <span className="text-[11px] tabular-nums text-slate-500">{monthDays} 个到期日</span>
         <div className="flex items-center gap-0.5">
           <button type="button" onClick={prevMonth} className="rounded p-1.5 text-slate-500 hover:bg-slate-800/60 hover:text-slate-200">
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
-          <span className="min-w-[88px] text-center text-[11px] font-semibold tabular-nums text-slate-200">{monthLabel}</span>
+          <span className="min-w-[88px] text-center text-[12px] font-semibold tabular-nums text-slate-200">{monthLabel}</span>
           <button type="button" onClick={nextMonth} className="rounded p-1.5 text-slate-500 hover:bg-slate-800/60 hover:text-slate-200">
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
@@ -181,15 +181,15 @@ export function ExpiryCalendar({ data }: { data: OvlabProductExp[] }) {
               setTip(null);
               setView({ y: new Date().getFullYear(), m: new Date().getMonth() });
             }}
-            className="ml-0.5 rounded border border-slate-700/60 px-2 py-1 text-[10px] text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+            className="ml-0.5 rounded border border-slate-700/60 px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
           >
             今日
           </button>
         </div>
       </div>
-      <div className="grid grid-cols-7 text-center text-[9px]">
+      <div className="grid grid-cols-7 text-center text-[10px]">
         {WEEKDAYS.map((w, idx) => (
-          <div key={w} className={cn("py-px font-medium", idx === 0 || idx === 6 ? "text-red-400/70" : "text-slate-500")}>{w}</div>
+          <div key={w} className={cn("py-px font-medium", idx === 0 || idx === 6 ? "text-red-400" : "text-slate-300")}>{w}</div>
         ))}
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-6 gap-px">
@@ -214,7 +214,7 @@ export function ExpiryCalendar({ data }: { data: OvlabProductExp[] }) {
                 showTip(e.currentTarget, ds, list);
               }}
               className={cn(
-                "relative flex min-h-0 flex-col items-center justify-center overflow-hidden rounded-sm border px-px text-[11px] leading-none lg:text-[10px]",
+                "relative flex min-h-0 flex-col items-center justify-center overflow-hidden rounded-sm border px-px text-[12px] leading-none",
                 !hasExpiry && !isToday && "border-transparent text-slate-600",
                 hasExpiry && !isToday && (hot
                   ? "cursor-pointer border-red-500/25 bg-red-500/5 text-red-300/80 active:bg-red-500/10"
@@ -227,14 +227,14 @@ export function ExpiryCalendar({ data }: { data: OvlabProductExp[] }) {
               <span
                 className={cn(
                   "shrink-0 tabular-nums",
-                  isToday && "rounded-full bg-sky-500/40 px-1.5 py-px text-[10px] font-bold leading-none text-sky-50",
+                  isToday && "rounded-full bg-sky-500/40 px-1.5 py-px text-[11px] font-bold leading-none text-sky-50",
                 )}
               >
                 {d}
               </span>
               {hasExpiry && (
                 <span className={cn(
-                  "mt-px max-h-[22px] w-full overflow-hidden text-center text-[9px] leading-[10px] tracking-tight opacity-80 lg:max-h-[18px] lg:text-[8px] lg:leading-[9px]",
+                  "mt-px max-h-[22px] w-full overflow-hidden text-center text-[9px] leading-[11px] tracking-tight opacity-80",
                   isToday && "text-sky-200/70",
                 )}>
                   {exNames.join(" ")}

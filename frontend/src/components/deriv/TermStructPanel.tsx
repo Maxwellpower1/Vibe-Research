@@ -79,7 +79,7 @@ function MonthTable({ pts }: { pts: CurvePt[] }) {
   const td = "px-1 py-0.5 text-right tabular-nums";
   return (
     <div className="shrink-0 overflow-x-auto border-b border-slate-800/60 px-1 pb-0.5">
-      <table className="w-full min-w-max text-[10px] leading-tight">
+      <table className="w-full min-w-max text-[11px] leading-tight">
         <thead>
           <tr>
             <th className="sticky left-0 bg-card px-1 py-0.5 text-left font-normal text-slate-500">指标</th>
@@ -206,7 +206,7 @@ export function TermStructPanel({ d }: { d: DerivData }) {
           trigger: "axis",
           backgroundColor: "rgba(15,23,42,0.95)",
           borderColor: "#334155",
-          textStyle: { color: "#e2e8f0", fontSize: 10 },
+          textStyle: { color: "#e2e8f0", fontSize: 11 },
           formatter: (ps: unknown) => {
             const arr = ps as Array<{ dataIndex: number; seriesName: string; value: number | null }>;
             const idx = arr[0]?.dataIndex ?? 0;
@@ -232,7 +232,7 @@ export function TermStructPanel({ d }: { d: DerivData }) {
             gridIndex: 1,
             data: xs,
             axisLine: { lineStyle: { color: SPLIT } },
-            axisLabel: { color: AXIS, fontSize: 9 },
+            axisLabel: { color: AXIS, fontSize: 10 },
             axisTick: { show: false },
           },
         ],
@@ -241,7 +241,7 @@ export function TermStructPanel({ d }: { d: DerivData }) {
             type: "value",
             scale: true,
             axisLine: { show: false },
-            axisLabel: { color: AXIS, fontSize: 9 },
+            axisLabel: { color: AXIS, fontSize: 10 },
             splitLine: { lineStyle: { color: SPLIT } },
           },
           {
@@ -251,7 +251,7 @@ export function TermStructPanel({ d }: { d: DerivData }) {
             axisLine: { show: false },
             axisLabel: {
               color: AXIS,
-              fontSize: 9,
+              fontSize: 10,
               formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(0)}万` : String(Math.round(v))),
             },
             splitLine: { lineStyle: { color: SPLIT } },
@@ -298,18 +298,18 @@ export function TermStructPanel({ d }: { d: DerivData }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 px-2 pt-1 text-[11px]">
+      <div className="flex shrink-0 items-center gap-2 px-2 pt-1 text-[12px]">
         <select
           value={sel ?? ""}
           onChange={(e) => setInner(e.target.value)}
-          className="h-5 max-w-[7rem] rounded border border-slate-700/60 bg-slate-900 px-1 text-[10px] text-slate-200 outline-none"
+          className="h-6 max-w-[8rem] rounded border border-slate-700/60 bg-slate-900 px-1.5 text-[11px] text-slate-200 outline-none"
           title="品种"
         >
           {withCurve.map((u) => (
             <option key={u} value={u}>{labelOf(u)} {u}</option>
           ))}
         </select>
-        <span className="ml-auto text-[10px] text-slate-600">实=今 虚=昨 柱=持仓</span>
+        <span className="ml-auto text-[11px] text-slate-600">实=今 虚=昨 柱=持仓</span>
       </div>
       {selCurve.length > 0 && <MonthTable pts={selCurve} />}
       <div className="relative min-h-0 flex-1">
