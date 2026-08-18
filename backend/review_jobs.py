@@ -95,14 +95,19 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
     import lives_feed
 
     kind = "02" if str(sector_kind) == "02" else "01"
-    src = "lives" if str(news_source) == "lives" else "cls"
+    src = str(news_source)
+    if src not in ("lives", "jin10"):
+        src = "cls"
 
     def _news() -> list:
         if src == "lives":
             d = _cached("market_lives", "1:40", 8, lambda: lives_feed.market_lives(1, 40))
-            items = d.get("items") if isinstance(d, dict) else None
-            return items if isinstance(items, list) else []
-        return _cls_tg_40()
+        elif src == "jin10":
+            d = _cached("market_lives", "jin10:40", 8, lambda: lives_feed.jin10_flash(40))
+        else:
+            return _cls_tg_40()
+        items = d.get("items") if isinstance(d, dict) else None
+        return items if isinstance(items, list) else []
 
     return [
         ("world", lambda: _read("world_indices", "live", 20, cockpit_live.world_indices)),

@@ -1,22 +1,35 @@
 import { useEffect, useRef } from "react";
-import { newsTag } from "@/lib/newsTag";
-import { itemKey, loadTelegraph, markClsSeen, useTelegraph, type FeedSource } from "@/lib/telegraphHub";
+import { newsTag, tagColor } from "@/lib/newsTag";
+import { feedOf, itemKey, loadTelegraph, markClsSeen, useTelegraph, type FeedSource } from "@/lib/telegraphHub";
 import type { ClsTelegraphItem } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-function TagPills({ title, extra, isNew }: { title: string; extra?: string; isNew?: boolean }) {
-  const tag = newsTag(title, extra);
-  if (!tag && !isNew) return null;
+function TagPills({
+  title, extra, isNew, cats,
+}: {
+  title: string; extra?: string; isNew?: boolean; cats?: string[];
+}) {
+  const inferred = newsTag(title, extra);
+  const labels = [...(cats ?? [])];
+  if (inferred && !labels.includes(inferred.label)) {
+    const loose = inferred.label === "宏观" || inferred.label === "政策";
+    if (!loose || !labels.length) labels.push(inferred.label);
+  }
+  if (!labels.length && !isNew) return null;
   return (
-    <span className="flex items-center gap-1">
-      {tag && (
-        <span
-          className="rounded-sm px-1 py-px text-[9px] leading-none"
-          style={{ background: `${tag.color}22`, color: tag.color }}
-        >
-          {tag.label}
-        </span>
-      )}
+    <span className="flex flex-wrap items-center gap-1">
+      {labels.map((label) => {
+        const color = tagColor(label);
+        return (
+          <span
+            key={label}
+            className="rounded-sm px-1 py-px text-[9px] leading-none"
+            style={{ background: `${color}22`, color }}
+          >
+            {label}
+          </span>
+        );
+      })}
       {isNew && (
         <span className="rounded-sm bg-cyan-500/20 px-1 py-px text-[9px] leading-none text-cyan-300">NEW</span>
       )}
@@ -38,7 +51,7 @@ function NewsRow({ it, isNew }: { it: ClsTelegraphItem; isNew: boolean }) {
         <span className="font-mono text-[10px] tabular-nums text-slate-500">
           {(it.time || "").slice(11, 16) || (it.time || "").slice(-8, -3) || "—"}
         </span>
-        <TagPills title={it.title} extra={extra} isNew={isNew} />
+        <TagPills title={it.title} extra={extra} isNew={isNew} cats={it.tags} />
       </div>
       <p className="mt-0.5 text-[12px] font-semibold leading-5 text-slate-200">{it.title}</p>
       {body && <p className="mt-0.5 line-clamp-2 text-[11px] leading-[1.55] text-slate-400">{body}</p>}
@@ -58,12 +71,13 @@ export function NewsFeedBar({
   onAuto: (v: boolean) => void;
 }) {
   const snap = useTelegraph();
-  const count = (source === "lives" ? snap.lives : snap.cls)?.count;
+  const count = feedOf(snap, source)?.count;
   return (
     <div className="flex items-center gap-1 text-[10px]">
       {([
         ["cls", "财联社"],
         ["lives", "新浪/见闻"],
+        ["jin10", "金十"],
       ] as const).map(([k, label]) => (
         <button
           key={k}
@@ -91,18 +105,18 @@ export function NewsFeedBar({
   );
 }
 
-/** CLS + Sina/Wallstreetcn feed for the review cockpit cell. */
+/** CLS + Sina/Wallstreetcn + Jin10 feed for the review cockpit cell. */
 export function NewsCockpitPanel({ source, auto }: { source: FeedSource; auto: boolean }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const snap = useTelegraph();
-  const data = source === "lives" ? snap.lives : snap.cls;
+  const data = feedOf(snap, source);
   const err = snap.err[source];
   const loading = snap.loading[source];
   const fresh = snap.fresh[source];
 
   useEffect(() => {
-    if (source === "lives" && !snap.lives) void loadTelegraph("lives");
-  }, [source, snap.lives]);
+    void loadTelegraph(source);
+  }, [source]);
 
   useEffect(() => {
     if (snap.cls) markClsSeen();

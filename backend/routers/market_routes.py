@@ -73,7 +73,9 @@ class ReviewContextIn(BaseModel):
 def market_review_context(body: ReviewContextIn):
     """Pack 复盘上下文 for 问 AI. Same text as the scheduled review mail."""
     kind = "02" if str(body.sector_kind) == "02" else "01"
-    src = "lives" if str(body.news_source) == "lives" else "cls"
+    src = str(body.news_source)
+    if src not in ("lives", "jin10"):
+        src = "cls"
     codes = [str(c).strip() for c in (body.watch_codes or []) if str(c).strip()][:20]
     try:
         data, errors = review_snapshot.collect_review_bundle(
@@ -619,16 +621,25 @@ def market_stock_boards_batch(codes: str = Query(..., min_length=6, max_length=2
 def market_lives(
     page: int = Query(1, ge=1, le=20),
     size: int = Query(40, ge=10, le=50),
+    source: str = Query("", description="jin10 uses flash_newest.js; default is sina/wscn"),
 ):
-    """新浪7x24直播, 失败回退华尔街见闻快讯. 缓存 8 秒. 不进驾驶舱格子."""
+    """新浪7x24直播, 失败回退华尔街见闻; source=jin10 走金十 flash_newest.js. 缓存 8 秒."""
     import lives_feed
     try:
-        data = _cached(
-            "market_lives",
-            f"{page}:{size}",
-            8,
-            lambda: lives_feed.market_lives(page, size),
-        )
+        if str(source) == "jin10":
+            data = _cached(
+                "market_lives",
+                f"jin10:{size}",
+                8,
+                lambda: lives_feed.jin10_flash(size),
+            )
+        else:
+            data = _cached(
+                "market_lives",
+                f"{page}:{size}",
+                8,
+                lambda: lives_feed.market_lives(page, size),
+            )
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"直播快讯异常：{e}") from e

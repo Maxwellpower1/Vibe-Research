@@ -59,6 +59,28 @@ def test_parse_sina_and_wscn_items():
     }, 10)
     assert wscn[0]["content"] == "hi"
     assert wscn[0]["title"] == "T"
+    flash = lives_feed.parse_jin10_js(
+        'var newest = ['
+        '{"id":"1","time":"2026-08-18 19:02:33","type":0,"channel":[1,3],"important":1,'
+        '"data":{"title":"","content":"<b>【株冶集团】上半年净利润增232%</b>"}},'
+        '{"id":"2","time":"2026-08-18 19:00:00","type":1,'
+        '"data":{"content":"广告"}},'
+        '{"id":"3","time":"2026-08-18 18:38:33","type":0,"channel":[5],'
+        '"data":{"title":"","content":"Xiaomi Group to hold earnings call."}},'
+        '{"id":"4","time":"2026-08-18 18:20:00","type":0,"channel":[1],'
+        '"data":{"content":"美债收益率持续走高？点击进入直播间>"}}'
+        '];',
+        40,
+    )
+    assert [x["id"] for x in flash] == ["1", "3"]
+    assert flash[0]["title"] == "株冶集团"
+    assert flash[0]["tags"] == ["重要", "股票"]
+    assert flash[1]["title"] == "Xiaomi Group to hold earnings call."
+    assert flash[1]["tags"] == ["英文"]
+    assert lives_feed.jin10_tags({"channel": [1, 2, 3], "important": 0}) == ["宏观"]
+    assert lives_feed.jin10_tags({"channel": [1, 3], "important": 0}) == ["股票"]
+    assert lives_feed.jin10_tags({"channel": [1, 4], "important": 1}) == ["重要", "预告"]
+    assert lives_feed.jin10_tags({"channel": [1], "important": 0}) == []
 
 
 def test_future_daily_parses_jsonp(monkeypatch):

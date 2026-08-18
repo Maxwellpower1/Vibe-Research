@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import type { OvlabMarketRow } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { num } from "@/components/ovlab/shared";
@@ -177,4 +178,96 @@ export function useAlertSeen(keys: string[], flushMs = 10_000) {
   }, [keys.join("|"), flushMs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return seen;
+}
+
+/** Numeric first, else zh string. Missing values go last. */
+export function cmpVal(a: unknown, b: unknown, dir: "asc" | "desc"): number {
+  const mul = dir === "asc" ? 1 : -1;
+  const an = num(a);
+  const bn = num(b);
+  if (an !== null && bn !== null) return (an - bn) * mul;
+  if (an !== null) return -1;
+  if (bn !== null) return 1;
+  return String(a ?? "").localeCompare(String(b ?? ""), "zh") * mul;
+}
+
+/** Flex header button: click cycles desc -> asc -> off. */
+export function SortableHd<K extends string>({
+  k, label, sort, onSort, className, title,
+}: {
+  k: K;
+  label: string;
+  sort: { key: K | null; dir: "asc" | "desc" };
+  onSort: (k: K) => void;
+  className?: string;
+  title?: string;
+}) {
+  const active = sort.key === k;
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={() => onSort(k)}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-0.5 select-none hover:text-slate-300",
+        active ? "text-cyan-400" : "text-slate-600",
+        className,
+      )}
+    >
+      {label}
+      {active
+        ? (sort.dir === "asc" ? <ArrowUp className="h-2.5 w-2.5" /> : <ArrowDown className="h-2.5 w-2.5" />)
+        : <ArrowUpDown className="h-2.5 w-2.5 opacity-30" />}
+    </button>
+  );
+}
+
+export const IV_SORT_COLS = [
+  { key: "atmv_current" as const, label: "隐波", cls: "w-[2.4rem] justify-end text-right", title: "平值隐波" },
+  { key: "atmv_percentile" as const, label: "IV分位", cls: "w-[3.8rem] justify-center", title: "隐波百分位, 左便宜 / 右贵" },
+  { key: "carry" as const, label: "溢价", cls: "w-[2.4rem] justify-end text-right", title: "IV溢价 = 隐波 - 实波" },
+];
+
+/** IV percentile as a spectrum marker: green=cheap, red=expensive. Hover shows the number. */
+export function IvpBar({ value }: { value: unknown }) {
+  const n = num(value);
+  if (n === null) {
+    return <span className="inline-block w-[3.8rem] shrink-0 text-center text-[10px] text-slate-600">-</span>;
+  }
+  const pv = Math.max(0, Math.min(100, n));
+  const tick = pv >= 90 ? "bg-red-300" : pv <= 10 ? "bg-emerald-300" : "bg-white";
+  const left = 3 + pv * 0.94;
+  return (
+    <span className="inline-flex w-[3.8rem] shrink-0 items-center" title={`IV分位 ${pv.toFixed(0)}`}>
+      <span className="relative h-1.5 w-full overflow-visible rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500">
+        <span
+          className={cn("absolute top-1/2 h-2.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-sm shadow-[0_0_4px_rgba(0,0,0,0.8)]", tick)}
+          style={{ left: `${left}%` }}
+        />
+      </span>
+    </span>
+  );
+}
+
+/** Compact 隐波 / IV分位 / 溢价 cells for 股指 and 商品 rows. */
+export function IvTriple({ row }: { row: Pick<OvlabMarketRow, "atmv_current" | "atmv_percentile" | "carry"> }) {
+  const iv = num(row.atmv_current);
+  const carry = num(row.carry);
+  return (
+    <>
+      <span className="w-[2.4rem] shrink-0 text-right text-[10px] tabular-nums text-slate-300" title="平值隐波">
+        {iv !== null ? iv.toFixed(2) : "-"}
+      </span>
+      <IvpBar value={row.atmv_percentile} />
+      <span
+        className={cn(
+          "w-[2.4rem] shrink-0 text-right text-[10px] tabular-nums",
+          carry !== null && carry > 0 ? "text-red-400" : carry !== null && carry < 0 ? "text-emerald-400" : "text-slate-400",
+        )}
+        title="IV溢价 = 隐波 - 实波"
+      >
+        {carry !== null ? carry.toFixed(1) : "-"}
+      </span>
+    </>
+  );
 }

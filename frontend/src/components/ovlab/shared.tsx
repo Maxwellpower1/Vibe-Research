@@ -297,7 +297,7 @@ export function SortableTh<T extends Record<string, unknown>>({ col, sort, onSor
   );
 }
 
-// —— 期权到期日历: 默认收起为一行快捷条, 需要时再展开完整月历 ——
+// —— 走势配色: 驾驶舱与全市场表共用 ——
 
 export const TREND_RED = "#ef4444";
 export const TREND_GREEN = "#22c55e";

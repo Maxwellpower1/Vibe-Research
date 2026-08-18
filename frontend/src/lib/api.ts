@@ -144,7 +144,7 @@ export interface NewsItem {
 /** 财联社电报 */
 export interface ClsTelegraphItem {
   id?: string | number; title: string; content?: string; summary?: string;
-  time: string; share_url?: string | null;
+  time: string; share_url?: string | null; tags?: string[];
 }
 export interface ClsTelegraph {
   source?: string; count: number; items: ClsTelegraphItem[];
@@ -324,6 +324,7 @@ export interface StockBoards {
 }
 export interface MarketLiveItem {
   id: string | number; title: string; content: string; time: string;
+  tags?: string[];
 }
 export interface MarketLives {
   source: string; count: number; items: MarketLiveItem[];
@@ -1091,7 +1092,17 @@ export interface OvlabMarketRow {
 }
 export type OvlabDetail = Record<string, unknown>;
 export type OvlabVolatilityTs = Record<string, unknown>;
-export type OvlabFutureTs = Record<string, unknown>;
+export interface OvlabFutureTsMonth {
+  maturity?: number;
+  bid?: number;
+  ask?: number;
+  future_tday?: number;
+  future_yday?: number;
+  oi_tday?: number;
+  oi_yday?: number;
+  days_to_expiry?: number;
+}
+export type OvlabFutureTs = Record<string, OvlabFutureTsMonth>;
 export type OvlabFutureTsAll = Record<string, unknown>;
 export interface OvlabFlowAlert {
   time?: string; instrument?: string; contract_code?: string;
@@ -1192,12 +1203,16 @@ export interface OvlabOptionDaily {
   iv: Array<[string, number | null]>;
 }
 
-/** 期限结构: 单品种远期曲线点 (volatility-surface forward 今/昨). */
+/** 期限结构: 单品种远期曲线点 (volatility-surface forward 今/昨 + 该月期权持仓). */
 export interface OvlabTermPoint {
   exp: string;
   dte: number;
   fwd: number;
   fwdYd: number | null;
+  /** Call+Put 期权持仓; 上游缺字段为 null. */
+  oi?: number | null;
+  /** 标的合约码: 期货 AG2609, ETF 为基金代码. */
+  code?: string;
 }
 export interface OvlabTermStructure {
   curves: Record<string, OvlabTermPoint[]>;
@@ -1377,7 +1392,7 @@ export const api = {
   reviewContext: (body: {
     watch_codes?: string[];
     sector_kind?: "01" | "02";
-    news_source?: "cls" | "lives";
+    news_source?: "cls" | "lives" | "jin10";
   }) => request<ReviewContextPacked>("/market/review-context", "POST", body),
   stockFlow: (top = 15, board?: string | null) =>
     get<StockFlow>(`/market/stock-flow?top=${top}${board ? `&board=${encodeURIComponent(board)}` : ""}`),
@@ -1436,8 +1451,8 @@ export const api = {
     get<FutureDaily>(`/market/future-daily?code=${encodeURIComponent(code)}&n=${n}`),
   stockBoardsBatch: (codes: string[]) =>
     get<Record<string, StockBoards>>(`/market/stock-boards-batch?codes=${encodeURIComponent(codes.slice(0, 12).join(","))}`),
-  marketLives: (page = 1, size = 40) =>
-    get<MarketLives>(`/market/lives?page=${page}&size=${size}`),
+  marketLives: (page = 1, size = 40, source?: "jin10") =>
+    get<MarketLives>(`/market/lives?page=${page}&size=${size}${source ? `&source=${source}` : ""}`),
   marketBreadth: () => get<MarketBreadth>("/market/breadth"),
   thsProfile: (code: string) =>
     get<ThsProfile>(`/market/ths-profile?code=${encodeURIComponent(code)}`),

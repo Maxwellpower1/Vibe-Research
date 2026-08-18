@@ -115,6 +115,8 @@ def test_money_jobs_match_http_keys():
     live = inspect.getsource(review_jobs.live_jobs)
     assert "money_jobs" in live
     assert "_cls_tg_40" in live
+    assert "jin10:40" in live
+    assert "jin10_flash" in live
 
 
 def test_commodity_quote_ttl_outlasts_keep_warm():

@@ -49,9 +49,6 @@ export const A_SHARE_TABS = [
 export const OVL_TABS = [
   { to: "/derivatives", label: "复盘", tab: null as string | null },
   { to: "/derivatives?tab=kline", label: "K线", tab: "kline" },
-  { to: "/derivatives?tab=detail", label: "详情", tab: "detail" },
-  { to: "/derivatives?tab=quote", label: "T报价", tab: "quote" },
-  { to: "/derivatives?tab=flow", label: "异动", tab: "flow" },
 ];
 
 export function parseAShareTab(raw: string | null): string {
@@ -61,8 +58,7 @@ export function parseAShareTab(raw: string | null): string {
 }
 
 export function parseOvlabTab(raw: string | null): string {
-  if (raw === "kline" || raw === "detail" || raw === "quote" || raw === "flow") return raw;
-  return "review";
+  return raw === "kline" ? "kline" : "review";
 }
 
 export function CockpitHeader({

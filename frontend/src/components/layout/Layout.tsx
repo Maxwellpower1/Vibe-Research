@@ -39,7 +39,7 @@ const MORE_NAV = PAGE_NAV.filter((l) => !l.primary);
 
 function isCockpitPath(pathname: string, tab: string | null) {
   if (pathname.startsWith("/ai-watch") || pathname.startsWith("/fin")) return true;
-  if (pathname.startsWith("/derivatives")) return !tab || tab === "review";
+  if (pathname.startsWith("/derivatives")) return tab !== "kline";
   if (!pathname.startsWith("/a-share")) return false;
   if (!tab || tab === "review") return true;
   return false;

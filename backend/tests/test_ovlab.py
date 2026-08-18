@@ -449,20 +449,22 @@ _TS_SURFACE = {
     "202612": {"exp": "202612", "forward_td": "16100.0", "forward_yd": "16150.0",
                "days_to_expiry": "119"},
     "202609": {"exp": "202609", "forward_td": "15950.0", "forward_yd": "16112.0",
-               "days_to_expiry": "28"},
+               "days_to_expiry": "28", "sum_oi_call": "100", "sum_oi_put": "50"},
     "202610": {"exp": "202610", "forward_td": "nan", "forward_yd": "16000.0",
                "days_to_expiry": "58"},  # fwd nan -> 跳过
 }
 
 
 def test_term_structure_curve_sorted_and_clean(monkeypatch):
-    """曲线按 dte 升序, nan forward 的月份被跳过."""
+    """曲线按 dte 升序, nan forward 的月份被跳过; oi=Call+Put, 缺字段为 None."""
     monkeypatch.setattr(ovlab, "get_volatility_surface", lambda p: _TS_SURFACE)
     out = ovlab.get_term_structure(["AG"])
     curve = out["curves"]["AG"]
     assert [p["exp"] for p in curve] == ["202609", "202612"]
     assert curve[0]["fwd"] == 15950.0 and curve[0]["fwdYd"] == 16112.0
     assert curve[0]["dte"] == 28.0
+    assert curve[0]["oi"] == 150.0 and curve[0]["code"] == "AG2609"
+    assert curve[1]["oi"] is None and curve[1]["code"] == "AG2612"
 
 
 def test_term_structure_multi_and_empty(monkeypatch):

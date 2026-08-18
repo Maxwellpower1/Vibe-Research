@@ -2,8 +2,8 @@ import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import {
-  Activity, AlertCircle, CandlestickChart, Layers, LineChart, ListOrdered,
-  Loader2, PieChart, RefreshCw, Sparkles, Table, TrendingUp, Users, X, Zap,
+  Activity, AlertCircle, CalendarDays, CandlestickChart, LineChart,
+  Loader2, RefreshCw, Sparkles, Table, TrendingUp, X, Zap,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -16,15 +16,10 @@ import { ApiError } from "@/lib/api";
 import { chatStream, hasLlm } from "@/lib/llm";
 import { cn } from "@/lib/utils";
 import { IndexFutPanel } from "@/components/deriv/IndexFutPanel";
-import { SectorHotPanel } from "@/components/deriv/SectorHotPanel";
 import { AlertPanel } from "@/components/deriv/AlertPanel";
-import { IvPanel } from "@/components/deriv/IvPanel";
-import { RankMetricBar, RankPanel, type RankKey } from "@/components/deriv/RankPanel";
-import { BreadthPanel } from "@/components/deriv/BreadthPanel";
+import { ExpiryCalPanel } from "@/components/deriv/ExpiryCalPanel";
 import { TermStructPanel } from "@/components/deriv/TermStructPanel";
-import { CommodityCell } from "@/components/deriv/CommodityCell";
 import { WatchPanel } from "@/components/deriv/WatchPanel";
-import { PositionCell } from "@/components/deriv/PositionCell";
 import { TQuotePanel, type OptionPick } from "@/components/deriv/TQuotePanel";
 import { OptionChartCard } from "@/components/deriv/OptionChartCard";
 import { FreshTag, NightOnlySwitch, SessionBadge } from "@/components/deriv/derivShared";
@@ -41,8 +36,34 @@ function packDerivContext(d: DerivData): string {
       const iv = num(row.atmv_current);
       const ivp = num(row.atmv_percentile);
       lines.push(
-        `- ${def.label}(${def.product}): 价 ${num(row.price)?.toFixed(2) ?? "-"}, 涨跌 ${ctn !== null ? (ctn * 100).toFixed(2) + "%" : "-"}, 隐波 ${iv?.toFixed(2) ?? "-"}, IVP ${ivp?.toFixed(0) ?? "-"}`,
+        `- ${def.label}(${def.product}): 价 ${num(row.price)?.toFixed(2) ?? "-"}, 涨跌 ${ctn !== null ? (ctn * 100).toFixed(2) + "%" : "-"}, 隐波 ${iv?.toFixed(2) ?? "-"}, IV分位 ${ivp?.toFixed(0) ?? "-"}`,
       );
+    }
+  }
+  if (!d.exps) {
+    lines.push("", "临期期权日历: 未取到");
+  } else {
+    const today = new Date();
+    const t = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+    const byDate = new Map<string, string[]>();
+    for (const p of d.exps) {
+      for (const e of p.exps ?? []) {
+        const ds = String(e.expDate ?? "");
+        if (!ds || ds < t) continue;
+        if (ds.slice(0, 6) !== t.slice(0, 6)) continue;
+        const name = String(p.product_alias ?? p.product_und ?? "");
+        if (!byDate.has(ds)) byDate.set(ds, []);
+        if (name) byDate.get(ds)!.push(name);
+      }
+    }
+    const upcoming = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    lines.push("", "## 临期期权 (本月未过期)");
+    if (upcoming.length === 0) {
+      lines.push("本月无剩余到期");
+    } else {
+      for (const [ds, names] of upcoming) {
+        lines.push(`- ${ds.slice(0, 4)}-${ds.slice(4, 6)}-${ds.slice(6, 8)}: ${names.slice(0, 12).join("、")}${names.length > 12 ? "…" : ""}`);
+      }
     }
   }
   if (!d.alerts) {
@@ -59,8 +80,8 @@ function packDerivContext(d: DerivData): string {
 export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) => void }) {
   const d = useDerivData();
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
-  const [rankMetric, setRankMetric] = useState<RankKey>("ctn");
   const [nightOnly, setNightOnly] = useState(false);
+  const [boardTab, setBoardTab] = useState<"spot" | "watch">("spot");
   // T 型报价联动: 品种 (各面板点品种行) + 点选的期权合约 (日K/分时卡)
   const [tqProd, setTqProd] = useState("");
   const [optPick, setOptPick] = useState<OptionPick | null>(null);
@@ -77,10 +98,6 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
   useLayoutEffect(() => {
     setHeaderSlot(document.getElementById("cockpit-header-actions"));
   }, []);
-
-  const sectorCount = d.rows
-    ? new Set(d.rows.map((r) => String(r.sector_alias ?? "")).filter(Boolean)).size
-    : 0;
 
   const runReview = async () => {
     setReviewErr(null);
@@ -108,53 +125,82 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
 
   const rows: CockpitRow[] = [
     {
-      defaultH: 0.29,
+      defaultH: 0.40,
       panels: [
         {
           id: "main-board",
-          title: "股指 · 商品 · 自选",
-          hint: "紫色线为平值隐波",
+          title: "行情观察",
+          hint: "点列头排序",
           icon: <LineChart size={14} />,
           accent: "#38bdf8",
-          defaultW: 0.56,
+          defaultW: 0.34,
           mobileH: "h-[64vh]",
           right: (
             <span className="flex items-center gap-2">
-              <NightOnlySwitch on={nightOnly} onChange={setNightOnly} />
+              {boardTab === "spot" ? <NightOnlySwitch on={nightOnly} onChange={setNightOnly} /> : null}
               <FreshTag updated={d.marketUpdated} />
             </span>
           ),
           body: (
-            <div className="flex h-full min-h-0 flex-col sm:flex-row">
-              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto border-b border-slate-800/60 sm:border-b-0 sm:border-r">
-                <IndexFutPanel d={d} nightOnly={nightOnly} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="flex shrink-0 gap-0.5 border-b border-slate-800/60 px-2 py-1">
+                {([
+                  ["spot", "股指·商品"],
+                  ["watch", "自选"],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setBoardTab(id)}
+                    className={cn(
+                      "rounded px-2 py-0.5 text-[10px]",
+                      boardTab === id ? "bg-slate-800 text-slate-200" : "text-slate-500 hover:text-slate-300",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto border-b border-slate-800/60 sm:border-b-0 sm:border-r">
-                <CommodityCell d={d} nightOnly={nightOnly} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />
-              </div>
-              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-                <WatchPanel d={d} onPickSymbol={onPickSymbol} compact />
-              </div>
+              {boardTab === "watch" ? (
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <WatchPanel d={d} onPickSymbol={onPickSymbol} />
+                </div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <IndexFutPanel d={d} nightOnly={nightOnly} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />
+                </div>
+              )}
             </div>
           ),
         },
         {
-          id: "sector-hot",
-          title: "商品板块",
-          hint: "同帧按板块聚合",
-          icon: <Layers size={14} />,
+          id: "expiry-cal",
+          title: "临期期权日历",
+          hint: "当月未过期 · 切月看远月",
+          icon: <CalendarDays size={14} />,
           accent: "#2dd4bf",
-          defaultW: 0.24,
-          mobileH: "h-[46vh]",
-          right: <FreshTag updated={d.marketUpdated} extra={`${sectorCount}板块`} />,
-          body: <SectorHotPanel d={d} onPickSymbol={onPickSymbol} />,
+          defaultW: 0.16,
+          mobileH: "h-[56vh]",
+          right: <FreshTag updated={d.marketUpdated} extra={d.exps ? `${d.exps.length}品种` : undefined} />,
+          body: <ExpiryCalPanel d={d} />,
+        },
+        {
+          id: "term-struct",
+          title: "期限结构",
+          hint: "远期曲线 · 柱=持仓",
+          icon: <TrendingUp size={14} />,
+          accent: "#34d399",
+          defaultW: 0.32,
+          mobileH: "h-[44vh]",
+          right: <FreshTag updated={d.marketUpdated} />,
+          body: <TermStructPanel d={d} />,
         },
         {
           id: "alert",
-          title: "异动 / 到期",
+          title: "异动",
           icon: <Zap size={14} />,
           accent: "#f59e0b",
-          defaultW: 0.20,
+          defaultW: 0.18,
           mobileH: "h-[50vh]",
           right: <FreshTag updated={d.alertUpdated} extra={`${d.alerts?.length ?? 0}条`} />,
           body: <AlertPanel d={d} />,
@@ -162,54 +208,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
       ],
     },
     {
-      defaultH: 0.27,
-      panels: [
-        {
-          id: "iv",
-          title: "隐波 / 溢价",
-          icon: <Activity size={14} />,
-          accent: "#a78bfa",
-          defaultW: 0.26,
-          mobileH: "h-[46vh]",
-          right: <FreshTag updated={d.marketUpdated} />,
-          body: <IvPanel d={d} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />,
-        },
-        {
-          id: "rank",
-          title: "涨跌榜",
-          icon: <ListOrdered size={14} />,
-          accent: "#fbbf24",
-          defaultW: 0.28,
-          mobileH: "h-[46vh]",
-          right: <RankMetricBar metric={rankMetric} onMetric={setRankMetric} />,
-          body: <RankPanel d={d} metric={rankMetric} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />,
-        },
-        {
-          id: "breadth",
-          title: "广度",
-          hint: "涨跌分布 + IVP 直方图",
-          icon: <PieChart size={14} />,
-          accent: "#818cf8",
-          defaultW: 0.22,
-          mobileH: "h-[40vh]",
-          right: <FreshTag updated={d.marketUpdated} />,
-          body: <BreadthPanel d={d} />,
-        },
-        {
-          id: "term-struct",
-          title: "期限结构",
-          hint: "远期曲线 · 实=今 虚=昨",
-          icon: <TrendingUp size={14} />,
-          accent: "#34d399",
-          defaultW: 0.24,
-          mobileH: "h-[44vh]",
-          right: <FreshTag updated={d.marketUpdated} />,
-          body: <TermStructPanel d={d} product={tqProd} onPickProduct={pickProduct} />,
-        },
-      ],
-    },
-    {
-      defaultH: 0.27,
+      defaultH: 0.60,
       panels: [
         {
           id: "tquote",
@@ -251,22 +250,6 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         },
       ],
     },
-    {
-      defaultH: 0.17,
-      panels: [
-        {
-          id: "position",
-          title: "持仓排名",
-          hint: "净多/净空第一",
-          icon: <Users size={14} />,
-          accent: "#fb7185",
-          defaultW: 1,
-          mobileH: "h-[44vh]",
-          right: <FreshTag updated={d.marketUpdated} />,
-          body: <PositionCell d={d} />,
-        },
-      ],
-    },
   ];
 
   const headerActions = (
@@ -300,7 +283,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         scopeKey="deriv"
         suggestions={[
           "今天哪些品种隐波百分位极端?",
-          "商品板块强弱如何?",
+          "本月还有哪些合约到期?",
           "最新异动集中在哪些合约?",
         ]}
       />
@@ -335,7 +318,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
             </div>
           </div>
           <p className="mt-1 text-[10px] text-slate-500">
-            已带入当前看板各格快照 (股指衍生 / 商品板块 / 隐波 / 涨跌榜 / 异动等)
+            已带入当前看板各格快照 (股指衍生 / 商品主力 / 临期期权 / 异动等)
           </p>
           {needConfig && (
             <div className="mt-3 flex items-center gap-2 rounded border border-warning/30 bg-warning/5 p-3 text-sm text-slate-400">

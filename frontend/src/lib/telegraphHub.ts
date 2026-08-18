@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { api, ApiError, type ClsTelegraph, type ClsTelegraphItem } from "@/lib/api";
 
-export type FeedSource = "cls" | "lives";
+export type FeedSource = "cls" | "lives" | "jin10";
 
 export function itemKey(it: ClsTelegraphItem, i: number) {
   return String(it.id ?? `${it.time}-${i}`);
@@ -39,22 +39,31 @@ export function countNew(items: ClsTelegraphItem[], seen: string): number {
 type Snap = {
   cls: ClsTelegraph | null;
   lives: ClsTelegraph | null;
+  jin10: ClsTelegraph | null;
   err: Partial<Record<FeedSource, string | null>>;
   loading: Partial<Record<FeedSource, boolean>>;
   newCount: number;
   fresh: Record<FeedSource, ReadonlySet<string>>;
 };
 
+export function feedOf(snap: Snap, src: FeedSource): ClsTelegraph | null {
+  if (src === "lives") return snap.lives;
+  if (src === "jin10") return snap.jin10;
+  return snap.cls;
+}
+
 let seenId = readSeen();
-const primed: Record<FeedSource, boolean> = { cls: false, lives: false };
+let lastSrc: FeedSource = "cls";
+const primed: Record<FeedSource, boolean> = { cls: false, lives: false, jin10: false };
 const seenKeys = new Set<string>();
 let snap: Snap = {
   cls: null,
   lives: null,
+  jin10: null,
   err: {},
   loading: { cls: true },
   newCount: 0,
-  fresh: { cls: new Set(), lives: new Set() },
+  fresh: { cls: new Set(), lives: new Set(), jin10: new Set() },
 };
 const listeners = new Set<() => void>();
 let timer: number | null = null;
@@ -65,6 +74,7 @@ function emit() {
 }
 
 async function pull(src: FeedSource, silent: boolean) {
+  lastSrc = src;
   if (src === "cls") {
     if (clsInflight) return;
     clsInflight = true;
@@ -75,16 +85,17 @@ async function pull(src: FeedSource, silent: boolean) {
   }
   try {
     let next: ClsTelegraph;
-    if (src === "lives") {
-      const lives = await api.marketLives(1, LIMIT);
+    if (src === "cls") {
+      next = await api.clsTelegraph(LIMIT);
+    } else {
+      const lives = await api.marketLives(1, LIMIT, src === "jin10" ? "jin10" : undefined);
       next = {
         count: lives.count,
         items: lives.items.map((it) => ({
           id: it.id, title: it.title, content: it.content, time: it.time,
+          tags: it.tags,
         })),
       };
-    } else {
-      next = await api.clsTelegraph(LIMIT);
     }
     const items = next.items || [];
     const keys = items.map((it, i) => itemKey(it, i));
@@ -133,7 +144,7 @@ function subscribe(fn: () => void) {
   listeners.add(fn);
   if (timer == null) {
     void pull("cls", false);
-    timer = window.setInterval(() => void pull("cls", true), REFRESH_MS);
+    timer = window.setInterval(() => void pull(lastSrc, true), REFRESH_MS);
   }
   return () => {
     listeners.delete(fn);
@@ -154,6 +165,5 @@ export function useTelegraph() {
 
 /** Current feed items without subscribing. Used when packing the cockpit for AI. */
 export function peekTelegraphItems(src: FeedSource): ClsTelegraphItem[] {
-  const feed = src === "lives" ? snap.lives : snap.cls;
-  return feed?.items ?? [];
+  return feedOf(snap, src)?.items ?? [];
 }

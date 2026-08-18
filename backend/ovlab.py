@@ -826,7 +826,8 @@ def get_option_daily(code: str, und: str = "") -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _ts_curve(product: str) -> tuple[str, list[dict[str, Any]]]:
-    """单品种远期曲线: [{exp, dte, fwd, fwdYd}] 按 dte 升序."""
+    """单品种远期曲线: [{exp, dte, fwd, fwdYd, oi, code}] 按 dte 升序.
+    oi = 该月 Call+Put 期权持仓 (surface sum_oi); code = 标的合约码 (期货 AG2609, ETF 为基金代码)."""
     try:
         raw = get_volatility_surface(product)
     except Exception:
@@ -842,11 +843,17 @@ def _ts_curve(product: str) -> tuple[str, list[dict[str, Any]]]:
             dte = _sfloat(blk.get("days_to_expiry"))
             if fwd is None or dte is None:
                 continue
+            exp_str = str(blk.get("exp") or exp_key)
+            oi_c = _sfloat(blk.get("sum_oi_call"))
+            oi_p = _sfloat(blk.get("sum_oi_put"))
+            oi = None if oi_c is None and oi_p is None else (oi_c or 0.0) + (oi_p or 0.0)
             out.append({
-                "exp": str(blk.get("exp") or exp_key),
+                "exp": exp_str,
                 "dte": dte,
                 "fwd": fwd,
                 "fwdYd": _sfloat(blk.get("forward_yd")),
+                "oi": oi,
+                "code": und_code(product, exp_str),
             })
     out.sort(key=lambda x: x["dte"])
     return product, out
@@ -863,7 +870,7 @@ def _build_term_structure(prods: list[str]) -> dict[str, Any]:
 
 def get_term_structure(products: list[str]) -> dict[str, Any]:
     """多品种远期曲线 (volatility-surface forward). 并发拉取, 整体缓存 60s, 休市冻结."""
-    prods = sorted({p.strip().upper() for p in products if p and p.strip()})[:24]
+    prods = sorted({p.strip().upper() for p in products if p and p.strip()})[:80]
     if not prods:
         return {}
     return _cached(

@@ -1,55 +1,136 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
-import { api, type OvlabTermPoint } from "@/lib/api";
+import { api, type OvlabFutureTs, type OvlabTermPoint } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import type { DerivData } from "@/hooks/useDerivData";
+import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
 import { CellEmpty } from "./derivShared";
 
-interface Slope {
-  und: string;
-  label: string;
-  near: OvlabTermPoint;
-  far: OvlabTermPoint;
-  /** (far - near) / near in %; positive = contango. */
-  pct: number;
-}
-
 const AXIS = "#475569";
 const SPLIT = "rgba(51,65,85,0.5)";
+const BAR = "rgba(245,158,11,0.78)";
+
+type CurvePt = {
+  exp: string;
+  dte: number;
+  fwd: number;
+  fwdYd: number | null;
+  oi: number | null;
+};
 
 /** 曲线有效点: 排除当日到期 (dte<1 的 forward 易失真). */
-function validCurve(curve: OvlabTermPoint[] | undefined): OvlabTermPoint[] {
-  return (curve ?? []).filter((p) => p.dte >= 1);
+function validSurf(curve: OvlabTermPoint[] | undefined): CurvePt[] {
+  return (curve ?? [])
+    .filter((p) => p.dte >= 1)
+    .map((p) => ({ exp: p.exp, dte: p.dte, fwd: p.fwd, fwdYd: p.fwdYd ?? null, oi: p.oi ?? null }));
 }
 
-function slopeOf(und: string, label: string, curve: OvlabTermPoint[]): Slope | null {
-  if (curve.length < 2) return null;
-  const near = curve[0];
-  const far = curve[curve.length - 1];
-  if (!near.fwd) return null;
-  return { und, label, near, far, pct: ((far.fwd - near.fwd) / near.fwd) * 100 };
+/** OpenVlab future-ts/{prodUnd}: 按到期月的期货价 + 持仓. 对齐 /future/term-structure. */
+function parseFutTs(raw: OvlabFutureTs | null): CurvePt[] {
+  if (!raw) return [];
+  const out: CurvePt[] = [];
+  for (const [exp, blk] of Object.entries(raw)) {
+    if (!blk || typeof blk !== "object") continue;
+    const fwd = num(blk.future_tday);
+    const dte = num(blk.days_to_expiry);
+    if (fwd === null || dte === null || dte < 1) continue;
+    out.push({
+      exp,
+      dte,
+      fwd,
+      fwdYd: num(blk.future_yday),
+      oi: num(blk.oi_tday),
+    });
+  }
+  return out.sort((a, b) => a.dte - b.dte);
+}
+
+function fmtOi(v: number | null | undefined): string {
+  if (v === null || v === undefined) return "-";
+  return v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(Math.round(v));
+}
+
+function isEtf(prod: string): boolean {
+  return /^\d+$/.test(prod);
+}
+
+function fmtPx(v: number): string {
+  if (Math.abs(v) >= 1000) return String(Math.round(v));
+  if (Math.abs(v) >= 100) return v.toFixed(1).replace(/\.0$/, "");
+  return v.toFixed(2);
+}
+
+function fmtChg(pct: number): string {
+  if (Math.abs(pct) < 0.005) return "0%";
+  const s = pct.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return `${pct > 0 ? "+" : ""}${s}%`;
+}
+
+function chgPct(p: CurvePt): number | null {
+  if (p.fwdYd == null || p.fwdYd === 0) return null;
+  return ((p.fwd - p.fwdYd) / p.fwdYd) * 100;
+}
+
+/** Compact month table above the curve: 现值 / 涨幅. */
+function MonthTable({ pts }: { pts: CurvePt[] }) {
+  if (pts.length === 0) return null;
+  const th = "px-1 py-0.5 text-right font-normal text-slate-500";
+  const td = "px-1 py-0.5 text-right tabular-nums";
+  return (
+    <div className="shrink-0 overflow-x-auto border-b border-slate-800/60 px-1 pb-0.5">
+      <table className="w-full min-w-max text-[10px] leading-tight">
+        <thead>
+          <tr>
+            <th className="sticky left-0 bg-card px-1 py-0.5 text-left font-normal text-slate-500">指标</th>
+            {pts.map((p) => (
+              <th key={p.exp} className={th}>{p.exp.slice(2)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="sticky left-0 bg-card px-1 py-0.5 text-slate-500">现值</td>
+            {pts.map((p) => (
+              <td key={p.exp} className={cn(td, "text-slate-200")}>{fmtPx(p.fwd)}</td>
+            ))}
+          </tr>
+          <tr>
+            <td className="sticky left-0 bg-card px-1 py-0.5 text-slate-500">涨幅</td>
+            {pts.map((p) => {
+              const chg = chgPct(p);
+              return (
+                <td
+                  key={p.exp}
+                  className={cn(
+                    td,
+                    chg == null || Math.abs(chg) < 0.005 ? "text-slate-400"
+                      : chg > 0 ? "text-red-400" : "text-emerald-400",
+                  )}
+                >
+                  {chg == null ? "-" : fmtChg(chg)}
+                </td>
+              );
+            })}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 /**
- * 期限结构: 上部选中品种远期曲线 (今实线/昨虚线, x=到期月), 下部跨品种近远月斜率排行.
- * 数据源 volatility-surface forward (future-ts-all 上游只覆盖 6 个品种, 弃用).
- * product/onPickProduct 与 T 型报价联动.
+ * 期限结构: 上部选中品种远期曲线 (今实线/昨虚线), 下部同月持仓量柱.
+ * 期货持仓走 future-ts oi_tday (同 openvlab.cn/future/term-structure);
+ * ETF 无此接口, 退回 surface Call+Put.
+ * 品种选择只在本格内, 不跟 T 型报价联动.
  */
-export function TermStructPanel({
-  d,
-  product,
-  onPickProduct,
-}: {
-  d: DerivData;
-  product?: string;
-  onPickProduct?: (und: string) => void;
-}) {
-  const unds = useMemo(() => {
-    const list = d.catalogRows.filter((c) => c.def.group === "commodity").map((c) => c.def.und);
-    if (product && !list.includes(product)) list.push(product); // 联动品种并入 (如多晶硅 PS)
-    return list;
-  }, [d.catalogRows, product]);
+export function TermStructPanel({ d }: { d: DerivData }) {
+  const unds = useMemo(
+    // 全市场 domestic 品种 (ctamap-all), 无期权的品种上游 surface 返回空, 自动不进曲线
+    () => [...new Set((d.rows ?? []).map((r) => String(r.prodUnd ?? "").trim()).filter(Boolean))],
+    [d.rows],
+  );
   const undsKey = unds.join(",");
   const { data } = usePolling(
     () => api.ovlabTermStructure(undsKey.split(",")),
@@ -67,20 +148,27 @@ export function TermStructPanel({
     return (und: string) => m.get(und) ?? und;
   }, [d.catalogRows, d.rows]);
 
-  const slopes = useMemo<Slope[]>(() => {
-    const curves = data?.curves ?? {};
-    const out: Slope[] = [];
-    for (const und of Object.keys(curves)) {
-      const s = slopeOf(und, labelOf(und), validCurve(curves[und]));
-      if (s) out.push(s);
-    }
-    return out.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
-  }, [data, labelOf]);
-
+  const withCurve = useMemo(
+    () => unds.filter((u) => (data?.curves?.[u]?.length ?? 0) > 0),
+    [unds, data],
+  );
   const [inner, setInner] = useState<string | null>(null);
-  const sel = (product && data?.curves?.[product] ? product : null) ?? inner ?? slopes[0]?.und ?? null;
-  const selCurve = useMemo(() => validCurve(sel ? data?.curves?.[sel] : undefined), [data, sel]);
-  const selSlope = slopes.find((s) => s.und === sel) ?? null;
+  const sel = inner && withCurve.includes(inner) ? inner : (withCurve[0] ?? null);
+  const surfCurve = useMemo(() => validSurf(sel ? data?.curves?.[sel] : undefined), [data, sel]);
+
+  const tsPoll = usePolling(
+    () => api.ovlabFutureTs(sel ?? "").then((months) => ({ prod: sel, months })),
+    60_000,
+    [sel],
+    Boolean(sel) && !isEtf(sel ?? ""),
+  );
+  const futCurve = useMemo(() => {
+    if (!sel || tsPoll.data?.prod !== sel) return [];
+    return parseFutTs(tsPoll.data.months);
+  }, [sel, tsPoll.data]);
+
+  const selCurve = futCurve.length > 0 ? futCurve : surfCurve;
+  const oiVals = useMemo(() => selCurve.map((p) => p.oi), [selCurve]);
 
   const chartRef = useRef<HTMLDivElement | null>(null);
   const ecRef = useRef<echarts.ECharts | null>(null);
@@ -100,12 +188,20 @@ export function TermStructPanel({
 
   useEffect(() => {
     const ec = ecRef.current;
-    if (!ec || !sel) return;
+    if (!ec) return;
+    if (!sel || selCurve.length === 0) {
+      ec.clear();
+      return;
+    }
     const xs = selCurve.map((p) => p.exp.slice(2));
     ec.setOption(
       {
         animation: false,
-        grid: { left: 44, right: 10, top: 8, bottom: 18 },
+        axisPointer: { link: [{ xAxisIndex: "all" }] },
+        grid: [
+          { left: 44, right: 10, top: 8, height: "52%" },
+          { left: 44, right: 10, top: "68%", height: "24%" },
+        ],
         tooltip: {
           trigger: "axis",
           backgroundColor: "rgba(15,23,42,0.95)",
@@ -113,29 +209,55 @@ export function TermStructPanel({
           textStyle: { color: "#e2e8f0", fontSize: 10 },
           formatter: (ps: unknown) => {
             const arr = ps as Array<{ dataIndex: number; seriesName: string; value: number | null }>;
-            const p = selCurve[arr[0]?.dataIndex ?? 0];
+            const idx = arr[0]?.dataIndex ?? 0;
+            const p = selCurve[idx];
             if (!p) return "";
             const rows = arr
-              .filter((a) => a.value != null)
+              .filter((a) => a.seriesName !== "持仓" && a.value != null)
               .map((a) => `${a.seriesName} ${a.value}`)
               .join("<br/>");
-            return `${p.exp} (${p.dte}天)<br/>${rows}`;
+            return `${p.exp} (${p.dte}天)<br/>${rows}<br/>持仓 ${fmtOi(oiVals[idx])}`;
           },
         },
-        xAxis: {
-          type: "category",
-          data: xs,
-          axisLine: { lineStyle: { color: SPLIT } },
-          axisLabel: { color: AXIS, fontSize: 9 },
-          axisTick: { show: false },
-        },
-        yAxis: {
-          type: "value",
-          scale: true,
-          axisLine: { show: false },
-          axisLabel: { color: AXIS, fontSize: 9 },
-          splitLine: { lineStyle: { color: SPLIT } },
-        },
+        xAxis: [
+          {
+            type: "category",
+            data: xs,
+            axisLine: { lineStyle: { color: SPLIT } },
+            axisLabel: { show: false },
+            axisTick: { show: false },
+          },
+          {
+            type: "category",
+            gridIndex: 1,
+            data: xs,
+            axisLine: { lineStyle: { color: SPLIT } },
+            axisLabel: { color: AXIS, fontSize: 9 },
+            axisTick: { show: false },
+          },
+        ],
+        yAxis: [
+          {
+            type: "value",
+            scale: true,
+            axisLine: { show: false },
+            axisLabel: { color: AXIS, fontSize: 9 },
+            splitLine: { lineStyle: { color: SPLIT } },
+          },
+          {
+            type: "value",
+            gridIndex: 1,
+            min: 0,
+            axisLine: { show: false },
+            axisLabel: {
+              color: AXIS,
+              fontSize: 9,
+              formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(0)}万` : String(Math.round(v))),
+            },
+            splitLine: { lineStyle: { color: SPLIT } },
+            splitNumber: 2,
+          },
+        ],
         series: [
           {
             name: "今日",
@@ -156,67 +278,47 @@ export function TermStructPanel({
             itemStyle: { color: "#64748b" },
             connectNulls: true,
           },
+          {
+            name: "持仓",
+            type: "bar",
+            xAxisIndex: 1,
+            yAxisIndex: 1,
+            data: oiVals,
+            itemStyle: { color: BAR },
+            barMaxWidth: 18,
+          },
         ],
       },
       { notMerge: true },
     );
-  }, [sel, selCurve]);
+  }, [sel, selCurve, oiVals]);
 
-  if (data && slopes.length === 0) return <CellEmpty />;
-  if (!data) return <CellEmpty text="更新中…" />;
-
-  const maxAbs = Math.max(...slopes.map((s) => Math.abs(s.pct)), 0.01);
+  const loading = !data;
+  const empty = !!data && withCurve.length === 0;
 
   return (
     <div className="flex h-full flex-col">
-      {/* 选中品种曲线头 */}
       <div className="flex shrink-0 items-center gap-2 px-2 pt-1 text-[11px]">
-        <span className="font-medium text-slate-200">{sel ? labelOf(sel) : "--"}</span>
-        {selSlope && (
-          <>
-            <span className={cn("tabular-nums", selSlope.pct >= 0 ? "text-red-400" : "text-emerald-400")}>
-              {selSlope.pct > 0 ? "+" : ""}{selSlope.pct.toFixed(2)}%
-            </span>
-            <span className="text-[10px] text-slate-500">
-              {selSlope.near.exp.slice(2)}→{selSlope.far.exp.slice(2)}
-            </span>
-          </>
-        )}
-        <span className="ml-auto text-[10px] text-slate-600">实=今 虚=昨</span>
+        <select
+          value={sel ?? ""}
+          onChange={(e) => setInner(e.target.value)}
+          className="h-5 max-w-[7rem] rounded border border-slate-700/60 bg-slate-900 px-1 text-[10px] text-slate-200 outline-none"
+          title="品种"
+        >
+          {withCurve.map((u) => (
+            <option key={u} value={u}>{labelOf(u)} {u}</option>
+          ))}
+        </select>
+        <span className="ml-auto text-[10px] text-slate-600">实=今 虚=昨 柱=持仓</span>
       </div>
-      {/* 远期曲线 */}
-      <div ref={chartRef} className="min-h-0 flex-1" />
-      {/* 斜率排行 */}
-      <div className="max-h-[42%] shrink-0 overflow-auto border-t border-slate-800/60 px-1 py-1">
-        {slopes.map((s) => (
-          <div
-            key={s.und}
-            onClick={() => {
-              setInner(s.und);
-              onPickProduct?.(s.und);
-            }}
-            className={cn(
-              "flex cursor-pointer items-center gap-2 rounded px-1.5 py-[2px] hover:bg-slate-800/40",
-              s.und === sel && "bg-slate-800/50",
-            )}
-            title={`${s.near.exp}(${s.near.dte}天) ${s.near.fwd} / ${s.far.exp}(${s.far.dte}天) ${s.far.fwd}`}
-          >
-            <span className="w-[3.2rem] shrink-0 truncate text-[11px] text-slate-300">{s.label}</span>
-            <span className="relative h-2 min-w-0 flex-1">
-              <span className="absolute inset-y-0 left-1/2 w-px bg-slate-700" />
-              <span
-                className={cn(
-                  "absolute top-0 h-full rounded-sm",
-                  s.pct >= 0 ? "left-1/2 bg-red-500/70" : "right-1/2 bg-emerald-500/70",
-                )}
-                style={{ width: `${(Math.abs(s.pct) / maxAbs) * 50}%` }}
-              />
-            </span>
-            <span className={cn("w-[3.4rem] shrink-0 text-right text-[10px] tabular-nums", s.pct >= 0 ? "text-red-400" : "text-emerald-400")}>
-              {s.pct > 0 ? "+" : ""}{s.pct.toFixed(2)}%
-            </span>
+      {selCurve.length > 0 && <MonthTable pts={selCurve} />}
+      <div className="relative min-h-0 flex-1">
+        <div ref={chartRef} className="absolute inset-0" />
+        {(loading || empty || selCurve.length === 0) && (
+          <div className="absolute inset-0">
+            <CellEmpty text={loading ? "更新中…" : "未取到"} />
           </div>
-        ))}
+        )}
       </div>
     </div>
   );

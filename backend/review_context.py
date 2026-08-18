@@ -316,9 +316,11 @@ def _news(items: Any) -> str | None:
         time = str(it.get("time") or "")
         clock = time[11:16] if len(time) >= 16 else time[-5:]
         extra = str(it.get("content") or it.get("summary") or "").replace("\n", " ").strip()
-        head = f"{i}. {clock} {title}".strip()
+        cats = [str(c).strip() for c in (it.get("tags") or []) if str(c).strip()][:3]
+        prefix = f"[{' '.join(cats)}] " if cats else ""
+        head = f"{i}. {clock} {prefix}{title}".strip()
         blocks.append(f"{head}\n{extra}" if extra and extra != title else head)
-    return "财联社\n" + "\n".join(blocks) if blocks else None
+    return "快讯\n" + "\n".join(blocks) if blocks else None
 
 
 def _lhb(lhb: Any) -> str | None:

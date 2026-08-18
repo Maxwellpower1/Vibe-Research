@@ -4,9 +4,9 @@ import { api, type OvlabKlineBar, type OvlabLastBar, type OvlabSearchItem } from
 import type { DerivData } from "@/hooks/useDerivData";
 import { usePolling } from "@/hooks/usePolling";
 import { cn } from "@/lib/utils";
-import { num, TrendPreviewCell, type PreviewSeries } from "@/components/ovlab/shared";
+import { nextSort, num, TrendPreviewCell, type PreviewSeries, type SortState } from "@/components/ovlab/shared";
 import { storageGet, storageSet } from "@/lib/storage";
-import { CellEmpty, klineSym, NightMoon } from "./derivShared";
+import { CellEmpty, cmpVal, IvpBar, klineSym, NightMoon, SortableHd } from "./derivShared";
 
 const WATCH_KEY = "deriv.watch";
 const MAX_WATCH = 20;
@@ -34,16 +34,19 @@ function PctText({ value }: { value: number | null }) {
   );
 }
 
+type WatchKey = "code" | "close" | "pct";
+
 /** 自选合约: local deriv.watch (具体合约代码, 如 IM2609). 旧品种条目自动迁到主力合约.
  *  行情: last-bar 60s 轮询; 分时: kline-history 1m 近 20h, 5min 轮询 (纯价格线, 不叠 IV).
- *  注: OpenVlab 无期权合约级行情接口, 搜索仅索引期货合约. */
+ *  点列头排序; 注: OpenVlab 无期权合约级行情接口, 搜索仅索引期货合约. */
 export function WatchPanel({ d, onPickSymbol, compact = false }: {
   d: DerivData;
   onPickSymbol?: (sym: string) => void;
-  /** 窄列模式 (嵌进主板卡第三列): 隐藏别名与 IVP 列. */
+  /** 窄列模式 (嵌进主板卡第三列): 隐藏别名与 IV分位 列. */
   compact?: boolean;
 }) {
   const [watch, setWatch] = useState<string[]>(loadWatch);
+  const [sort, setSort] = useState<SortState<Record<WatchKey, unknown>>>({ key: null, dir: "desc" });
   const [kw, setKw] = useState("");
   const [hits, setHits] = useState<OvlabSearchItem[]>([]);
   const [searching, setSearching] = useState(false);
@@ -111,7 +114,7 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
   }, [watch, sparkPoll.data]);
   const sparkLoading = sparkPoll.data === null && watch.length > 0;
 
-  // 合约 -> 品种行 (别名/夜盘/IVP 上下文): 先精确主力合约, 再按字母前缀找 prodUnd
+  // 合约 -> 品种行 (别名/夜盘/IV分位 上下文): 先精确主力合约, 再按字母前缀找 prodUnd
   const productOf = useMemo(() => {
     const all = d.rows ?? [];
     return (ticker: string) => {
@@ -144,6 +147,19 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
     setHits([]);
   };
 
+  const shown = useMemo(() => {
+    const rows = watch.map((code) => {
+      const lb = quotes[code];
+      const close = num(lb?.close);
+      const pre = num(lb?.pre_close);
+      const pct = close !== null && pre ? ((close - pre) / pre) * 100 : null;
+      return { code, close, pre, pct };
+    });
+    if (!sort.key) return rows;
+    const key = sort.key;
+    return [...rows].sort((a, b) => cmpVal(a[key], b[key], sort.dir));
+  }, [watch, quotes, sort]);
+
   return (
     <div className="flex h-full flex-col">
       <div className="relative shrink-0 px-2 pt-1.5">
@@ -172,15 +188,17 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
           </div>
         )}
       </div>
-      <div className="mt-1 min-h-0 flex-1 overflow-auto px-1 pb-1">
+      <div className="mt-1 flex items-center gap-1.5 px-2 pb-0.5 text-[9px] text-slate-600">
+        <SortableHd k="code" label="合约" sort={sort} onSort={(k) => setSort((s) => nextSort(s, k))} className="min-w-0 flex-1 justify-start" />
+        <SortableHd k="close" label="最新" sort={sort} onSort={(k) => setSort((s) => nextSort(s, k))} className="justify-end" />
+        <SortableHd k="pct" label="涨跌" sort={sort} onSort={(k) => setSort((s) => nextSort(s, k))} className="justify-end" />
+        <span className="w-[52px] shrink-0">分时</span>
+        <span className="w-3 shrink-0" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-1 pb-1">
         {watch.length === 0 && <CellEmpty text="暂无自选, 上方搜索添加" />}
-        {watch.map((code) => {
-          const lb = quotes[code];
-          const close = num(lb?.close);
-          const pre = num(lb?.pre_close);
-          const pct = close !== null && pre ? ((close - pre) / pre) * 100 : null;
+        {shown.map(({ code, close, pre, pct }) => {
           const prod = productOf(code);
-          const ivp = num(prod?.atmv_percentile);
           return (
             <div
               key={code}
@@ -204,14 +222,7 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
                   {close !== null ? Number(close.toFixed(2)).toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "-"}
                 </span>
                 <PctText value={pct} />
-                {!compact && (
-                  <span className={cn(
-                    "w-[2rem] text-right text-[10px] tabular-nums",
-                    ivp !== null && ivp >= 90 ? "text-red-400" : ivp !== null && ivp <= 10 ? "text-emerald-400" : "text-slate-500",
-                  )} title="品种隐波百分位">
-                    {ivp !== null ? ivp.toFixed(0) : "-"}
-                  </span>
-                )}
+                {!compact && <IvpBar value={prod?.atmv_percentile} />}
               </button>
               <TrendPreviewCell series={sparks[code]} loading={sparkLoading && !sparks[code]} base={pre} />
               <button
