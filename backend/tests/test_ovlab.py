@@ -441,3 +441,47 @@ def test_build_option_daily_no_data(monkeypatch):
 def test_get_option_daily_empty_code():
     assert ovlab.get_option_daily("") == {}
     assert ovlab.get_option_daily("   ") == {}
+
+
+# ---------- term-structure ----------
+
+_TS_SURFACE = {
+    "202612": {"exp": "202612", "forward_td": "16100.0", "forward_yd": "16150.0",
+               "days_to_expiry": "119"},
+    "202609": {"exp": "202609", "forward_td": "15950.0", "forward_yd": "16112.0",
+               "days_to_expiry": "28"},
+    "202610": {"exp": "202610", "forward_td": "nan", "forward_yd": "16000.0",
+               "days_to_expiry": "58"},  # fwd nan -> 跳过
+}
+
+
+def test_term_structure_curve_sorted_and_clean(monkeypatch):
+    """曲线按 dte 升序, nan forward 的月份被跳过."""
+    monkeypatch.setattr(ovlab, "get_volatility_surface", lambda p: _TS_SURFACE)
+    out = ovlab.get_term_structure(["AG"])
+    curve = out["curves"]["AG"]
+    assert [p["exp"] for p in curve] == ["202609", "202612"]
+    assert curve[0]["fwd"] == 15950.0 and curve[0]["fwdYd"] == 16112.0
+    assert curve[0]["dte"] == 28.0
+
+
+def test_term_structure_multi_and_empty(monkeypatch):
+    """多品种并发; 无 surface 的品种不进结果; 空入参归 {}."""
+    monkeypatch.setattr(
+        ovlab, "get_volatility_surface",
+        lambda p: _TS_SURFACE if p == "AG" else {},
+    )
+    out = ovlab.get_term_structure(["AG", "XX", "ag"])  # 去重后 AG/XX
+    assert list(out["curves"].keys()) == ["AG"]
+    assert ovlab.get_term_structure([]) == {}
+    assert ovlab.get_term_structure(["  "]) == {}
+
+
+def test_term_structure_cached(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: True)
+    monkeypatch.setattr(ovlab, "get_volatility_surface",
+                        lambda p: calls.append(p) or _TS_SURFACE)
+    r1 = ovlab.get_term_structure(["AG", "CU"])
+    r2 = ovlab.get_term_structure(["CU", "AG"])  # 排序后同钥匙
+    assert r1 == r2 and len(calls) == 2

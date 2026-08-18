@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  api, type OvlabFlowAlert, type OvlabFutureTsAll, type OvlabMarketRow, type OvlabProductExp,
+  api, type OvlabFlowAlert, type OvlabMarketRow, type OvlabProductExp,
 } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { DERIV_DEFS, type DerivDef } from "@/config/deriv";
@@ -21,7 +21,6 @@ export interface DerivData {
   alerts: OvlabFlowAlert[] | null;
   alertUpdated: number;
   exps: OvlabProductExp[] | null;
-  tsAll: OvlabFutureTsAll | null;
   /** preview code (prodUnd:exp) -> price+IV series, catalog codes only. */
   sparks: Record<string, PreviewSeries>;
   sparkLoading: boolean;
@@ -39,7 +38,6 @@ export function useDerivData(): DerivData {
   const market = usePolling(() => api.ovlabMarket(), 60_000, [nonce]);
   const alertPoll = usePolling(() => api.ovlabFlowAlert(), 60_000, [nonce]);
   const expPoll = usePolling(() => api.ovlabProductExps(), 300_000, [nonce]);
-  const tsPoll = usePolling(() => api.ovlabFutureTsAll(), 300_000, [nonce]);
 
   const rows = useMemo(
     () => (market.data ? market.data.filter(isDomestic) : null),
@@ -87,7 +85,6 @@ export function useDerivData(): DerivData {
     alerts: alertPoll.data,
     alertUpdated: alertPoll.updated,
     exps: expPoll.data,
-    tsAll: tsPoll.data,
     sparks,
     sparkLoading: sparkPoll.data === null && codesKey.length > 0,
     refreshing,

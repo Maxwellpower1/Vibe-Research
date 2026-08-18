@@ -19,6 +19,7 @@ import json
 import logging
 import math
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -817,6 +818,59 @@ def get_option_daily(code: str, und: str = "") -> dict[str, Any]:
         lambda: _build_option_daily(c, u),
         valid=lambda v: isinstance(v, dict) and bool(v.get("bars")),
         ttl=300,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 期限结构 (volatility-surface 的 forward 今/昨曲线; future-ts-all 上游只覆盖 6 个品种, 弃用)
+# ---------------------------------------------------------------------------
+
+def _ts_curve(product: str) -> tuple[str, list[dict[str, Any]]]:
+    """单品种远期曲线: [{exp, dte, fwd, fwdYd}] 按 dte 升序."""
+    try:
+        raw = get_volatility_surface(product)
+    except Exception:
+        logger.warning("term-structure surface %s failed", product)
+        return product, []
+    out: list[dict[str, Any]] = []
+    if isinstance(raw, dict):
+        for exp_key in sorted(raw.keys()):
+            blk = raw[exp_key]
+            if not isinstance(blk, dict):
+                continue
+            fwd = _sfloat(blk.get("forward_td"))
+            dte = _sfloat(blk.get("days_to_expiry"))
+            if fwd is None or dte is None:
+                continue
+            out.append({
+                "exp": str(blk.get("exp") or exp_key),
+                "dte": dte,
+                "fwd": fwd,
+                "fwdYd": _sfloat(blk.get("forward_yd")),
+            })
+    out.sort(key=lambda x: x["dte"])
+    return product, out
+
+
+def _build_term_structure(prods: list[str]) -> dict[str, Any]:
+    curves: dict[str, list[dict[str, Any]]] = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for prod, curve in pool.map(_ts_curve, prods):
+            if curve:
+                curves[prod] = curve
+    return {"curves": curves}
+
+
+def get_term_structure(products: list[str]) -> dict[str, Any]:
+    """多品种远期曲线 (volatility-surface forward). 并发拉取, 整体缓存 60s, 休市冻结."""
+    prods = sorted({p.strip().upper() for p in products if p and p.strip()})[:24]
+    if not prods:
+        return {}
+    return _cached(
+        "ovlab_termstruct::" + ",".join(prods),
+        lambda: _build_term_structure(prods),
+        valid=lambda v: isinstance(v, dict) and bool(v.get("curves")),
+        ttl=60,
     )
 
 

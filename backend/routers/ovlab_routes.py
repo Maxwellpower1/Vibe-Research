@@ -264,6 +264,17 @@ def ovlab_option_daily(
     )
 
 
+@router.get("/api/ovlab/term-structure")
+def ovlab_term_structure(
+    products: str = Query(
+        ..., min_length=1, max_length=400, description="逗号分隔品种代码, 如 AU,AG,CU"
+    ),
+):
+    """OpenVlab 期限结构: 多品种远期曲线 (volatility-surface forward 今/昨)。并发拉取, 缓存 60 秒。"""
+    plist = [p for p in products.split(",") if p.strip()]
+    return _ovlab_call(lambda: ovlab.get_term_structure(plist), "期限结构")
+
+
 @router.post("/api/ovlab/skewmap")
 def ovlab_skewmap(req: SkewmapReq):
     """OpenVlab 偏度图 (skewmap, POST)。不缓存。"""

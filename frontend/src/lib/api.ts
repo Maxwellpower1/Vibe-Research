@@ -1192,6 +1192,17 @@ export interface OvlabOptionDaily {
   iv: Array<[string, number | null]>;
 }
 
+/** 期限结构: 单品种远期曲线点 (volatility-surface forward 今/昨). */
+export interface OvlabTermPoint {
+  exp: string;
+  dte: number;
+  fwd: number;
+  fwdYd: number | null;
+}
+export interface OvlabTermStructure {
+  curves: Record<string, OvlabTermPoint[]>;
+}
+
 /** Market hover preview: price + IV intraday series (price-volatility-series) */
 export interface OvlabPriceVolSeriesItem {
   symbol?: string;
@@ -1626,6 +1637,9 @@ export const api = {
   /** 期权日K: 分钟线聚合交易日 OHLCV + 标的平值隐波日线. 服务端缓存 5min, 休市冻结. */
   ovlabOptionDaily: (code: string, und: string) =>
     get<OvlabOptionDaily>(`/ovlab/option-daily?code=${encodeURIComponent(code)}&und=${encodeURIComponent(und)}`),
+  /** 期限结构: 多品种远期曲线 (surface forward 今/昨). 服务端缓存 60s, 休市冻结. */
+  ovlabTermStructure: (products: string[]) =>
+    get<OvlabTermStructure>(`/ovlab/term-structure?products=${encodeURIComponent(products.join(","))}`),
   ovlabSkewmap: (selectedExpiries?: Record<string, unknown>) =>
     request<OvlabSkewmap>("/ovlab/skewmap", "POST", { selectedExpiries: selectedExpiries ?? {} }),
   ovlabSurfacemap: (product?: string) =>
