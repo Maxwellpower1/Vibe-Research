@@ -50,7 +50,9 @@ def test_evaluate_momentum_positive_ic():
     out = evaluate(panel, "momentum_20", rebalance="monthly", n_groups=5, start=days[25])
     assert out["n_periods"] >= 2
     assert out["ic_mean"] is not None
+    assert out["ic_pearson_mean"] is not None
     assert out["ic_mean"] > 0.2
+    assert out["ic_pearson_mean"] > 0.2
     q1 = next(g for g in out["group_stats"] if g["label"] == "Q1")
     q5 = next(g for g in out["group_stats"] if g["label"] == "Q5")
     assert q5["total_return"] > q1["total_return"]
@@ -104,10 +106,69 @@ def test_meta_lists_factors():
     assert "zoo_alpha006" in ids
     assert "zoo_alpha101" in ids
     assert "roe" in ids and "np" in ids and "revenue" in ids
+    assert "excess_mom_20" in ids
+    assert "mom_accel_20" in ids
+    assert "volume_chg_5" in ids
+    assert "vp_corr_10" in ids
+    assert "amplitude_20" in ids
     assert "turnover_rate" not in ids
     groups = {f["group"] for f in data["factors"]}
     assert "动量" in groups and "WorldQuant" in groups and "财务PIT" in groups
     assert data["limits"]["factor_max_codes"] == 600
+
+
+def test_excess_mom_demeans_cross_section():
+    import numpy as np
+
+    panel, _ = _panel(6, 30)
+    fac = factor_matrix(panel, "excess_mom_20")
+    row = fac[20]
+    assert np.isfinite(row).all()
+    assert abs(float(np.mean(row))) < 1e-9
+
+
+def test_new_ohlcv_factors_finite():
+    import numpy as np
+
+    days = _weekdays(50)
+    bars = {}
+    for j in range(4):
+        closes = [10.0 + j + t * 0.1 for t in range(50)]
+        bars[f"sh{600000 + j}"] = [
+            {
+                "datetime": d,
+                "open": c,
+                "high": c + 0.5,
+                "low": c - 0.4,
+                "close": c,
+                "adj_close": c,
+                "volume": 100 + j * 10 + t,
+            }
+            for t, (d, c) in enumerate(zip(days, closes))
+        ]
+    panel = build_panel(bars)
+    accel = factor_matrix(panel, "mom_accel_20")
+    volc = factor_matrix(panel, "volume_chg_5")
+    vpc = factor_matrix(panel, "vp_corr_10")
+    amp = factor_matrix(panel, "amplitude_20")
+    assert np.isfinite(accel[40]).any()
+    assert np.isfinite(volc[5]).all()
+    assert np.isfinite(vpc[10]).any()
+    assert np.isfinite(amp[19]).all()
+    assert float(np.nanmean(amp[19:])) > 0
+
+
+def test_sortino_uses_downside():
+    from backtest.matcher import compute_stats
+
+    empty = compute_stats([100], [], 100)
+    assert empty["sortino"] == 0.0
+    up = compute_stats([100, 101, 102, 103], [], 100)
+    assert up["sortino"] == 0.0
+    mixed = compute_stats([100, 110, 99, 108, 95, 120], [], 100)
+    assert mixed["sharpe"] != 0
+    assert mixed["sortino"] != 0
+    assert mixed["sortino"] != mixed["sharpe"]
 
 
 def test_rsi_high_on_uptrend():

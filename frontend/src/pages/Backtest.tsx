@@ -20,6 +20,7 @@ import { loadWatch, parseCodes } from "@/lib/watchlist";
 import { storageGet, storageSet } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { FactorPanel } from "@/pages/backtest/FactorPanel";
+import { ModelPanel } from "@/pages/backtest/ModelPanel";
 import { FALLBACK_INDEX_POOLS, IndexPoolButtons } from "@/pages/backtest/IndexPoolButtons";
 import { Tearsheet } from "@/pages/backtest/Tearsheet";
 import { jobPct, jobText, useBacktestJob } from "@/pages/backtest/useBacktestJob";
@@ -63,6 +64,8 @@ interface Draft {
   maxHoldDays: number;
   indexId: string;
   pitMembers: boolean;
+  maxWeight: number;
+  industryNeutral: boolean;
 }
 
 const STRATS: { id: BacktestStrategy; label: string; hint: string }[] = [
@@ -70,6 +73,7 @@ const STRATS: { id: BacktestStrategy; label: string; hint: string }[] = [
   { id: "ma_cross", label: "均线金叉死叉", hint: "短均线上穿长均线买, 下穿卖" },
   { id: "dates", label: "指定买卖日", hint: "一行一条: 600519 buy 2024-03-01" },
   { id: "rank_mom", label: "动量轮动", hint: "静态池近 N 日收益取前 K, 每 M 日再平衡. 不是全 A 每天重选" },
+  { id: "top_k", label: "目标权重 Top-K", hint: "按分数取前 K, 按目标权重加减仓. 池子仍 <=600, 不是每天重选全 A" },
 ];
 
 function defaultDraft(): Draft {
@@ -96,6 +100,8 @@ function defaultDraft(): Draft {
     maxHoldDays: 0,
     indexId: "",
     pitMembers: false,
+    maxWeight: 0,
+    industryNeutral: false,
   };
 }
 
@@ -165,6 +171,8 @@ function draftFromResult(result: BacktestResult, base: Draft): Draft {
     maxHoldDays: Number(matcher.max_hold_days ?? 0),
     indexId: String(cfg.index || base.indexId || ""),
     pitMembers: Boolean(cfg.pit_members),
+    maxWeight: Number(matcher.max_weight ?? 0) * 100,
+    industryNeutral: Boolean(matcher.industry_neutral),
   };
 }
 
@@ -365,7 +373,7 @@ export function Backtest() {
   const [maxCodes, setMaxCodes] = useState(FALLBACK_MAX);
   const [cover, setCover] = useState<BacktestStoreCover | null>(null);
   const [compare, setCompare] = useState<BacktestResult | null>(null);
-  const [tab, setTab] = useState<"account" | "factor">("account");
+  const [tab, setTab] = useState<"account" | "factor" | "model">("account");
   const job = useBacktestJob(running);
   const [indexPools, setIndexPools] = useState<BacktestIndexPoolDef[]>(FALLBACK_INDEX_POOLS);
   const [poolNote, setPoolNote] = useState("");
@@ -441,12 +449,14 @@ export function Backtest() {
         rebalance: next.rebalance,
         events: next.strategy === "dates" ? parseEvents(next.events) : [],
         oos_frac: next.oosMode === "20" ? 0.2 : next.oosMode === "30" ? 0.3 : undefined,
-        tune_ma: oosOn && next.tuneMa && (next.strategy === "ma_cross" || next.strategy === "rank_mom"),
+        tune_ma: oosOn && next.tuneMa && (next.strategy === "ma_cross" || next.strategy === "rank_mom" || next.strategy === "top_k"),
         walk_forward: next.oosMode === "wf",
         stop_loss_pct: next.stopLossPct > 0 ? next.stopLossPct / 100 : 0,
         max_hold_days: next.maxHoldDays > 0 ? next.maxHoldDays : 0,
         index: next.pitMembers && next.indexId ? next.indexId : undefined,
         pit_members: Boolean(next.pitMembers && next.indexId),
+        max_weight: next.maxWeight > 0 ? next.maxWeight / 100 : 0,
+        industry_neutral: next.industryNeutral,
       };
       const out = await api.backtestRun(body);
       setResult(out);
@@ -511,8 +521,10 @@ export function Backtest() {
       <PageHeader
         title="回测"
         subtitle={tab === "factor"
-          ? "因子研究: Rank IC / 五档 / 多空. 从本机日 K 现场算, 不是账户撮合, 不荐股."
-          : "A 股日线账户模拟. 优先读本机近 2 年库存, 缺的再补. 信号日不等于成交日, 默认次日开盘. 研究用, 不荐股、不预测."}
+          ? "因子研究: Rank IC / Pearson IC / 五档 / 多空. 从本机日 K 现场算, 不是账户撮合, 不荐股."
+          : tab === "model"
+            ? "模型研究: 同一日 K 训 LightGBM, 分数进 Top-K. 网格只在切点前. 不接券商, 不荐股."
+            : "A 股日线账户模拟. 优先读本机库存, 缺的再补. 信号日不等于成交日, 默认次日开盘."}
         actions={
           tab === "account" ? (
             <button
@@ -528,7 +540,7 @@ export function Backtest() {
         }
       />
       <div className="mb-3 flex gap-1">
-        {([["account", "账户"], ["factor", "因子"]] as const).map(([k, lab]) => (
+        {([["account", "账户"], ["factor", "因子"], ["model", "模型"]] as const).map(([k, lab]) => (
           <button
             key={k}
             type="button"
@@ -548,6 +560,9 @@ export function Backtest() {
           lookback={draft.lookback}
           onCodes={(codes) => patch({ codes })}
         />
+      )}
+      {tab === "model" && (
+        <ModelPanel codes={draft.codes} lookback={draft.lookback} />
       )}
       {tab === "account" && (
       <>
@@ -702,9 +717,6 @@ export function Backtest() {
               />
               按日成分回放{draft.indexId ? ` (${draft.indexId})` : " (先点沪深300等)"}
             </label>
-            {draft.lookback === "3y" && (
-              <p className="mt-1 text-[10px] text-amber-200/80">库存是近 2 年, 3y 缺的段会现拉.</p>
-            )}
           </label>
 
           <div>
@@ -752,14 +764,14 @@ export function Backtest() {
                 </button>
               ))}
             </div>
-            {draft.oosMode !== "off" && (draft.strategy === "ma_cross" || draft.strategy === "rank_mom") && (
+            {draft.oosMode !== "off" && (draft.strategy === "ma_cross" || draft.strategy === "rank_mom" || draft.strategy === "top_k") && (
               <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                 <input
                   type="checkbox"
                   checked={draft.tuneMa}
                   onChange={(e) => patch({ tuneMa: e.target.checked })}
                 />
-                {draft.strategy === "rank_mom" ? "只在样本内选动量窗口, 样本外冻结" : "只在样本内选均线, 样本外冻结"}
+                {draft.strategy === "ma_cross" ? "只在样本内选均线, 样本外冻结" : "只在样本内选动量窗口, 样本外冻结"}
               </label>
             )}
             <p className={cn("mt-1 text-[10px]", draft.oosMode === "wf" && draft.lookback === "1y" ? "text-amber-200/80" : "text-slate-500")}>
@@ -798,10 +810,23 @@ export function Backtest() {
               <NumField label="长均线" value={draft.longWin} onChange={(v) => patch({ longWin: v })} />
             </div>
           )}
-          {draft.strategy === "rank_mom" && (
+          {(draft.strategy === "rank_mom" || draft.strategy === "top_k") && (
             <div className="grid grid-cols-2 gap-2">
               <NumField label="动量窗口" value={draft.momWin} onChange={(v) => patch({ momWin: v })} />
               <NumField label="再平衡(日)" value={draft.rebalance} onChange={(v) => patch({ rebalance: v })} />
+            </div>
+          )}
+          {draft.strategy === "top_k" && (
+            <div className="space-y-2">
+              <NumField label="个股上限 %" value={draft.maxWeight} step={1} onChange={(v) => patch({ maxWeight: v })} />
+              <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                <input
+                  type="checkbox"
+                  checked={draft.industryNeutral}
+                  onChange={(e) => patch({ industryNeutral: e.target.checked })}
+                />
+                行业中性 (缺归属单独一组, 不假装中性)
+              </label>
             </div>
           )}
           {draft.strategy === "dates" && (
@@ -874,6 +899,7 @@ export function Backtest() {
                 <Stat label="收益" value={fmtPct(result.stats.total_return)} className={tone(result.stats.total_return)} />
                 <Stat label="CAGR" value={fmtPct(result.stats.cagr)} className={tone(result.stats.cagr)} />
                 <Stat label="夏普" value={result.stats.sharpe.toFixed(2)} />
+                <Stat label="Sortino" value={(result.stats.sortino ?? 0).toFixed(2)} />
                 <Stat label="最大回撤" value={fmtPct(result.stats.max_drawdown)} className={tone(result.stats.max_drawdown)} />
                 <Stat label="波动" value={fmtPct(result.stats.vol)} />
                 <Stat label="胜率" value={fmtPct(result.stats.win_rate)} />

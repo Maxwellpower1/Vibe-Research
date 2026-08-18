@@ -23,11 +23,11 @@ from backtest.panel import Panel, build_panel, norm_date
 from backtest.rules import FILL_MODES, FILL_OPEN_T1, MatcherConfig
 from backtest.signals import STRATEGIES, build_signals
 from backtest.store import ensure_bars, fetch_daily_bars
+from backtest.universe_sync import LOOKBACKS, STORE_LOOKBACK
 
 BENCH_SYMBOL = "sh000300"
 
 MAX_CODES = 600
-LOOKBACKS = {"1y": 365, "2y": 730, "3y": 1095}
 
 DISCLAIMER = (
     "研究模拟, 不是实盘, 不荐股、不预测。"
@@ -35,7 +35,7 @@ DISCLAIMER = (
     "净值只来自现金加市值, 不用持有期去乘年化。"
     "ST 5% 涨跌停从代码看不出来, 按板块默认带宽。"
     "原始价和复权因子分开; 只写已收盘 bar。"
-    "优先读本机近 2 年库存, 缺的再补。"
+    "优先读本机库存, 缺的再补。"
     "自选默认是静态池, 有幸存者偏差; 勾选按日成分才按 members_on 回放。"
     "沪深300 基准优先按日成分等权可交易; 没有覆盖这段的快照时退回指数价格比。"
 )
@@ -225,6 +225,8 @@ def _cfg_from_body(body: dict) -> MatcherConfig:
             exposure=float(body.get("exposure", 1)),
             stop_loss_pct=float(body.get("stop_loss_pct") or 0),
             max_hold_days=int(body.get("max_hold_days") or 0),
+            max_weight=float(body.get("max_weight") or 0),
+            industry_neutral=bool(body.get("industry_neutral")),
         )
     except ValueError as e:
         raise BacktestError(str(e)) from e
@@ -416,14 +418,25 @@ def _run_backtest_body(
             if tune and strategy == "ma_cross":
                 short_win, long_win, tune_grid = tune_ma(panel.slice(0, split_idx), cfg)
                 warnings.append(f"均线在样本内选定 {short_win}/{long_win}, 样本外冻结")
-            if tune and strategy == "rank_mom":
-                mom_win, tune_grid = tune_mom(panel.slice(0, split_idx), cfg, rebalance)
+            if tune and strategy in ("rank_mom", "top_k"):
+                mom_win, tune_grid = tune_mom(panel.slice(0, split_idx), cfg, rebalance, strategy)
                 warnings.append(f"动量窗口在样本内选定 {mom_win}, 样本外冻结")
     except OosError as e:
         raise BacktestError(str(e)) from e
+    industries = None
+    if cfg.industry_neutral:
+        from backtest.allocate import industry_labels
+
+        industries = industry_labels(panel.symbols)
+        missing = sum(1 for lab in industries if not lab)
+        if missing:
+            warnings.append(f"行业中性: {missing} 只没有板块归属, 单独一组, 不假装中性")
+    weight_mode = str(body.get("weight") or "equal").strip().lower()
+    if weight_mode not in ("equal", "factor_weight"):
+        weight_mode = "equal"
     mark(step="signals", done=len(symbols), total=len(symbols))
     try:
-        entries, exits, sig_notes = build_signals(
+        entries, exits, sig_notes, targets = build_signals(
             panel,
             strategy,
             short_win=short_win,
@@ -433,12 +446,17 @@ def _run_backtest_body(
             rebalance=rebalance,
             top_k=cfg.max_positions,
             member_mask=member_mask,
+            max_weight=cfg.max_weight,
+            industry_neutral=cfg.industry_neutral,
+            exposure=cfg.exposure,
+            weight=weight_mode,
+            industries=industries,
         )
     except ValueError as e:
         raise BacktestError(str(e)) from e
     warnings.extend(sig_notes)
     mark(step="match")
-    out = run_match(panel, entries, exits, cfg)
+    out = run_match(panel, entries, exits, cfg, targets=targets)
     out["tearsheet"] = tearsheet(out.get("equity_curve") or [])
     out["universe"] = {
         "symbols": panel.symbols,
@@ -481,6 +499,11 @@ def _run_backtest_body(
             rebalance=rebalance,
             top_k=cfg.max_positions,
             member_mask=member_mask,
+            max_weight=cfg.max_weight,
+            industry_neutral=cfg.industry_neutral,
+            exposure=cfg.exposure,
+            weight=weight_mode,
+            industries=industries,
         )
         out["oos"] = {
             "split": split_date,
@@ -577,6 +600,7 @@ def meta() -> dict:
             {"id": "ma_cross", "label": "均线金叉死叉", "hint": "短均线上穿长均线买, 下穿卖"},
             {"id": "dates", "label": "指定买卖日", "hint": "你给出 code / side / date, 按信号日撮合"},
             {"id": "rank_mom", "label": "动量轮动", "hint": "静态池里按近 N 日收益取前 K, 每 M 日再平衡. 不是全 A 每天重选"},
+            {"id": "top_k", "label": "目标权重 Top-K", "hint": "按分数取前 K, 按目标权重加减仓. 池子仍 <=600, 不是每天重选全 A"},
         ],
         "fills": list(FILL_MODES),
         "lookbacks": list(LOOKBACKS),
@@ -596,10 +620,12 @@ def meta() -> dict:
             "成分股按日存; 财务用 (start, end) + 公告日。自选仍是静态池",
             "作业先同步写 run, 要排队再加 jobs.json, 不上 SQLite",
             "样本外: 参数只在切点前选; 另开一笔钱验后半段. 滚动切窗每折新开账户, 不再叠单点切窗",
-            "优先读全 A 库存近 2 年; 缺的现拉并写入. 中证500 能一次进完. 不是无上限, 防全 A 同步打挂. 库存不齐会现拉, 会慢. 3y 会超出库存窗口",
+            f"优先读全 A 库存近 {STORE_LOOKBACK}; 缺的现拉并写入. 库存不齐会现拉, 会慢",
             "动量轮动只在这次填的静态池里排, 前 K = 最大持仓. 不是按日全 A 重选",
+            "Top-K 按目标权重加减仓, 可开个股上限和行业中性. 宇宙仍 <=600",
             "止损和最长持有在撮合里执行, 仍受 T+1 / 跌停拦住",
-            "因子页: Rank IC / 五档 / 多空, 可改方向 / 分层 / 权重. 对照最多 6 个因子",
+            "因子页: Rank IC / 五档 / 多空 / Pearson IC. 可改方向 / 分层 / 权重. 对照最多 6 个因子",
+            "模型页: 同一日 K 面板训 LightGBM, 分数进 Top-K. 网格只在切点前. 没装 lightgbm 会提示",
             "一键导入写最新名单, 也可拉中证调整公告写入按日快照. 表单默认仍是静态池; 勾选按日成分才回放",
             "沪深300 基准: 有按日快照时跑等权可交易账户, 没有则退回指数价格比并写明",
             "财务 PIT 按公告日入库, 因子页 ROE/净利润/营收只用已公告的值",

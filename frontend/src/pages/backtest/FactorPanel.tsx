@@ -519,6 +519,7 @@ export function FactorPanel({
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Stat label="IC 均值" value={result.ic_mean == null ? "—" : result.ic_mean.toFixed(3)} className={tone(result.ic_mean)} />
+            <Stat label="Pearson IC" value={result.ic_pearson_mean == null ? "—" : result.ic_pearson_mean.toFixed(3)} className={tone(result.ic_pearson_mean)} />
             <Stat label="IR" value={result.ir == null ? "—" : result.ir.toFixed(2)} className={tone(result.ir)} />
             <Stat label="IC 胜率" value={fmtPct(result.ic_win_rate)} />
             <Stat

@@ -154,7 +154,7 @@ def test_walk_forward_hold_runs():
 def test_ma_signal_on_full_panel_uses_is_history():
     closes = [10] * 30 + [12] * 30
     panel = build_panel({"sh600000": _rows(closes)})
-    entries, _, _ = build_signals(panel, "ma_cross", short_win=5, long_win=10)
+    entries, _, _, _ = build_signals(panel, "ma_cross", short_win=5, long_win=10)
     split = 30
     # A golden cross after the jump should exist and sit on/after split
     if entries.any():

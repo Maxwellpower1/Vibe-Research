@@ -1,7 +1,8 @@
-"""V1 signal builders: hold / ma_cross / dates / rank_mom.
+"""V1 signal builders: hold / ma_cross / dates / rank_mom / top_k.
 
 Signals sit on the bar they are known. The matcher shifts them for open_t+1.
 rank_mom rotates inside a static pool. It is not a daily full-A rescreen.
+top_k writes target weights; the matcher adds and cuts to those weights.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import numpy as np
 from backtest.panel import Panel, norm_date
 
 
-STRATEGIES = ("hold", "ma_cross", "dates", "rank_mom")
+STRATEGIES = ("hold", "ma_cross", "dates", "rank_mom", "top_k")
 
 
 def _empty(panel: Panel) -> tuple[np.ndarray, np.ndarray]:
@@ -162,6 +163,75 @@ def signal_rank_mom(
     return entries, exits
 
 
+def momentum_row(panel: Panel, i: int, lookback: int, mask: np.ndarray | None = None) -> np.ndarray:
+    """Lookback return on bar i. Names failing the mask are NaN."""
+    row = np.full(panel.S, np.nan)
+    if i < lookback:
+        return row
+    for j in range(panel.S):
+        if mask is not None and not bool(mask[i, j]):
+            continue
+        now = panel.adj_close[i, j]
+        prev = panel.adj_close[i - lookback, j]
+        if np.isfinite(now) and np.isfinite(prev) and float(prev) > 0:
+            row[j] = float(now / prev - 1.0)
+    return row
+
+
+def signal_top_k(
+    panel: Panel,
+    lookback: int = 20,
+    rebalance: int = 20,
+    top_k: int = 10,
+    mask: np.ndarray | None = None,
+    scores: np.ndarray | None = None,
+    max_weight: float = 0.0,
+    industry_neutral: bool = False,
+    exposure: float = 1.0,
+    weight: str = "equal",
+    industries: list[str] | None = None,
+) -> np.ndarray:
+    """Target weights on every bar. Rebalance days recompute; others copy last."""
+    from backtest.allocate import scores_to_weights
+
+    if lookback < 2:
+        raise ValueError("动量窗口至少 2 根")
+    if rebalance < 1:
+        raise ValueError("再平衡间隔至少 1 根")
+    if top_k < 1:
+        raise ValueError("Top-K 至少取 1 只")
+    if scores is not None and scores.shape != (panel.T, panel.S):
+        raise ValueError("分数矩阵形状要和面板一致")
+    targets = np.zeros((panel.T, panel.S), dtype=float)
+    first = lookback
+    if first >= panel.T:
+        return targets
+    last_w: np.ndarray | None = None
+    for i in range(first, panel.T):
+        if (i - first) % rebalance == 0:
+            if scores is not None:
+                row = np.array(scores[i], dtype=float, copy=True)
+                if mask is not None:
+                    row = np.where(mask[i], row, np.nan)
+            else:
+                row = momentum_row(panel, i, lookback, mask)
+            last_w, _info = scores_to_weights(
+                row,
+                top_k=top_k,
+                max_weight=max_weight,
+                industry_neutral=industry_neutral,
+                exposure=exposure,
+                weight=weight,
+                industries=industries,
+            )
+        if last_w is None:
+            continue
+        targets[i] = last_w
+        if mask is not None:
+            targets[i] = np.where(mask[i], targets[i], 0.0)
+    return targets
+
+
 def build_signals(
     panel: Panel,
     strategy: str,
@@ -173,11 +243,18 @@ def build_signals(
     rebalance: int = 20,
     top_k: int = 10,
     member_mask: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    score_matrix: np.ndarray | None = None,
+    max_weight: float = 0.0,
+    industry_neutral: bool = False,
+    exposure: float = 1.0,
+    weight: str = "equal",
+    industries: list[str] | None = None,
+) -> tuple[np.ndarray, np.ndarray, list[str], np.ndarray | None]:
     name = (strategy or "hold").strip().lower()
     if name not in STRATEGIES:
         raise ValueError(f"strategy 仅支持 {STRATEGIES}")
     notes: list[str] = []
+    targets: np.ndarray | None = None
     if name == "hold":
         if member_mask is not None:
             entries, exits = signal_members(panel, member_mask)
@@ -201,6 +278,33 @@ def build_signals(
         else:
             notes.append("动量轮动只在这次填的静态池里排, 不是按日全 A 重选, 有幸存者偏差")
         notes.append("续持会计入已持有, 不是没买进")
+    elif name == "top_k":
+        entries, exits = _empty(panel)
+        targets = signal_top_k(
+            panel,
+            mom_win,
+            rebalance,
+            top_k,
+            mask=member_mask,
+            scores=score_matrix,
+            max_weight=max_weight,
+            industry_neutral=industry_neutral,
+            exposure=exposure,
+            weight=weight,
+            industries=industries,
+        )
+        if panel.T <= mom_win and score_matrix is None:
+            notes.append(f"日 K 只有 {panel.T} 根, 动量窗口 {mom_win} 不够, 不会开仓")
+        if score_matrix is not None:
+            notes.append("Top-K 用外来分数按目标权重调仓, 续持会加减仓")
+        else:
+            notes.append("Top-K 用动量分数按目标权重调仓, 续持会加减仓. 不是全 A 每天重选")
+        if member_mask is not None:
+            notes.append("目标权重已按日成分掩码, 出池权重为 0")
+        if industry_neutral:
+            notes.append("行业中性: 分数先减行业均值; 没有归属的单独一组")
+        if max_weight > 0:
+            notes.append(f"个股权重上限 {max_weight:.0%}")
     else:
         entries, exits, notes = signal_dates(panel, events or [])
         if not events:
@@ -208,4 +312,4 @@ def build_signals(
         if member_mask is not None:
             entries, exits = apply_membership(entries, exits, member_mask)
             notes.append("指定日信号已按日成分掩码, 出池强平")
-    return entries, exits, notes
+    return entries, exits, notes, targets

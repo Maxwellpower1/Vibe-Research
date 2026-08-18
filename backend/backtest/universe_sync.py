@@ -1,7 +1,8 @@
 """Fill the market parquet store for the A-share universe.
 
-Same bars/ + adj/ layout as a normal backtest. Last 2y, closed bars only.
-Already-covered symbols are skipped. Not on review warmup / quote hub.
+Same bars/ + adj/ layout as a normal backtest. Same window as the
+longest backtest lookback (3y). Closed bars only. Already-covered
+symbols are skipped. Not on review warmup / quote hub.
 """
 from __future__ import annotations
 
@@ -17,8 +18,10 @@ from backtest.market import last_closed_iso, market_root
 from backtest.store import ensure_bars
 
 BEIJING = timezone(timedelta(hours=8))
-LOOKBACK_DAYS = 730
-LOOKBACK = "2y"
+LOOKBACKS = {"1y": 365, "2y": 730, "3y": 1095}
+STORE_LOOKBACK = "3y"
+LOOKBACK = STORE_LOOKBACK
+LOOKBACK_DAYS = LOOKBACKS[STORE_LOOKBACK]
 WORKERS = 4
 STATUS_NAME = "universe-sync.json"
 
@@ -158,7 +161,7 @@ def run_sync(
     workers: int = WORKERS,
     on_tick=None,
 ) -> dict[str, Any]:
-    """Fill missing 2y bars. fetch_fn/codes/on_tick injected by tests or CLI."""
+    """Fill missing store-window bars. fetch_fn/codes/on_tick injected by tests or CLI."""
     start, end = window()
     pool = universe.normalize(codes) if codes is not None else universe.read_codes(fresh_only=False)
     st = {

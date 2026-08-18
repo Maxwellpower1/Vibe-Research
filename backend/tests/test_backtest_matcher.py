@@ -208,8 +208,8 @@ def test_overlap_signals_one_position():
 
 def test_hold_not_twenty_overlapping_lots():
     panel = _panel([10] * 25)
-    entries, exits, _ = build_signals(panel, "hold")
-    out = run_match(panel, entries, exits, _cfg())
+    entries, exits, _, targets = build_signals(panel, "hold")
+    out = run_match(panel, entries, exits, _cfg(), targets=targets)
     buys = [t for t in out["trades"] if t["side"] == "buy"]
     assert len(buys) == 1
 
@@ -218,8 +218,8 @@ def test_sharpe_from_daily_equity_not_horizon():
     # Steady climb. Fortune-style 252/20 on a 20-day hold would explode; ours stays modest.
     closes = [10 + i * 0.05 for i in range(40)]
     panel = _panel(closes)
-    entries, exits, _ = build_signals(panel, "hold")
-    out = run_match(panel, entries, exits, _cfg(initial_capital=1_000_000, max_positions=1))
+    entries, exits, _, targets = build_signals(panel, "hold")
+    out = run_match(panel, entries, exits, _cfg(initial_capital=1_000_000, max_positions=1), targets=targets)
     sharpe = out["stats"]["sharpe"]
     assert sharpe > 0
     eq = np.asarray([p["equity"] for p in out["equity_curve"]], dtype=float)
@@ -413,3 +413,137 @@ def test_dates_strategy_exact_match():
     sells = [t for t in out["trades"] if t["side"] == "sell" and t["reason"] == "signal"]
     assert buys[0]["date"] == rows[2]["datetime"]
     assert sells[0]["date"] == rows[5]["datetime"]
+
+
+def test_allocate_cap_and_missing_industry():
+    from backtest.allocate import neutralize, scores_to_weights
+
+    scores = np.array([3.0, 2.0, 1.0, 0.5])
+    w, notes = scores_to_weights(scores, top_k=3, max_weight=0.4, exposure=1.0)
+    assert notes["picked"] == 3
+    assert float(w.max()) <= 0.4 + 1e-9
+    assert abs(float(w.sum()) - 1.0) < 1e-6 or float(w.sum()) <= 1.0 + 1e-9
+    neu = neutralize(np.array([2.0, 4.0, 10.0]), ["银行", "银行", "白酒"])
+    assert abs(neu[0] + 1.0) < 1e-9
+    assert abs(neu[1] - 1.0) < 1e-9
+    assert abs(neu[2]) < 1e-9
+    w2, info = scores_to_weights(
+        np.array([1.0, 2.0, 3.0]),
+        top_k=2,
+        industry_neutral=True,
+        industries=["", "银行", "银行"],
+    )
+    assert info["missing_industry"] == 1
+    assert float(w2.sum()) > 0
+    clustered = np.array([10.0, 9.0, 8.0, 1.0, 0.5, 0.1])
+    labels = ["银行", "银行", "银行", "白酒", "白酒", "白酒"]
+    raw, _ = scores_to_weights(clustered, top_k=3)
+    neu_w, _ = scores_to_weights(clustered, top_k=3, industry_neutral=True, industries=labels)
+    assert float(raw[0] + raw[1] + raw[2]) > 0.99
+    assert float(neu_w[0] + neu_w[1] + neu_w[2]) < 0.99
+    assert float(neu_w[3] + neu_w[4] + neu_w[5]) > 0
+
+
+def test_target_weights_add_and_cut():
+    days = _weekdays(8)
+    def pack(closes: list[float]) -> list[dict]:
+        return [
+            {"datetime": d, "open": c, "high": c, "low": c, "close": c, "adj_close": c, "volume": 1000}
+            for d, c in zip(days, closes)
+        ]
+    panel = build_panel({
+        "sh600000": pack([10] * 8),
+        "sz000001": pack([10] * 8),
+    })
+    entries = np.zeros((panel.T, 2), dtype=bool)
+    exits = np.zeros((panel.T, 2), dtype=bool)
+    targets = np.zeros((panel.T, 2))
+    targets[0] = [0.6, 0.4]
+    targets[3] = [0.3, 0.7]
+    for i in range(1, 3):
+        targets[i] = targets[0]
+    for i in range(4, 8):
+        targets[i] = targets[3]
+    out = run_match(
+        panel,
+        entries,
+        exits,
+        _cfg(initial_capital=100_000, max_positions=2, lot_size=100),
+        targets=targets,
+    )
+    buys = [t for t in out["trades"] if t["side"] == "buy"]
+    assert buys
+    assert any(t["reason"] == "rebalance" for t in out["trades"])
+    # first fill is next open of day0 target -> dates[1]
+    first_day = [t for t in buys if t["date"] == panel.dates[1]]
+    assert {t["symbol"] for t in first_day} == {"sh600000", "sz000001"}
+    later = [t for t in out["trades"] if t["date"] == panel.dates[4] and t["reason"] == "rebalance"]
+    assert later
+
+
+def test_target_t1_blocks_new_lot_sell():
+    panel = _panel([10] * 8)
+    entries = np.zeros((panel.T, 1), dtype=bool)
+    exits = np.zeros((panel.T, 1), dtype=bool)
+    targets = np.zeros((panel.T, 1))
+    targets[0, 0] = 1.0
+    targets[1, 0] = 0.0
+    out = run_match(panel, entries, exits, _cfg(), targets=targets)
+    buys = [t for t in out["trades"] if t["side"] == "buy"]
+    assert buys and buys[0]["date"] == panel.dates[1]
+    assert not any(t["date"] == panel.dates[1] and t["side"] == "sell" for t in out["trades"])
+    sold = [t for t in out["trades"] if t["side"] == "sell" and t["reason"] == "rebalance"]
+    assert sold and sold[0]["date"] == panel.dates[2]
+    locked = run_match(panel, entries, exits, _cfg(t_plus=2), targets=targets)
+    assert locked["execution"]["rejects"]["t1"] >= 1
+    assert not any(
+        t["date"] == panel.dates[2] and t["side"] == "sell" and t["reason"] == "rebalance"
+        for t in locked["trades"]
+    )
+
+
+def test_target_limit_up_blocks_buy():
+    closes = [10, 10.5, 10.5, 10.5, 10.5, 10.5]
+    opens = [10, 11.0, 10.5, 10.5, 10.5, 10.5]
+    panel = _panel(closes, opens)
+    entries = np.zeros((panel.T, 1), dtype=bool)
+    exits = np.zeros((panel.T, 1), dtype=bool)
+    targets = np.zeros((panel.T, 1))
+    targets[0, 0] = 1.0
+    out = run_match(panel, entries, exits, _cfg(), targets=targets)
+    assert not [t for t in out["trades"] if t["side"] == "buy"]
+    assert out["execution"]["rejects"]["limit_up"] >= 1
+
+
+def test_run_backtest_top_k_injected():
+    days = _weekdays(16)
+    def pack(closes: list[float]) -> list[dict]:
+        return [
+            {"datetime": d, "open": c, "high": c, "low": c, "close": c, "volume": 1000}
+            for d, c in zip(days, closes)
+        ]
+    out = run_backtest(
+        {
+            "codes": ["600000", "000001"],
+            "start": days[0],
+            "end": days[-1],
+            "strategy": "top_k",
+            "mom_win": 3,
+            "rebalance": 4,
+            "commission_pct": 0,
+            "commission_min": 0,
+            "stamp_tax_pct": 0,
+            "slippage_bps": 0,
+            "initial_capital": 100000,
+            "max_positions": 1,
+            "max_weight": 0.5,
+        },
+        bars_by_symbol={
+            "sh600000": pack([10 + i * 0.4 for i in range(16)]),
+            "sz000001": pack([20 - i * 0.3 for i in range(16)]),
+        },
+    )
+    buys = [t for t in out["trades"] if t["side"] == "buy"]
+    assert buys
+    assert out["strategy"]["name"] == "top_k"
+    assert any("目标权重" in w or "Top-K" in w for w in out["warnings"])

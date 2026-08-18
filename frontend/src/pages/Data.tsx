@@ -88,7 +88,7 @@ export function Data() {
     <div className="mx-auto max-w-6xl px-3 py-3 sm:px-4">
       <PageHeader
         title="本机数据"
-        subtitle="看本机日历、标的池日 K、按日成分、财务 PIT、实验。可补齐近 2 年已收盘日 K，不算 enriched，不清库。"
+        subtitle="看本机日历、标的池日 K、按日成分、财务 PIT、实验。可补齐近 3 年已收盘日 K，不清库。"
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -97,7 +97,7 @@ export function Data() {
               disabled={syncing || syncState === "running"}
               className="inline-flex items-center gap-1 rounded border border-cyan-700/60 px-2 py-1 text-[11px] text-cyan-200 hover:text-cyan-100 disabled:opacity-50"
             >
-              {syncState === "running" ? "补齐中…" : "补齐近2年"}
+              {syncState === "running" ? "补齐中…" : "补齐近3年"}
             </button>
             <button
               type="button"
@@ -212,7 +212,7 @@ export function Data() {
               {symbols.length === 0 ? (
                 <EmptyState
                   title="还没有日 K"
-                  description="点「补齐近2年」拉标的池, 或去回测页跑几只。"
+                  description="点「补齐近3年」拉标的池, 或去回测页跑几只。"
                 />
               ) : (
                 <table className="w-full min-w-[560px] text-left text-[11px]">

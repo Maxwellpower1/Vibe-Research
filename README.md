@@ -41,17 +41,15 @@ Vibe-Research 是一个开源的「个人 AI 投研看板」，**主推 A 股、
 | 📡&nbsp;**资&#8288;讯&#8288;雷&#8288;达** | 复盘第一行右侧**快讯格**（财联社 / 新浪/见闻，打标 + NEW，默认自动滚到顶） |
 | ⭐&nbsp;**自&#8288;选&#8288;股** | **批量粘贴一串代码即加**（逗号 / 空格 / 换行都行）· 一屏表格总览（现价 / 涨跌 / PE / PB / 换手）· **实时行情开关**（右上角，默认关；开了在交易时段每 3 秒自动刷新，非交易时段与页面切走时自动暂停）· 一键交给 AI 读。只存本地 |
 | 💼&nbsp;**我&#8288;的&#8288;持&#8288;仓** | **A股**：录入即实时盈亏 · 已清仓记录（只存本地）。**期货账户**：CTP 只读 · 区间结算单本地缓存 · 净值/累计收益/盈亏日历/统计（账号在本机 `~/.vibe-research/ctp.json`）|
-| 🌊&nbsp;**期&#8288;权&#8288;/&#8288;期&#8288;货** | **OpenVlab** 公开数据：市场概览（全部品种现价 / 涨跌 / 平值隐波 / 隐波百分位 / 22 日实波 / VolAlphaT / Carry / 偏度及百分位 / 主力合约 / 到期日 / 夜盘 / 境外）· 单品种详情（dto）· 波动率期限结构汇总。只客观呈现，不推荐不预测 |
-| 🇺🇸&nbsp;**美&#8288;股** | 本地观察列表（ticker）· 东财快照行情 · **日 K + 成交量**（新浪）· **财报日历** · **SEC 当日申报流**（需 `VR_SEC_CONTACT`）。点列表即切图；只客观呈现，不推荐不预测 |
+| 🌊&nbsp;**期&#8288;权&#8288;/&#8288;期&#8288;货** | **OpenVlab** 公开数据：市场概览（全部品种现价 / 涨跌 / 平值隐波 / 隐波百分位 / 22 日实波 / VolAlphaT / Carry / 偏度及百分位 / 主力合约 / 到期日 / 夜盘 / 境外）· 单品种详情（dto）· 波动率期限结构汇总 |
+| 🇺🇸&nbsp;**美&#8288;股** | 本地观察列表（ticker）· 东财快照行情 · **日 K + 成交量**（新浪）· **财报日历** · **SEC 当日申报流**（需 `VR_SEC_CONTACT`）。点列表即切图 |
 | 🔬&nbsp;**研&#8288;究&#8288;桌** | 顶栏 `/research`：多标的 **相关性热力图** · **ETF 穿透**（A 股东财中报/年报全持仓，美股 N-PORT）· **13F 环比** · Stooq/Baostock/pykrx K 线。只呈现公开披露，持仓天生滞后 |
-| 🧪&nbsp;**回&#8288;测** | 顶栏 `/backtest`：账户模拟 + **因子**（Rank IC / 五档 / 多空 / 对照。可改方向和分层。日 K 现场算，不是 enriched）。账户有止损、最长持有、月收益。均线 / 动量只在样本内选参。研究模拟，不荐股 |
-| 🗄️&nbsp;**数&#8288;据** | 顶栏更多 `/data`：看本机日历、日 K 覆盖、实验。可补齐标的池近 2 年已收盘日 K。命令行: `python backend/fill_2y_bars.py` |
+| 🧪&nbsp;**回&#8288;测** | 顶栏 `/backtest`：账户 + **因子** + **模型**。因子多超额动量 / 动量加速 / 量变等公式，Rank IC / Pearson IC / 五档 / 多空。账户有 `top_k` 目标权重、个股上限、行业中性、Sortino。模型页同一日 K 训 LightGBM（可选），分数进 Top-K。网格只在样本内选参 |
+| 🗄️&nbsp;**数&#8288;据** | 顶栏更多 `/data`：看本机日历、日 K 覆盖、实验。可补齐标的池近 3 年已收盘日 K。命令行: `python backend/fill_2y_bars.py` |
 | 🤖&nbsp;**AI&#8288;观&#8288;察** | 顶栏进入：公有云 Token 消耗（OpenRouter 日榜）· LLM 价格趋势 / 降价事件（TrakToken TTSI）· 大模型价格表与智能×成本散点（Artificial Analysis，可选 key）· AI 基建 CapEx/ROI（SEC + 模型外推）。只客观呈现，预测段标「模型假设」 |
 | 🔌&nbsp;**接&#8288;入&nbsp;AI** | 订阅接入（本机 CLI，免 key）· API 多模型（自动填 baseURL）· MCP（挂进 Claude Code 等 agent）|
 
-> **投研分析框架**：让 AI 分析个股时，自动按 估值 / 资金面 / 财报质量 / 行业景气 / 事件催化与风险 五维组织结论——框架只规定「怎么读数据」、不规定买卖，方向仍由你自己的 AI 决定。
->
-> 连板股 / 成交额榜 / 龙虎榜等均为**客观公开榜单数据，只呈现事实、不推荐、不预测**。
+> **投研分析框架**：让 AI 分析个股时，按 估值 / 资金面 / 财报质量 / 行业景气 / 事件催化与风险 五维组织结论。
 
 ## 数据源（Data Sources）
 
@@ -85,7 +83,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - 后端 `backend/gstock.py` + `gstock_deep.py`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo quoteSummary；挂了就空）** + **三表关键科目（东财）** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo search，crumb 被拦时走 RSS）**。个股页输 `AAPL` / `00700` 即可。
 - **美股日 K**：`GET /api/global/us/kline?symbol=AAPL&num=180`（新浪；Yahoo chart 在国内 403）。A 股日 K 腾讯/mootdx 空时回退 **Baostock**（可选包）。
 - **研究桌**：`GET /api/research/kline`（Stooq / Baostock / pykrx）· `/correlation` · `/etf-holdings` · `/13f`。韩股日 K 需 `pip install pykrx`（Naver 复权，不是 KRX 原始盘）。
-- **回测**：`GET /api/backtest/meta` · `GET /api/backtest/index-pool`（沪深300 / 中证500 / 科创50 / 创业板指；`history=1` 同时写入中证变动日快照）· `POST /api/backtest/run`（可 `index` + `pit_members` 按日成分回放）· `POST /api/backtest/factor`（含 ROE/净利润/营收公告日 PIT）· `GET/DELETE /api/backtest/runs` · `GET /api/backtest/store`（可带 `?codes=` 看这批覆盖）· `POST /api/backtest/store/sync` · `POST /api/backtest/store/members` · `POST /api/backtest/store/fundamentals`。账户 / 因子硬顶 600 只（中证500 能一次进完；库存不齐会现拉, 会慢）。不是全 A。日 K 走 `daily_bars`（腾讯，与 light_kline 同源）。实验在 `~/.vibe-research/backtest/runs/<id>/`。表单默认仍是最新名单静态池；勾选按日成分才回放。沪深300 基准有快照时是等权可交易账户，不是指数价格比。北交所 920 按 30% 涨跌停。
+- **回测**：`GET /api/backtest/meta` · `GET /api/backtest/index-pool`（沪深300 / 中证500 / 科创50 / 创业板指；`history=1` 同时写入中证变动日快照）· `POST /api/backtest/run`（可 `index` + `pit_members` 按日成分回放；策略含 `top_k` 目标权重，可 `max_weight` / `industry_neutral`）· `POST /api/backtest/factor`（含 ROE/净利润/营收公告日 PIT）· `POST /api/backtest/model`（LightGBM 可选，分数进 Top-K）· `GET/DELETE /api/backtest/runs` · `GET /api/backtest/store`（可带 `?codes=` 看这批覆盖）· `POST /api/backtest/store/sync` · `POST /api/backtest/store/members` · `POST /api/backtest/store/fundamentals`。库存不齐会现拉, 会慢。日 K 走 `daily_bars`（腾讯，与 light_kline 同源）。实验在 `~/.vibe-research/backtest/runs/<id>/`。表单默认仍是最新名单静态池；勾选按日成分才回放。沪深300 基准有快照时是等权可交易账户，不是指数价格比。北交所 920 按 30% 涨跌停。
 - **美股页**：观察列表 + K 线 + **EDGAR Screener（S 级）** + 涨跌榜 + 选中标的期权 + 财报日历 + SEC 日报。
 - **AI 观察**：`GET /api/ai-watch/openrouter-usage`（需 `OPENROUTER_API_KEY`，无 key 读本地缓存）· `spend-index`（TrakToken RSS）· `aa-models`（可选 `ARTIFICIAL_ANALYSIS_API_KEY`）· `ai-infra`（SEC CapEx + 模型外推）。快照落在 `~/.vibe-research/ai-watch/`。
 - **SEC**：设置 `VR_SEC_CONTACT="Name you@example.com"`，否则 SEC 端点返回 503。

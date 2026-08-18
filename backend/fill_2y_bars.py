@@ -1,7 +1,7 @@
-"""CLI: fill last 2y closed daily bars into VR_DATA_DIR/market/.
+"""CLI: fill the store-window closed daily bars into VR_DATA_DIR/market/.
 
 Same path as the data-page button. Already-covered symbols are skipped.
-Does not compute TickFlow enriched. Does not wipe the store.
+Does not wipe the store. Window matches the longest backtest lookback (3y).
 
 Usage (from repo root or backend/):
   python backend/fill_2y_bars.py
@@ -24,14 +24,14 @@ from backtest.universe_sync import portrait, run_sync, window
 
 def _parse(argv: list[str] | None = None) -> argparse.Namespace:
     ids = ", ".join(p["id"] for p in POOLS)
-    p = argparse.ArgumentParser(description="Fill last 2y closed daily bars (skip if covered).")
+    p = argparse.ArgumentParser(description="Fill store-window closed daily bars (skip if covered).")
     p.add_argument("codes", nargs="*", help="6-digit codes. Empty = full A-share universe file.")
     p.add_argument("--index", default="", help=f"Index snapshot instead of universe. {ids}")
     p.add_argument("--workers", type=int, default=2, help="Fetch threads. Default 2 (Tencent rate).")
     p.add_argument(
         "--include-bj",
         action="store_true",
-        help="Also fetch 920/8 Beijing names. Tencent usually has no 2y history.",
+        help="Also fetch 920/8 Beijing names. Tencent usually has thin history.",
     )
     return p.parse_args(argv)
 
@@ -61,7 +61,7 @@ def _codes(ns: argparse.Namespace) -> list[str] | None:
         kept = _drop_bj(codes)
         dropped = len(codes) - len(kept)
         if dropped:
-            print(f"drop {dropped} bj (Tencent 2y empty). --include-bj to keep", flush=True)
+            print(f"drop {dropped} bj (Tencent often empty). --include-bj to keep", flush=True)
         codes = kept
     return codes
 

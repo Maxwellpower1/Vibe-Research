@@ -482,7 +482,7 @@ def inventory() -> dict:
         "fundamentals": funds,
         "runs": {"count": run_count, "recent": list_runs(8)},
         "legacy_kline": legacy,
-        "note": "本机日历 / 日 K / 按日成分 / 财务PIT / 实验. 标的池近 2 年可点补齐, 只写已收盘 bar, 不算 enriched, 不清库.",
+        "note": "本机日历 / 日 K / 按日成分 / 财务PIT / 实验. 标的池近 3 年可点补齐, 只写已收盘 bar, 不清库.",
     }
 
 

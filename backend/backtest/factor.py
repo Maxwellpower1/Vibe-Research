@@ -41,6 +41,11 @@ FACTORS: dict[str, dict] = {
     "vol_ratio_5": {"id": "vol_ratio_5", "label": "量比(5日)", "win": 5, "kind": "vol_ratio", "group": "量价"},
     "macd_hist": {"id": "macd_hist", "label": "MACD柱", "win": 35, "kind": "macd", "group": "趋势"},
     "kdj_k": {"id": "kdj_k", "label": "KDJ-K", "win": 9, "kind": "kdj", "group": "趋势"},
+    "excess_mom_20": {"id": "excess_mom_20", "label": "20日超额动量", "win": 20, "kind": "excess_mom", "group": "动量"},
+    "mom_accel_20": {"id": "mom_accel_20", "label": "20日动量加速", "win": 40, "kind": "mom_accel", "group": "动量"},
+    "volume_chg_5": {"id": "volume_chg_5", "label": "5日量变", "win": 5, "kind": "vol_chg", "group": "量价"},
+    "vp_corr_10": {"id": "vp_corr_10", "label": "10日量价相关", "win": 10, "kind": "vp_corr", "group": "量价"},
+    "amplitude_20": {"id": "amplitude_20", "label": "20日振幅", "win": 20, "kind": "amp_mean", "group": "波动"},
     "zoo_alpha006": {"id": "zoo_alpha006", "label": "WQ #6 开盘量价相关", "win": 10, "kind": "zoo006", "group": "WorldQuant"},
     "zoo_alpha012": {"id": "zoo_alpha012", "label": "WQ #12 量价同向", "win": 2, "kind": "zoo012", "group": "WorldQuant"},
     "zoo_alpha101": {"id": "zoo_alpha101", "label": "WQ #101 日内实体", "win": 1, "kind": "zoo101", "group": "WorldQuant"},
@@ -183,6 +188,32 @@ def _rolling_corr(a: np.ndarray, b: np.ndarray, win: int) -> np.ndarray:
     return out
 
 
+def _rolling_mean(x: np.ndarray, win: int) -> np.ndarray:
+    t, s = x.shape
+    out = np.full((t, s), np.nan)
+    if win < 1:
+        return out
+    for i in range(win - 1, t):
+        block = x[i - win + 1 : i + 1]
+        finite = np.isfinite(block)
+        counts = finite.sum(axis=0)
+        filled = np.where(finite, block, 0.0)
+        out[i] = np.divide(filled.sum(axis=0), counts, out=np.full(s, np.nan), where=counts == win)
+    return out
+
+
+def _mom(adj: np.ndarray, win: int) -> np.ndarray:
+    t, s = adj.shape
+    out = np.full((t, s), np.nan)
+    if t <= win or win < 1:
+        return out
+    prev = adj[:-win]
+    now = adj[win:]
+    ok = np.isfinite(prev) & np.isfinite(now) & (prev > 0)
+    out[win:] = np.where(ok, now / prev - 1.0, np.nan)
+    return out
+
+
 def _rolling_minmax(x: np.ndarray, win: int, op) -> np.ndarray:
     t, s = x.shape
     out = np.full((t, s), np.nan)
@@ -201,13 +232,30 @@ def factor_matrix(panel: Panel, factor_id: str) -> np.ndarray:
     win = int(spec["win"])
     kind = spec["kind"]
     if kind == "mom":
+        return _mom(adj, win)
+    if kind == "excess_mom":
+        mom = _mom(adj, win)
+        for i in range(t):
+            row = mom[i]
+            ok = np.isfinite(row)
+            if int(ok.sum()) < 2:
+                continue
+            out[i] = np.where(ok, row - float(np.nanmean(row)), np.nan)
+        return out
+    if kind == "mom_accel":
+        half = max(1, win // 2)
+        return _mom(adj, half) - _mom(adj, win)
+    if kind == "vol_chg":
+        vol = panel.volume
         if t <= win:
             return out
-        prev = adj[:-win]
-        now = adj[win:]
+        prev = vol[:-win]
+        now = vol[win:]
         ok = np.isfinite(prev) & np.isfinite(now) & (prev > 0)
         out[win:] = np.where(ok, now / prev - 1.0, np.nan)
         return out
+    if kind == "vp_corr":
+        return _rolling_corr(adj, panel.volume, win)
     if kind == "vol":
         return _rolling_std(_daily_ret(adj), win)
     if kind == "rsi":
@@ -236,6 +284,10 @@ def factor_matrix(panel: Panel, factor_id: str) -> np.ndarray:
             ok = np.isfinite(prev) & np.isfinite(now_h) & np.isfinite(now_l) & (prev > 0)
             out[1:] = np.where(ok, (now_h - now_l) / prev, np.nan)
         return out
+    if kind == "amp_mean":
+        den = np.where(np.isfinite(close) & (close > 0), close, np.nan)
+        amp = np.divide(high - low, den, out=np.full((t, s), np.nan), where=np.isfinite(den))
+        return _rolling_mean(amp, win)
     if kind == "vol_ratio":
         vol = panel.volume
         for i in range(win, t):
@@ -374,6 +426,7 @@ def evaluate(
     idxs = [i for i in rebalance_indices(panel.dates, rebalance) if (not start or panel.dates[i] >= start)]
     pairs = [(idxs[k], idxs[k + 1]) for k in range(len(idxs) - 1)]
     ic_series: list[dict] = []
+    pearson_ics: list[float] = []
     group_rets: list[dict] = []
     skipped = 0
     for i, nxt in pairs:
@@ -390,6 +443,9 @@ def evaluate(
         ic = spearman(scores[ok], fwd[ok])
         if np.isfinite(ic):
             ic_series.append({"date": panel.dates[i], "ic": round(float(ic), 4)})
+        ic_p = _pearson(scores[ok], fwd[ok])
+        if np.isfinite(ic_p):
+            pearson_ics.append(float(ic_p))
         groups = _group_ids(scores[ok], n_groups)
         rets = fwd[ok]
         sc = scores[ok]
@@ -403,6 +459,7 @@ def evaluate(
     ic_std = float(np.std(ics, ddof=1)) if len(ics) > 1 else None
     ir = (ic_mean / ic_std) if (ic_mean is not None and ic_std and abs(ic_std) > 1e-8) else None
     ic_win = (sum(1 for v in ics if v > 0) / len(ics)) if ics else None
+    ic_pearson_mean = float(np.mean(pearson_ics)) if pearson_ics else None
     ppy = {"daily": 252.0, "weekly": 52.0, "monthly": 12.0}[rebalance]
 
     navs = {f"Q{g}": 1.0 for g in range(1, n_groups + 1)}
@@ -461,6 +518,7 @@ def evaluate(
         "n_periods": len(group_rets),
         "ic_mean": None if ic_mean is None else round(ic_mean, 4),
         "ic_std": None if ic_std is None else round(ic_std, 4),
+        "ic_pearson_mean": None if ic_pearson_mean is None else round(ic_pearson_mean, 4),
         "ir": None if ir is None else round(ir, 4),
         "ic_win_rate": None if ic_win is None else round(ic_win, 4),
         "ic_series": ic_series,
@@ -518,7 +576,7 @@ def run_factor(body: dict, *, bars_by_symbol: dict[str, list[dict]] | None = Non
     if pool == "store":
         symbols = store_pool(int(body.get("limit") or FACTOR_MAX))
         if not symbols:
-            raise BacktestError("库存还没有已覆盖的标的, 先去数据页补齐近 2 年")
+            raise BacktestError("库存还没有已覆盖的标的, 先去数据页补齐日 K")
     else:
         symbols = resolve_codes(body.get("codes") or [], limit=FACTOR_MAX)
         if len(symbols) < 2:
@@ -684,7 +742,7 @@ def run_factor_compare(body: dict, *, bars_by_symbol: dict[str, list[dict]] | No
     if pool == "store":
         symbols = store_pool(int(body.get("limit") or FACTOR_MAX))
         if not symbols:
-            raise BacktestError("库存还没有已覆盖的标的, 先去数据页补齐近 2 年")
+            raise BacktestError("库存还没有已覆盖的标的, 先去数据页补齐日 K")
     else:
         symbols = resolve_codes(body.get("codes") or [], limit=FACTOR_MAX)
         if len(symbols) < 2:

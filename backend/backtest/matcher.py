@@ -24,6 +24,13 @@ from backtest.rules import (
 
 
 @dataclass
+class _Lot:
+    shares: int
+    entry_idx: int
+    cash_spent: float
+
+
+@dataclass
 class _Pos:
     j: int
     shares: int
@@ -32,6 +39,7 @@ class _Pos:
     signal_date: str
     entry_px: float
     cash_spent: float
+    lots: list[_Lot] = field(default_factory=list)
 
 
 @dataclass
@@ -72,6 +80,23 @@ def _signal_date(dates: list[str], fill_idx: int, shifted: bool) -> str:
     if shifted and fill_idx > 0:
         return dates[fill_idx - 1]
     return dates[fill_idx]
+
+
+def _shift_weights(weights: np.ndarray, shifted: bool, rejects: dict[str, int]) -> np.ndarray:
+    """Yesterday's target fills today. Same leftover rule as flags."""
+    arr = np.asarray(weights, dtype=float)
+    if not shifted:
+        return arr
+    out = np.zeros_like(arr)
+    if arr.shape[0] > 1:
+        out[1:] = arr[:-1]
+    leftover = 0
+    if arr.size:
+        last = arr[-1]
+        leftover = int(np.count_nonzero(np.isfinite(last) & (last > 0)))
+    if leftover:
+        rejects["no_next_bar"] += leftover
+    return out
 
 
 def _shift_flags(flags: np.ndarray, shifted: bool, rejects: dict[str, int]) -> np.ndarray:
@@ -226,6 +251,7 @@ def compute_stats(equity: list[float], trades: list[dict], initial: float) -> di
             "vol": 0.0,
             "max_drawdown": 0.0,
             "calmar": 0.0,
+            "sortino": 0.0,
             "days": max(arr.size - 1, 0),
             "trades": 0,
             "round_trips": 0,
@@ -242,9 +268,13 @@ def compute_stats(equity: list[float], trades: list[dict], initial: float) -> di
         sd = float(np.std(rets, ddof=1))
         vol = sd * float(np.sqrt(252.0))
         sharpe = float(np.mean(rets) / sd * np.sqrt(252.0)) if sd > 1e-12 else 0.0
+        down = rets[rets < 0]
+        dsd = float(np.std(down, ddof=1)) if down.size > 1 else 0.0
+        sortino = float(np.mean(rets) / dsd * np.sqrt(252.0)) if dsd > 1e-12 else 0.0
     else:
         vol = 0.0
         sharpe = 0.0
+        sortino = 0.0
     peak = np.maximum.accumulate(arr)
     dd = arr / np.where(peak == 0, np.nan, peak) - 1.0
     max_dd = float(np.nanmin(dd)) if dd.size else 0.0
@@ -263,6 +293,7 @@ def compute_stats(equity: list[float], trades: list[dict], initial: float) -> di
         "vol": vol,
         "max_drawdown": max_dd,
         "calmar": calmar,
+        "sortino": sortino,
         "days": n,
         "trades": len(trades),
         "round_trips": len(sells),
@@ -276,6 +307,7 @@ def run_match(
     entries: np.ndarray,
     exits: np.ndarray,
     cfg: MatcherConfig,
+    targets: np.ndarray | None = None,
 ) -> dict:
     if panel.T < 2 or panel.S < 1:
         raise ValueError("日 K 不够: 至少 2 个交易日、1 只标的")
@@ -283,6 +315,12 @@ def run_match(
     shifted = cfg.fill == FILL_OPEN_T1
     fill_entry = _shift_flags(np.asarray(entries, dtype=bool), shifted, book.rejects)
     fill_exit = _shift_flags(np.asarray(exits, dtype=bool), shifted, book.rejects)
+    fill_w: np.ndarray | None = None
+    if targets is not None:
+        tw = np.asarray(targets, dtype=float)
+        if tw.shape != (panel.T, panel.S):
+            raise ValueError("目标权重形状要和面板一致")
+        fill_w = _shift_weights(tw, shifted, book.rejects)
     raw_px = panel.open if shifted else panel.close
     pre = panel.pre_close()
     cash = float(cfg.initial_capital)
@@ -291,13 +329,51 @@ def run_match(
     dd_curve: list[dict] = []
     peak = cash
 
-    def _sell(t: int, j: int, *, reason: str, px: float) -> None:
+    def _unlocked(pos: _Pos, t: int) -> int:
+        if pos.lots:
+            return sum(lt.shares for lt in pos.lots if t - lt.entry_idx >= cfg.t_plus)
+        return pos.shares if t - pos.entry_idx >= cfg.t_plus else 0
+
+    def _sell(t: int, j: int, *, reason: str, px: float, qty: int | None = None) -> int:
         nonlocal cash
         pos = positions.get(j)
         if pos is None:
-            return
+            return 0
+        want = pos.shares if qty is None else min(int(qty), pos.shares)
+        if want <= 0:
+            return 0
+        ignore_t1 = reason == "end"
+        sold = 0
+        spent_cut = 0.0
+        if pos.lots:
+            kept: list[_Lot] = []
+            left = want
+            for lt in pos.lots:
+                if left <= 0:
+                    kept.append(lt)
+                    continue
+                if (not ignore_t1) and t - lt.entry_idx < cfg.t_plus:
+                    kept.append(lt)
+                    continue
+                take = min(lt.shares, left)
+                frac = take / lt.shares if lt.shares else 0.0
+                spent_cut += lt.cash_spent * frac
+                lt.shares -= take
+                lt.cash_spent *= (1.0 - frac)
+                left -= take
+                sold += take
+                if lt.shares > 0:
+                    kept.append(lt)
+            pos.lots = kept
+        else:
+            if (not ignore_t1) and t - pos.entry_idx < cfg.t_plus:
+                return 0
+            sold = want
+            spent_cut = pos.cash_spent * (sold / pos.shares) if pos.shares else 0.0
+        if sold <= 0:
+            return 0
         fill = slip_price(px, "sell", cfg)
-        notional = pos.shares * fill
+        notional = sold * fill
         comm = commission_yuan(notional, cfg)
         stamp = notional * cfg.stamp_tax_pct
         proceeds = notional - comm - stamp
@@ -311,16 +387,69 @@ def run_match(
                 _signal_date(panel.dates, t, shifted) if reason == "signal" else panel.dates[t]
             ),
             "price": round(fill, 4),
-            "shares": pos.shares,
+            "shares": sold,
             "notional": round(notional, 2),
             "commission": round(comm, 2),
             "stamp_tax": round(stamp, 2),
             "cash_delta": round(proceeds, 2),
-            "pnl": round(proceeds - pos.cash_spent, 2),
+            "pnl": round(proceeds - spent_cut, 2),
             "hold_days": t - pos.entry_idx,
             "reason": reason,
         })
-        del positions[j]
+        pos.shares -= sold
+        pos.cash_spent -= spent_cut
+        if pos.shares <= 0:
+            del positions[j]
+        elif pos.lots:
+            pos.entry_idx = pos.lots[0].entry_idx
+        return sold
+
+    def _buy(t: int, j: int, shares: int, px: float, reason: str) -> bool:
+        nonlocal cash
+        fill = slip_price(px, "buy", cfg)
+        if fill <= 0 or shares < cfg.lot_size:
+            return False
+        notional = shares * fill
+        comm = commission_yuan(notional, cfg)
+        spent = notional + comm
+        if cash + 1e-9 < spent:
+            return False
+        cash -= spent
+        sig = _signal_date(panel.dates, t, shifted)
+        lot = _Lot(shares=shares, entry_idx=t, cash_spent=spent)
+        if j in positions:
+            pos = positions[j]
+            pos.shares += shares
+            pos.cash_spent += spent
+            pos.lots.append(lot)
+        else:
+            positions[j] = _Pos(
+                j=j,
+                shares=shares,
+                entry_idx=t,
+                entry_date=panel.dates[t],
+                signal_date=sig,
+                entry_px=fill,
+                cash_spent=spent,
+                lots=[lot],
+            )
+        book.trades.append({
+            "symbol": panel.symbols[j],
+            "name": panel.names.get(panel.symbols[j], ""),
+            "side": "buy",
+            "date": panel.dates[t],
+            "signal_date": sig,
+            "price": round(fill, 4),
+            "shares": shares,
+            "notional": round(notional, 2),
+            "commission": round(comm, 2),
+            "stamp_tax": 0.0,
+            "cash_delta": round(-spent, 2),
+            "pnl": None,
+            "hold_days": 0,
+            "reason": reason,
+        })
+        return True
 
     for t in range(panel.T):
         day = panel.dates[t]
@@ -331,7 +460,8 @@ def run_match(
             if pos is None:
                 return
             px = float(raw_px[t, j])
-            if t - pos.entry_idx < cfg.t_plus:
+            free = _unlocked(pos, t)
+            if free < cfg.lot_size:
                 book.pending_exits.add(j)
                 book.rejects["t1"] += 1
                 return
@@ -346,7 +476,10 @@ def run_match(
                 return
             if reason in book.rejects:
                 book.rejects[reason] += 1
-            _sell(t, j, reason=reason, px=px)
+            qty = free if free < pos.shares else None
+            _sell(t, j, reason=reason, px=px, qty=qty)
+            if j in positions:
+                book.pending_exits.add(j)
 
         to_exit = set(book.pending_exits)
         book.pending_exits = set()
@@ -371,77 +504,118 @@ def run_match(
                 if _finite(mark) and pos.entry_px > 0 and mark / pos.entry_px - 1.0 <= -cfg.stop_loss_pct:
                     _try_exit(j, "stop")
 
-        candidates: list[int] = []
-        for j in range(panel.S):
-            if not fill_entry[t, j]:
-                continue
-            if j in positions:
-                book.rejects["already_held"] += 1
-                continue
-            candidates.append(j)
-        slots = cfg.max_positions - len(positions)
-        if slots <= 0:
-            book.rejects["no_slot"] += len(candidates)
-            candidates = []
-        elif len(candidates) > slots:
-            book.rejects["no_slot"] += len(candidates) - slots
-            candidates = candidates[:slots]
-        if candidates:
-            mtm = _mark(panel, positions, t - 1 if t else t)
-            budget = (cash + mtm) * cfg.exposure / cfg.max_positions
-            for j in candidates:
-                px = float(raw_px[t, j])
-                if not _finite(px):
-                    book.rejects["no_price"] += 1
+        if fill_w is not None:
+            row = fill_w[t]
+            active = bool(np.any(np.isfinite(row) & (row > 0))) or bool(positions)
+            if active:
+                px_map: dict[int, float] = {}
+                mtm_now = 0.0
+                for j, pos in positions.items():
+                    px = float(raw_px[t, j])
+                    if not _finite(px):
+                        px = pos.entry_px
+                    px_map[j] = px
+                    mtm_now += pos.shares * px
+                equity = cash + mtm_now
+                for j in sorted(positions):
+                    tgt = float(row[j]) if np.isfinite(row[j]) else 0.0
+                    tgt = max(tgt, 0.0)
+                    px = px_map.get(j, float(raw_px[t, j]))
+                    if not _finite(px):
+                        continue
+                    fill = slip_price(px, "sell", cfg)
+                    desired = cfg.lot_size * int((equity * tgt) // (fill * cfg.lot_size)) if fill > 0 else 0
+                    have = positions[j].shares
+                    extra = have - desired
+                    extra = cfg.lot_size * (extra // cfg.lot_size)
+                    if extra < cfg.lot_size:
+                        continue
+                    prev = float(pre[t, j])
+                    if _finite(prev) and at_limit_down(px, prev, limit_pct(panel.symbols[j])):
+                        book.rejects["limit_down"] += 1
+                        continue
+                    free = _unlocked(positions[j], t)
+                    qty = min(extra, cfg.lot_size * (free // cfg.lot_size))
+                    if qty < cfg.lot_size:
+                        book.rejects["t1"] += 1
+                        continue
+                    _sell(t, j, reason="rebalance", px=px, qty=qty)
+                for j in range(panel.S):
+                    tgt = float(row[j]) if np.isfinite(row[j]) else 0.0
+                    if tgt <= 0:
+                        continue
+                    px = float(raw_px[t, j])
+                    if not _finite(px):
+                        book.rejects["no_price"] += 1
+                        continue
+                    prev = float(pre[t, j])
+                    if _finite(prev) and at_limit_up(px, prev, limit_pct(panel.symbols[j])):
+                        book.rejects["limit_up"] += 1
+                        continue
+                    fill = slip_price(px, "buy", cfg)
+                    if fill <= 0:
+                        book.rejects["no_price"] += 1
+                        continue
+                    desired = cfg.lot_size * int((equity * tgt) // (fill * cfg.lot_size))
+                    have = positions[j].shares if j in positions else 0
+                    need = desired - have
+                    need = cfg.lot_size * (need // cfg.lot_size)
+                    if need < cfg.lot_size:
+                        continue
+                    shares = need
+                    while shares >= cfg.lot_size:
+                        notional = shares * fill
+                        comm = commission_yuan(notional, cfg)
+                        if cash + 1e-9 >= notional + comm:
+                            break
+                        shares -= cfg.lot_size
+                    if shares < cfg.lot_size:
+                        book.rejects["no_cash"] += 1
+                        continue
+                    _buy(t, j, shares, px, "rebalance")
+        else:
+            candidates: list[int] = []
+            for j in range(panel.S):
+                if not fill_entry[t, j]:
                     continue
-                prev = float(pre[t, j])
-                if _finite(prev) and at_limit_up(px, prev, limit_pct(panel.symbols[j])):
-                    book.rejects["limit_up"] += 1
+                if j in positions:
+                    book.rejects["already_held"] += 1
                     continue
-                fill = slip_price(px, "buy", cfg)
-                if fill <= 0:
-                    book.rejects["no_price"] += 1
-                    continue
-                shares = cfg.lot_size * int(budget // (fill * cfg.lot_size))
-                while shares >= cfg.lot_size:
-                    notional = shares * fill
-                    comm = commission_yuan(notional, cfg)
-                    if cash + 1e-9 >= notional + comm:
-                        break
-                    shares -= cfg.lot_size
-                if shares < cfg.lot_size:
-                    book.rejects["no_lot" if budget < fill * cfg.lot_size else "no_cash"] += 1
-                    continue
-                notional = shares * fill
-                comm = commission_yuan(notional, cfg)
-                spent = notional + comm
-                cash -= spent
-                sig = _signal_date(panel.dates, t, shifted)
-                positions[j] = _Pos(
-                    j=j,
-                    shares=shares,
-                    entry_idx=t,
-                    entry_date=day,
-                    signal_date=sig,
-                    entry_px=fill,
-                    cash_spent=spent,
-                )
-                book.trades.append({
-                    "symbol": panel.symbols[j],
-                    "name": panel.names.get(panel.symbols[j], ""),
-                    "side": "buy",
-                    "date": day,
-                    "signal_date": sig,
-                    "price": round(fill, 4),
-                    "shares": shares,
-                    "notional": round(notional, 2),
-                    "commission": round(comm, 2),
-                    "stamp_tax": 0.0,
-                    "cash_delta": round(-spent, 2),
-                    "pnl": None,
-                    "hold_days": 0,
-                    "reason": "signal",
-                })
+                candidates.append(j)
+            slots = cfg.max_positions - len(positions)
+            if slots <= 0:
+                book.rejects["no_slot"] += len(candidates)
+                candidates = []
+            elif len(candidates) > slots:
+                book.rejects["no_slot"] += len(candidates) - slots
+                candidates = candidates[:slots]
+            if candidates:
+                mtm = _mark(panel, positions, t - 1 if t else t)
+                budget = (cash + mtm) * cfg.exposure / cfg.max_positions
+                for j in candidates:
+                    px = float(raw_px[t, j])
+                    if not _finite(px):
+                        book.rejects["no_price"] += 1
+                        continue
+                    prev = float(pre[t, j])
+                    if _finite(prev) and at_limit_up(px, prev, limit_pct(panel.symbols[j])):
+                        book.rejects["limit_up"] += 1
+                        continue
+                    fill = slip_price(px, "buy", cfg)
+                    if fill <= 0:
+                        book.rejects["no_price"] += 1
+                        continue
+                    shares = cfg.lot_size * int(budget // (fill * cfg.lot_size))
+                    while shares >= cfg.lot_size:
+                        notional = shares * fill
+                        comm = commission_yuan(notional, cfg)
+                        if cash + 1e-9 >= notional + comm:
+                            break
+                        shares -= cfg.lot_size
+                    if shares < cfg.lot_size:
+                        book.rejects["no_lot" if budget < fill * cfg.lot_size else "no_cash"] += 1
+                        continue
+                    _buy(t, j, shares, px, "signal")
 
         for j in orphans:
             if j in positions:
@@ -491,5 +665,7 @@ def run_match(
             "t_plus": cfg.t_plus,
             "stop_loss_pct": cfg.stop_loss_pct,
             "max_hold_days": cfg.max_hold_days,
+            "max_weight": cfg.max_weight,
+            "industry_neutral": cfg.industry_neutral,
         },
     }

@@ -14,7 +14,7 @@ def test_store_inventory_ok(monkeypatch, tmp_path):
     assert data["root"] == str(tmp_path)
     assert data["bars"]["count"] == 0
     assert "补齐" in data["note"]
-    assert data["universe"]["lookback"] == "2y"
+    assert data["universe"]["lookback"] == "3y"
 
 
 def test_store_sync_empty_universe(monkeypatch, tmp_path):
@@ -54,6 +54,7 @@ def test_meta_ok():
     data = r.json()["data"]
     assert "hold" in {s["id"] for s in data["strategies"]}
     assert "rank_mom" in {s["id"] for s in data["strategies"]}
+    assert "top_k" in {s["id"] for s in data["strategies"]}
     assert "不荐股" in data["disclaimer"]
     assert data["limits"]["max_codes"] == 600
     assert "库存" in data["disclaimer"]

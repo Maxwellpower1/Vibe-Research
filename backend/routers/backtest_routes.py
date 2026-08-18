@@ -67,7 +67,7 @@ def backtest_store(
 
 @router.post("/api/backtest/store/sync")
 def backtest_store_sync():
-    """Fill missing 2y daily bars for the A-share universe. Returns immediately."""
+    """Fill missing store-window daily bars for the A-share universe. Returns immediately."""
     from backtest.universe_sync import start_sync
 
     return {"data": start_sync()}
@@ -178,6 +178,18 @@ def backtest_factor(body: dict | None = None):
 
     try:
         return {"data": run_factor(body or {})}
+    except BacktestError as e:
+        raise HTTPException(400, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/api/backtest/model")
+def backtest_model(body: dict | None = None):
+    from backtest.model import run_model
+
+    try:
+        return {"data": run_model(body or {})}
     except BacktestError as e:
         raise HTTPException(400, str(e)) from e
     except ValueError as e:

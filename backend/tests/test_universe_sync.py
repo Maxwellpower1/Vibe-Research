@@ -1,4 +1,4 @@
-"""Universe 2y bar fill. No live Tencent."""
+"""Universe store-window bar fill. No live Tencent."""
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -21,11 +21,13 @@ def test_read_codes_keeps_stale(monkeypatch, tmp_path):
     assert universe.read_codes(fresh_only=False) == codes
 
 
-def test_window_is_two_years(monkeypatch):
+def test_window_matches_store_lookback(monkeypatch):
     monkeypatch.setattr(us, "last_closed_iso", lambda: "2026-08-14")
     start, end = us.window("2026-08-14")
     assert end == "2026-08-14"
-    assert start == (date(2026, 8, 14) - timedelta(days=730)).isoformat()
+    assert us.STORE_LOOKBACK == "3y"
+    assert start == (date(2026, 8, 14) - timedelta(days=us.LOOKBACKS["3y"])).isoformat()
+    assert us.LOOKBACKS["3y"] == 1095
 
 
 def test_sync_writes_and_skips(monkeypatch, tmp_path):
@@ -67,7 +69,7 @@ def test_portrait_counts_on_disk(monkeypatch, tmp_path):
     port = us.portrait()
     assert port["codes"] == 2000
     assert port["on_disk"] == 1
-    assert port["lookback"] == "2y"
+    assert port["lookback"] == "3y"
 
 
 def test_inventory_note_and_universe(monkeypatch, tmp_path):
@@ -75,7 +77,7 @@ def test_inventory_note_and_universe(monkeypatch, tmp_path):
     data = inventory()
     assert "补齐" in data["note"]
     assert "不清库" in data["note"]
-    assert data["universe"]["lookback"] == "2y"
+    assert data["universe"]["lookback"] == "3y"
     assert data["bars"]["preview"] == 0
 
 

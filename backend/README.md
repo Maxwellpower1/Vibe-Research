@@ -1,6 +1,6 @@
 # Vibe-Research Backend
 
-A股数据层 + 可插拔 AI 层。全部只读、无状态；不预置任何标的、不推荐、不预测。
+A股数据层 + 可插拔 AI 层。
 
 ## 安装
 
@@ -62,11 +62,12 @@ python3 -m venv .venv
 | `GET /api/research/etf-holdings?symbol=` | ETF 穿透（东财 / N-PORT） | requests；美股需 VR_SEC_CONTACT |
 | `GET /api/research/13f?manager=` | 13F 持仓 + 两季环比；`ticker=` 列持有人 | VR_SEC_CONTACT |
 | `GET /api/backtest/meta` | 回测策略 / 默认费用 / 免责声明 | — |
-| `POST /api/backtest/run` | A 股日线账户回测（次日开盘、T+1、整手、印花税只卖） | 腾讯日 K |
-| `POST /api/backtest/factor` | 因子 Rank IC / 五档 / 多空（TickFlow 技术因子 + 3 条 WorldQuant，日 K 现场算） | 本机库存 |
+| `POST /api/backtest/run` | A 股日线账户回测（次日开盘、T+1、整手、印花税只卖；`top_k` 按目标权重加减仓） | 腾讯日 K |
+| `POST /api/backtest/factor` | 因子 Rank IC / Pearson IC / 五档 / 多空（技术因子 + OHLCV 公式 + 3 条 WorldQuant，日 K 现场算） | 本机库存 |
 | `POST /api/backtest/factor/compare` | 同一面板对照最多 6 个因子 + IC 相关 | 本机库存 |
+| `POST /api/backtest/model` | 模型研究：样本内训 LightGBM，分数进 Top-K；没装则提示 | 本机库存；可选 lightgbm |
 | `GET /api/backtest/store` | 本机日历 / 日 K 覆盖 / 实验；`?codes=` 看这批是否齐 | — |
-| `POST /api/backtest/store/sync` | 补齐标的池近 2 年已收盘日 K（已齐跳过） | 腾讯日 K |
+| `POST /api/backtest/store/sync` | 补齐标的池近 3 年已收盘日 K（已齐跳过） | 腾讯日 K |
 | CLI `python fill_2y_bars.py` | 同上，前台跑；`--index sh000905` 或跟代码 | 腾讯日 K |
 | `GET /api/backtest/store/{symbol}` | 读一只已落盘日 K 的尾部 | — |
 | `GET /api/backtest/runs` | 实验列表（`runs/<id>/` 写完不改） | — |

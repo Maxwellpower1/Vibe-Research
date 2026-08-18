@@ -21,3 +21,4 @@ duckdb  # 回测行情: 分区 parquet, 内存查, 不建 .db
 # 研究桌可选源（未装时对应端点 501 + 安装提示）
 # baostock          # A 股日 K 兜底
 # pykrx             # 韩股日 K
+# lightgbm          # 回测模型页; 未装时 /api/backtest/model 说明, 不强迫装

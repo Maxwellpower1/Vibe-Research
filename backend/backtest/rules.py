@@ -31,6 +31,8 @@ class MatcherConfig:
     exposure: float = 1.0
     stop_loss_pct: float = 0.0
     max_hold_days: int = 0
+    max_weight: float = 0.0
+    industry_neutral: bool = False
 
     def __post_init__(self) -> None:
         if self.fill not in FILL_MODES:
@@ -49,6 +51,8 @@ class MatcherConfig:
             raise ValueError("stop_loss_pct 必须 >= 0")
         if self.max_hold_days < 0:
             raise ValueError("max_hold_days 必须 >= 0")
+        if self.max_weight < 0 or self.max_weight > 1:
+            raise ValueError("max_weight 必须在 [0, 1] 里, 0 表示不限制")
 
 
 def digits6(code: str) -> str:

@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from backtest.market import data_root
 
-RUN_FILES = ("config.json", "trades.json", "equity.json", "factor.json", "meta.json")
+RUN_FILES = ("config.json", "trades.json", "equity.json", "factor.json", "model.json", "meta.json")
 
 
 class RunLocked(RuntimeError):
@@ -64,6 +64,29 @@ def write_run(run_id: str, *, config: dict, trades: list, equity: dict, meta: di
         "equity.json": equity,
         "meta.json": packed,
     })
+
+
+def write_model_run(
+    run_id: str,
+    *,
+    config: dict,
+    result: dict,
+    meta: dict,
+    trades: list | None = None,
+    equity: dict | None = None,
+) -> Path:
+    packed = dict(meta)
+    packed["kind"] = "model"
+    files: dict[str, object] = {
+        "config.json": config,
+        "model.json": result,
+        "meta.json": packed,
+    }
+    if trades is not None:
+        files["trades.json"] = trades
+    if equity is not None:
+        files["equity.json"] = equity
+    return _write_files(run_id, files)
 
 
 def write_factor_run(run_id: str, *, config: dict, result: dict, meta: dict) -> Path:
@@ -208,11 +231,45 @@ def result_from_factor(pack: dict) -> dict:
     return out
 
 
+def result_from_model(pack: dict) -> dict:
+    """Rebuild a model research payload. Includes the account book if stored."""
+    meta = pack.get("meta") or {}
+    equity = pack.get("equity") or {}
+    stored, now, match, extra = _data_hash_check(pack, skip=True)
+    warnings = list(meta.get("warnings") or [])
+    warnings.extend(extra)
+    return {
+        "run_id": pack.get("id") or meta.get("id"),
+        "kind": "model",
+        "created": meta.get("created"),
+        "data_hash": stored,
+        "data_hash_now": now,
+        "data_hash_match": match,
+        "model": pack.get("model") or meta.get("model") or {},
+        "equity_curve": equity.get("equity_curve") or [],
+        "drawdown_curve": equity.get("drawdown_curve") or [],
+        "trades": pack.get("trades") or [],
+        "by_symbol": _rollup_trades(pack.get("trades") or []),
+        "stats": meta.get("stats") or {},
+        "execution": meta.get("execution") or {},
+        "universe": meta.get("universe") or {},
+        "strategy": meta.get("strategy") or {},
+        "warnings": warnings,
+        "disclaimer": meta.get("disclaimer") or "",
+        "config": pack.get("config") or {},
+        "closed_end": meta.get("closed_end"),
+        "oos": meta.get("oos"),
+        "tearsheet": _tearsheet(equity.get("equity_curve") or []),
+    }
+
+
 def result_from_run(pack: dict) -> dict:
     """Rebuild the API payload from an immutable run."""
     meta = pack.get("meta") or {}
     if str(meta.get("kind") or "") == "factor" or pack.get("factor"):
         return result_from_factor(pack)
+    if str(meta.get("kind") or "") == "model" or pack.get("model"):
+        return result_from_model(pack)
     equity = pack.get("equity") or {}
     stored, now, match, extra = _data_hash_check(pack)
     warnings = list(meta.get("warnings") or [])

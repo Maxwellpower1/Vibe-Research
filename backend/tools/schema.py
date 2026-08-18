@@ -224,7 +224,7 @@ TOOLS: list[dict] = [
     _t("run_backtest",
        "跑 A 股日线账户回测, 只返回净值摘要/成交笔数/未成交原因。研究模拟, 不荐股、不预测、不校准该不该买。默认次日开盘, T+1, 整手 100, 印花税只卖。",
        {"codes": {"type": "array", "items": {"type": "string"}, "description": "最多 100 个 A 股代码, 优先读本机库存"},
-        "strategy": {"type": "string", "enum": ["hold", "ma_cross", "dates", "rank_mom"], "description": "默认 hold. rank_mom 是静态池动量轮动, 不是全 A 每天重选"},
+        "strategy": {"type": "string", "enum": ["hold", "ma_cross", "dates", "rank_mom", "top_k"], "description": "默认 hold. rank_mom 是换名单不调仓位; top_k 按目标权重加减仓. 都不是全 A 每天重选"},
         "lookback": {"type": "string", "enum": ["1y", "2y", "3y"], "description": "默认 2y"},
         "start": {"type": "string", "description": "YYYY-MM-DD, 可替代 lookback"},
         "end": {"type": "string", "description": "YYYY-MM-DD"},

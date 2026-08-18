@@ -1605,7 +1605,7 @@ export const api = {
   backtestMeta: () => get<BacktestMeta>("/backtest/meta"),
   backtestProgress: () => get<BacktestProgress>("/backtest/progress"),
   backtestRun: (body: BacktestRunBody) => request<BacktestResult>("/backtest/run", "POST", body),
-  backtestRuns: (limit = 40, kind?: "account" | "factor") =>
+  backtestRuns: (limit = 40, kind?: "account" | "factor" | "model") =>
     get<BacktestRunSummary[]>(`/backtest/runs?limit=${limit}${kind ? `&kind=${kind}` : ""}`),
   backtestRunGet: (id: string) => get<BacktestResult>(`/backtest/runs/${encodeURIComponent(id)}`),
   backtestRunDelete: (id: string) => request<{ ok: boolean; id: string }>(`/backtest/runs/${encodeURIComponent(id)}`, "DELETE"),
@@ -1631,6 +1631,7 @@ export const api = {
   backtestStorePeek: (symbol: string, n = 30) =>
     get<BacktestStorePeek>(`/backtest/store/${encodeURIComponent(symbol)}?n=${n}`),
   backtestFactor: (body: BacktestFactorBody) => request<BacktestFactorResult>("/backtest/factor", "POST", body),
+  backtestModel: (body: BacktestModelBody) => request<BacktestModelResult>("/backtest/model", "POST", body),
   backtestFactorCompare: (body: BacktestFactorCompareBody) =>
     request<BacktestFactorCompare>("/backtest/factor/compare", "POST", body),
   backtestIndexPool: (index: string, refresh = false, history = false) =>
@@ -1808,7 +1809,7 @@ export interface Research13f {
   note?: string;
 }
 
-export type BacktestStrategy = "hold" | "ma_cross" | "dates" | "rank_mom";
+export type BacktestStrategy = "hold" | "ma_cross" | "dates" | "rank_mom" | "top_k";
 
 export interface BacktestEvent {
   code: string;
@@ -1840,6 +1841,9 @@ export interface BacktestRunBody {
   walk_forward?: boolean;
   index?: string;
   pit_members?: boolean;
+  max_weight?: number;
+  industry_neutral?: boolean;
+  weight?: "equal" | "factor_weight";
 }
 
 export interface BacktestSymbolRow {
@@ -1884,6 +1888,7 @@ export interface BacktestResult {
     vol: number;
     max_drawdown: number;
     calmar: number;
+    sortino?: number;
     days: number;
     trades: number;
     round_trips: number;
@@ -1912,7 +1917,7 @@ export interface BacktestResult {
     from_store?: number;
     fetched?: number;
   };
-  strategy?: { name: string; short_win?: number; long_win?: number; mom_win?: number; rebalance?: number; top_k?: number };
+  strategy?: { name: string; short_win?: number; long_win?: number; mom_win?: number; rebalance?: number; top_k?: number; horizon?: number };
   warnings?: string[];
   disclaimer?: string;
   config?: {
@@ -1941,8 +1946,11 @@ export interface BacktestResult {
       max_positions?: number;
       stop_loss_pct?: number;
       max_hold_days?: number;
+      max_weight?: number;
+      industry_neutral?: boolean;
     };
   };
+  model?: BacktestModelInfo;
   tearsheet?: {
     monthly: { month: string; return: number }[];
     yearly: { year: string; return: number }[];
@@ -1988,7 +1996,7 @@ export interface BacktestResult {
 
 export interface BacktestRunSummary {
   id: string;
-  kind?: "account" | "factor" | string;
+  kind?: "account" | "factor" | "model" | string;
   created?: string;
   data_hash?: string;
   strategy?: { name?: string } | string;
@@ -2153,6 +2161,7 @@ export interface BacktestFactorResult {
   n_dates: number;
   n_periods: number;
   ic_mean: number | null;
+  ic_pearson_mean?: number | null;
   ic_std: number | null;
   ir: number | null;
   ic_win_rate: number | null;
@@ -2188,6 +2197,45 @@ export interface BacktestFactorResult {
     n_requested?: number;
   };
 }
+
+export interface BacktestModelInfo {
+  backend?: string;
+  features?: string[];
+  horizon?: number;
+  split?: string | null;
+  n_train?: number;
+  params?: Record<string, number>;
+  is_ic?: number | null;
+  oos_ic?: number | null;
+  grid?: Array<Record<string, number | null>>;
+  drift?: { feature: string; psi: number | null; ks: number | null }[];
+  n_features?: number;
+}
+
+export interface BacktestModelBody {
+  codes: string[];
+  lookback?: "1y" | "2y" | "3y";
+  start?: string;
+  end?: string;
+  horizon?: number;
+  rebalance?: number;
+  mom_win?: number;
+  tune?: boolean;
+  oos_frac?: number;
+  initial_capital?: number;
+  max_positions?: number;
+  max_weight?: number;
+  industry_neutral?: boolean;
+  commission_pct?: number;
+  commission_min?: number;
+  stamp_tax_pct?: number;
+  slippage_bps?: number;
+}
+
+export type BacktestModelResult = BacktestResult & {
+  kind?: "model";
+  model?: BacktestModelInfo;
+};
 
 export interface BacktestProgress {
   state: "idle" | "running" | "done" | string;

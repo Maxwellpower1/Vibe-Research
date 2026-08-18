@@ -12,6 +12,7 @@ _STEPS = {
     "match": "撮合",
     "factor": "算因子",
     "compare": "对照",
+    "train": "训练",
     "write": "写实验",
     "done": "完成",
 }

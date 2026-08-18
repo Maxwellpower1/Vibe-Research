@@ -34,6 +34,8 @@ test("backtest page uses store cover and meta limit", () => {
   assert.match(src, /FALLBACK_MAX/);
   assert.match(src, /to="\/data"/);
   assert.match(src, /rank_mom/);
+  assert.match(src, /top_k/);
+  assert.match(src, /ModelPanel/);
   assert.match(src, /对照/);
   assert.match(src, /填回表单/);
   assert.match(src, /by_symbol/);

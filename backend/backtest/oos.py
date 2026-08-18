@@ -68,8 +68,8 @@ def tune_ma(panel: Panel, cfg: MatcherConfig) -> tuple[int, int, list[dict]]:
     for short, long in MA_GRID:
         if panel.T < long + 5:
             continue
-        entries, exits, _ = build_signals(panel, "ma_cross", short_win=short, long_win=long)
-        stats = run_match(panel, entries, exits, cfg)["stats"]
+        entries, exits, _, targets = build_signals(panel, "ma_cross", short_win=short, long_win=long)
+        stats = run_match(panel, entries, exits, cfg, targets=targets)["stats"]
         row = {
             "short_win": short,
             "long_win": long,
@@ -85,17 +85,30 @@ def tune_ma(panel: Panel, cfg: MatcherConfig) -> tuple[int, int, list[dict]]:
     return best[1], best[2], rows
 
 
-def tune_mom(panel: Panel, cfg: MatcherConfig, rebalance: int = 20) -> tuple[int, list[dict]]:
+def tune_mom(
+    panel: Panel,
+    cfg: MatcherConfig,
+    rebalance: int = 20,
+    strategy: str = "rank_mom",
+) -> tuple[int, list[dict]]:
     """Pick momentum window on this panel only. Caller must pass IS bars."""
+    name = strategy if strategy in ("rank_mom", "top_k") else "rank_mom"
     best: tuple[float, int] | None = None
     rows: list[dict] = []
     for win in MOM_WINS:
         if panel.T < win + 5:
             continue
-        entries, exits, _ = build_signals(
-            panel, "rank_mom", mom_win=win, rebalance=rebalance, top_k=cfg.max_positions
+        entries, exits, _, targets = build_signals(
+            panel,
+            name,
+            mom_win=win,
+            rebalance=rebalance,
+            top_k=cfg.max_positions,
+            max_weight=cfg.max_weight,
+            industry_neutral=cfg.industry_neutral,
+            exposure=cfg.exposure,
         )
-        stats = run_match(panel, entries, exits, cfg)["stats"]
+        stats = run_match(panel, entries, exits, cfg, targets=targets)["stats"]
         row = {"mom_win": win, "sharpe": stats["sharpe"], "total_return": stats["total_return"]}
         rows.append(row)
         score = float(stats["sharpe"])
@@ -128,23 +141,34 @@ def segment_stats(equity_curve: list[dict], trades: list[dict], split_date: str,
     return is_stats, oos_stats
 
 
-def oos_flags(panel: Panel, split_idx: int, strategy: str, **sig_kw) -> tuple[np.ndarray, np.ndarray]:
-    entries, exits, _ = build_signals(panel, strategy, **sig_kw)
+def mask_before_w(weights: np.ndarray, idx: int) -> np.ndarray:
+    out = np.array(weights, copy=True)
+    if idx > 0:
+        out[:idx] = 0
+    return out
+
+
+def oos_flags(
+    panel: Panel, split_idx: int, strategy: str, **sig_kw
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+    entries, exits, _, targets = build_signals(panel, strategy, **sig_kw)
     entries = mask_before(entries, split_idx)
     exits = mask_before(exits, split_idx)
+    if targets is not None:
+        targets = mask_before_w(targets, split_idx)
     if strategy == "hold" and not entries.any():
         for j in range(panel.S):
             for i in range(split_idx, panel.T):
                 if np.isfinite(panel.close[i, j]) and np.isfinite(panel.open[i, j]):
                     entries[i, j] = True
                     break
-    return entries, exits
+    return entries, exits, targets
 
 
 def oos_fresh(panel: Panel, split_idx: int, strategy: str, cfg: MatcherConfig, **sig_kw) -> dict:
     """New cash book that only trades on OOS. Signals still see IS history."""
-    entries, exits = oos_flags(panel, split_idx, strategy, **sig_kw)
-    return run_match(panel, entries, exits, cfg)
+    entries, exits, targets = oos_flags(panel, split_idx, strategy, **sig_kw)
+    return run_match(panel, entries, exits, cfg, targets=targets)
 
 
 def run_walk_forward(
@@ -166,6 +190,11 @@ def run_walk_forward(
     folds_idx = walk_folds(panel.T, train, test, step)
     folds: list[dict] = []
     stitched = [cfg.initial_capital]
+    industries = None
+    if cfg.industry_neutral:
+        from backtest.allocate import industry_labels
+
+        industries = industry_labels(panel.symbols)
     for is_start, is_end, oos_end in folds_idx:
         window = panel.slice(is_start, oos_end)
         rel = is_end - is_start
@@ -174,10 +203,10 @@ def run_walk_forward(
         grid: list[dict] = []
         if tune and strategy == "ma_cross":
             s, l, grid = tune_ma(window.slice(0, rel), cfg)
-        if tune and strategy == "rank_mom":
-            mw, grid = tune_mom(window.slice(0, rel), cfg, rebalance)
+        if tune and strategy in ("rank_mom", "top_k"):
+            mw, grid = tune_mom(window.slice(0, rel), cfg, rebalance, strategy)
         win_mask = member_mask[is_start:oos_end] if member_mask is not None else None
-        entries, exits = oos_flags(
+        entries, exits, targets = oos_flags(
             window,
             rel,
             strategy,
@@ -188,8 +217,12 @@ def run_walk_forward(
             rebalance=rebalance,
             top_k=cfg.max_positions,
             member_mask=win_mask,
+            max_weight=cfg.max_weight,
+            industry_neutral=cfg.industry_neutral,
+            exposure=cfg.exposure,
+            industries=industries,
         )
-        out = run_match(window, entries, exits, cfg)
+        out = run_match(window, entries, exits, cfg, targets=targets)
         ret = float(out["stats"]["total_return"])
         stitched.append(round(stitched[-1] * (1.0 + ret), 2))
         folds.append({
