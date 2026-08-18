@@ -20,6 +20,7 @@ import { AlertPanel, FLOW_RULE_LABEL } from "@/components/deriv/AlertPanel";
 import { ExpiryCalPanel } from "@/components/deriv/ExpiryCalPanel";
 import { TermStructPanel } from "@/components/deriv/TermStructPanel";
 import { WatchPanel } from "@/components/deriv/WatchPanel";
+import { ThsCmdIndexPanel } from "@/components/deriv/ThsCmdIndexPanel";
 import { TQuotePanel, type OptionPick } from "@/components/deriv/TQuotePanel";
 import { OptionChartCard } from "@/components/deriv/OptionChartCard";
 import { FreshTag, NightOnlySwitch, SessionBadge } from "@/components/deriv/derivShared";
@@ -84,14 +85,18 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
   const d = useDerivData();
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [nightOnly, setNightOnly] = useState(false);
-  const [boardTab, setBoardTab] = useState<"spot" | "watch">("spot");
-  // T 型报价联动: 品种 (各面板点品种行) + 点选的期权合约 (日K/分时卡)
+  const [boardTab, setBoardTab] = useState<"spot" | "watch" | "index">("spot");
+  // T 型报价联动: 点行情观察出标的图; 点 T 表出期权图
   const [tqProd, setTqProd] = useState("");
   const [optPick, setOptPick] = useState<OptionPick | null>(null);
-  const pickProduct = (p: string) => {
+  const pickProduct = (p: string, undChart?: { code: string; name: string }) => {
     if (!p) return;
     setTqProd(p);
-    setOptPick(null); // 换品种清掉旧合约
+    if (undChart?.code) {
+      setOptPick({ kind: "und", code: undChart.code, und: undChart.code, name: undChart.name });
+      return;
+    }
+    setOptPick(null);
   };
   const [review, setReview] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -141,7 +146,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
           right: (
             <span className="flex items-center gap-2">
               {boardTab === "spot" ? <NightOnlySwitch on={nightOnly} onChange={setNightOnly} /> : null}
-              <FreshTag updated={d.marketUpdated} />
+              {boardTab === "index" ? null : <FreshTag updated={d.marketUpdated} />}
             </span>
           ),
           body: (
@@ -150,6 +155,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
                 {([
                   ["spot", "股指·商品"],
                   ["watch", "自选"],
+                  ["index", "指数"],
                 ] as const).map(([id, label]) => (
                   <button
                     key={id}
@@ -167,6 +173,10 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
               {boardTab === "watch" ? (
                 <div className="min-h-0 flex-1 overflow-hidden">
                   <WatchPanel d={d} onPickSymbol={onPickSymbol} />
+                </div>
+              ) : boardTab === "index" ? (
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <ThsCmdIndexPanel />
                 </div>
               ) : (
                 <div className="min-h-0 flex-1 overflow-y-auto">
@@ -235,7 +245,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         {
           id: "opt-charts",
           title: "日K / 分时",
-          hint: optPick ? optPick.name : "联动 T 型报价",
+          hint: optPick ? optPick.name : "点行情观察或 T 表",
           icon: <CandlestickChart size={14} />,
           accent: "#f472b6",
           defaultW: 0.22,

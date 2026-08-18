@@ -84,6 +84,24 @@ function chgPct(p: CurvePt): number | null {
   return ((p.fwd - p.fwdYd) / p.fwdYd) * 100;
 }
 
+function chgTone(chg: number | null): "up" | "dn" | "flat" {
+  if (chg == null || Math.abs(chg) < 0.005) return "flat";
+  return chg > 0 ? "up" : "dn";
+}
+
+/** Point label on the today curve: 现值 + 涨幅. */
+function ptLabel(p: CurvePt): string {
+  const chg = chgPct(p);
+  return `{px|${fmtPx(p.fwd)}}\n{${chgTone(chg)}|${chg == null ? "-" : fmtChg(chg)}}`;
+}
+
+const LABEL_RICH = {
+  px: { fontSize: 10, color: "#e2e8f0", fontWeight: 600, lineHeight: 13 },
+  up: { fontSize: 9, color: "#f87171", lineHeight: 12 },
+  dn: { fontSize: 9, color: "#34d399", lineHeight: 12 },
+  flat: { fontSize: 9, color: "#94a3b8", lineHeight: 12 },
+};
+
 function ReceiptSpark({ pts }: { pts: Array<[string, number]> }) {
   if (pts.length < 2) return null;
   const ys = pts.map((p) => p[1]);
@@ -151,53 +169,6 @@ function ReceiptStrip({
     <div className="flex shrink-0 items-center gap-2 border-y border-cyan-500/25 bg-cyan-400/[0.06] px-2 py-1 text-[12px] tabular-nums">
       <span className="shrink-0 font-semibold text-cyan-300">仓单</span>
       {body}
-    </div>
-  );
-}
-
-/** Compact month table above the curve: 现值 / 涨幅. */
-function MonthTable({ pts }: { pts: CurvePt[] }) {
-  if (pts.length === 0) return null;
-  const th = "px-1 py-0.5 text-right font-normal text-slate-500";
-  const td = "px-1 py-0.5 text-right tabular-nums";
-  return (
-    <div className="shrink-0 overflow-x-auto border-b border-slate-800/60 px-1 pb-0.5">
-      <table className="w-full min-w-max text-[11px] leading-tight">
-        <thead>
-          <tr>
-            <th className="sticky left-0 bg-card px-1 py-0.5 text-left font-normal text-slate-500">指标</th>
-            {pts.map((p) => (
-              <th key={p.exp} className={th}>{p.exp.slice(2)}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="sticky left-0 bg-card px-1 py-0.5 text-slate-500">现值</td>
-            {pts.map((p) => (
-              <td key={p.exp} className={cn(td, "text-slate-200")}>{fmtPx(p.fwd)}</td>
-            ))}
-          </tr>
-          <tr>
-            <td className="sticky left-0 bg-card px-1 py-0.5 text-slate-500">涨幅</td>
-            {pts.map((p) => {
-              const chg = chgPct(p);
-              return (
-                <td
-                  key={p.exp}
-                  className={cn(
-                    td,
-                    chg == null || Math.abs(chg) < 0.005 ? "text-slate-400"
-                      : chg > 0 ? "text-red-400" : "text-emerald-400",
-                  )}
-                >
-                  {chg == null ? "-" : fmtChg(chg)}
-                </td>
-              );
-            })}
-          </tr>
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -293,7 +264,7 @@ export function TermStructPanel({ d }: { d: DerivData }) {
     ec.setOption(
       {
         animation: false,
-        grid: { left: 40, right: 36, top: 10, bottom: 22 },
+        grid: { left: 40, right: 36, top: 36, bottom: 22 },
         tooltip: {
           trigger: "axis",
           backgroundColor: "rgba(15,23,42,0.95)",
@@ -304,11 +275,14 @@ export function TermStructPanel({ d }: { d: DerivData }) {
             const idx = arr[0]?.dataIndex ?? 0;
             const p = selCurve[idx];
             if (!p) return "";
+            const chg = chgPct(p);
+            const tone = chgTone(chg);
+            const chgColor = tone === "up" ? "#f87171" : tone === "dn" ? "#34d399" : "#94a3b8";
             const rows = arr
               .filter((a) => a.value != null)
               .map((a) => `${a.seriesName} ${a.seriesName === "持仓" ? fmtOi(a.value) : a.value}`)
               .join("<br/>");
-            return `${p.exp} (${p.dte}天)<br/>${rows}`;
+            return `${p.exp} (${p.dte}天)<br/>现值 ${fmtPx(p.fwd)} <span style="color:${chgColor}">${chg == null ? "-" : fmtChg(chg)}</span><br/>${rows}`;
           },
         },
         xAxis: {
@@ -370,6 +344,16 @@ export function TermStructPanel({ d }: { d: DerivData }) {
             symbolSize: 4,
             lineStyle: { color: "#22d3ee", width: 1.6 },
             itemStyle: { color: "#22d3ee" },
+            label: {
+              show: true,
+              position: "top",
+              distance: 4,
+              formatter: (arg: { dataIndex: number }) => {
+                const p = selCurve[arg.dataIndex];
+                return p ? ptLabel(p) : "";
+              },
+              rich: LABEL_RICH,
+            },
             z: 3,
           },
         ],
@@ -392,7 +376,6 @@ export function TermStructPanel({ d }: { d: DerivData }) {
         <span className="ml-auto text-[11px] text-slate-600">左价 右仓 · 实=今 虚=昨</span>
       </div>
       <ReceiptStrip sel={sel} wr={wr} loading={wrLoading} err={wrPoll.error} />
-      {selCurve.length > 0 && <MonthTable pts={selCurve} />}
       <div className="relative min-h-0 flex-1">
         <div ref={chartRef} className="absolute inset-0" />
         {(loading || empty || selCurve.length === 0) && (

@@ -630,6 +630,14 @@ def black76(fwd: float, strike: float, vol_pct: float, t: float, is_call: bool) 
     return v if math.isfinite(v) else None
 
 
+def theo_chg(px: float | None, px_yd: float | None) -> float | None:
+    """理论价涨幅 (今-昨)/昨. 昨价非正则 None."""
+    if px is None or px_yd is None or px_yd <= 0:
+        return None
+    v = (px - px_yd) / px_yd
+    return v if math.isfinite(v) else None
+
+
 def _sfloat(v: Any) -> float | None:
     """surface 标量都是 str: 转 float, 空串/非法/nan/inf 归 None (防 JSON 序列化 500)."""
     f: float | None = None
@@ -686,6 +694,73 @@ def _oi_map(v: Any) -> dict[float, float | None]:
     return out
 
 
+# CFFEX index option unds (T 表走 prodUnd: IF/IH/IM). Upstream surface
+# near expiry only returns an ATM stub (IF front: 5 rungs). Fill the ladder.
+_INDEX_TQUOTE = frozenset({"IF", "IH", "IM", "IO", "HO", "MO"})
+
+
+def _median_step(keys: list[float]) -> float | None:
+    if len(keys) < 2:
+        return None
+    gaps = sorted(keys[i + 1] - keys[i] for i in range(len(keys) - 1) if keys[i + 1] > keys[i])
+    if not gaps:
+        return None
+    return gaps[len(gaps) // 2]
+
+
+def interp_iv(theo: dict[float, float | None], k: float) -> float | None:
+    """Smile IV at strike k: exact hit, else linear in strike, wings flat."""
+    got = theo.get(k)
+    if got is not None and got > 0:
+        return got
+    xs = sorted(x for x, v in theo.items() if v is not None and v > 0)
+    if not xs:
+        return None
+    if k <= xs[0]:
+        return theo[xs[0]]
+    if k >= xs[-1]:
+        return theo[xs[-1]]
+    for a, b in zip(xs, xs[1:]):
+        if a <= k <= b:
+            va, vb = theo[a], theo[b]
+            if va is None or vb is None or b == a:
+                return va if va is not None else vb
+            t = (k - a) / (b - a)
+            return va * (1.0 - t) + vb * t
+    return None
+
+
+def extend_index_strikes(
+    product: str,
+    keys: list[float],
+    fwd: float | None,
+    span: float = 0.15,
+    min_n: int = 25,
+) -> list[float]:
+    """Index T-quote: pad a regular ladder around fwd (±span or min_n rungs).
+    Commodities keep the upstream set."""
+    ks = sorted(set(keys))
+    if product.upper() not in _INDEX_TQUOTE:
+        return ks
+    step = _median_step(ks)
+    if not step:
+        return ks
+    mid = float(fwd) if fwd else ks[len(ks) // 2]
+    half = max(span * abs(mid), (min_n // 2) * step)
+    lo, hi = mid - half, mid + half
+    phase = ks[0]
+    n0 = round((lo - phase) / step)
+    out = set(ks)
+    k = phase + n0 * step
+    for _ in range(400):
+        if k > hi + step * 0.1:
+            break
+        if k > 0:
+            out.add(round(k, 6))
+        k += step
+    return sorted(out)
+
+
 def _build_tquote(product: str) -> dict[str, Any]:
     raw = get_volatility_surface(product)
     if not isinstance(raw, dict):
@@ -700,6 +775,10 @@ def _build_tquote(product: str) -> dict[str, Any]:
         theo = _strike_map(blk.get("theovol_tday"))
         if not theo:
             continue
+        fwd_yd = _sfloat(blk.get("forward_yd"))
+        t_yd = _sfloat(blk.get("maturity_yday"))
+        theo_yd = _strike_map(blk.get("theovol_yday"))
+        atm_yd = _sfloat(blk.get("atmvol_yday"))
         delta_c = _strike_map(blk.get("delta_tday_call"))
         delta_p = _strike_map(blk.get("delta_tday_put"))
         iv_cb = _strike_map(blk.get("mktvol_tday_call_bid"))
@@ -712,30 +791,40 @@ def _build_tquote(product: str) -> dict[str, Any]:
         oid_p = _oi_map(blk.get("strike_oid_p"))
 
         exp_str = str(blk.get("exp") or exp_key)
+        base_keys = set(theo) | set(delta_c) | set(delta_p) | set(iv_cb) | set(iv_ca) | set(iv_pb) | set(iv_pa) | set(oi_c) | set(oi_p)
+        keys = extend_index_strikes(product, sorted(base_keys), fwd)
         strikes: list[dict[str, Any]] = []
-        for k in sorted(theo.keys()):
-            theo_iv = theo.get(k)
+        for k in keys:
+            theo_iv = interp_iv(theo, k)
             can_price = bool(fwd and t and theo_iv)
+            px_c = black76(fwd, k, theo_iv, t, True) if can_price else None  # type: ignore[arg-type]
+            px_p = black76(fwd, k, theo_iv, t, False) if can_price else None  # type: ignore[arg-type]
+            iv_yd = interp_iv(theo_yd, k) if theo_yd else None
+            if iv_yd is None:
+                iv_yd = atm_yd
+            can_yd = bool(fwd_yd and t_yd and iv_yd)
+            px_c_yd = black76(fwd_yd, k, iv_yd, t_yd, True) if can_yd else None  # type: ignore[arg-type]
+            px_p_yd = black76(fwd_yd, k, iv_yd, t_yd, False) if can_yd else None  # type: ignore[arg-type]
             strikes.append({
                 "strike": k,
                 "callCode": option_code(product, exp_str, "C", k),
                 "putCode": option_code(product, exp_str, "P", k),
                 "call": {
-                    "price": black76(fwd, k, theo_iv, t, True) if can_price else None,  # type: ignore[arg-type]
+                    "price": px_c, "pct": theo_chg(px_c, px_c_yd),
                     "ivBid": iv_cb.get(k), "ivAsk": iv_ca.get(k), "theoIv": theo_iv,
                     "delta": delta_c.get(k), "oi": oi_c.get(k), "oiChg": oid_c.get(k),
                 },
                 "put": {
-                    "price": black76(fwd, k, theo_iv, t, False) if can_price else None,  # type: ignore[arg-type]
+                    "price": px_p, "pct": theo_chg(px_p, px_p_yd),
                     "ivBid": iv_pb.get(k), "ivAsk": iv_pa.get(k), "theoIv": theo_iv,
                     "delta": delta_p.get(k), "oi": oi_p.get(k), "oiChg": oid_p.get(k),
                 },
             })
 
         atm: float | None = None
-        if fwd:
+        if fwd and keys:
             f = float(fwd)
-            atm = min(theo.keys(), key=lambda k: abs(k - f))
+            atm = min(keys, key=lambda k: abs(k - f))
         expiries.append({
             "exp": exp_str,
             "und": und_code(product, exp_str),

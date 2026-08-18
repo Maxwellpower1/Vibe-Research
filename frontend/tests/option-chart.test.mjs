@@ -58,12 +58,43 @@ test("hoverIdxOf 类目轴用 dataIndex / 时间字符串, leave 清空", () => 
   }, cats), null);
 });
 
+function overlayAxis(vals, occupy = 0.32) {
+  const xs = [];
+  for (const v of vals) {
+    if (v != null && Number.isFinite(v) && v > 0) xs.push(v);
+  }
+  if (xs.length === 0) return null;
+  const lo = Math.min(...xs);
+  const hi = Math.max(...xs);
+  const mid = (lo + hi) / 2;
+  const half = Math.max((hi - lo) / 2, Math.abs(mid) * 0.015, 0.4);
+  const frac = Math.min(0.85, Math.max(0.1, occupy));
+  const pad = half / frac - half;
+  return { min: mid - half - pad, max: mid + half + pad };
+}
+
+test("overlayAxis 窄幅隐波只占约三成高度, 空值忽略", () => {
+  const r = overlayAxis([18, 22, 19, 21]);
+  assert.ok(r);
+  const data = 22 - 18;
+  const span = r.max - r.min;
+  assert.ok(Math.abs(data / span - 0.32) < 0.02, "默认约占 32% 高度");
+  assert.ok(r.min < 18 && r.max > 22);
+  const quiet = overlayAxis([20.1, 20.2, 20.15, 20.18, null, 0]);
+  assert.ok(quiet);
+  assert.ok((20.2 - 20.1) / (quiet.max - quiet.min) < 0.2, "几乎走平也不拉满");
+  assert.equal(overlayAxis([]), null);
+  assert.equal(overlayAxis([null, 0, -1]), null);
+});
+
 test("OptionChartCard 用 hoverIdxOf, 下跌面积不再反转渐变", async () => {
   const src = await readFile(new URL("../src/components/deriv/OptionChartCard.tsx", import.meta.url), "utf8");
   assert.ok(src.includes("export function hoverIdxOf"), "十字光标走 hoverIdxOf");
   assert.ok(src.includes("seriesDataIndices"), "类目轴读 dataIndex");
   assert.ok(src.includes("rgba(${fade},0.35)"), "涨跌面积都是顶浓底淡");
-  assert.ok(!src.includes("rgba(34,197,94,0.02)\" }, { offset: 1"), "不再用反转绿渐变");
+  assert.ok(src.includes("export function overlayAxis"), "隐波右轴走 overlayAxis");
+  assert.ok(src.includes("overlayAxis(minData?.iv"), "分时隐波不拉满");
+  assert.ok(src.includes("overlayAxis(dailyIv)"), "日K隐波同一比例");
 });
 
 test("驾驶舱日K分时叠在同一张卡", async () => {
@@ -74,4 +105,13 @@ test("驾驶舱日K分时叠在同一张卡", async () => {
   assert.ok(src.includes("defaultW: 0.36") && src.includes("defaultW: 0.20"), "行情观察/日历宽度");
   assert.ok(src.includes("defaultW: 0.78") && src.includes("defaultW: 0.22"), "T 表主宽, 图卡一小条");
   assert.ok(src.includes("defaultH: 0.29") && src.includes("defaultH: 0.71"), "首行回原高, T 区加高");
+  assert.ok(src.includes('kind: "und"'), "点行情观察出标的日K/分时");
+  assert.ok(src.includes("undChart"), "行情观察行带标的码给图卡");
+});
+
+test("IndexFutPanel 行点击带标的码, 合约码仍跳 K线页", async () => {
+  const src = await readFile(new URL("../src/components/deriv/IndexFutPanel.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("undChart?: { code: string; name: string }"), "行点击第二参是标的图");
+  assert.ok(src.includes("contractCode(row) || klineSym(row)"), "标的码用主力合约");
+  assert.ok(src.includes("onPickSymbol(sym)"), "行上合约码仍跳 K线");
 });

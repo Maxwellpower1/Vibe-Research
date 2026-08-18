@@ -81,6 +81,7 @@ function padToSlots(items, slots, timeOf) {
 function kindOfUnd(und, times) {
   const u = String(und || "").trim().toUpperCase();
   const root = /^\d{6}/.test(u) ? u.slice(0, 6) : (u.match(/^([A-Z]+)/) || ["", ""])[1];
+  if (/^85[01]\d{3}$/.test(root)) return times.some(isNightTime) ? "cmd" : "cmdDay";
   if (/^\d{6}$/.test(root)) return "etf";
   if (["IF", "IH", "IM", "IO", "HO", "MO"].includes(root)) return times.some(isNightTime) ? "index" : "etf";
   return times.some(isNightTime) ? "cmd" : "cmdDay";
@@ -138,6 +139,8 @@ test("kindOfUnd: ETF / 股指日盘 / 商品夜盘", () => {
   assert.equal(kindOfUnd("IF", ["21:05", "09:31"]), "index");
   assert.equal(kindOfUnd("AU", ["09:01"]), "cmdDay");
   assert.equal(kindOfUnd("AU2609C952", ["21:05"]), "cmd");
+  assert.equal(kindOfUnd("850001", ["09:01"]), "cmdDay");
+  assert.equal(kindOfUnd("850001", ["21:05"]), "cmd");
 });
 
 test("spark idx: 早盘远小于收盘", () => {
@@ -175,6 +178,7 @@ test("分时图走交易时段轴, 不按点序均分", async () => {
   assert.match(kline, /derivMinuteSlots/);
   assert.match(spark, /derivSessionIdx/);
   assert.match(axis, /export function derivMinuteSlots/);
+  assert.match(axis, /85\[01\]/, "850 商品指数走商品时段不是 ETF");
   assert.match(axis, /empty hover stays null/);
   assert.match(card, /hover != null && i == null/);
   assert.match(kline, /emptyHover/);

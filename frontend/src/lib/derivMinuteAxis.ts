@@ -74,6 +74,8 @@ export function undRootOf(sym: string): string {
 
 export function kindOfUnd(und: string | undefined, times: string[]): DerivAxisKind {
   const u = undRootOf(und || "");
+  // 同花顺商品指数 850xxx/851xxx: 6 位数字但走商品时段, 不是 ETF
+  if (/^85[01]\d{3}$/.test(u)) return times.some(isNightTime) ? "cmd" : "cmdDay";
   if (/^\d{6}$/.test(u)) return "etf";
   if (INDEX_ROOTS.has(u)) return times.some(isNightTime) ? "index" : "etf";
   return times.some(isNightTime) ? "cmd" : "cmdDay";

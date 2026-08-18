@@ -4,13 +4,15 @@ import type { DerivData } from "@/hooks/useDerivData";
 import { usePolling } from "@/hooks/usePolling";
 import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
-import { CellEmpty, CtnText, ProdSearchSelect } from "./derivShared";
+import { CellEmpty, CtnText, ProdSearchSelect, SortableHd } from "./derivShared";
+import { storageGet, storageSet } from "@/lib/storage";
 
-/** 点选的期权合约 (联动日K/分时卡片). */
+/** 右下日K/分时: 点行情观察出标的, 点 T 表出期权合约. */
 export interface OptionPick {
-  code: string; // 期权合约代码, 如 AU2609C952
-  und: string;  // 标的码 (日K IV 叠加用)
-  name: string; // 展示名, 如 AU2609购952
+  kind: "option" | "und";
+  code: string; // option: AU2609C952; und: IF2608 / 510300
+  und: string;  // 标的码 (日K IV 叠加 / 分时轴)
+  name: string;
 }
 
 /** 代码转展示名: AU2609C952 -> AU2609购952. 锚定末尾 C/P+行权价, 防品种码本身含 C/P (玉米 C / PP / ZC). */
@@ -64,6 +66,19 @@ export function maxOiIdx(strikes: OvlabTQuoteStrike[], side: "call" | "put"): nu
     if (v !== null && v > best) { best = v; idx = i; }
   }
   return idx;
+}
+
+/** 隐藏实值侧: ATM 档两边都留; 购实值=strike<fwd, 沽实值=strike>fwd. */
+export function hideItmSide(
+  side: "call" | "put",
+  strike: number,
+  fwd: number | null,
+  atm: number | null,
+  hide: boolean,
+): boolean {
+  if (!hide || fwd === null) return false;
+  if (atm != null && strike === atm) return false;
+  return side === "call" ? strike < fwd : strike > fwd;
 }
 
 /** 可见档购+沽持仓最大值, 给横条定标尺. */
@@ -142,8 +157,26 @@ function SideCells({ s, itm, side, selected, maxOi, oiMax, atmIv, onPick }: {
   const bg = selected ? "bg-violet-500/15" : itm ? "bg-slate-800/40" : undefined;
   const alignCls = side === "call" ? "num" : "text-left tabular-nums";
   const pickCls = onPick ? "cursor-pointer hover:bg-violet-500/10" : undefined;
+  const px = num(s.price);
+  const chg = num(s.pct);
+  const chgPct = chg !== null ? chg * 100 : null;
   const priceTd = (
-    <td key="price" onClick={onPick} className={cn(alignCls, "text-[12px] font-medium text-slate-100", bg, pickCls)}>{fmtPrice(s.price)}</td>
+    <td
+      key="price"
+      onClick={onPick}
+      className={cn(alignCls, "text-[12px] font-medium text-slate-100", bg, pickCls)}
+      title={chgPct !== null ? `相对昨理论价 ${fmtPct(chgPct, 2)}` : undefined}
+    >
+      {fmtPrice(px)}
+      {chgPct !== null && (
+        <span className={cn(
+          "ml-0.5 text-[10px] font-normal tabular-nums",
+          chgPct > 0 ? "text-red-400" : chgPct < 0 ? "text-emerald-400" : "text-slate-500",
+        )}>
+          {fmtPct(chgPct, Math.abs(chgPct) >= 100 ? 0 : 1)}
+        </span>
+      )}
+    </td>
   );
   const ivTd = (
     <td
@@ -179,8 +212,8 @@ function SideCells({ s, itm, side, selected, maxOi, oiMax, atmIv, onPick }: {
 }
 
 /** T 型报价: 行权价链 (理论价/IV/Delta/持仓横条) x 到期月. 数据 OpenVlab volatility-surface + Black-76.
- *  品种受控于驾驶舱 (点品种行联动); 点单侧格子发出 onPickContract 联动日K/分时卡.
- *  换品种/到期月且当前选中不在链上时, 自动点 ATM 购.
+ *  品种受控于驾驶舱 (点品种行联动); 点单侧格子发出 kind=option 联动日K/分时卡.
+ *  换品种/到期月且当前选中不在链上时, 自动点 ATM 购; kind=und (行情观察标的图) 不覆盖.
  *  标的最新/涨跌挂 d.rows (ovlab_market), 不另开轮询. */
 export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   d: DerivData;
@@ -209,6 +242,15 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   }, [prod, products, d.rows, onProduct]);
 
   const [exp, setExp] = useState<string>("");
+  const [strikeDir, setStrikeDir] = useState<"asc" | "desc">("desc");
+  const [hideItm, setHideItm] = useState(() => storageGet("deriv.tquote.hideItm") === "1");
+  const toggleHideItm = () => {
+    setHideItm((on) => {
+      const next = !on;
+      storageSet("deriv.tquote.hideItm", next ? "1" : "0");
+      return next;
+    });
+  };
   useEffect(() => { setExp(""); }, [prod]);
 
   const tq = usePolling(
@@ -220,16 +262,50 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   const loading = tq.data === null && !tq.error;
   const expiries = tq.data?.expiries ?? [];
   const cur: OvlabTQuoteExpiry | undefined = expiries.find((e) => e.exp === exp) ?? expiries[0];
+  const fwd = num(cur?.forward);
+  const atm = cur?.atm ?? null;
 
-  const maxCall = useMemo(() => (cur ? maxOiIdx(cur.strikes ?? [], "call") : -1), [cur]);
-  const maxPut = useMemo(() => (cur ? maxOiIdx(cur.strikes ?? [], "put") : -1), [cur]);
+  const maxCall = useMemo(() => {
+    if (!cur) return null as number | null;
+    let best = -1, k: number | null = null;
+    for (const s of cur.strikes ?? []) {
+      if (hideItmSide("call", s.strike, fwd, atm, hideItm)) continue;
+      const v = num(s.call.oi);
+      if (v !== null && v > best) { best = v; k = s.strike; }
+    }
+    return k;
+  }, [cur, hideItm, fwd, atm]);
+  const maxPut = useMemo(() => {
+    if (!cur) return null as number | null;
+    let best = -1, k: number | null = null;
+    for (const s of cur.strikes ?? []) {
+      if (hideItmSide("put", s.strike, fwd, atm, hideItm)) continue;
+      const v = num(s.put.oi);
+      if (v !== null && v > best) { best = v; k = s.strike; }
+    }
+    return k;
+  }, [cur, hideItm, fwd, atm]);
 
   const rows = useMemo(() => {
     if (!cur) return [];
-    // upstream ascending; display high strike on top.
-    return (cur.strikes ?? []).slice().reverse();
-  }, [cur]);
-  const oiMax = useMemo(() => maxOiVal(rows), [rows]);
+    const list = (cur.strikes ?? []).slice();
+    list.sort((a, b) => strikeDir === "desc" ? b.strike - a.strike : a.strike - b.strike);
+    return list;
+  }, [cur, strikeDir]);
+  const oiMax = useMemo(() => {
+    let m = 0;
+    for (const s of rows) {
+      if (!hideItmSide("call", s.strike, fwd, atm, hideItm)) {
+        const c = num(s.call.oi);
+        if (c !== null && c > m) m = c;
+      }
+      if (!hideItmSide("put", s.strike, fwd, atm, hideItm)) {
+        const p = num(s.put.oi);
+        if (p !== null && p > m) m = p;
+      }
+    }
+    return m;
+  }, [rows, hideItm, fwd, atm]);
 
   const mkt = useMemo(
     () => (d.rows ?? []).find((r) => String(r.prodUnd ?? "").trim() === prod),
@@ -237,7 +313,6 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   );
   const undPx = num(mkt?.price);
   const undCtn = num(mkt?.ctn);
-  const fwd = num(cur?.forward);
   const fwdYd = num(cur?.forwardYd);
   const fwdChg = fwd !== null && fwdYd !== null && fwdYd !== 0 ? ((fwd - fwdYd) / fwdYd) * 100 : null;
   const atmIvChg = cur?.atmIv != null && cur?.atmIvYd != null ? cur.atmIv - cur.atmIvYd : null;
@@ -246,17 +321,18 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
 
   const emitPick = (code: string | undefined) => {
     if (!code || !onPickContract) return;
-    onPickContract({ code, und: cur?.und ?? "", name: optionName(code) });
+    onPickContract({ kind: "option", code, und: cur?.und ?? "", name: optionName(code) });
   };
 
   useEffect(() => {
     if (!cur?.strikes?.length || !onPickContract) return;
+    if (pick?.kind === "und") return;
     const inChain = cur.strikes.some((s) => s.callCode === pick?.code || s.putCode === pick?.code);
     if (inChain) return;
     const atm = cur.strikes.find((s) => s.strike === cur.atm) ?? cur.strikes[cur.strikes.length >> 1];
     if (!atm?.callCode) return;
-    onPickContract({ code: atm.callCode, und: cur.und ?? "", name: optionName(atm.callCode) });
-  }, [prod, cur?.exp, cur?.und, pick?.code, onPickContract]);
+    onPickContract({ kind: "option", code: atm.callCode, und: cur.und ?? "", name: optionName(atm.callCode) });
+  }, [prod, cur?.exp, cur?.und, pick?.code, pick?.kind, onPickContract]);
 
   const atmRowRef = useRef<HTMLTableRowElement | null>(null);
   useEffect(() => {
@@ -304,8 +380,34 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
             </button>
           ))}
         </div>
+        <span className="flex shrink-0 items-center gap-1">
+          <span className="text-[10px] text-slate-500">隐藏实值</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={hideItm}
+            title="隐藏实值侧, ATM 档两边都留"
+            onClick={toggleHideItm}
+            className={cn(
+              "relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors",
+              hideItm ? "bg-cyan-500/70" : "bg-slate-700/70",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block h-2.5 w-2.5 rounded-full bg-white transition-transform",
+                hideItm ? "translate-x-[12px]" : "translate-x-[2px]",
+              )}
+            />
+          </button>
+        </span>
         {cur?.lastTime && (
-          <span className="shrink-0 text-[10px] tabular-nums text-slate-600">{cur.lastTime.slice(5, 16)}</span>
+          <span
+            className="shrink-0 rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[12px] font-medium tabular-nums text-cyan-300"
+            title={`上游更新 ${cur.lastTime}`}
+          >
+            更新 {cur.lastTime.slice(11, 19) || cur.lastTime}
+          </span>
         )}
       </div>
 
@@ -356,7 +458,16 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
             <thead>
               <tr>
                 <th colSpan={4} className="text-center text-[12px] font-semibold text-red-300">购 Call</th>
-                <th rowSpan={2} className="text-center align-middle font-semibold text-slate-200">行权价</th>
+                <th rowSpan={2} className="text-center align-middle font-semibold text-slate-200">
+                  <SortableHd
+                    k="strike"
+                    label="行权价"
+                    sort={{ key: "strike", dir: strikeDir }}
+                    onSort={() => setStrikeDir((d) => (d === "desc" ? "asc" : "desc"))}
+                    className="justify-center"
+                    title="点此按行权价升/降序"
+                  />
+                </th>
                 <th colSpan={4} className="text-center text-[12px] font-semibold text-emerald-300">沽 Put</th>
               </tr>
               <tr>
@@ -372,23 +483,28 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
             </thead>
             <tbody>
               {rows.map((s) => {
-                const isAtm = s.strike === cur.atm;
+                const isAtm = s.strike === atm;
                 const callItm = fwd !== null && s.strike < fwd;
                 const putItm = fwd !== null && s.strike > fwd;
-                const fullIdx = (cur.strikes ?? []).findIndex((x) => x.strike === s.strike);
+                const hideCall = hideItmSide("call", s.strike, fwd, atm, hideItm);
+                const hidePut = hideItmSide("put", s.strike, fwd, atm, hideItm);
                 const mny = fwd !== null && fwd !== 0 ? ((s.strike / fwd) - 1) * 100 : null;
                 return (
                   <tr key={s.strike} ref={isAtm ? atmRowRef : undefined} className={cn(isAtm && "bg-cyan-500/10")}>
-                    <SideCells
-                      s={s.call}
-                      itm={callItm}
-                      side="call"
-                      selected={pick?.code != null && pick.code === s.callCode}
-                      maxOi={fullIdx === maxCall && maxCall >= 0}
-                      oiMax={oiMax}
-                      atmIv={cur.atmIv}
-                      onPick={s.callCode && onPickContract ? () => emitPick(s.callCode) : undefined}
-                    />
+                    {hideCall ? (
+                      <td colSpan={4} className="bg-slate-950/30" />
+                    ) : (
+                      <SideCells
+                        s={s.call}
+                        itm={callItm}
+                        side="call"
+                        selected={pick?.kind === "option" && pick.code === s.callCode}
+                        maxOi={maxCall !== null && s.strike === maxCall}
+                        oiMax={oiMax}
+                        atmIv={cur.atmIv}
+                        onPick={s.callCode && onPickContract ? () => emitPick(s.callCode) : undefined}
+                      />
+                    )}
                     <td
                       className={cn(
                         "text-center text-[12px] font-medium tabular-nums",
@@ -399,16 +515,20 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
                       {fmtStrike(s.strike)}
                       {isAtm && <span className="ml-0.5 text-[9px] text-cyan-500/80">ATM</span>}
                     </td>
-                    <SideCells
-                      s={s.put}
-                      itm={putItm}
-                      side="put"
-                      selected={pick?.code != null && pick.code === s.putCode}
-                      maxOi={fullIdx === maxPut && maxPut >= 0}
-                      oiMax={oiMax}
-                      atmIv={cur.atmIv}
-                      onPick={s.putCode && onPickContract ? () => emitPick(s.putCode) : undefined}
-                    />
+                    {hidePut ? (
+                      <td colSpan={4} className="bg-slate-950/30" />
+                    ) : (
+                      <SideCells
+                        s={s.put}
+                        itm={putItm}
+                        side="put"
+                        selected={pick?.kind === "option" && pick.code === s.putCode}
+                        maxOi={maxPut !== null && s.strike === maxPut}
+                        oiMax={oiMax}
+                        atmIv={cur.atmIv}
+                        onPick={s.putCode && onPickContract ? () => emitPick(s.putCode) : undefined}
+                      />
+                    )}
                   </tr>
                 );
               })}

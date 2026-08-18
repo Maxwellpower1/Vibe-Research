@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 import {
   BookOpen,
@@ -55,14 +55,17 @@ export function Layout() {
   const moreActive = MORE_NAV.some((l) => l.match(pathname));
   const aTab = parseAShareTab(params.get("tab"));
   const oTab = parseOvlabTab(params.get("tab"));
+  const mainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     document.documentElement.classList.remove("light");
     document.documentElement.classList.add("dark");
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setMoreOpen(false);
+    // Phone: #main is the shared scroller. Keep the new page at the top.
+    mainRef.current?.scrollTo(0, 0);
   }, [pathname]);
 
   return (
@@ -107,6 +110,7 @@ export function Layout() {
       )}
       <main
         id="main"
+        ref={mainRef}
         className={cn(
           "min-h-0 flex-1 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0",
           cockpit ? "flex flex-col overflow-auto lg:overflow-hidden" : "overflow-auto",

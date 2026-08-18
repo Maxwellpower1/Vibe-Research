@@ -69,6 +69,25 @@ function alignSeries(
   return cats.map((c) => exact.get(c) ?? (loose ? (keys.get(minuteKey(c)) ?? keys.get(hmOf(c)) ?? null) : null));
 }
 
+/** Overlay axis: keep a quiet series from filling the pane (IV wiggle ~occupy of height). */
+export function overlayAxis(
+  vals: Array<number | null | undefined>,
+  occupy = 0.32,
+): { min: number; max: number } | null {
+  const xs: number[] = [];
+  for (const v of vals) {
+    if (v != null && Number.isFinite(v) && v > 0) xs.push(v);
+  }
+  if (xs.length === 0) return null;
+  const lo = Math.min(...xs);
+  const hi = Math.max(...xs);
+  const mid = (lo + hi) / 2;
+  const half = Math.max((hi - lo) / 2, Math.abs(mid) * 0.015, 0.4);
+  const frac = Math.min(0.85, Math.max(0.1, occupy));
+  const pad = half / frac - half;
+  return { min: mid - half - pad, max: mid + half + pad };
+}
+
 /** echarts updateAxisPointer -> 类目下标. 类目轴 value 是字符串, 不能当 number 用. */
 export function hoverIdxOf(raw: unknown, cats: string[]): number | null {
   const p = raw as {
@@ -240,7 +259,8 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
             axisPointer: { label: { show: false } },
           },
           {
-            scale: true, position: "right" as const,
+            ...(overlayAxis(dailyIv) ?? { min: 0, max: 1 }),
+            scale: false, position: "right" as const,
             splitLine: { show: false },
             axisLabel: { show: false },
             axisPointer: { label: { show: false } },
@@ -323,7 +343,7 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
           splitLine: { show: false }, axisPointer: { label: { show: false } },
         },
       ],
-      yAxis: [
+        yAxis: [
         {
           min: pMin - pPad, max: pMax + pPad, scale: false,
           splitLine: { lineStyle: { color: cGrid, opacity: 0.25, width: 1 } },
@@ -331,7 +351,8 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
           axisPointer: { label: { show: false } },
         },
         {
-          scale: true, position: "right" as const,
+          ...(overlayAxis(minData?.iv ?? []) ?? { min: 0, max: 1 }),
+          scale: false, position: "right" as const,
           splitLine: { show: false },
           axisLabel: { show: false },
           axisPointer: { label: { show: false } },
@@ -434,7 +455,7 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
           <span className={cn("min-w-0 truncate tabular-nums", head.toneCls)}>{head.label}</span>
         )}
         {!pick && mode === "daily" && (
-          <span className="text-slate-600">点 T 表出图</span>
+          <span className="text-slate-600">点行情观察或 T 表</span>
         )}
       </div>
       <div className="relative min-h-0 flex-1">

@@ -311,10 +311,12 @@ _SURFACE = {
     "202609": {
         "exp": "202609", "expiry_date": "20260825", "days_to_expiry": "7",
         "forward_td": "954.119", "forward_yd": "954.29",
-        "maturity_tday": "0.0198413", "atmvol_tday": "20.0764", "atmvol_yday": "20.8889",
+        "maturity_tday": "0.0198413", "maturity_yday": "0.0238095",
+        "atmvol_tday": "20.0764", "atmvol_yday": "20.8889",
         "rho_tday": "1.13", "move_up": "0.0227", "move_dn": "-0.0227",
         "sum_oi_call": "23725", "sum_oi_put": "20361", "last_time": "2026-08-18 15:00:22",
         "theovol_tday": "[[952.0, 19.9525], [960.0, 20.6874]]",
+        "theovol_yday": "[[952.0, 20.8889], [960.0, 21.5]]",
         "delta_tday_call": "[[952.0, 0.536859], [960.0, 0.422002]]",
         "delta_tday_put": "[[952.0, -0.462662], [960.0, -0.577519]]",
         "mktvol_tday_call_bid": "[[952.0, 20.2277], [960.0, 20.6346]]",
@@ -351,6 +353,62 @@ def test_build_tquote_parses_str_fields(monkeypatch):
     # parity: 同一 theoIv 下 C - P == F - K
     c, p = s0["call"]["price"], s0["put"]["price"]
     assert c - p == pytest.approx(954.119 - 952.0, abs=1e-6)
+    assert s0["call"]["pct"] is not None
+    yd = ovlab.black76(954.29, 952.0, 20.8889, 0.0238095, True)
+    assert s0["call"]["pct"] == pytest.approx((c - yd) / yd, rel=1e-6)
+
+
+def test_theo_chg():
+    assert ovlab.theo_chg(12.0, 10.0) == pytest.approx(0.2)
+    assert ovlab.theo_chg(8.0, 10.0) == pytest.approx(-0.2)
+    assert ovlab.theo_chg(1.0, 0) is None
+    assert ovlab.theo_chg(None, 10.0) is None
+
+
+def test_extend_index_strikes_pads_atm_stub():
+    """IF near-expiry surface is an ATM stub; ladder covers ±15% at 50pt."""
+    keys = [4600.0, 4650.0, 4700.0, 4750.0, 4800.0]
+    out = ovlab.extend_index_strikes("IF", keys, 4706.1)
+    assert 4300.0 in out and 5100.0 in out
+    assert all(x in out for x in keys)
+    assert len(out) >= 25
+    steps = [out[i + 1] - out[i] for i in range(len(out) - 1)]
+    assert all(s == pytest.approx(50.0) for s in steps)
+    assert ovlab.extend_index_strikes("AU", keys, 4706.1) == keys
+
+
+def test_interp_iv_linear_and_flat_wings():
+    theo = {4600.0: 17.0, 4700.0: 15.0}
+    assert ovlab.interp_iv(theo, 4700.0) == 15.0
+    assert ovlab.interp_iv(theo, 4650.0) == pytest.approx(16.0)
+    assert ovlab.interp_iv(theo, 4500.0) == 17.0
+    assert ovlab.interp_iv(theo, 4800.0) == 15.0
+    assert ovlab.interp_iv({}, 4700.0) is None
+
+
+def test_build_tquote_index_fills_stub(monkeypatch):
+    blk = dict(_SURFACE["202609"])
+    blk["theovol_tday"] = "[[4600.0, 17.2], [4650.0, 15.7], [4700.0, 14.4], [4750.0, 14.4], [4800.0, 14.8]]"
+    blk["forward_td"] = "4706.1"
+    blk["delta_tday_call"] = "[[4700.0, 0.5]]"
+    blk["delta_tday_put"] = "[[4700.0, -0.5]]"
+    blk["mktvol_tday_call_bid"] = "[[4700.0, 14.5]]"
+    blk["mktvol_tday_call_ask"] = "[[4700.0, 14.7]]"
+    blk["mktvol_tday_put_bid"] = "[[4700.0, 14.3]]"
+    blk["mktvol_tday_put_ask"] = "[[4700.0, 14.6]]"
+    blk["strike_poi_c"] = '{"4700.0": 100}'
+    blk["strike_poi_p"] = '{"4700.0": 80}'
+    blk["strike_oid_c"] = '{"4700.0": 1}'
+    blk["strike_oid_p"] = '{"4700.0": 2}'
+    monkeypatch.setattr(ovlab, "get_volatility_surface", lambda p: {"202608": blk})
+    out = ovlab._build_tquote("IF")
+    strikes = out["expiries"][0]["strikes"]
+    assert len(strikes) >= 25
+    by_k = {s["strike"]: s for s in strikes}
+    assert by_k[4700.0]["call"]["oi"] == 100.0
+    assert by_k[4300.0]["call"]["oi"] is None
+    assert by_k[4300.0]["call"]["theoIv"] == pytest.approx(17.2)
+    assert by_k[4300.0]["call"]["price"] is not None
 
 
 def test_get_tquote_empty_product():

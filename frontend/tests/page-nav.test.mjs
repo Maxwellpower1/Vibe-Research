@@ -37,6 +37,7 @@ test("/derivatives sits right after /a-share and is primary", () => {
   assert.match(header, /parseOvlabTab/);
   const layout = readFileSync(join(root, "src/components/layout/Layout.tsx"), "utf8");
   assert.match(layout, /OVL_TABS/);
+  assert.match(layout, /mainRef\.current\?\.scrollTo\(0, 0\)/, "切页把手机共用滚动条拉回顶");
   const ovlab = readFileSync(join(root, "src/pages/Ovlab.tsx"), "utf8");
   assert.match(ovlab, /DerivCockpit/);
   assert.match(ovlab, /DerivLightChart/);

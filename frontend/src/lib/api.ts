@@ -398,6 +398,30 @@ export interface ThsRotation {
     leads?: Array<{ code: string; name: string; pct: number }>;
   }>;
 }
+/** 同花顺 fuyao 快照. pct 已由最新/昨收现算, 单位是百分点. */
+export interface ThsSnapRow {
+  market: string;
+  code: string;
+  last: number | null;
+  prev: number | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  pct: number | null;
+  volume?: number | null;
+  amount?: number | null;
+  lb?: number | null;
+}
+/** 同花顺 K 线. t 为毫秒时间戳. */
+export interface ThsKlineBar {
+  t: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  amount: number | null;
+}
 export interface StockBasicInfo {
   code: string; name?: string; industry?: string; area?: string;
   concepts?: string[];
@@ -1156,9 +1180,12 @@ export interface OvlabProductExp {
 export interface OvlabExchangeInfo { code?: string; name?: string; [k: string]: unknown }
 export interface OvlabSectorInfo { code?: string; name?: string; [k: string]: unknown }
 
-/** T 型报价: 单侧 (Call/Put) 每档. price 为 Black-76 理论价 (theoIv + forward 反推). */
+/** T 型报价: 单侧 (Call/Put) 每档. price 为 Black-76 理论价 (theoIv + forward 反推).
+ *  pct 为相对昨理论价涨幅 (今-昨)/昨, 昨=forward_yd+theovol_yday 反推. */
 export interface OvlabTQuoteSide {
   price?: number | null;
+  /** 相对昨理论价, 小数比率 (0.03 = +3%). */
+  pct?: number | null;
   ivBid?: number | null;
   ivAsk?: number | null;
   theoIv?: number | null;
@@ -1469,6 +1496,11 @@ export const api = {
     get<ThsProfile>(`/market/ths-profile?code=${encodeURIComponent(code)}`),
   thsRotation: (kind: "concept" | "industry" = "concept", top = 15) =>
     get<ThsRotation>(`/market/ths-rotation?kind=${kind}&top=${top}`),
+  /** 同花顺 fuyao 快照/K线. 独立源, 不进报价中心. */
+  thsSnapshot: (codes: string[]) =>
+    get<ThsSnapRow[]>(`/ths/snapshot?codes=${encodeURIComponent(codes.slice(0, 50).join(","))}`),
+  thsKline: (code: string, period: "day_1" | "min_1" | "min_5" = "day_1", count = 400) =>
+    get<ThsKlineBar[]>(`/ths/kline?code=${encodeURIComponent(code)}&period=${period}&count=${count}`),
   finBoard: (period = "") =>
     get<FinBoard>(`/fin/board${period ? `?period=${encodeURIComponent(period)}` : ""}`),
   finForecast: (period = "") =>
