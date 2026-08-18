@@ -3,7 +3,7 @@ import { createBrowserRouter, Navigate, useLocation } from "react-router-dom";
 import { RouteError } from "@/components/common/RouteError";
 import { Layout } from "@/components/layout/Layout";
 
-/** Old /ovlab bookmarks land on /derivatives, keeping ?tab=&symbol=. */
+/** Old /ovlab bookmarks land on /derivatives. */
 function OvlabRedirect() {
   const { search } = useLocation();
   return <Navigate to={`/derivatives${search}`} replace />;

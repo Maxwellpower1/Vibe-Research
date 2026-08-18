@@ -10,6 +10,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 # ~/.vibe-research/ 里的用户数据（比如把用户真实持有的 600519 合并后删掉）。
 _TEST_DATA_DIR = tempfile.mkdtemp(prefix="vr-test-data-")
 os.environ["VR_DATA_DIR"] = _TEST_DATA_DIR
+# MQTT sidecar talks to emqx.openvlab.cn; keep unit tests offline.
+os.environ["VR_OVLAB_MQTT"] = "0"
 
 
 def pytest_configure(config):

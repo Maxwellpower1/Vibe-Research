@@ -253,7 +253,7 @@ export function AShareLightChart({
       ? (1 - VIEW_DAYS / bars.length) * 100
       : 0;
 
-    // Custom trend paint: red above / green below zero axis (DerivLightChart 同口径)
+    // Custom trend paint: red above / green below zero axis
     const trendPaintSeries = {
       name: "_trendPaint",
       type: "custom" as const,

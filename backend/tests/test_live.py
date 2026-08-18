@@ -116,3 +116,32 @@ def test_hk_cashflow_shape():
         assert "经营活动现金流净额" in cf["item_order"]
         assert {"report_date", "items", "currency"} <= set(cf["periods"][0])
     assert gstock.hk_cashflow("AAPL") == {}  # 美股不走此接口
+
+
+@pytest.mark.live
+def test_ovlab_mqtt_optionflow_connects(monkeypatch):
+    """CONNACK to OpenVlab guest optionflow/ctamap/dataview. Does not write REST cache."""
+    import time
+
+    pytest.importorskip("paho.mqtt.client")
+    pytest.importorskip("websocket")
+    monkeypatch.setenv("VR_OVLAB_MQTT", "1")
+    import ovlab_mqtt
+
+    ovlab_mqtt.stop()
+    ovlab_mqtt.reset_for_tests()
+    ovlab_mqtt.start()
+    deadline = time.time() + 10
+    snap = ovlab_mqtt.snapshot()
+    while time.time() < deadline and not snap["connected"] and not snap["error"]:
+        time.sleep(0.25)
+        snap = ovlab_mqtt.snapshot()
+    ovlab_mqtt.stop()
+    assert snap["feeds_ui"] is True
+    assert snap["error"] is None
+    assert snap["connected"] is True
+    assert set(snap["topics"]) == {
+        "vlab/stream/optionflow/guest",
+        "vlab/stream/ctamap/guest",
+        "vlab/stream/dataview/guest/instr/+",
+    }

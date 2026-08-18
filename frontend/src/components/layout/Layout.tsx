@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { PageFallback } from "@/components/ui/PageFallback";
-import { A_SHARE_TABS, CockpitHeader, NAV_RAIL_CLASS, OVL_TABS, PAGE_NAV, navChipClass, parseAShareTab, parseOvlabTab } from "@/components/cockpit/CockpitHeader";
+import { A_SHARE_TABS, CockpitHeader, NAV_RAIL_CLASS, PAGE_NAV, navChipClass, parseAShareTab } from "@/components/cockpit/CockpitHeader";
 import { TickerTape } from "@/components/cockpit/TickerTape";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useTapeQuotes } from "@/hooks/useTapeQuotes";
@@ -39,7 +39,7 @@ const MORE_NAV = PAGE_NAV.filter((l) => !l.primary);
 
 function isCockpitPath(pathname: string, tab: string | null) {
   if (pathname.startsWith("/ai-watch") || pathname.startsWith("/fin")) return true;
-  if (pathname.startsWith("/derivatives")) return tab !== "kline";
+  if (pathname.startsWith("/derivatives")) return true;
   if (!pathname.startsWith("/a-share")) return false;
   if (!tab || tab === "review") return true;
   return false;
@@ -54,7 +54,6 @@ export function Layout() {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreActive = MORE_NAV.some((l) => l.match(pathname));
   const aTab = parseAShareTab(params.get("tab"));
-  const oTab = parseOvlabTab(params.get("tab"));
   const mainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -85,21 +84,6 @@ export function Layout() {
         >
           {A_SHARE_TABS.map((t) => {
             const active = t.tab === null ? aTab === "review" : aTab === t.tab;
-            return (
-              <Link key={t.label} to={t.to} aria-current={active ? "page" : undefined} className={navChipClass(active)}>
-                {t.label}
-              </Link>
-            );
-          })}
-        </nav>
-      )}
-      {pathname.startsWith("/derivatives") && (
-        <nav
-          className={cn(NAV_RAIL_CLASS, "mx-2 mt-1 shrink-0")}
-          aria-label="期权期货页签"
-        >
-          {OVL_TABS.map((t) => {
-            const active = t.tab === null ? oTab === "review" : oTab === t.tab;
             return (
               <Link key={t.label} to={t.to} aria-current={active ? "page" : undefined} className={navChipClass(active)}>
                 {t.label}

@@ -263,7 +263,7 @@ function SideCells({ s, itm, side, selected, maxOi, oiMax, atmIv, onPick }: {
 /** T 型报价: 行权价链 (理论价/IV/Delta/持仓横条) x 到期月. 数据 OpenVlab volatility-surface + Black-76.
  *  品种受控于驾驶舱 (点品种行联动); 点单侧格子发出 kind=option 联动日K/分时卡.
  *  换品种/到期月且当前选中不在链上时, 自动点 ATM 购; kind=und (行情观察标的图) 不覆盖.
- *  标的最新/涨跌优先当月期货 (tquote.futPx, 切月跟着变); ETF 无期货回落 d.rows. */
+ *  标的最新/涨跌优先 dataview 当月期货 last, 再 tquote.futPx, ETF 无期货回落 d.rows. */
 export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   d: DerivData;
   product?: string;
@@ -292,7 +292,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
 
   const [exp, setExp] = useState<string>("");
   const [strikeDir, setStrikeDir] = useState<"asc" | "desc">("desc");
-  const [hideItm, setHideItm] = useState(() => storageGet("deriv.tquote.hideItm") === "1");
+  const [hideItm, setHideItm] = useState(() => storageGet("deriv.tquote.hideItm") !== "0");
   const toggleHideItm = () => {
     setHideItm((on) => {
       const next = !on;
@@ -319,8 +319,18 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   );
   const futPx = num(cur?.futPx);
   const futPct = num(cur?.futPct);
-  const undPx = futPx ?? num(mkt?.price);
-  const undCtn = futPx != null ? futPct : num(mkt?.ctn);
+  const tickLast = num(d.ticks[String(cur?.und ?? "").toUpperCase()]?.last);
+  const basePx = futPx ?? num(mkt?.price);
+  const baseCtn = futPx != null ? futPct : num(mkt?.ctn);
+  let undPx = basePx;
+  let undCtn = baseCtn;
+  if (tickLast != null) {
+    undPx = tickLast;
+    if (basePx != null && baseCtn != null && 1 + baseCtn !== 0) {
+      const prev = basePx / (1 + baseCtn);
+      if (prev !== 0) undCtn = (tickLast - prev) / prev;
+    }
+  }
   const bracket = useMemo(
     () => undBracket((cur?.strikes ?? []).map((s) => s.strike), undPx),
     [cur, undPx],

@@ -170,17 +170,41 @@ test("悬停空槽不回落最后一笔", () => {
 
 test("分时图走交易时段轴, 不按点序均分", async () => {
   const card = await readFile(new URL("../src/components/deriv/OptionChartCard.tsx", import.meta.url), "utf8");
-  const kline = await readFile(new URL("../src/components/deriv/DerivLightChart.tsx", import.meta.url), "utf8");
   const spark = await readFile(new URL("../src/components/ovlab/shared.tsx", import.meta.url), "utf8");
   const axis = await readFile(new URL("../src/lib/derivMinuteAxis.ts", import.meta.url), "utf8");
-  assert.match(card, /derivMinuteSlots/);
+  assert.match(card, /concatDaySlots/);
   assert.match(card, /padToSlots/);
-  assert.match(kline, /derivMinuteSlots/);
   assert.match(spark, /derivSessionIdx/);
   assert.match(axis, /export function derivMinuteSlots/);
+  assert.match(axis, /export function concatDaySlots/);
   assert.match(axis, /85\[01\]/, "850 商品指数走商品时段不是 ETF");
   assert.match(axis, /empty hover stays null/);
   assert.match(card, /hover != null && i == null/);
-  assert.match(kline, /emptyHover/);
   assert.doesNotMatch(spark, /i \/ \(n - 1\)\) \* innerW/);
+});
+
+test("concatDaySlots 两日中间空档, 一日无空档", () => {
+  function concatDaySlots(tds, kind) {
+    if (tds.length === 0) return { cats: [], splitAt: null };
+    if (tds.length === 1) return { cats: derivMinuteSlots(tds[0], kind), splitAt: null };
+    const cats = [];
+    let splitAt = null;
+    tds.forEach((td, i) => {
+      if (i > 0) {
+        splitAt = cats.length;
+        cats.push("");
+      }
+      cats.push(...derivMinuteSlots(td, kind));
+    });
+    return { cats, splitAt };
+  }
+  const one = concatDaySlots(["2026-08-18"], "etf");
+  assert.equal(one.splitAt, null);
+  assert.ok(one.cats.length > 200);
+  assert.ok(one.cats.every((c) => c));
+  const two = concatDaySlots(["2026-08-17", "2026-08-18"], "etf");
+  assert.equal(two.cats[two.splitAt], "");
+  assert.equal(two.cats.filter((c) => c === "").length, 1);
+  assert.ok(two.cats[0].startsWith("2026-08-17"));
+  assert.ok(two.cats[two.splitAt + 1].startsWith("2026-08-18"));
 });

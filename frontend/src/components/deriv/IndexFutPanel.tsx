@@ -35,11 +35,10 @@ function commodityRowsOf(rows: OvlabMarketRow[] | null): OvlabMarketRow[] {
 }
 
 /** 股指 + 商品主力: 一张竖表. 点列头整表排序; 默认股指在上、商品在下.
- *  非目录商品分时按可见码补拉. 行点击 -> onPickProduct (T 表 + 标的图); 合约码点击 -> onPickSymbol. */
-export function IndexFutPanel({ d, nightOnly = false, onPickSymbol, onPickProduct }: {
+ *  非目录商品分时按可见码补拉. 行点击 -> onPickProduct (T 表 + 标的图). */
+export function IndexFutPanel({ d, nightOnly = false, onPickProduct }: {
   d: DerivData;
   nightOnly?: boolean;
-  onPickSymbol?: (sym: string) => void;
   onPickProduct?: (prodUnd: string, undChart?: { code: string; name: string }) => void;
 }) {
   const [sort, setSort] = useState<SortState<Record<BoardKey, unknown>>>({ key: null, dir: "desc" });
@@ -104,7 +103,6 @@ export function IndexFutPanel({ d, nightOnly = false, onPickSymbol, onPickProduc
       </div>
       <div className="divide-y divide-slate-800/60">
         {items.map(({ key, label, row }) => {
-          const sym = klineSym(row);
           const code = contractCode(row);
           const pc = previewCode(row);
           const spark = d.sparks[pc] ?? extraSparks[pc];
@@ -117,21 +115,17 @@ export function IndexFutPanel({ d, nightOnly = false, onPickSymbol, onPickProduc
               type="button"
               onClick={onPickProduct
                 ? () => onPickProduct(prodUnd, undCode ? { code: undCode, name: `${label} ${undCode}` } : undefined)
-                : sym && onPickSymbol ? () => onPickSymbol(sym) : undefined}
+                : undefined}
               className={cn(
                 "flex w-full items-center gap-1.5 px-2 py-1 text-left transition-colors",
-                (onPickProduct || (onPickSymbol && sym)) && "hover:bg-slate-800/40",
+                onPickProduct && "hover:bg-slate-800/40",
               )}
-              title={onPickProduct ? `看 ${label} 标的日K/分时, 调出 T 型报价` : sym ? `看 ${sym} K线` : undefined}
+              title={onPickProduct ? `看 ${label} 标的日K/分时, 调出 T 型报价` : undefined}
             >
               <NightMoon show={Number(row.has_night_trading) === 1} />
               <span className="w-[3.8rem] shrink-0 leading-tight">
                 <span className="block truncate text-[12px] font-medium text-slate-200">{label}</span>
-                <span
-                  className={cn("block truncate font-mono text-[10px] text-cyan-500/70", sym && onPickSymbol && "hover:text-cyan-300")}
-                  onClick={sym && onPickSymbol ? (e) => { e.stopPropagation(); onPickSymbol(sym); } : undefined}
-                  title={sym ? `看 ${sym} K线` : undefined}
-                >
+                <span className="block truncate font-mono text-[10px] text-cyan-500/70">
                   {code || "-"}
                 </span>
               </span>

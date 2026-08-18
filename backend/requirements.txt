@@ -18,6 +18,11 @@ duckdb  # 回测行情: 分区 parquet, 内存查, 不建 .db
 # 未安装时 /api/portfolio/ctp 返回配置提示，不影响其余功能
 # openctp-ctp
 
+# OpenVlab 网页 MQTT 旁路 —— 启动订 optionflow, 不喂驾驶舱
+# VR_OVLAB_MQTT=0 可关; 未装时启动跳过, REST 异动照常
+paho-mqtt
+websocket-client
+
 # 研究桌可选源（未装时对应端点 501 + 安装提示）
 # baostock          # A 股日 K 兜底
 # pykrx             # 韩股日 K

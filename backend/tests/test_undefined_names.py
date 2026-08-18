@@ -177,6 +177,7 @@ def test_gstock_deep_and_routers_import() -> None:
         "routers.fin_routes",
         "routers.research_routes",
         "routers.ai_watch_routes",
+        "ovlab_mqtt",
         "routers.ovlab_routes",
         "routers.fino_routes",
         "routers.portfolio",

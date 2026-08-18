@@ -16,7 +16,7 @@ import { ApiError } from "@/lib/api";
 import { chatStream, hasLlm } from "@/lib/llm";
 import { cn } from "@/lib/utils";
 import { IndexFutPanel } from "@/components/deriv/IndexFutPanel";
-import { AlertPanel, FLOW_RULE_LABEL } from "@/components/deriv/AlertPanel";
+import { AlertPanel, ruleLabelOf } from "@/components/deriv/AlertPanel";
 import { ExpiryCalPanel } from "@/components/deriv/ExpiryCalPanel";
 import { TermStructPanel } from "@/components/deriv/TermStructPanel";
 import { WatchPanel } from "@/components/deriv/WatchPanel";
@@ -72,8 +72,7 @@ function packDerivContext(d: DerivData): string {
   } else {
     lines.push("", `## 最新异动 (前 ${Math.min(15, d.alerts.length)} 条)`);
     for (const a of d.alerts.slice(0, 15)) {
-      const rid = String(a.rule_id ?? "");
-      const kind = FLOW_RULE_LABEL[rid] ?? rid;
+      const kind = ruleLabelOf(a);
       const dte = daysToExpiry(a.exp_date);
       lines.push(`- ${String(a.time ?? "").slice(5, 16)} ${a.contract_code ?? "-"} ${kind} 剩余${dte ?? "-"}天 区间${a.pct_change ?? "-"}`);
     }
@@ -81,7 +80,7 @@ function packDerivContext(d: DerivData): string {
   return lines.join("\n");
 }
 
-export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) => void }) {
+export function DerivCockpit() {
   const d = useDerivData();
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [nightOnly, setNightOnly] = useState(false);
@@ -138,7 +137,6 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         {
           id: "main-board",
           title: "行情观察",
-          hint: "点列头排序",
           icon: <LineChart size={14} />,
           accent: "#38bdf8",
           defaultW: 0.36,
@@ -172,7 +170,13 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
               </div>
               {boardTab === "watch" ? (
                 <div className="min-h-0 flex-1 overflow-hidden">
-                  <WatchPanel d={d} onPickSymbol={onPickSymbol} />
+                  <WatchPanel
+                    d={d}
+                    onPick={(code, prodUnd) => {
+                      if (prodUnd) pickProduct(prodUnd, { code, name: code });
+                      else setOptPick({ kind: "und", code, und: code, name: code });
+                    }}
+                  />
                 </div>
               ) : boardTab === "index" ? (
                 <div className="min-h-0 flex-1 overflow-hidden">
@@ -180,7 +184,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
                 </div>
               ) : (
                 <div className="min-h-0 flex-1 overflow-y-auto">
-                  <IndexFutPanel d={d} nightOnly={nightOnly} onPickSymbol={onPickSymbol} onPickProduct={pickProduct} />
+                  <IndexFutPanel d={d} nightOnly={nightOnly} onPickProduct={pickProduct} />
                 </div>
               )}
             </div>
@@ -257,7 +261,11 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
                 <OptionChartCard pick={optPick} mode="daily" />
               </div>
               <div className="min-h-0 flex-1">
-                <OptionChartCard pick={optPick} mode="minute" />
+                <OptionChartCard
+                  pick={optPick}
+                  mode="minute"
+                  tick={optPick ? d.ticks[optPick.code.toUpperCase()] : undefined}
+                />
               </div>
             </div>
           ),

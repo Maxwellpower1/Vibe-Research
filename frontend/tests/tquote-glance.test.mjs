@@ -99,12 +99,14 @@ test("TQuotePanel 默认全部档位 / 自动 ATM 购", async () => {
   assert.ok(src.includes("cur?.futPx"), "顶栏价走当月期货 futPx");
   assert.ok(src.includes("<CtnText value={undCtn}"), "涨跌跟当月期货, ETF 回落行情观察");
   assert.ok(src.includes("futPx ?? num(mkt?.price)"), "无当月期货才回落主力快照");
+  assert.ok(src.includes("d.ticks[String(cur?.und"), "dataview 叠当月期货 last");
   assert.ok(src.includes('.trim() === prod'), "ETF 回落对应当前品种, 不新开轮询");
   assert.ok(src.includes("ProdSearchSelect"), "品种下拉可搜索");
   assert.ok(!/<select[\s\S]*品种/.test(src), "不再用原生 select 选品种");
   assert.ok(src.includes("更新 {cur.lastTime.slice(11, 19)"), "更新时间带标签且到秒");
   assert.ok(src.includes("隐藏实值"), "顶栏有隐藏实值开关");
   assert.ok(src.includes("deriv.tquote.hideItm"), "开关记本机");
+  assert.ok(src.includes('storageGet("deriv.tquote.hideItm") !== "0"'), "未记过本机则默认隐藏实值");
   assert.ok(src.includes("hideItmSide"), "实值侧用 hideItmSide");
   assert.ok(src.includes("undBracket"), "现价卡在相邻两档");
   assert.ok(src.includes("SpotUndRow"), "两档之间插蓝线行");

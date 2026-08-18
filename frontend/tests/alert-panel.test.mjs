@@ -51,6 +51,10 @@ function passesThresh(a, t) {
 test("异动卡对齐 OpenVlab option-flow: 三类可关 + 额/量阈值", async () => {
   const src = await readFile(new URL("../src/components/deriv/AlertPanel.tsx", import.meta.url), "utf8");
   assert.ok(src.includes("r001_single_trade: \"成交异动\""), "成交异动");
+  assert.ok(src.includes("成交异动⬆"), "成交异动上");
+  assert.ok(src.includes("成交异动⬇"), "成交异动下");
+  assert.ok(src.includes("text-red-400"), "上红");
+  assert.ok(src.includes("text-emerald-400"), "下绿");
   assert.ok(src.includes("r002_1m_pct_move: \"走势异动\""), "走势异动");
   assert.ok(src.includes("r003_repeated_aggressive_burst: \"连续成交\""), "连续成交");
   assert.ok(src.includes('title="区间成交量"'), "区间成交量列");
@@ -68,6 +72,113 @@ test("异动卡对齐 OpenVlab option-flow: 三类可关 + 额/量阈值", async
   assert.ok(!src.includes(">连续</button>"), "顶栏不再单独切连续");
   assert.ok(src.includes("未勾选类型"), "全关空态");
   assert.doesNotMatch(src, /r002_volume_surge|r003_oi_surge|单笔异动/);
+});
+
+test("异动卡 MQTT 实时 overlay: REST seed + 本机 mqtt 状态, 不另开 market 轮询", async () => {
+  const hook = await readFile(new URL("../src/hooks/useDerivData.ts", import.meta.url), "utf8");
+  const panel = await readFile(new URL("../src/components/deriv/AlertPanel.tsx", import.meta.url), "utf8");
+  const apiSrc = await readFile(new URL("../src/lib/api.ts", import.meta.url), "utf8");
+  assert.ok(hook.includes("api.ovlabMqtt()"), "驾驶舱读 MQTT 状态");
+  assert.ok(hook.includes("2_000"), "异动 MQTT 2s 读内存");
+  assert.ok(hook.includes("mergeFlowAlerts"), "REST seed + MQTT 合并");
+  assert.ok(hook.includes("mergeMarketRows"), "ctamap 叠行情观察");
+  assert.ok(hook.includes("ticksByInstr"), "dataview 按合约");
+  assert.equal(hook.split("api.ovlabMarket()").length - 1, 1, "仍只有一条 market 轮询");
+  assert.ok(panel.includes("已连接"), "异动卡 MQTT 已连接");
+  assert.ok(panel.includes("text-emerald-400"), "已连接绿色");
+  assert.ok(panel.includes("MQTT未连"), "异动卡 MQTT 未连");
+  assert.ok(panel.includes("MQTT关"), "异动卡 MQTT 关");
+  assert.ok(apiSrc.includes("ovlabMqtt:"), "api 挂 /ovlab/mqtt");
+});
+
+function mergeFlowAlerts(rest, live) {
+  if (!live?.length) return rest;
+  if (!rest?.length) return live;
+  const map = new Map();
+  const key = (a) => `${a.contract_code ?? ""}|${a.time ?? ""}|${a.rule_id ?? ""}`;
+  for (const a of rest) map.set(key(a), a);
+  for (const a of live) map.set(key(a), a);
+  return [...map.values()].sort((a, b) => String(b.time ?? "").localeCompare(String(a.time ?? "")));
+}
+
+test("异动合并: MQTT 同键覆盖, 按时间新到旧", () => {
+  const rest = [
+    { contract_code: "A", time: "2026-08-18 10:00:00", rule_id: "r001_single_trade", window_volume: 1 },
+    { contract_code: "B", time: "2026-08-18 10:01:00", rule_id: "r001_single_trade", window_volume: 2 },
+  ];
+  const live = [
+    { contract_code: "A", time: "2026-08-18 10:00:00", rule_id: "r001_single_trade", window_volume: 9 },
+    { contract_code: "C", time: "2026-08-18 10:02:00", rule_id: "r002_1m_pct_move", window_volume: 3 },
+  ];
+  const out = mergeFlowAlerts(rest, live);
+  assert.equal(out.length, 3);
+  assert.equal(out[0].contract_code, "C");
+  assert.equal(out.find((a) => a.contract_code === "A").window_volume, 9);
+});
+
+const MARKET_LIVE = [
+  "price", "ctn", "atmv_current", "atmv_1dchg", "atmv_percentile",
+  "carry", "skew_current", "skew_1dchg", "last_time", "exp",
+];
+
+function overlayMarket(rest, live) {
+  const out = { ...rest };
+  for (const k of MARKET_LIVE) {
+    const v = live[k];
+    if (v !== undefined && v !== null && v !== "") out[k] = v;
+  }
+  return out;
+}
+
+function mergeMarketRows(rest, live) {
+  if (!rest) return rest;
+  if (!live?.length) return rest;
+  const byProduct = new Map();
+  const byUnd = new Map();
+  for (const r of live) {
+    const p = String(r.product ?? "").trim().toUpperCase();
+    const u = String(r.prodUnd ?? r.product_und ?? "").trim().toUpperCase();
+    if (p) byProduct.set(p, r);
+    if (u) byUnd.set(u, r);
+  }
+  return rest.map((r) => {
+    const p = String(r.product ?? "").trim().toUpperCase();
+    const u = String(r.prodUnd ?? "").trim().toUpperCase();
+    const tick = (p && byProduct.get(p)) || (u && byUnd.get(u));
+    return tick ? overlayMarket(r, tick) : r;
+  });
+}
+
+function ticksByInstr(list) {
+  const m = {};
+  for (const t of list ?? []) {
+    const k = String(t.instr ?? "").trim().toUpperCase();
+    if (k) m[k] = t;
+  }
+  return m;
+}
+
+test("行情观察: ctamap 叠价, 不增 MQTT 独有品种", () => {
+  const rest = [
+    { product: "AL", prodUnd: "AL", product_alias: "沪铝", price: 18000, ctn: 0.01 },
+    { product: "CU", prodUnd: "CU", product_alias: "沪铜", price: 70000, ctn: 0 },
+  ];
+  const live = [
+    { prodUnd: "al", price: 18510, ctn: 0.02 },
+    { product: "ZN", price: 1 },
+  ];
+  const out = mergeMarketRows(rest, live);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].price, 18510);
+  assert.equal(out[0].product_alias, "沪铝");
+  assert.equal(out[1].price, 70000);
+  assert.equal(mergeMarketRows(null, live), null);
+});
+
+test("dataview ticks 按合约大写", () => {
+  const m = ticksByInstr([{ instr: "al2609", last: 18510, oi: 12 }]);
+  assert.equal(m.AL2609.last, 18510);
+  assert.equal(m.al2609, undefined);
 });
 
 test("成交异动: 额或量, 可关", () => {
@@ -93,6 +204,37 @@ test("走势异动: 涨幅且成交额", () => {
   t.on.r002 = false;
   assert.equal(passesThresh(a({ pct_change: "50", window_premium: 1e9 }), t), false);
   assert.equal(clampThresh({ ...DEFAULT, movePrem: 1 }).movePrem, 1_000);
+});
+
+function tradeSide(a) {
+  const s = String(a.side ?? "").toLowerCase();
+  if (s === "ask" || s === "buy" || s === "b") return 1;
+  if (s === "bid" || s === "sell" || s === "s") return -1;
+  const ft = String(a.fill_type ?? "").toLowerCase();
+  if (ft.includes("ascend")) return 1;
+  if (ft.includes("descend")) return -1;
+  const p = intervalPct(a);
+  if (p != null && p > 0) return 1;
+  if (p != null && p < 0) return -1;
+  return 0;
+}
+
+function ruleLabelOf(a) {
+  const rid = String(a.rule_id ?? "");
+  const base = { r001_single_trade: "成交异动", r002_1m_pct_move: "走势异动", r003_repeated_aggressive_burst: "连续成交" }[rid] ?? rid;
+  if (rid !== "r001_single_trade") return base;
+  const d = tradeSide(a);
+  if (d > 0) return "成交异动⬆";
+  if (d < 0) return "成交异动⬇";
+  return base;
+}
+
+test("成交异动: ask 红上 bid 绿下, 不看区间涨幅", () => {
+  assert.equal(ruleLabelOf({ rule_id: "r001_single_trade", side: "ask", pct_change: "0.00%" }), "成交异动⬆");
+  assert.equal(ruleLabelOf({ rule_id: "r001_single_trade", side: "bid", pct_change: "0.00%" }), "成交异动⬇");
+  assert.equal(ruleLabelOf({ rule_id: "r001_single_trade", side: "mid" }), "成交异动");
+  assert.equal(ruleLabelOf({ rule_id: "r001_single_trade", fill_type: "ascending_fill" }), "成交异动⬆");
+  assert.equal(ruleLabelOf({ rule_id: "r002_1m_pct_move", side: "ask" }), "走势异动");
 });
 
 test("连续成交: 2秒额, 下限=默认 5万", () => {

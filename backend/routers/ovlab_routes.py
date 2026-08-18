@@ -91,6 +91,13 @@ def ovlab_flow_alert():
     return _ovlab_call(ovlab.get_flow_alerts, "异动榜")
 
 
+@router.get("/api/ovlab/mqtt")
+def ovlab_mqtt_status():
+    """OpenVlab MQTT status + optionflow rows for the 异动 overlay. Does not write REST cache."""
+    import ovlab_mqtt
+    return {"data": ovlab_mqtt.snapshot()}
+
+
 @router.post("/api/ovlab/flow-data")
 def ovlab_flow_data(req: FlowDataReq):
     """OpenVlab 资金流分页数据 (flow-data, POST)。不缓存（参数多变）。"""

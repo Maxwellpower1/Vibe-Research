@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Settings } from "lucide-react";
 import type { OvlabFlowAlert } from "@/lib/api";
 import type { DerivData } from "@/hooks/useDerivData";
 import { cn } from "@/lib/utils";
@@ -127,6 +128,41 @@ function fmtAmt(n: number): string {
   return String(Math.round(n));
 }
 
+/** 1=主动买(ask/上行)  -1=主动卖(bid/下行)  0=分不清. r001 以 side 为准, 区间涨幅常为 0. */
+export function tradeSide(a: OvlabFlowAlert): 1 | -1 | 0 {
+  const s = String(a.side ?? "").toLowerCase();
+  if (s === "ask" || s === "buy" || s === "b") return 1;
+  if (s === "bid" || s === "sell" || s === "s") return -1;
+  const ft = String(a.fill_type ?? "").toLowerCase();
+  if (ft.includes("ascend")) return 1;
+  if (ft.includes("descend")) return -1;
+  const p = intervalPct(a);
+  if (p != null && p > 0) return 1;
+  if (p != null && p < 0) return -1;
+  return 0;
+}
+
+/** Type cell: 成交异动 split by side. */
+export function ruleLabelOf(a: OvlabFlowAlert): string {
+  const rid = String(a.rule_id ?? "");
+  const base = FLOW_RULE_LABEL[rid] ?? rid;
+  if (rid !== "r001_single_trade") return base;
+  const d = tradeSide(a);
+  if (d > 0) return "成交异动⬆";
+  if (d < 0) return "成交异动⬇";
+  return base;
+}
+
+export function ruleToneOf(a: OvlabFlowAlert): string {
+  const rid = String(a.rule_id ?? "");
+  if (rid === "r001_single_trade") {
+    const d = tradeSide(a);
+    if (d > 0) return "text-red-400";
+    if (d < 0) return "text-emerald-400";
+  }
+  return RULE_TONE[rid] ?? "text-slate-500";
+}
+
 function triggerHint(a: OvlabFlowAlert): string {
   const rid = String(a.rule_id ?? "");
   const base = RULE_HINT[rid] ?? "";
@@ -135,6 +171,11 @@ function triggerHint(a: OvlabFlowAlert): string {
   const bits = [base];
   if (vol != null) bits.push(`${Math.round(vol)}手`);
   if (prem != null) bits.push(fmtAmt(prem));
+  if (rid === "r001_single_trade") {
+    const d = tradeSide(a);
+    if (d > 0) bits.push("主动买");
+    else if (d < 0) bits.push("主动卖");
+  }
   if (rid === "r003_repeated_aggressive_burst") {
     const fill = a.fill_type === "descending_fill" ? "下行" : a.fill_type === "ascending_fill" ? "上行" : "";
     if (fill) bits.push(fill);
@@ -206,7 +247,23 @@ function RuleCheck({
   );
 }
 
-/** 异动: flow-alert feed. Local thresh + per-rule on/off; no extra poll. */
+function mqttStatusHint(m: DerivData["alertMqtt"]): { text: string; cls: string; title: string; on: boolean } {
+  if (!m) return { text: "MQTT…", cls: "text-slate-600", title: "正在读连接状态", on: false };
+  if (!m.enabled) return { text: "MQTT关", cls: "text-slate-600", title: "VR_OVLAB_MQTT=0, 异动走 REST", on: false };
+  if (m.connected) return { text: "已连接", cls: "text-emerald-400", title: "optionflow 实时叠在表上", on: true };
+  return { text: "MQTT未连", cls: "text-slate-500", title: m.error || "未连上 broker, 异动走 REST", on: false };
+}
+
+function MqttMark({ hint }: { hint: ReturnType<typeof mqttStatusHint> }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1", hint.cls)} title={hint.title}>
+      <span className={cn("inline-block h-1.5 w-1.5 rounded-full", hint.on ? "bg-emerald-400" : "bg-slate-600")} />
+      {hint.text}
+    </span>
+  );
+}
+
+/** 异动: REST flow-alert seed, MQTT optionflow overlay from useDerivData. Local thresh. */
 export function AlertPanel({ d }: { d: DerivData }) {
   const [thresh, setThresh] = useState<Thresh>(loadThresh);
   const [cfgOpen, setCfgOpen] = useState(false);
@@ -242,19 +299,26 @@ export function AlertPanel({ d }: { d: DerivData }) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [cfgOpen]);
 
-  if (!d.alerts) return <CellEmpty text="更新中…" />;
+  const mqttHint = mqttStatusHint(d.alertMqtt);
 
   return (
     <div className="flex h-full flex-col">
       <div className="relative flex shrink-0 items-center justify-end gap-2 border-b border-slate-800/60 px-2 py-0.5">
-        <span className="mr-auto tabular-nums text-[11px] text-slate-500">{alerts.length}条</span>
+        <span className="mr-auto flex items-center gap-1.5 tabular-nums text-[11px] text-slate-500">
+          <MqttMark hint={mqttHint} />
+          {d.alerts ? `${alerts.length}条` : "…"}
+        </span>
         <div ref={cfgRef} className="relative">
           <button
             type="button"
             onClick={() => setCfgOpen((v) => !v)}
-            className={cn("text-[11px]", cfgOpen ? "text-amber-400" : "text-slate-500 hover:text-slate-300")}
+            className={cn(
+              "inline-flex items-center gap-0.5 text-[11px]",
+              cfgOpen ? "text-amber-400" : "text-slate-500 hover:text-slate-300",
+            )}
             title="自定义阈值"
           >
+            <Settings className="h-3 w-3" strokeWidth={2} />
             阈值
           </button>
           {cfgOpen && (
@@ -338,10 +402,11 @@ export function AlertPanel({ d }: { d: DerivData }) {
         </button>
       </div>
       <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
-        {alerts.length === 0 && (
+        {!d.alerts && <CellEmpty text="更新中…" />}
+        {d.alerts && alerts.length === 0 && (
           <CellEmpty text={thresh.on.r001 || thresh.on.r002 || thresh.on.r003 ? "暂无异动" : "未勾选类型"} />
         )}
-        {alerts.length > 0 && (
+        {d.alerts && alerts.length > 0 && (
           <table className="w-full border-collapse text-[11px]">
             <thead>
               <tr className="text-slate-400">
@@ -357,7 +422,6 @@ export function AlertPanel({ d }: { d: DerivData }) {
               {alerts.map((a) => {
                 const k = alertKey(a);
                 const isNew = !seen.has(k);
-                const rid = String(a.rule_id ?? "");
                 const pct = intervalPct(a);
                 const dte = daysToExpiry(a.exp_date);
                 const vol = num(a.window_volume);
@@ -376,8 +440,8 @@ export function AlertPanel({ d }: { d: DerivData }) {
                     <td className="max-w-[6.5rem] truncate px-1 py-0.5 text-slate-300" title={String(a.instrument ?? a.contract_code ?? "")}>
                       {String(a.contract_code ?? "-")}
                     </td>
-                    <td className={cn("whitespace-nowrap px-1 py-0.5", RULE_TONE[rid] ?? "text-slate-500")}>
-                      {FLOW_RULE_LABEL[rid] ?? rid}
+                    <td className={cn("whitespace-nowrap px-1 py-0.5", ruleToneOf(a))}>
+                      {ruleLabelOf(a)}
                     </td>
                     <td className={cn(
                       "px-1 py-0.5 text-right tabular-nums",

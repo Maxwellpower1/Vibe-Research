@@ -33,14 +33,13 @@ test("/derivatives sits right after /a-share and is primary", () => {
   assert.match(ovlLine, /primary: true/);
   const researchLine = nav.split("\n").find((l) => l.includes('to: "/research"'));
   assert.match(researchLine, /primary: false/);
-  assert.match(header, /export const OVL_TABS/);
-  assert.match(header, /parseOvlabTab/);
+  assert.doesNotMatch(header, /OVL_TABS|parseOvlabTab/);
   const layout = readFileSync(join(root, "src/components/layout/Layout.tsx"), "utf8");
-  assert.match(layout, /OVL_TABS/);
+  assert.doesNotMatch(layout, /OVL_TABS|期权期货页签/);
   assert.match(layout, /mainRef\.current\?\.scrollTo\(0, 0\)/, "切页把手机共用滚动条拉回顶");
   const ovlab = readFileSync(join(root, "src/pages/Ovlab.tsx"), "utf8");
   assert.match(ovlab, /DerivCockpit/);
-  assert.match(ovlab, /DerivLightChart/);
+  assert.doesNotMatch(ovlab, /DerivLightChart/);
   assert.doesNotMatch(ovlab, /CtpPortfolio/);
   assert.doesNotMatch(ovlab, /VolSurfacePanel|FlowAlertPanel/);
 });
@@ -53,7 +52,7 @@ test("brand is fixed so PAGE_NAV chips do not shift", () => {
   assert.doesNotMatch(header, /PAGE_TITLES|brand\.to/);
   assert.doesNotMatch(header, /aria-label="A股页签"|aria-label="期权期货页签"/);
   assert.match(layout, /aria-label="A股页签"/);
-  assert.match(layout, /aria-label="期权期货页签"/);
+  assert.doesNotMatch(layout, /aria-label="期权期货页签"/);
   assert.doesNotMatch(layout, /shrink-0 lg:hidden/);
 });
 

@@ -32,19 +32,10 @@ export const A_SHARE_TABS = [
   { to: "/a-share?tab=feed", label: "公告", tab: "feed" },
 ];
 
-export const OVL_TABS = [
-  { to: "/derivatives", label: "复盘", tab: null as string | null },
-  { to: "/derivatives?tab=kline", label: "K线", tab: "kline" },
-];
-
 export function parseAShareTab(raw: string | null): string {
   if (raw === "kline" || raw === "chart" || raw === "stock") return "kline";
   if (raw === "detail" || raw === "feed") return raw;
   return "review";
-}
-
-export function parseOvlabTab(raw: string | null): string {
-  return raw === "kline" ? "kline" : "review";
 }
 
 /** Recessed rail for page nav and 复盘/K线. */

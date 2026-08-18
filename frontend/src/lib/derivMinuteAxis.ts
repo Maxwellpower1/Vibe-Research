@@ -139,7 +139,36 @@ export function padToSlots<T>(
     const hm = hmOf(t);
     if (hm) byHm.set(hm, it);
   }
-  return slots.map((s) => byKey.get(minuteKey(s)) ?? byHm.get(hmOf(s)) ?? null);
+  const tds = new Set(slots.filter(Boolean).map(tradingDayOf));
+  const clockOk = tds.size <= 1;
+  return slots.map((s) => {
+    if (!s) return null;
+    return byKey.get(minuteKey(s)) ?? (clockOk ? byHm.get(hmOf(s)) : undefined) ?? null;
+  });
+}
+
+/** Distinct trading days in time order. */
+export function tradingDaysOf(times: string[]): string[] {
+  return [...new Set(times.map(tradingDayOf).filter(Boolean))].sort();
+}
+
+/** Concatenate session slots for N days. Empty gap so the line does not jump overnight. */
+export function concatDaySlots(
+  tds: string[],
+  kind: DerivAxisKind,
+): { cats: string[]; splitAt: number | null } {
+  if (tds.length === 0) return { cats: [], splitAt: null };
+  if (tds.length === 1) return { cats: derivMinuteSlots(tds[0], kind), splitAt: null };
+  const cats: string[] = [];
+  let splitAt: number | null = null;
+  tds.forEach((td, i) => {
+    if (i > 0) {
+      splitAt = cats.length;
+      cats.push("");
+    }
+    cats.push(...derivMinuteSlots(td, kind));
+  });
+  return { cats, splitAt };
 }
 
 /** Spark X index. ETF matches A-share 240; commodity skips 10:15-10:30. */

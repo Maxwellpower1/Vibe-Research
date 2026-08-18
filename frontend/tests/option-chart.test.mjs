@@ -105,15 +105,24 @@ function parseMinute(raw) {
     const close = Number(b[1]);
     if (!Number.isFinite(close)) continue;
     const oi = Number(b[3]);
+    const open = Number(b[4]);
     const vol = Number(b[7]);
     out.push({
       t: String(b[0]),
       close,
+      open: Number.isFinite(open) ? open : null,
       vol: Number.isFinite(vol) ? vol : 0,
       oi: Number.isFinite(oi) && oi > 0 ? oi : null,
     });
   }
   return out;
+}
+
+function volUp(close, open, prev) {
+  if (close == null || !Number.isFinite(close)) return false;
+  const ref = open != null && Number.isFinite(open) ? open : prev;
+  if (ref == null || !Number.isFinite(ref)) return true;
+  return close >= ref;
 }
 
 test("parseMinute 第4列是仓、第8列是量, 缺列当空", () => {
@@ -125,10 +134,20 @@ test("parseMinute 第4列是仓、第8列是量, 缺列当空", () => {
   assert.equal(rows.length, 3);
   assert.equal(rows[0].oi, 199971);
   assert.equal(rows[0].vol, 768);
+  assert.equal(rows[0].open, 951.92);
   assert.equal(rows[1].oi, 80);
   assert.equal(rows[1].vol, 0);
   assert.equal(rows[2].oi, null);
   assert.equal(rows[2].vol, 10);
+});
+
+test("volUp 当根收>=开为红, 缺开盘用上一根收", () => {
+  assert.equal(volUp(12.2, 12.0, 11.9), true);
+  assert.equal(volUp(11.8, 12.0, 12.1), false);
+  assert.equal(volUp(12.0, 12.0, 11.0), true);
+  assert.equal(volUp(12.2, null, 12.0), true);
+  assert.equal(volUp(11.8, null, 12.0), false);
+  assert.equal(volUp(null, 12.0, 12.0), false);
 });
 
 test("分时量窗叠持仓黄线, 独立轴不压成交量", async () => {
@@ -138,13 +157,10 @@ test("分时量窗叠持仓黄线, 独立轴不压成交量", async () => {
   assert.ok(src.includes("yAxisIndex: 3"), "仓走量窗独立轴");
   assert.ok(src.includes("overlayAxis(minData?.oi"), "仓不跟成交量抢同一标尺");
   assert.ok(src.includes("仓 ${fmtOi(oi)}"), "十字光标读仓");
-});
-
-test("K线页分时同一套列序: 第4列仓第8列量", async () => {
-  const src = await readFile(new URL("../src/components/deriv/DerivLightChart.tsx", import.meta.url), "utf8");
-  assert.ok(src.includes("[datetime, price, pct, oi, open, high, low, vol]"));
-  assert.ok(src.includes("const vol = Number(r[7])"));
-  assert.ok(src.includes("const oi = Number(r[3])"));
+  assert.ok(src.includes("量 ${fmtOi(vol)}"), "十字光标读量");
+  assert.ok(src.includes("volUp(px, minData?.opens[i]"), "量柱按当根开收");
+  assert.ok(src.includes("UP_VOL"), "量柱半透明红绿, 不挡持仓黄线");
+  assert.ok(!src.includes("px >= baseline"), "量柱不按相对昨结整日同色");
 });
 
 test("驾驶舱日K分时叠在同一张卡", async () => {
@@ -159,9 +175,154 @@ test("驾驶舱日K分时叠在同一张卡", async () => {
   assert.ok(src.includes("undChart"), "行情观察行带标的码给图卡");
 });
 
-test("IndexFutPanel 行点击带标的码, 合约码仍跳 K线页", async () => {
+test("IndexFutPanel 行点击出标的图, 不再跳独立 K线页", async () => {
   const src = await readFile(new URL("../src/components/deriv/IndexFutPanel.tsx", import.meta.url), "utf8");
   assert.ok(src.includes("undChart?: { code: string; name: string }"), "行点击第二参是标的图");
   assert.ok(src.includes("contractCode(row) || klineSym(row)"), "标的码用主力合约");
-  assert.ok(src.includes("onPickSymbol(sym)"), "行上合约码仍跳 K线");
+  assert.ok(!src.includes("onPickSymbol"), "不再跳独立 K线页");
+});
+
+test("分时卡可切两日, 按交易日拼轴", async () => {
+  const src = await readFile(new URL("../src/components/deriv/OptionChartCard.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes('[2, "两日"]'), "两日开关");
+  assert.ok(src.includes("minuteFrame"), "两日拼轴走 minuteFrame");
+  assert.ok(src.includes("concatDaySlots"), "交易日槽位拼接");
+  assert.ok(src.includes("deriv.minute.days"), "本机记住一日/两日");
+  assert.ok(src.includes("applyMinuteTick"), "dataview 叠分时最后一笔");
+});
+
+test("驾驶舱分时吃 dataview tick", async () => {
+  const src = await readFile(new URL("../src/pages/DerivCockpit.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("d.ticks[optPick.code.toUpperCase()]"), "分时卡吃当前合约 tick");
+});
+
+test("自选最新叠 dataview", async () => {
+  const src = await readFile(new URL("../src/components/deriv/WatchPanel.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("d.ticks[code.toUpperCase()]"), "自选最新叠 dataview");
+  assert.ok(src.includes("api.ovlabLastBar"), "last-bar 仍做底");
+});
+
+function minuteKey(t) {
+  const s = (t || "").replace("T", " ").trim();
+  if (s.length >= 16 && /^\d{4}-\d{2}-\d{2} /.test(s)) return s.slice(0, 16);
+  return "";
+}
+
+function applyMinuteTick(frame, tick, now) {
+  const last = Number(tick?.last);
+  if (!Number.isFinite(last) || frame.cats.length === 0) return frame;
+  const pad = (n) => String(n).padStart(2, "0");
+  const want = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  let i = frame.cats.findIndex((c) => c && minuteKey(c) === want);
+  if (i < 0) {
+    i = -1;
+    for (let k = frame.prices.length - 1; k >= 0; k--) {
+      if (frame.prices[k] != null && Number.isFinite(frame.prices[k])) { i = k; break; }
+    }
+  }
+  if (i < 0) return frame;
+  const prices = frame.prices.slice();
+  const oi = frame.oi.slice();
+  prices[i] = last;
+  const oiv = Number(tick?.oi);
+  if (Number.isFinite(oiv) && oiv > 0) oi[i] = oiv;
+  return { ...frame, prices, oi };
+}
+
+test("applyMinuteTick 填当前分钟槽, 否则改最后一笔", () => {
+  const frame = {
+    cats: ["2026-08-18 09:30:00", "2026-08-18 09:31:00", "2026-08-18 09:32:00"],
+    prices: [10, 11, null],
+    oi: [1, 2, null],
+  };
+  const now = new Date(2026, 7, 18, 9, 32, 5);
+  const out = applyMinuteTick(frame, { last: 12.5, oi: 9 }, now);
+  assert.equal(out.prices[2], 12.5);
+  assert.equal(out.oi[2], 9);
+  assert.equal(out.prices[1], 11);
+  const late = applyMinuteTick(frame, { last: 13 }, new Date(2026, 7, 18, 10, 0, 0));
+  assert.equal(late.prices[1], 13);
+});
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+function toClockMin(t) {
+  const colon = (t || "").match(/(\d{1,2}):(\d{2})/);
+  if (colon) return Number(colon[1]) * 60 + Number(colon[2]);
+  return NaN;
+}
+function hmOf(t) {
+  const m = toClockMin(t);
+  if (!Number.isFinite(m)) return "";
+  return `${pad2(Math.floor(m / 60) % 24)}:${pad2(m % 60)}`;
+}
+function alignMinuteKey(t) {
+  const s = (t || "").replace("T", " ").trim();
+  if (s.length >= 16 && /^\d{4}-\d{2}-\d{2} /.test(s)) return s.slice(0, 16);
+  return hmOf(t);
+}
+function alignSeries(pairs, cats, loose = false) {
+  const exact = new Map();
+  const keys = new Map();
+  const clock = new Map();
+  for (const [t, v] of pairs ?? []) {
+    exact.set(t, v);
+    if (!loose) continue;
+    const mk = alignMinuteKey(t);
+    keys.set(mk, v);
+    const hm = hmOf(t);
+    if (hm && mk === hm) clock.set(hm, v);
+  }
+  const clockOk = loose && new Set(cats.filter(Boolean).map(tradingDayOf)).size <= 1;
+  return cats.map((c) => {
+    if (!c) return null;
+    return exact.get(c)
+      ?? (loose ? keys.get(alignMinuteKey(c)) : undefined)
+      ?? (clockOk ? clock.get(hmOf(c)) : undefined)
+      ?? null;
+  });
+}
+
+test("一日分时隐波不把昨天 15:00 叠到今日空槽", () => {
+  const cats = [
+    "2026-08-18 09:30:00",
+    "2026-08-18 10:00:00",
+    "2026-08-18 15:00:00",
+  ];
+  const pairs = [
+    ["2026-08-17 09:30:00", 20],
+    ["2026-08-17 15:00:00", 22],
+    ["2026-08-18 09:30:00", 18],
+    ["2026-08-18 10:00:00", 19],
+  ];
+  const want = new Set(["2026-08-18"]);
+  const iv = alignSeries(pairs.filter(([t]) => want.has(tradingDayOf(t))), cats, true);
+  assert.equal(iv[0], 18);
+  assert.equal(iv[1], 19);
+  assert.equal(iv[2], null, "未到 15:00 的空槽保持空, 紫线不拉满");
+});
+
+test("两日分时隐波仍落在各自交易日", () => {
+  const cats = [
+    "2026-08-17 15:00:00",
+    "",
+    "2026-08-18 09:30:00",
+    "2026-08-18 15:00:00",
+  ];
+  const pairs = [
+    ["2026-08-17 15:00:00", 22],
+    ["2026-08-18 09:30:00", 18],
+  ];
+  const iv = alignSeries(pairs, cats, true);
+  assert.equal(iv[0], 22);
+  assert.equal(iv[1], null);
+  assert.equal(iv[2], 18);
+  assert.equal(iv[3], null);
+});
+
+test("minuteFrame 隐波按交易日过滤, 不用跨日钟面匹配", async () => {
+  const src = await readFile(new URL("../src/components/deriv/OptionChartCard.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("want.has(tradingDayOf(t))"), "一日隐波只留当前交易日");
+  assert.ok(src.includes("if (hm && mk === hm) clock.set(hm, v)"), "有日期的点不按 HH:MM 串日");
 });

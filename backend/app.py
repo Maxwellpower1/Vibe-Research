@@ -148,5 +148,17 @@ def _warm_deriv() -> None:
 
 # Derivatives cockpit: fill first-screen keys once at boot (the only upstream fetch when market closed).
 threading.Thread(target=_warm_deriv, name="deriv-warm", daemon=True).start()
+
+
+def _start_ovlab_mqtt() -> None:
+    try:
+        import ovlab_mqtt
+        ovlab_mqtt.start()
+    except Exception:
+        pass
+
+
+# OpenVlab MQTT sidecar: optionflow into memory only, does not feed REST / UI.
+threading.Thread(target=_start_ovlab_mqtt, name="ovlab-mqtt", daemon=True).start()
 # Opt-in: trading-day AI review email (VR_REVIEW_MAIL=1).
 review_mail.start_scheduler()

@@ -1137,6 +1137,31 @@ export interface OvlabFlowAlert {
   price_start?: number; price_end?: number;
   [k: string]: unknown;
 }
+export interface OvlabMqttStatus {
+  enabled: boolean;
+  connected: boolean;
+  broker?: string;
+  topics: string[];
+  sources: string[];
+  recv: number;
+  raw?: number;
+  drop?: number;
+  last_at: number | null;
+  feeds_ui: boolean;
+  optionflow?: OvlabFlowAlert[];
+  optionflow_n?: number;
+  ctamap?: OvlabMarketRow[];
+  ctamap_n?: number;
+  dataview?: OvlabDataviewTick[];
+  dataview_n?: number;
+  error?: string | null;
+}
+/** MQTT dataview last print (per contract). */
+export interface OvlabDataviewTick {
+  instr: string;
+  last?: number | null;
+  oi?: number | null;
+}
 export interface OvlabWarehouseHistory {
   last_update_time?: string; value?: unknown; category?: string;
   ratioData?: unknown;
@@ -1655,6 +1680,7 @@ export const api = {
   ovlabFutureTsAll: () => get<OvlabFutureTsAll>("/ovlab/future-ts-all"),
   ovlabFutureTs: (prodUnd: string) => get<OvlabFutureTs>(`/ovlab/future-ts?prod_und=${encodeURIComponent(prodUnd)}`),
   ovlabFlowAlert: () => get<OvlabFlowAlert[]>("/ovlab/flow-alert"),
+  ovlabMqtt: () => get<OvlabMqttStatus>("/ovlab/mqtt"),
   ovlabFlowData: (product?: string, page = 1, pageSize = 50) =>
     request<OvlabFlowData>("/ovlab/flow-data", "POST", { product: product?.trim() || null, page, page_size: pageSize }),
   ovlabWarehouseHistory: (product: string) =>

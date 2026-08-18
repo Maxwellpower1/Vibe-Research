@@ -37,11 +37,11 @@ function PctText({ value }: { value: number | null }) {
 type WatchKey = "code" | "close" | "pct";
 
 /** 自选合约: local deriv.watch (具体合约代码, 如 IM2609). 旧品种条目自动迁到主力合约.
- *  行情: last-bar 60s 轮询; 分时: kline-history 1m 近 20h, 5min 轮询 (纯价格线, 不叠 IV).
- *  点列头排序; 注: OpenVlab 无期权合约级行情接口, 搜索仅索引期货合约. */
-export function WatchPanel({ d, onPickSymbol, compact = false }: {
+ *  行情: last-bar 60s 做底, MQTT dataview 叠最新价; 分时: kline-history 1m 近 20h, 5min 轮询 (纯价格线, 不叠 IV).
+ *  点列头排序; 点合约出驾驶舱日K/分时. 注: OpenVlab 无期权合约级行情接口, 搜索仅索引期货合约. */
+export function WatchPanel({ d, onPick, compact = false }: {
   d: DerivData;
-  onPickSymbol?: (sym: string) => void;
+  onPick?: (code: string, prodUnd?: string) => void;
   /** 窄列模式 (嵌进主板卡第三列): 隐藏别名与 IV分位 列. */
   compact?: boolean;
 }) {
@@ -150,7 +150,8 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
   const shown = useMemo(() => {
     const rows = watch.map((code) => {
       const lb = quotes[code];
-      const close = num(lb?.close);
+      const tick = d.ticks[code.toUpperCase()];
+      const close = num(tick?.last) ?? num(lb?.close);
       const pre = num(lb?.pre_close);
       const pct = close !== null && pre ? ((close - pre) / pre) * 100 : null;
       return { code, close, pre, pct };
@@ -158,7 +159,7 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
     if (!sort.key) return rows;
     const key = sort.key;
     return [...rows].sort((a, b) => cmpVal(a[key], b[key], sort.dir));
-  }, [watch, quotes, sort]);
+  }, [watch, quotes, sort, d.ticks]);
 
   return (
     <div className="flex h-full flex-col">
@@ -206,7 +207,10 @@ export function WatchPanel({ d, onPickSymbol, compact = false }: {
             >
               <button
                 type="button"
-                onClick={onPickSymbol ? () => onPickSymbol(code) : undefined}
+                onClick={onPick ? () => {
+                  const pu = prod ? String(prod.prodUnd ?? prod.product ?? "").trim() : "";
+                  onPick(code, pu || undefined);
+                } : undefined}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
                 <span className="shrink-0 text-[12px] font-medium tabular-nums text-cyan-300/90">{code}</span>

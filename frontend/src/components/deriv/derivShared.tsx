@@ -6,7 +6,7 @@ import { num } from "@/components/ovlab/shared";
 import { formatAge } from "@/lib/freshness";
 import { storageGet, storageSet } from "@/lib/storage";
 
-/** K-line symbol for DerivLightChart: prodUnd + exp tail (e.g. IF2608). */
+/** 主力合约码: prodUnd + exp tail (e.g. IF2608). */
 export function klineSym(r: Pick<OvlabMarketRow, "prodUnd" | "exp">): string {
   const und = String(r.prodUnd ?? "").trim();
   const tail = String(r.exp ?? "").trim().slice(-4);
