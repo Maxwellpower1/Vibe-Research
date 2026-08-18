@@ -202,13 +202,11 @@ def ovlab_atmvol_history(
 
 @router.get("/api/ovlab/last-bar")
 def ovlab_last_bar(
-    response: Response,
     code: str = Query(
         ..., min_length=1, max_length=64, description="合约代码, 如 SC2609"
     ),
 ):
-    """OpenVlab 单合约最新 bar (last-bar/{code})。不缓存。"""
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    """OpenVlab 单合约最新 bar (last-bar/{code})。缓存 60s, 休市喂上一笔。"""
     return _ovlab_call(lambda: ovlab.get_last_bar(code.strip()), "最新 bar")
 
 
@@ -241,6 +239,16 @@ def ovlab_volatility_surface(
     return _ovlab_call(
         lambda: ovlab.get_volatility_surface(product.strip()), "波动率曲面"
     )
+
+
+@router.get("/api/ovlab/tquote")
+def ovlab_tquote(
+    product: str = Query(
+        ..., min_length=1, max_length=32, description="品种代码, 如 AU"
+    ),
+):
+    """OpenVlab T 型报价: 按到期月分组的行权价链 (IV/Delta/持仓) + Black-76 理论价。缓存 2 分钟。"""
+    return _ovlab_call(lambda: ovlab.get_tquote(product.strip()), "T型报价")
 
 
 @router.post("/api/ovlab/skewmap")

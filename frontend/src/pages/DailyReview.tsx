@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import {
   Sparkles, Loader2, AlertCircle, RefreshCw, X,
   ArrowLeftRight, ListOrdered, Globe, Layers, BarChart3,
-  Activity, Diamond, Star, Flame, ScrollText, Rss,
+  Activity, Star, Flame, ScrollText, Rss,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -97,34 +97,43 @@ export function DailyReview() {
       defaultH: 0.30,
       panels: [
         {
-          id: "index",
-          title: "全球关键指数",
+          id: "market-watch",
+          title: "行情观察",
+          hint: "全球关键指数 + 宏观观察",
           icon: <Globe size={14} />,
           accent: "#38bdf8",
-          defaultW: 0.25,
-          mobileH: "h-[420px]",
-          body: <WorldIndexPanel />,
+          defaultW: 0.43,
+          mobileH: "h-[64vh]",
+          right: <span className="text-[10px] tabular-nums text-slate-500">5s</span>,
+          body: (
+            <div className="flex h-full min-h-0 flex-col sm:flex-row">
+              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto border-b border-slate-800/60 sm:border-b-0 sm:border-r">
+                <WorldIndexPanel />
+              </div>
+              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+                <CommodityPanel />
+              </div>
+            </div>
+          ),
         },
         {
-          id: "sectors",
-          title: "市场板块实时热点",
-          hint: "点击板块看个股列表",
-          icon: <Layers size={14} />,
-          accent: "#22d3ee",
-          defaultW: 0.42,
-          mobileH: "h-[420px]",
+          id: "sentiment",
+          title: "涨跌分布 / 广度",
+          icon: <BarChart3 size={14} />,
+          accent: "#818cf8",
+          defaultW: 0.24,
+          mobileH: "h-[380px]",
           right: (
-            <SectorHotBar
-              kind={sectorKind}
-              q={sectorQ}
-              onKind={setSectorKind}
-              onQuery={setSectorQ}
-            />
+            <span className="text-[10px] tabular-nums text-slate-500">
+              {d.breadthLabel}
+            </span>
           ),
           body: (
-            <SectorHotPanel
-              kind={sectorKind}
-              q={sectorQ}
+            <ReviewSentimentPanel
+              sentiment={d.sentiment}
+              ovDone={d.ovDone}
+              pending={reviewPending(false, "lines")}
+              breadth={d.breadth}
             />
           ),
         },
@@ -193,33 +202,25 @@ export function DailyReview() {
           body: <StockRankPanel tab={rankTab} />,
         },
         {
-          id: "goods",
-          title: "宏观观察",
-          icon: <Diamond size={14} />,
-          accent: "#f5c542",
-          defaultW: 0.18,
-          mobileH: "h-[380px]",
-          right: <span className="text-[10px] tabular-nums text-slate-500">5s</span>,
-          body: <CommodityPanel />,
-        },
-        {
-          id: "sentiment",
-          title: "涨跌分布 / 广度",
-          icon: <BarChart3 size={14} />,
-          accent: "#818cf8",
-          defaultW: 0.24,
-          mobileH: "h-[380px]",
+          id: "sectors",
+          title: "市场板块实时热点",
+          hint: "点击板块看个股列表",
+          icon: <Layers size={14} />,
+          accent: "#22d3ee",
+          defaultW: 0.42,
+          mobileH: "h-[420px]",
           right: (
-            <span className="text-[10px] tabular-nums text-slate-500">
-              {d.breadthLabel}
-            </span>
+            <SectorHotBar
+              kind={sectorKind}
+              q={sectorQ}
+              onKind={setSectorKind}
+              onQuery={setSectorQ}
+            />
           ),
           body: (
-            <ReviewSentimentPanel
-              sentiment={d.sentiment}
-              ovDone={d.ovDone}
-              pending={reviewPending(false, "lines")}
-              breadth={d.breadth}
+            <SectorHotPanel
+              kind={sectorKind}
+              q={sectorQ}
             />
           ),
         },

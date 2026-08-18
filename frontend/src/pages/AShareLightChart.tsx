@@ -253,7 +253,7 @@ export function AShareLightChart({
       ? (1 - VIEW_DAYS / bars.length) * 100
       : 0;
 
-    // Same custom paint as Ovlab LightChartPanel: red above / green below zero axis
+    // Custom trend paint: red above / green below zero axis (DerivLightChart 同口径)
     const trendPaintSeries = {
       name: "_trendPaint",
       type: "custom" as const,

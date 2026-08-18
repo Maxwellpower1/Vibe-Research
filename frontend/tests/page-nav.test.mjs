@@ -19,6 +19,36 @@ test("desktop header and phone bar share PAGE_NAV", () => {
   assert.match(layout, /"\/data"/);
 });
 
+test("/derivatives sits right after /a-share and is primary", () => {
+  const header = readFileSync(join(root, "src/components/cockpit/CockpitHeader.tsx"), "utf8");
+  const nav = header.slice(header.indexOf("export const PAGE_NAV"), header.indexOf("export const A_SHARE_TABS"));
+  const aIdx = nav.indexOf('to: "/a-share"');
+  const oIdx = nav.indexOf('to: "/derivatives"');
+  const fIdx = nav.indexOf('to: "/fin"');
+  assert.ok(aIdx >= 0 && oIdx > aIdx && fIdx > oIdx);
+  const ovlLine = nav.split("\n").find((l) => l.includes('to: "/derivatives"'));
+  assert.match(ovlLine, /primary: true/);
+  const researchLine = nav.split("\n").find((l) => l.includes('to: "/research"'));
+  assert.match(researchLine, /primary: false/);
+  assert.match(header, /export const OVL_TABS/);
+  assert.match(header, /parseOvlabTab/);
+  const layout = readFileSync(join(root, "src/components/layout/Layout.tsx"), "utf8");
+  assert.match(layout, /OVL_TABS/);
+  const ovlab = readFileSync(join(root, "src/pages/Ovlab.tsx"), "utf8");
+  assert.match(ovlab, /DerivCockpit/);
+  assert.match(ovlab, /DerivLightChart/);
+  assert.match(ovlab, /VolSurfacePanel/);
+  assert.match(ovlab, /FlowAlertPanel/);
+  assert.doesNotMatch(ovlab, /CtpPortfolio/);
+});
+
+test("brand link returns to current section home", () => {
+  const header = readFileSync(join(root, "src/components/cockpit/CockpitHeader.tsx"), "utf8");
+  assert.match(header, /<Link to=\{brand\.to\}/);
+  assert.match(header, /title: "期权期货", subtitle: "OPTIONS & FUTURES", to: "\/derivatives"/);
+  assert.match(header, /MARKET RESEARCH COCKPIT", to: "\/a-share"/);
+});
+
 test("A-share portfolio jumps to backtest and autostarts", () => {
   const src = readFileSync(join(root, "src/components/portfolio/StockPortfolio.tsx"), "utf8");
   assert.match(src, /\/backtest\?codes=/);

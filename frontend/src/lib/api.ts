@@ -1134,6 +1134,43 @@ export interface OvlabProductExp {
 export interface OvlabExchangeInfo { code?: string; name?: string; [k: string]: unknown }
 export interface OvlabSectorInfo { code?: string; name?: string; [k: string]: unknown }
 
+/** T 型报价: 单侧 (Call/Put) 每档. price 为 Black-76 理论价 (theoIv + forward 反推). */
+export interface OvlabTQuoteSide {
+  price?: number | null;
+  ivBid?: number | null;
+  ivAsk?: number | null;
+  theoIv?: number | null;
+  delta?: number | null;
+  oi?: number | null;
+  oiChg?: number | null;
+}
+export interface OvlabTQuoteStrike {
+  strike: number;
+  call: OvlabTQuoteSide;
+  put: OvlabTQuoteSide;
+}
+export interface OvlabTQuoteExpiry {
+  exp: string;
+  expiryDate?: string;
+  dte?: number | null;
+  forward?: number | null;
+  forwardYd?: number | null;
+  atmIv?: number | null;
+  atmIvYd?: number | null;
+  pcr?: number | null;
+  moveUp?: number | null;
+  moveDn?: number | null;
+  sumOiCall?: number | null;
+  sumOiPut?: number | null;
+  lastTime?: string;
+  atm?: number | null;
+  strikes: OvlabTQuoteStrike[];
+}
+export interface OvlabTQuote {
+  product: string;
+  expiries: OvlabTQuoteExpiry[];
+}
+
 /** Market hover preview: price + IV intraday series (price-volatility-series) */
 export interface OvlabPriceVolSeriesItem {
   symbol?: string;
@@ -1562,6 +1599,9 @@ export const api = {
   ovlabSymbolInfo: (code: string) => get<OvlabSymbolInfo>(`/ovlab/symbol-info?code=${encodeURIComponent(code)}`),
   ovlabVolatilitySurface: (product: string) =>
     get<OvlabVolSurface>(`/ovlab/volatility-surface?product=${encodeURIComponent(product)}`),
+  /** T 型报价: 行权价链 (IV/Delta/持仓) + Black-76 理论价. 服务端缓存 2min, 休市冻结. */
+  ovlabTQuote: (product: string) =>
+    get<OvlabTQuote>(`/ovlab/tquote?product=${encodeURIComponent(product)}`),
   ovlabSkewmap: (selectedExpiries?: Record<string, unknown>) =>
     request<OvlabSkewmap>("/ovlab/skewmap", "POST", { selectedExpiries: selectedExpiries ?? {} }),
   ovlabSurfacemap: (product?: string) =>

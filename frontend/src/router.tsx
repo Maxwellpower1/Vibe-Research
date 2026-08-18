@@ -1,7 +1,13 @@
 import { lazy } from "react";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useLocation } from "react-router-dom";
 import { RouteError } from "@/components/common/RouteError";
 import { Layout } from "@/components/layout/Layout";
+
+/** Old /ovlab bookmarks land on /derivatives, keeping ?tab=&symbol=. */
+function OvlabRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/derivatives${search}`} replace />;
+}
 
 // Heavy pages load on demand; Suspense boundary lives in Layout around <Outlet />.
 const AShare = lazy(() => import("@/pages/AShare").then((m) => ({ default: m.AShare })));
@@ -25,7 +31,8 @@ export const router = createBrowserRouter([
           { path: "/", element: <Navigate to="/a-share" replace /> },
           { path: "/a-share", element: <AShare /> },
           { path: "/portfolio", element: <Portfolio /> },
-          { path: "/ovlab", element: <Ovlab /> },
+          { path: "/derivatives", element: <Ovlab /> },
+          { path: "/ovlab", element: <OvlabRedirect /> },
           { path: "/us-market", element: <UsMarket /> },
           { path: "/research", element: <Research /> },
           { path: "/backtest", element: <Backtest /> },

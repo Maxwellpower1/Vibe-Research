@@ -9,6 +9,7 @@ mock 上游 _get / _post, 验证:
 - DependencyMissing 在缺 requests 时抛出
 """
 import time
+from datetime import datetime
 
 import pytest
 
@@ -42,13 +43,80 @@ def test_cached_empty_not_cached(monkeypatch):
     assert len(calls) == 2
 
 
-def test_cached_serves_last_after_ttl(monkeypatch):
+def test_cached_serves_last_after_ttl_when_closed(monkeypatch):
+    """休市冻结: 过期不重取, 直接喂上一笔."""
     calls = []
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: False)
     monkeypatch.setattr(ovlab, "_get", lambda *a, **k: calls.append(a) or [{"x": 1}])
     ovlab.get_market_overview()
     ovlab._CACHE.expire("ovlab_market")
     out = ovlab.get_market_overview()
     assert out == [{"x": 1}]
+    assert len(calls) == 1
+
+
+def test_cached_refreshes_after_ttl_when_open(monkeypatch):
+    """盘中: 过期重取上游, 拿到新值."""
+    calls = []
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: True)
+    monkeypatch.setattr(ovlab, "_get", lambda *a, **k: calls.append(a) or [{"x": len(calls)}])
+    assert ovlab.get_market_overview() == [{"x": 1}]
+    ovlab._CACHE.expire("ovlab_market")
+    assert ovlab.get_market_overview() == [{"x": 2}]
+    assert len(calls) == 2
+
+
+def test_cached_open_failure_falls_back_to_last(monkeypatch):
+    """盘中上游失败: 回落上一笔, 不抛错."""
+    calls = []
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: True)
+    monkeypatch.setattr(ovlab, "_get", lambda *a, **k: calls.append(a) or [{"x": 1}])
+    ovlab.get_market_overview()
+    ovlab._CACHE.expire("ovlab_market")
+
+    def boom(*a, **k):
+        raise RuntimeError("upstream down")
+    monkeypatch.setattr(ovlab, "_get", boom)
+    assert ovlab.get_market_overview() == [{"x": 1}]
+
+
+def test_cached_cold_key_fetches_once_when_closed(monkeypatch):
+    """休市冷键 (启动后第一枪): 放行一次出网."""
+    calls = []
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: False)
+    monkeypatch.setattr(ovlab, "_get", lambda *a, **k: calls.append(a) or [{"x": 1}])
+    assert ovlab.get_market_overview() == [{"x": 1}]
+    assert len(calls) == 1
+
+
+# ---------- deriv_market_open ----------
+
+@pytest.mark.parametrize("dt,expected", [
+    (datetime(2026, 8, 18, 10, 0), True),    # 周二日盘
+    (datetime(2026, 8, 18, 12, 0), False),   # 午休
+    (datetime(2026, 8, 18, 14, 0), True),    # 下午盘
+    (datetime(2026, 8, 18, 15, 30), False),  # 盘后
+    (datetime(2026, 8, 18, 21, 30), True),   # 夜盘
+    (datetime(2026, 8, 19, 1, 0), True),     # 周三凌晨夜盘 (属周二)
+    (datetime(2026, 8, 17, 1, 0), False),    # 周一凌晨无夜盘
+    (datetime(2026, 8, 22, 1, 0), True),     # 周六凌晨 (属周五夜盘)
+    (datetime(2026, 8, 22, 10, 0), False),   # 周六白天
+    (datetime(2026, 8, 23, 21, 30), False),  # 周日无夜盘
+])
+def test_deriv_market_open_windows(dt, expected):
+    assert ovlab.deriv_market_open(dt) is expected
+
+
+# ---------- get_last_bar ----------
+
+def test_last_bar_cached_60s(monkeypatch):
+    """last-bar 走 60s 缓存: 两次调用只出网一次."""
+    calls = []
+    monkeypatch.setattr(ovlab, "_get", lambda *a, **k: calls.append(a) or {"close": 1})
+    assert ovlab.get_last_bar("IM2609") == {"close": 1}
+    assert ovlab.get_last_bar("IM2609") == {"close": 1}
+    assert len(calls) == 1
+    assert ovlab.get_last_bar("") == {}
     assert len(calls) == 1
 
 
@@ -64,7 +132,7 @@ def test_cached_custom_ttl(monkeypatch):
 # ---------- search_symbols ----------
 
 def test_search_symbols_limit_passed(monkeypatch):
-    """limit 应透传到上游 params."""
+    """limit 应透传到上游 params; 上游查询参数名是 search."""
     captured = {}
     def fake_get(path, params=None, timeout=20.0):
         captured["params"] = params
@@ -72,7 +140,16 @@ def test_search_symbols_limit_passed(monkeypatch):
     monkeypatch.setattr(ovlab, "_get", fake_get)
     ovlab.search_symbols("SC", limit=15)
     assert captured["params"].get("limit") == 15
-    assert captured["params"].get("keyword") == "SC"
+    assert captured["params"].get("search") == "SC"
+
+
+def test_search_symbols_unwraps_pagination_shell(monkeypatch):
+    """上游返回 {data, pagination} 分页壳, 取 data 列表."""
+    def fake_get(path, params=None, timeout=20.0):
+        return {"data": [{"ticker": "IM2609"}], "pagination": {"total": 1}}
+    monkeypatch.setattr(ovlab, "_get", fake_get)
+    out = ovlab.search_symbols("IM2609")
+    assert out == [{"ticker": "IM2609"}]
 
 
 def test_search_symbols_no_limit_omitted(monkeypatch):
@@ -175,3 +252,87 @@ def test_dependency_missing_raised(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", fake_import)
     with pytest.raises(ovlab.DependencyMissing, match="requests"):
         ovlab._requests()
+
+
+# ---------- black76 / tquote ----------
+
+def test_black76_atm_parity():
+    """平值 Black-76: C == P, 数值对基准 3.9878."""
+    c = ovlab.black76(100, 100, 20, 0.25, True)
+    p = ovlab.black76(100, 100, 20, 0.25, False)
+    assert c == pytest.approx(3.9878, abs=1e-3)
+    assert p == pytest.approx(c, abs=1e-12)
+
+
+def test_black76_put_call_parity_otm():
+    """put-call parity (无贴现): C - P == F - K."""
+    c = ovlab.black76(954.119, 1000, 26.0, 0.0198, True)
+    p = ovlab.black76(954.119, 1000, 26.0, 0.0198, False)
+    assert c - p == pytest.approx(954.119 - 1000, abs=1e-9)
+
+
+def test_black76_invalid_inputs():
+    assert ovlab.black76(0, 100, 20, 0.25, True) is None
+    assert ovlab.black76(100, 100, 0, 0.25, True) is None
+    assert ovlab.black76(100, 100, 20, 0, False) is None
+
+
+_SURFACE = {
+    "202609": {
+        "exp": "202609", "expiry_date": "20260825", "days_to_expiry": "7",
+        "forward_td": "954.119", "forward_yd": "954.29",
+        "maturity_tday": "0.0198413", "atmvol_tday": "20.0764", "atmvol_yday": "20.8889",
+        "rho_tday": "1.13", "move_up": "0.0227", "move_dn": "-0.0227",
+        "sum_oi_call": "23725", "sum_oi_put": "20361", "last_time": "2026-08-18 15:00:22",
+        "theovol_tday": "[[952.0, 19.9525], [960.0, 20.6874]]",
+        "delta_tday_call": "[[952.0, 0.536859], [960.0, 0.422002]]",
+        "delta_tday_put": "[[952.0, -0.462662], [960.0, -0.577519]]",
+        "mktvol_tday_call_bid": "[[952.0, 20.2277], [960.0, 20.6346]]",
+        "mktvol_tday_call_ask": "[[952.0, 20.7524], [960.0, 20.9009]]",
+        "mktvol_tday_put_bid": '[[952.0, 19.3252], [960.0, ""]]',
+        "mktvol_tday_put_ask": '[[952.0, 20.1124], [960.0, ""]]',
+        "strike_poi_c": '{"952.0": 2377, "960.0": 894}',
+        "strike_poi_p": '{"952.0": 600, "960.0": 262}',
+        "strike_oid_c": '{"952.0": 163, "960.0": 122}',
+        "strike_oid_p": '{"952.0": 269, "960.0": 166}',
+    },
+}
+
+
+def test_build_tquote_parses_str_fields(monkeypatch):
+    """surface 的 str 字段 (JSON 字符串/标量) 全部解析成数值, 理论价非空."""
+    monkeypatch.setattr(ovlab, "get_volatility_surface", lambda p: _SURFACE)
+    out = ovlab._build_tquote("AU")
+    assert out["product"] == "AU"
+    exp = out["expiries"][0]
+    assert exp["exp"] == "202609" and exp["dte"] == 7.0
+    assert exp["forward"] == pytest.approx(954.119)
+    assert exp["atm"] == 952.0  # 距 forward 最近
+    assert len(exp["strikes"]) == 2
+    s0 = exp["strikes"][0]
+    assert s0["strike"] == 952.0
+    assert s0["call"]["delta"] == pytest.approx(0.536859)
+    assert s0["call"]["oi"] == 2377.0
+    assert s0["call"]["oiChg"] == 163.0
+    assert s0["call"]["price"] is not None and s0["call"]["price"] > 0
+    assert s0["put"]["ivBid"] == pytest.approx(19.3252)
+    # 空串 IV 归 None
+    assert exp["strikes"][1]["put"]["ivBid"] is None
+    # parity: 同一 theoIv 下 C - P == F - K
+    c, p = s0["call"]["price"], s0["put"]["price"]
+    assert c - p == pytest.approx(954.119 - 952.0, abs=1e-6)
+
+
+def test_get_tquote_empty_product():
+    assert ovlab.get_tquote("") == {}
+    assert ovlab.get_tquote("   ") == {}
+
+
+def test_get_tquote_cached(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: True)
+    monkeypatch.setattr(ovlab, "get_volatility_surface",
+                        lambda p: calls.append(1) or _SURFACE)
+    r1 = ovlab.get_tquote("AU")
+    r2 = ovlab.get_tquote("AU")
+    assert r1 == r2 and len(calls) == 1

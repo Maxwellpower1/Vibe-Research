@@ -8,7 +8,8 @@
 设计:
 - 只读, 无状态, 客观呈现公开数据, 不推荐 / 不预测 / 不评分.
 - 全站共享一份缓存 (TTL 默认 5 分钟), 多用户多次打开只抓一次.
-  过期读上一笔, 不再出网. 空结果不缓存, 下次请求直接重试.
+  盘中过期重取, 上游失败回落上一笔; 休市 (盘后/午休/周末) 冻结, 只喂上一笔不出网.
+  空结果不缓存, 下次请求直接重试. 启动时 warm_once 填一次首屏钥匙.
 - requests 惰性导入: 缺失时对应函数抛 DependencyMissing, app 层转 501 + 安装提示.
 """
 
@@ -16,7 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
+from datetime import datetime
 from typing import Any
 
 from cache import TTLCache, is_nonempty
@@ -79,11 +82,46 @@ _TTL = 300  # 5 分钟, 全站共享
 _CACHE = TTLCache(maxsize=256, default_ttl=_TTL, negative_ttl=0, name="ovlab")
 
 
+def deriv_market_open(now: datetime | None = None) -> bool:
+    """期货交易时段 (与前端 derivShared.derivSession 同窗口, 只按本地钟点, 不判节假日).
+
+    日盘 09:00-11:30 / 13:30-15:00 (周一至周五); 夜盘 21:00 起, 凌晨段 00:00-02:30
+    属前一交易日 (周二至周六凌晨算夜盘). 午休 / 盘后 / 周末为休市.
+    节假日白天会误判为开市, 多打几枪上游无害.
+    """
+    now = now or datetime.now()
+    day = now.weekday()  # Mon=0 .. Sun=6
+    mins = now.hour * 60 + now.minute
+    if mins < 150:  # 00:00-02:30 凌晨夜盘段
+        return 1 <= day <= 5  # Tue..Sat
+    if day >= 5:  # 周末
+        return False
+    return (540 <= mins < 690) or (810 <= mins < 900) or (mins >= 1260)
+
+
 def _cached(key: str, fn, valid=is_nonempty, ttl: float | None = None):
-    """First fill then last-good. Empty upstream is not stored, next call retries.
+    """Session-aware cache. Empty upstream is not stored, next call retries.
+
+    休市: 有上一笔直接喂, 不出网; 冷键放行一次 (启动后第一枪).
+    盘中: 过期重取, 上游失败回落上一笔.
     ttl: custom seconds, default _TTL.
     """
-    return _CACHE.get_or_set(key, fn, ttl=ttl, valid=valid, negative_ttl=0, serve_last=True)
+    if not deriv_market_open():
+        last = _CACHE.get_last(key)
+        if last is not None and valid(last):
+            return last
+
+    def _fetch():
+        try:
+            return fn()
+        except Exception:
+            last = _CACHE.get_last(key)
+            if last is not None and valid(last):
+                logger.warning("ovlab %s upstream failed, serve last-good", key)
+                return last
+            raise
+
+    return _CACHE.get_or_set(key, _fetch, ttl=ttl, valid=valid, negative_ttl=0, serve_last=False)
 
 
 def _get(path: str, params: dict[str, Any] | None = None, timeout: float = 20.0) -> Any:
@@ -453,22 +491,37 @@ def get_atmvol_history(symbol: str, resolution: str = "1D",
 
 
 def get_last_bar(code: str) -> dict[str, Any]:
-    """单个合约最新 bar (last-bar/{code}, GET). 实时 OHLC + oi + vol. 不缓存."""
+    """单个合约最新 bar (last-bar/{code}, GET). 实时 OHLC + oi + vol.
+
+    缓存 60s (对齐自选合约轮询节奏), 休市冻结喂上一笔.
+    """
     code = (code or "").strip()
     if not code:
         return {}
-    return _get(f"last-bar/{code}")
+    return _cached(
+        f"ovlab_lastbar::{code}",
+        lambda: _get(f"last-bar/{code}"),
+        valid=lambda v: isinstance(v, dict) and bool(v),
+        ttl=60,
+    )
 
 
 def search_symbols(keyword: str = "", limit: int = 30) -> list[dict[str, Any]]:
-    """标的搜索 (search-symbols, GET). keyword 模糊匹配, 返回合约元信息列表. 短缓存 60s."""
+    """标的搜索 (search-symbols, GET). 上游参数名是 search, 响应为 {data, pagination} 分页壳. 短缓存 60s."""
     kw = (keyword or "").strip()
-    params: dict[str, Any] = {"keyword": kw} if kw else {}
+    params: dict[str, Any] = {"search": kw} if kw else {}
     if limit and limit > 0:
         params["limit"] = limit
+
+    def _unwrap() -> list[dict[str, Any]]:
+        r = _get("search-symbols", params=params)
+        if isinstance(r, dict):
+            r = r.get("data")
+        return r if isinstance(r, list) else []
+
     return _cached(
         f"ovlab_search::{kw}::{limit}",
-        lambda: _get("search-symbols", params=params) or [],
+        _unwrap,
         valid=lambda v: isinstance(v, list),
         ttl=60,
     )
@@ -505,6 +558,157 @@ def get_skewmap(body: dict[str, Any] | None = None) -> dict[str, Any]:
     return _post("skewmap", body=body or {})
 
 
+# ---------------------------------------------------------------------------
+# T 型报价 (volatility-surface 解析 + Black-76 理论价)
+# ---------------------------------------------------------------------------
+
+def _norm_cdf(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def black76(fwd: float, strike: float, vol_pct: float, t: float, is_call: bool) -> float | None:
+    """Black-76 期货期权理论价 (无贴现, 与盘面报价口径一致). vol_pct 百分数隐波, t 年化期限."""
+    if fwd <= 0 or strike <= 0 or vol_pct <= 0 or t <= 0:
+        return None
+    sig = vol_pct / 100.0
+    sq = sig * math.sqrt(t)
+    d1 = (math.log(fwd / strike) + 0.5 * sig * sig * t) / sq
+    d2 = d1 - sq
+    if is_call:
+        return fwd * _norm_cdf(d1) - strike * _norm_cdf(d2)
+    return strike * _norm_cdf(-d2) - fwd * _norm_cdf(-d1)
+
+
+def _sfloat(v: Any) -> float | None:
+    """surface 标量都是 str: 转 float, 空串/非法归 None."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _sjson(v: Any) -> Any:
+    """surface 复合字段是 JSON 字符串: 解 list/dict, 失败归 None."""
+    if isinstance(v, (list, dict)):
+        return v
+    if isinstance(v, str):
+        s = v.strip()
+        if s.startswith(("[", "{")):
+            try:
+                return json.loads(s)
+            except Exception:
+                return None
+    return None
+
+
+def _strike_map(v: Any) -> dict[float, float | None]:
+    """[[strike, val], ...] -> {strike: val}; val 空串归 None."""
+    arr = _sjson(v)
+    out: dict[float, float | None] = {}
+    if not isinstance(arr, list):
+        return out
+    for item in arr:
+        if isinstance(item, list) and len(item) >= 2:
+            k = _sfloat(item[0])
+            if k is not None:
+                out[k] = _sfloat(item[1])
+    return out
+
+
+def _oi_map(v: Any) -> dict[float, float | None]:
+    """{"904.0": 336, ...} -> {904.0: 336}."""
+    d = _sjson(v)
+    out: dict[float, float | None] = {}
+    if not isinstance(d, dict):
+        return out
+    for k, val in d.items():
+        fk = _sfloat(k)
+        if fk is not None:
+            out[fk] = _sfloat(val)
+    return out
+
+
+def _build_tquote(product: str) -> dict[str, Any]:
+    raw = get_volatility_surface(product)
+    if not isinstance(raw, dict):
+        return {}
+    expiries: list[dict[str, Any]] = []
+    for exp_key in sorted(raw.keys()):
+        blk = raw[exp_key]
+        if not isinstance(blk, dict):
+            continue
+        fwd = _sfloat(blk.get("forward_td"))
+        t = _sfloat(blk.get("maturity_tday"))
+        theo = _strike_map(blk.get("theovol_tday"))
+        if not theo:
+            continue
+        delta_c = _strike_map(blk.get("delta_tday_call"))
+        delta_p = _strike_map(blk.get("delta_tday_put"))
+        iv_cb = _strike_map(blk.get("mktvol_tday_call_bid"))
+        iv_ca = _strike_map(blk.get("mktvol_tday_call_ask"))
+        iv_pb = _strike_map(blk.get("mktvol_tday_put_bid"))
+        iv_pa = _strike_map(blk.get("mktvol_tday_put_ask"))
+        oi_c = _oi_map(blk.get("strike_poi_c"))
+        oi_p = _oi_map(blk.get("strike_poi_p"))
+        oid_c = _oi_map(blk.get("strike_oid_c"))
+        oid_p = _oi_map(blk.get("strike_oid_p"))
+
+        strikes: list[dict[str, Any]] = []
+        for k in sorted(theo.keys()):
+            theo_iv = theo.get(k)
+            can_price = bool(fwd and t and theo_iv)
+            strikes.append({
+                "strike": k,
+                "call": {
+                    "price": black76(fwd, k, theo_iv, t, True) if can_price else None,  # type: ignore[arg-type]
+                    "ivBid": iv_cb.get(k), "ivAsk": iv_ca.get(k), "theoIv": theo_iv,
+                    "delta": delta_c.get(k), "oi": oi_c.get(k), "oiChg": oid_c.get(k),
+                },
+                "put": {
+                    "price": black76(fwd, k, theo_iv, t, False) if can_price else None,  # type: ignore[arg-type]
+                    "ivBid": iv_pb.get(k), "ivAsk": iv_pa.get(k), "theoIv": theo_iv,
+                    "delta": delta_p.get(k), "oi": oi_p.get(k), "oiChg": oid_p.get(k),
+                },
+            })
+
+        atm = min(theo.keys(), key=lambda k: abs(k - fwd)) if fwd else None
+        expiries.append({
+            "exp": str(blk.get("exp") or exp_key),
+            "expiryDate": str(blk.get("expiry_date") or ""),
+            "dte": _sfloat(blk.get("days_to_expiry")),
+            "forward": fwd,
+            "forwardYd": _sfloat(blk.get("forward_yd")),
+            "atmIv": _sfloat(blk.get("atmvol_tday")),
+            "atmIvYd": _sfloat(blk.get("atmvol_yday")),
+            "pcr": _sfloat(blk.get("rho_tday")),
+            "moveUp": _sfloat(blk.get("move_up")),
+            "moveDn": _sfloat(blk.get("move_dn")),
+            "sumOiCall": _sfloat(blk.get("sum_oi_call")),
+            "sumOiPut": _sfloat(blk.get("sum_oi_put")),
+            "lastTime": str(blk.get("last_time") or ""),
+            "atm": atm,
+            "strikes": strikes,
+        })
+    return {"product": product, "expiries": expiries}
+
+
+def get_tquote(product: str) -> dict[str, Any]:
+    """T 型报价: volatility-surface 解析 + Black-76 理论价. 缓存 2 分钟, 休市冻结."""
+    p = (product or "").strip()
+    if not p:
+        return {}
+    return _cached(
+        f"ovlab_tquote::{p.upper()}",
+        lambda: _build_tquote(p),
+        valid=lambda v: isinstance(v, dict) and bool(v.get("expiries")),
+        ttl=120,
+    )
+
+
 def get_surfacemap(params: dict[str, Any] | None = None) -> dict[str, Any]:
     """曲面图 (surfacemap, GET). params 可含 product 等. 缓存 2 分钟."""
     p = params or {}
@@ -515,6 +719,47 @@ def get_surfacemap(params: dict[str, Any] | None = None) -> dict[str, Any]:
         valid=lambda v: isinstance(v, dict) and bool(v),
         ttl=120,
     )
+
+
+# ---------------------------------------------------------------------------
+# 启动预热
+# ---------------------------------------------------------------------------
+
+def warm_once() -> None:
+    """启动时填一次驾驶舱首屏钥匙 (market / flow-alert / product-exps / future-ts-all / 目录码分时).
+
+    盘后启动: 这是休市期间唯一一次出网, 之后冻结到下一交易时段.
+    盘中启动: 只是提前预热, 之后仍按 TTL 刷新. 失败只记日志, 不阻塞启动.
+    """
+    try:
+        rows = get_market_overview()
+    except Exception as e:
+        logger.warning("deriv warm market failed: %s", e)
+        return
+    for label, fn in (
+        ("flow-alert", get_flow_alerts),
+        ("product-exps", get_product_exps),
+        ("future-ts-all", get_future_term_structures_all),
+    ):
+        try:
+            fn()
+        except Exception as e:
+            logger.info("deriv warm %s failed: %s", label, e)
+    try:
+        from deriv_catalog import DERIV_CATALOG  # noqa: PLC0415
+        want = {p for p, _u, _n, _g, _s in DERIV_CATALOG}
+        codes = sorted({
+            f"{str(r.get('prodUnd') or '').strip()}:{str(r.get('exp') or '').strip()}"
+            for r in rows
+            if str(r.get("product") or "") in want
+            and str(r.get("prodUnd") or "").strip()
+            and str(r.get("exp") or "").strip()
+        })
+        if codes:
+            get_price_volatility_series(codes)
+            logger.info("deriv warm price-vol: %d codes", len(codes))
+    except Exception as e:
+        logger.info("deriv warm price-vol failed: %s", e)
 
 
 # ---------------------------------------------------------------------------

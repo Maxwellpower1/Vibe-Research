@@ -30,6 +30,22 @@ _Avoid_: prompt packer, reviewContext.ts, system prompt
 `astock.A_INDICES`、`cockpit_live.WORLD_INDICES` 从这里来。
 _Avoid_: A_INDICES, WORLD_INDICES, WORLD_INDEX_DEFS（实现名，不是领域名）
 
+**衍生目录**:
+期权驾驶舱首屏要画的国内品种唯一名单（21 个：股指 IO/HO/MO、ETF 期权 5 个、商品期权 13 个），码是 OpenVlab `ctamap-all` 的 `product`，按活数据校准（无国债、无 HC）。预热不进复盘清单。
+入口: `backend/deriv_catalog.py`。前端 `frontend/src/config/deriv.ts` 的 `DERIV_DEFS` 必须同序同码。
+_Avoid_: 第二份品种 JSON, 把 OpenVlab 塞进 review_jobs / 报价中心
+
+**期权驾驶舱**:
+`/derivatives` 默认那一屏（顶栏紧挨 A 股；旧 `/ovlab` 书签 301 过来，查询串保留）。格子从 `GET /api/ovlab/market`（钥匙 `ovlab_market`）筛衍生目录，异动走 `ovlab_flow_alert`，迷你走势只对可见目录码调 `price-volatility-series`。第三行有 **T 型报价** 卡（`TQuotePanel` ← `GET /api/ovlab/tquote?product=`）：`volatility-surface` 按到期月解析出行权价链（IV 买卖/理论 IV/Delta/持仓/持仓变化），价格列是 Black-76 理论价（theoIv+forward 反推，平价关系自洽）；OpenVlab 无期权合约级行情（last-bar 对期权码回退标的期货），真实期权价只能以后走 CTP `ReqQryDepthMarketData`。内页签 `?tab=kline/detail/quote/flow` 挂回旧九格能力；K线签是 `DerivLightChart`（A股轻量图同口径：自选合约列表、分时零轴=last-bar `pre_close`、5日零轴=首笔，叠 ATM隐波/持仓量）。CTP 账户数据不进这一页（留在 /portfolio）。
+ovlab 缓存随交易时段：盘中过期重取、上游失败回落上一笔；休市（盘后/午休/周末）冻结只喂上一笔，冷键放行一次。后端启动 `ovlab.warm_once` 填一次首屏钥匙（market / flow-alert / product-exps / future-ts-all / 目录码分时）。时段窗口前后端各一份（`ovlab.deriv_market_open` / `derivShared.derivSession`），改窗口两边同步。
+入口: `frontend/src/pages/DerivCockpit.tsx` + `frontend/src/hooks/useDerivData.ts` + `frontend/src/components/deriv/`。
+_Avoid_: 第二条 /api/ovlab/market 轮询, 同一屏两条分时源（新浪 commodity-minutes 不进这页）, CTP 接口
+
+**同花顺行情**:
+fuyao 网关（`quota-h.10jqka.com.cn`）的快照 / 日 K / 分钟线：股票（沪 17 深 33）、指数（沪 16 深 32）、同花顺指数（64，含商品 850xxx）、板块（48）。免鉴权，Referer 必须带 stockpage 代码路径，裸域名 403。字段是数字 ID；涨跌幅不取上游 199112（语义随市场漂移），由 最新/昨收 现算。不进报价中心、不进复盘清单，是独立数据源。
+入口: `backend/ths_quote.py`；HTTP `GET /api/ths/snapshot` · `GET /api/ths/kline`（period: day_1/min_1/min_5）。
+_Avoid_: hexin-v 逆向, 第二条报价轮询, 199112 当统一涨跌幅
+
 **报价中心**:
 网页里全球指数 / 商品 / 自选 / K 线页 / 自选公告表共用的那一份实时报价。开市 5 秒，休市/午休拉长，仍走这里。间隔问 `ashareSession.hubPollMs`（交易日来自预热状态的 `trading_day`）。
 入口: `frontend/src/lib/quoteHub.ts` 的 `useQuotes`。字段用 `pct` / `prev` / `turnover`，以及腾讯已有的 `pe_ttm` / `pb` / `mcap_yi`。
@@ -103,6 +119,8 @@ _Avoid_: 第二条日历, 第二条报价轮询, 重叠持有期×252/horizon �
 - 后端：`cd backend && python -m pytest -m "not live"`
 - 前端：`cd frontend && npm test` 且 `npx tsc -b`
 - 指数目录：`backend/tests/test_index_catalog.py` + `frontend/tests/review-context.test.mjs`
+- 衍生目录 / 期权驾驶舱导航：`backend/tests/test_deriv_catalog.py` + `frontend/tests/page-nav.test.mjs`（`/derivatives` 紧挨 `/a-share`，前后端同序同码）
+- 同花顺行情：`backend/tests/test_ths_quote.py`（市场码归位、pct 现算、缓存上一笔）
 - 报价中心：`frontend/tests/quote-hub.test.mjs`（K 线页 / 自选公告走 `useQuotes`）
 - 缓存键：预热填过 `world_indices` 后，`get_global_indices` 不再打上游；热槽过期仍读上一笔（`backend/tests/test_clock_serve.py`、`backend/tests/test_cache.py`）
 - 标的池 / 横截面：`backend/tests/test_cross_section.py`（只有 `a-share-codes.json`；快照不写报价 5 秒缓存）

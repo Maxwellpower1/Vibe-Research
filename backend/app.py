@@ -64,6 +64,7 @@ from routers import (
     ovlab_routes,
     portfolio,
     research_routes,
+    ths_routes,
 )
 from version import read_version
 
@@ -119,6 +120,7 @@ app.include_router(ai_watch_routes.router)
 app.include_router(fin_routes.router)
 app.include_router(research_routes.router)
 app.include_router(backtest_routes.router)
+app.include_router(ths_routes.router)
 
 # A-share calendar first so mail/warmup skip holidays (weekend fallback if fetch fails).
 trading_calendar.start_background()
@@ -134,5 +136,17 @@ def _warm_suggest() -> None:
 
 
 threading.Thread(target=_warm_suggest, name="universe-suggest", daemon=True).start()
+
+
+def _warm_deriv() -> None:
+    try:
+        import ovlab
+        ovlab.warm_once()
+    except Exception:
+        pass
+
+
+# Derivatives cockpit: fill first-screen keys once at boot (the only upstream fetch when market closed).
+threading.Thread(target=_warm_deriv, name="deriv-warm", daemon=True).start()
 # Opt-in: trading-day AI review email (VR_REVIEW_MAIL=1).
 review_mail.start_scheduler()

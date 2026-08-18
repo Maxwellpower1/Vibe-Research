@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, CircleHelp } from "lucide-react";
+import { useState, useEffect, useCallback, useId, useRef } from "react";
+import { createPortal } from "react-dom";
+import { RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, CircleHelp, Loader2 } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { cn } from "@/lib/utils";
+import type { OvlabMarketRow, OvlabPriceVolSeriesItem } from "@/lib/api";
 
 export function num(v: unknown): number | null {
   const n = typeof v === "string" ? parseFloat(v) : v;
@@ -299,5 +301,269 @@ export function SortableTh<T extends Record<string, unknown>>({ col, sort, onSor
 
 export const TREND_RED = "#ef4444";
 export const TREND_GREEN = "#22c55e";
-export const TREND_PINK = "#f472b6";
+export const TREND_IV = "#a78bfa";
+
+// A股 MinuteSpark 柔和配色: 分时 spark 与 /a-share 视觉对齐
+export const SPARK_UP = "#fda4af";
+export const SPARK_DOWN = "#6ee7b7";
+export const SPARK_FLAT = "#cbd5e1";
+export const SPARK_BASE = "#94a3b8";
+
+/** Derive prev close/settle from price & ctn (涨跌幅%). Null when either missing. */
+export function prevCloseOf(r: Pick<OvlabMarketRow, "price" | "ctn">): number | null {
+  const p = num(r.price);
+  const c = num(r.ctn);
+  if (p === null || c === null || c <= -100) return null;
+  const base = p / (1 + c / 100);
+  return Number.isFinite(base) && base > 0 ? base : null;
+}
+
+// —— 走势预览 / 涨跌胶囊 / 百分位条: 驾驶舱与全市场表共用 ——
+
+/** Build OpenVlab preview code: prodUnd:exp (e.g. MA:202609) */
+export function previewCode(r: Pick<OvlabMarketRow, "prodUnd" | "exp">): string {
+  const und = String(r.prodUnd ?? "").trim();
+  const exp = String(r.exp ?? "").trim();
+  return und && exp ? `${und}:${exp}` : "";
+}
+
+export type PreviewSeries = { prices: Array<[string, number]>; volatilities: Array<[string, number]> };
+
+/** Key price-volatility-series response items by preview code (symbol). */
+export function toSparkMap(items: OvlabPriceVolSeriesItem[] | null | undefined): Record<string, PreviewSeries> {
+  const out: Record<string, PreviewSeries> = {};
+  for (const it of items ?? []) {
+    const sym = String(it.symbol ?? "").trim();
+    if (!sym) continue;
+    out[sym] = {
+      prices: Array.isArray(it.prices) ? it.prices : [],
+      volatilities: Array.isArray(it.volatilities) ? it.volatilities : [],
+    };
+  }
+  return out;
+}
+
+/** Dual-line SVG spark: price vs base (prev close, fallback first print), A股 MinuteSpark palette; IV in violet. */
+export function TrendSparkSvg({
+  prices, volatilities, base, width = 88, height = 36, className, fill = false,
+}: {
+  prices: Array<[string, number]>;
+  volatilities: Array<[string, number]>;
+  /** Prev close/settle as baseline; falls back to first print. */
+  base?: number | null;
+  width?: number;
+  height?: number;
+  className?: string;
+  /** Stretch to container width (MinuteSpark style): CSS controls size, strokes stay 1:1. */
+  fill?: boolean;
+}) {
+  const pad = 2;
+  const uid = useId().replace(/:/g, "");
+
+  const priceVals = prices.map((p) => Number(p[1])).filter((n) => Number.isFinite(n));
+  const volVals = volatilities.map((p) => Number(p[1])).filter((n) => Number.isFinite(n));
+
+  const boxProps = fill
+    ? { preserveAspectRatio: "none" as const, className: cn("block w-full", className) }
+    : { width, height, className };
+
+  if (priceVals.length < 2 && volVals.length < 2) {
+    return (
+      <svg viewBox={`0 0 ${width} ${height}`} {...boxProps} aria-hidden>
+        <line x1={pad} y1={height / 2} x2={width - pad} y2={height / 2} stroke="currentColor" strokeDasharray="3 3" className="text-muted-foreground/40" vectorEffect="non-scaling-stroke" />
+      </svg>
+    );
+  }
+
+  const innerW = width - pad * 2;
+  const innerH = height - pad * 2;
+
+  // Baseline = prev close when given, else first print; scale includes it so the line stays visible
+  const zero = base != null && Number.isFinite(base) && base > 0 ? base : (priceVals[0] ?? 0);
+  const pMin = priceVals.length ? Math.min(...priceVals, zero) : 0;
+  const pMax = priceVals.length ? Math.max(...priceVals, zero) : 1;
+  const pSpan = pMax - pMin || 1;
+  const xAt = (i: number, n: number) => pad + (n <= 1 ? 0 : (i / (n - 1)) * innerW);
+  const yPrice = (v: number) => pad + (1 - (v - pMin) / pSpan) * innerH;
+  const zeroY = yPrice(zero);
+
+  // Single tone by last vs baseline, same as MinuteSpark
+  const lastP = priceVals.length ? priceVals[priceVals.length - 1] : null;
+  const tone = lastP === null || zero <= 0 ? SPARK_FLAT : lastP > zero ? SPARK_UP : lastP < zero ? SPARK_DOWN : SPARK_FLAT;
+
+  const pricePts = priceVals.map((v, i) => ({ x: xAt(i, priceVals.length), y: yPrice(v) }));
+  const priceLine = pricePts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  // Area closes down to the bottom edge, gradient fades out (MinuteSpark style)
+  const priceArea = pricePts.length >= 2
+    ? `${priceLine} L${pricePts[pricePts.length - 1].x.toFixed(1)},${(height - pad).toFixed(1)} L${pricePts[0].x.toFixed(1)},${(height - pad).toFixed(1)} Z`
+    : "";
+
+  // IV: independent normalize
+  let volLine = "";
+  if (volVals.length >= 2) {
+    const vMin = Math.min(...volVals);
+    const vMax = Math.max(...volVals);
+    const vSpan = vMax - vMin || 1;
+    volLine = volVals.map((v, i) => {
+      const x = xAt(i, volVals.length);
+      const y = pad + (1 - (v - vMin) / vSpan) * innerH;
+      return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+  }
+
+  const grad = `${uid}-g`;
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} {...boxProps} aria-hidden>
+      <defs>
+        <linearGradient id={grad} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={tone} stopOpacity="0.38" />
+          <stop offset="100%" stopColor={tone} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      {/* Baseline (prev close) */}
+      {pricePts.length >= 2 && (
+        <line x1={pad} y1={zeroY} x2={width - pad} y2={zeroY} stroke={SPARK_BASE} strokeWidth="1" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />
+      )}
+
+      {/* Price area + line, single tone */}
+      {priceArea && (
+        <>
+          <path d={priceArea} fill={`url(#${grad})`} />
+          <path d={priceLine} fill="none" stroke={tone} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        </>
+      )}
+
+      {/* IV violet overlay */}
+      {volLine ? (
+        <path d={volLine} fill="none" stroke={TREND_IV} strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" opacity={0.9} vectorEffect="non-scaling-stroke" />
+      ) : null}
+    </svg>
+  );
+}
+
+/** Inline spark + hover enlarged overlay (price + IV), like openvlab.cn/market TrendPreviewCell. */
+export function TrendPreviewCell({ series, loading, base }: { series?: PreviewSeries; loading?: boolean; base?: number | null }) {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  const show = () => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) { setHover(true); return; }
+    const popW = 280;
+    const popH = 180;
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+    if (left < 8) left = 8;
+    if (top + popH > window.innerHeight - 8) top = rect.top - popH - 6;
+    setPos({ top, left });
+    setHover(true);
+  };
+
+  if (loading && !series) {
+    return (
+      <div className="flex h-9 w-[5.5rem] items-center justify-center text-muted-foreground/50">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      </div>
+    );
+  }
+  const prices = series?.prices ?? [];
+  const vols = series?.volatilities ?? [];
+  const empty = prices.length < 2 && vols.length < 2;
+  const lastP = prices.length ? num(prices[prices.length - 1][1]) : null;
+  const firstP = prices.length ? num(prices[0][1]) : null;
+  const lastV = vols.length ? num(vols[vols.length - 1][1]) : null;
+  const firstV = vols.length ? num(vols[0][1]) : null;
+  const refP = base != null && Number.isFinite(base) && base > 0 ? base : firstP;
+  const pChg = lastP != null && refP != null && refP !== 0 ? ((lastP - refP) / refP) * 100 : null;
+  const vChg = lastV != null && firstV != null ? lastV - firstV : null;
+
+  return (
+    <div
+      ref={anchorRef}
+      className="relative"
+      onMouseEnter={show}
+      onMouseLeave={() => setHover(false)}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className={cn(
+        "flex h-9 w-[5.5rem] items-center justify-center rounded-md border border-transparent transition-colors",
+        !empty && "hover:border-border/60 hover:bg-muted/30",
+      )}>
+        {empty
+          ? <span className="text-xs text-muted-foreground/40">-</span>
+          : <TrendSparkSvg prices={prices} volatilities={vols} base={base} />}
+      </div>
+      {hover && !empty && pos && createPortal(
+        <div
+          className="pointer-events-none fixed z-[100] w-[280px] rounded-xl border border-border/70 bg-background p-3 shadow-xl"
+          style={{ top: pos.top, left: pos.left }}
+        >
+          <div className="mb-2 flex items-center justify-between gap-2 text-[11px]">
+            <span className="font-medium text-foreground">走势预览</span>
+            <span className="flex items-center gap-2 text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-1.5 w-2 rounded-full bg-red-500" />
+                <span className="h-1.5 w-2 rounded-full bg-emerald-500" />
+                价格
+              </span>
+              <span className="inline-flex items-center gap-1"><span className="h-1.5 w-3 rounded-full bg-violet-400" />隐波</span>
+            </span>
+          </div>
+          <TrendSparkSvg prices={prices} volatilities={vols} base={base} width={256} height={96} />
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] tabular-nums">
+            <div>
+              <div className="text-muted-foreground">价格</div>
+              <div className="font-medium">
+                {lastP != null ? lastP.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "-"}
+                {pChg != null && (
+                  <span className={cn("ml-1", pChg > 0 ? "text-red-500" : pChg < 0 ? "text-emerald-500" : "text-muted-foreground")}>
+                    {pChg > 0 ? "+" : ""}{pChg.toFixed(2)}%
+                  </span>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">隐波</div>
+              <div className="font-medium">
+                {lastV != null ? lastV.toFixed(2) : "-"}
+                {vChg != null && (
+                  <span className={cn("ml-1", vChg > 0 ? "text-red-500" : vChg < 0 ? "text-emerald-500" : "text-muted-foreground")}>
+                    {vChg > 0 ? "+" : ""}{vChg.toFixed(2)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+export function PctPill({ value, digits = 2, suffix = "" }: { value: unknown; digits?: number; suffix?: string }) {
+  // Missing upstream metrics default to 0 (e.g. new listings without IV)
+  const n = num(value) ?? 0;
+  const cls = n > 0 ? "up" : n < 0 ? "down" : "flat";
+  const text = `${n > 0 ? "+" : ""}${n.toFixed(digits)}${suffix}`;
+  return <span className={cn("pct-pill", cls)}>{text}</span>;
+}
+
+export function PercentileBar({ value }: { value: unknown }) {
+  const n = num(value) ?? 0;
+  const pv = Math.max(0, Math.min(100, n));
+  const tone = pv >= 80 ? "from-red-500/80 to-red-400/50" : pv <= 20 ? "from-emerald-500/80 to-emerald-400/50" : "from-amber-500/70 to-amber-400/40";
+  return (
+    <div className="inline-flex min-w-[5.5rem] items-center gap-1.5">
+      <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted/50">
+        <div className={cn("absolute inset-y-0 left-0 rounded-full bg-gradient-to-r", tone)} style={{ width: `${pv}%` }} />
+      </div>
+      <span className="w-8 text-right text-xs font-medium tabular-nums text-muted-foreground">{n.toFixed(0)}</span>
+    </div>
+  );
+}
 

@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { PageFallback } from "@/components/ui/PageFallback";
-import { A_SHARE_TABS, CockpitHeader, PAGE_NAV, parseAShareTab } from "@/components/cockpit/CockpitHeader";
+import { A_SHARE_TABS, CockpitHeader, OVL_TABS, PAGE_NAV, parseAShareTab, parseOvlabTab } from "@/components/cockpit/CockpitHeader";
 import { TickerTape } from "@/components/cockpit/TickerTape";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useTapeQuotes } from "@/hooks/useTapeQuotes";
@@ -29,7 +29,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/backtest": FlaskConical,
   "/data": Database,
   "/ai-watch": Cpu,
-  "/ovlab": LineChart,
+  "/derivatives": LineChart,
   "/portfolio": Wallet,
   "/settings": Plug,
 };
@@ -39,6 +39,7 @@ const MORE_NAV = PAGE_NAV.filter((l) => !l.primary);
 
 function isCockpitPath(pathname: string, tab: string | null) {
   if (pathname.startsWith("/ai-watch") || pathname.startsWith("/fin")) return true;
+  if (pathname.startsWith("/derivatives")) return !tab || tab === "review";
   if (!pathname.startsWith("/a-share")) return false;
   if (!tab || tab === "review") return true;
   return false;
@@ -53,6 +54,7 @@ export function Layout() {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreActive = MORE_NAV.some((l) => l.match(pathname));
   const aTab = parseAShareTab(params.get("tab"));
+  const oTab = parseOvlabTab(params.get("tab"));
 
   useEffect(() => {
     document.documentElement.classList.remove("light");
@@ -80,6 +82,28 @@ export function Layout() {
         >
           {A_SHARE_TABS.map((t) => {
             const active = t.tab === null ? aTab === "review" : aTab === t.tab;
+            return (
+              <Link
+                key={t.label}
+                to={t.to}
+                className={cn(
+                  "shrink-0 rounded px-2 py-0.5 text-[10px]",
+                  active ? "bg-cyan-500/10 text-cyan-300" : "text-slate-500",
+                )}
+              >
+                {t.label}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
+      {pathname.startsWith("/derivatives") && (
+        <nav
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-background px-2 py-1 lg:hidden"
+          aria-label="期权期货页签"
+        >
+          {OVL_TABS.map((t) => {
+            const active = t.tab === null ? oTab === "review" : oTab === t.tab;
             return (
               <Link
                 key={t.label}

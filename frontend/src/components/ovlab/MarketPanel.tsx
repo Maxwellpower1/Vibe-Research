@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useId, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   AlertCircle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleHelp,
   Loader2, Moon, Search, X,
@@ -12,8 +11,9 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
-  AutoRefreshBar, SortableTh, TREND_GREEN, TREND_PINK, TREND_RED,
-  daysToExpiry, nextSort, num, sortRows, useAutoRefresh, type SortState,
+  AutoRefreshBar, PctPill, PercentileBar, prevCloseOf, SortableTh, TrendPreviewCell,
+  daysToExpiry, nextSort, num, previewCode, sortRows, useAutoRefresh,
+  type PreviewSeries, type SortState,
 } from "@/components/ovlab/shared";
 
 export const MARKET_COLS: { key: keyof OvlabMarketRow; label: string; cls?: string; sortable?: boolean; title?: string }[] = [
@@ -225,239 +225,6 @@ export function ExpiryCalendar({ data, selectedDate, onPick, onClear }: {
         </div>
       )}
     </GlassCard>
-  );
-}
-
-/** Build OpenVlab preview code: prodUnd:exp (e.g. MA:202609) */
-export function previewCode(r: Pick<OvlabMarketRow, "prodUnd" | "exp">): string {
-  const und = String(r.prodUnd ?? "").trim();
-  const exp = String(r.exp ?? "").trim();
-  return und && exp ? `${und}:${exp}` : "";
-}
-
-export type PreviewSeries = { prices: Array<[string, number]>; volatilities: Array<[string, number]> };
-
-
-/** Dual-line SVG spark: price vs zero-axis (first print) with red/green area; IV in pink. */
-export function TrendSparkSvg({
-  prices, volatilities, width = 88, height = 36, className,
-}: {
-  prices: Array<[string, number]>;
-  volatilities: Array<[string, number]>;
-  width?: number;
-  height?: number;
-  className?: string;
-}) {
-  const pad = 2;
-  const uid = useId().replace(/:/g, "");
-
-  const priceVals = prices.map((p) => Number(p[1])).filter((n) => Number.isFinite(n));
-  const volVals = volatilities.map((p) => Number(p[1])).filter((n) => Number.isFinite(n));
-
-  if (priceVals.length < 2 && volVals.length < 2) {
-    return (
-      <svg width={width} height={height} className={cn("text-muted-foreground/40", className)} aria-hidden>
-        <line x1={pad} y1={height / 2} x2={width - pad} y2={height / 2} stroke="currentColor" strokeDasharray="3 3" />
-      </svg>
-    );
-  }
-
-  const innerW = width - pad * 2;
-  const innerH = height - pad * 2;
-
-  // Price: zero axis = first print; scale includes zero so baseline stays visible
-  const zero = priceVals[0] ?? 0;
-  const pMin = priceVals.length ? Math.min(...priceVals, zero) : 0;
-  const pMax = priceVals.length ? Math.max(...priceVals, zero) : 1;
-  const pSpan = pMax - pMin || 1;
-  const xAt = (i: number, n: number) => pad + (n <= 1 ? 0 : (i / (n - 1)) * innerW);
-  const yPrice = (v: number) => pad + (1 - (v - pMin) / pSpan) * innerH;
-  const zeroY = yPrice(zero);
-
-  const pricePts = priceVals.map((v, i) => ({ x: xAt(i, priceVals.length), y: yPrice(v), v }));
-  const priceLine = pricePts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-  // Close area down/up to zero axis
-  const priceArea = pricePts.length >= 2
-    ? `${priceLine} L${pricePts[pricePts.length - 1].x.toFixed(1)},${zeroY.toFixed(1)} L${pricePts[0].x.toFixed(1)},${zeroY.toFixed(1)} Z`
-    : "";
-
-  // IV: independent normalize
-  let volLine = "";
-  if (volVals.length >= 2) {
-    const vMin = Math.min(...volVals);
-    const vMax = Math.max(...volVals);
-    const vSpan = vMax - vMin || 1;
-    volLine = volVals.map((v, i) => {
-      const x = xAt(i, volVals.length);
-      const y = pad + (1 - (v - vMin) / vSpan) * innerH;
-      return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(" ");
-  }
-
-  const clipUp = `${uid}-up`;
-  const clipDn = `${uid}-dn`;
-  const gradUp = `${uid}-gup`;
-  const gradDn = `${uid}-gdn`;
-
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className={className} aria-hidden>
-      <defs>
-        {/* Screen-up (price above zero) = y smaller than zeroY */}
-        <clipPath id={clipUp}><rect x={0} y={0} width={width} height={Math.max(0, zeroY)} /></clipPath>
-        <clipPath id={clipDn}><rect x={0} y={zeroY} width={width} height={Math.max(0, height - zeroY)} /></clipPath>
-        <linearGradient id={gradUp} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={TREND_RED} stopOpacity="0.45" />
-          <stop offset="100%" stopColor={TREND_RED} stopOpacity="0.02" />
-        </linearGradient>
-        <linearGradient id={gradDn} x1="0" y1="1" x2="0" y2="0">
-          <stop offset="0%" stopColor={TREND_GREEN} stopOpacity="0.45" />
-          <stop offset="100%" stopColor={TREND_GREEN} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-
-      {/* Zero axis */}
-      {pricePts.length >= 2 && (
-        <line x1={pad} y1={zeroY} x2={width - pad} y2={zeroY} stroke="currentColor" className="text-muted-foreground/30" strokeWidth="1" strokeDasharray="2 2" />
-      )}
-
-      {/* Price area + line: red above zero, green below */}
-      {priceArea && (
-        <>
-          <path d={priceArea} fill={`url(#${gradUp})`} clipPath={`url(#${clipUp})`} />
-          <path d={priceArea} fill={`url(#${gradDn})`} clipPath={`url(#${clipDn})`} />
-          <path d={priceLine} fill="none" stroke={TREND_RED} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" clipPath={`url(#${clipUp})`} />
-          <path d={priceLine} fill="none" stroke={TREND_GREEN} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" clipPath={`url(#${clipDn})`} />
-        </>
-      )}
-
-      {/* IV pink overlay */}
-      {volLine ? (
-        <path d={volLine} fill="none" stroke={TREND_PINK} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" opacity={0.95} />
-      ) : null}
-    </svg>
-  );
-}
-
-/** Inline spark + hover enlarged overlay (price + IV), like openvlab.cn/market TrendPreviewCell. */
-export function TrendPreviewCell({ series, loading }: { series?: PreviewSeries; loading?: boolean }) {
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  const show = () => {
-    const rect = anchorRef.current?.getBoundingClientRect();
-    if (!rect) { setHover(true); return; }
-    const popW = 280;
-    const popH = 180;
-    let left = rect.left;
-    let top = rect.bottom + 6;
-    if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
-    if (left < 8) left = 8;
-    if (top + popH > window.innerHeight - 8) top = rect.top - popH - 6;
-    setPos({ top, left });
-    setHover(true);
-  };
-
-  if (loading && !series) {
-    return (
-      <div className="flex h-9 w-[5.5rem] items-center justify-center text-muted-foreground/50">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      </div>
-    );
-  }
-  const prices = series?.prices ?? [];
-  const vols = series?.volatilities ?? [];
-  const empty = prices.length < 2 && vols.length < 2;
-  const lastP = prices.length ? num(prices[prices.length - 1][1]) : null;
-  const firstP = prices.length ? num(prices[0][1]) : null;
-  const lastV = vols.length ? num(vols[vols.length - 1][1]) : null;
-  const firstV = vols.length ? num(vols[0][1]) : null;
-  const pChg = lastP != null && firstP != null && firstP !== 0 ? ((lastP - firstP) / firstP) * 100 : null;
-  const vChg = lastV != null && firstV != null ? lastV - firstV : null;
-
-  return (
-    <div
-      ref={anchorRef}
-      className="relative"
-      onMouseEnter={show}
-      onMouseLeave={() => setHover(false)}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className={cn(
-        "flex h-9 w-[5.5rem] items-center justify-center rounded-md border border-transparent transition-colors",
-        !empty && "hover:border-border/60 hover:bg-muted/30",
-      )}>
-        {empty
-          ? <span className="text-xs text-muted-foreground/40">-</span>
-          : <TrendSparkSvg prices={prices} volatilities={vols} />}
-      </div>
-      {hover && !empty && pos && createPortal(
-        <div
-          className="pointer-events-none fixed z-[100] w-[280px] rounded-xl border border-border/70 bg-background p-3 shadow-xl"
-          style={{ top: pos.top, left: pos.left }}
-        >
-          <div className="mb-2 flex items-center justify-between gap-2 text-[11px]">
-            <span className="font-medium text-foreground">走势预览</span>
-            <span className="flex items-center gap-2 text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <span className="h-1.5 w-2 rounded-full bg-red-500" />
-                <span className="h-1.5 w-2 rounded-full bg-emerald-500" />
-                价格
-              </span>
-              <span className="inline-flex items-center gap-1"><span className="h-1.5 w-3 rounded-full bg-pink-400" />隐波</span>
-            </span>
-          </div>
-          <TrendSparkSvg prices={prices} volatilities={vols} width={256} height={96} />
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] tabular-nums">
-            <div>
-              <div className="text-muted-foreground">价格</div>
-              <div className="font-medium">
-                {lastP != null ? lastP.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "-"}
-                {pChg != null && (
-                  <span className={cn("ml-1", pChg > 0 ? "text-red-500" : pChg < 0 ? "text-emerald-500" : "text-muted-foreground")}>
-                    {pChg > 0 ? "+" : ""}{pChg.toFixed(2)}%
-                  </span>
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">隐波</div>
-              <div className="font-medium">
-                {lastV != null ? lastV.toFixed(2) : "-"}
-                {vChg != null && (
-                  <span className={cn("ml-1", vChg > 0 ? "text-red-500" : vChg < 0 ? "text-emerald-500" : "text-muted-foreground")}>
-                    {vChg > 0 ? "+" : ""}{vChg.toFixed(2)}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
-    </div>
-  );
-}
-
-export function PctPill({ value, digits = 2, suffix = "" }: { value: unknown; digits?: number; suffix?: string }) {
-  // Missing upstream metrics default to 0 (e.g. new listings without IV)
-  const n = num(value) ?? 0;
-  const cls = n > 0 ? "up" : n < 0 ? "down" : "flat";
-  const text = `${n > 0 ? "+" : ""}${n.toFixed(digits)}${suffix}`;
-  return <span className={cn("pct-pill", cls)}>{text}</span>;
-}
-
-export function PercentileBar({ value }: { value: unknown }) {
-  const n = num(value) ?? 0;
-  const pv = Math.max(0, Math.min(100, n));
-  const tone = pv >= 80 ? "from-red-500/80 to-red-400/50" : pv <= 20 ? "from-emerald-500/80 to-emerald-400/50" : "from-amber-500/70 to-amber-400/40";
-  return (
-    <div className="inline-flex min-w-[5.5rem] items-center gap-1.5">
-      <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted/50">
-        <div className={cn("absolute inset-y-0 left-0 rounded-full bg-gradient-to-r", tone)} style={{ width: `${pv}%` }} />
-      </div>
-      <span className="w-8 text-right text-xs font-medium tabular-nums text-muted-foreground">{n.toFixed(0)}</span>
-    </div>
   );
 }
 
@@ -787,6 +554,7 @@ export function MarketPanel({ onPickSymbol }: { onPickSymbol?: (symbol: string) 
                               <TrendPreviewCell
                                 series={pCode ? seriesMap[pCode] : undefined}
                                 loading={seriesLoading && !(pCode && seriesMap[pCode])}
+                                base={prevCloseOf(r)}
                               />
                             </td>,
                           ];
