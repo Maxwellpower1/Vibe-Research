@@ -97,6 +97,56 @@ test("OptionChartCard 用 hoverIdxOf, 下跌面积不再反转渐变", async () 
   assert.ok(src.includes("overlayAxis(dailyIv)"), "日K隐波同一比例");
 });
 
+function parseMinute(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const b of raw) {
+    if (!Array.isArray(b) || b.length < 2) continue;
+    const close = Number(b[1]);
+    if (!Number.isFinite(close)) continue;
+    const oi = Number(b[3]);
+    const vol = Number(b[7]);
+    out.push({
+      t: String(b[0]),
+      close,
+      vol: Number.isFinite(vol) ? vol : 0,
+      oi: Number.isFinite(oi) && oi > 0 ? oi : null,
+    });
+  }
+  return out;
+}
+
+test("parseMinute 第4列是仓、第8列是量, 缺列当空", () => {
+  const rows = parseMinute([
+    ["2026-08-18 23:08:00", 950.98, "-0.57%", 199971, 951.92, 951.92, 950.76, 768],
+    ["2026-08-18 09:32:00", 12.4, "1.3%", 80, 12.3, 12.5, 12.2],
+    ["2026-08-18 09:33:00", 12.1, "-1.2%", 0, 12.4, 12.4, 12.0, 10],
+  ]);
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].oi, 199971);
+  assert.equal(rows[0].vol, 768);
+  assert.equal(rows[1].oi, 80);
+  assert.equal(rows[1].vol, 0);
+  assert.equal(rows[2].oi, null);
+  assert.equal(rows[2].vol, 10);
+});
+
+test("分时量窗叠持仓黄线, 独立轴不压成交量", async () => {
+  const src = await readFile(new URL("../src/components/deriv/OptionChartCard.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("[time, close, pct, oi, open, high, low, vol]"), "分钟 bar 第4列仓第8列量");
+  assert.ok(src.includes('name: "持仓量"'), "分时画持仓线");
+  assert.ok(src.includes("yAxisIndex: 3"), "仓走量窗独立轴");
+  assert.ok(src.includes("overlayAxis(minData?.oi"), "仓不跟成交量抢同一标尺");
+  assert.ok(src.includes("仓 ${fmtOi(oi)}"), "十字光标读仓");
+});
+
+test("K线页分时同一套列序: 第4列仓第8列量", async () => {
+  const src = await readFile(new URL("../src/components/deriv/DerivLightChart.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("[datetime, price, pct, oi, open, high, low, vol]"));
+  assert.ok(src.includes("const vol = Number(r[7])"));
+  assert.ok(src.includes("const oi = Number(r[3])"));
+});
+
 test("驾驶舱日K分时叠在同一张卡", async () => {
   const src = await readFile(new URL("../src/pages/DerivCockpit.tsx", import.meta.url), "utf8");
   assert.ok(src.includes('id: "opt-charts"'), "一张图卡");

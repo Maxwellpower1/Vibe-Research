@@ -248,30 +248,6 @@ export function AlertPanel({ d }: { d: DerivData }) {
     <div className="flex h-full flex-col">
       <div className="relative flex shrink-0 items-center justify-end gap-2 border-b border-slate-800/60 px-2 py-0.5">
         <span className="mr-auto tabular-nums text-[11px] text-slate-500">{alerts.length}条</span>
-        <button
-          type="button"
-          onClick={() => toggleOn("r001")}
-          className={cn("text-[11px]", thresh.on.r001 ? "text-amber-400" : "text-slate-600 hover:text-slate-400")}
-          title={thresh.on.r001 ? "成交异动开" : "成交异动关"}
-        >
-          成交
-        </button>
-        <button
-          type="button"
-          onClick={() => toggleOn("r002")}
-          className={cn("text-[11px]", thresh.on.r002 ? "text-sky-400" : "text-slate-600 hover:text-slate-400")}
-          title={thresh.on.r002 ? "走势异动开" : "走势异动关"}
-        >
-          走势
-        </button>
-        <button
-          type="button"
-          onClick={() => toggleOn("r003")}
-          className={cn("text-[11px]", thresh.on.r003 ? "text-fuchsia-400" : "text-slate-600 hover:text-slate-400")}
-          title={thresh.on.r003 ? "连续成交开" : "连续成交关"}
-        >
-          连续
-        </button>
         <div ref={cfgRef} className="relative">
           <button
             type="button"

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type Ref } from "react";
 import { api, type OvlabTQuoteExpiry, type OvlabTQuoteSide, type OvlabTQuoteStrike } from "@/lib/api";
 import type { DerivData } from "@/hooks/useDerivData";
 import { usePolling } from "@/hooks/usePolling";
@@ -68,17 +68,66 @@ export function maxOiIdx(strikes: OvlabTQuoteStrike[], side: "call" | "put"): nu
   return idx;
 }
 
-/** 隐藏实值侧: ATM 档两边都留; 购实值=strike<fwd, 沽实值=strike>fwd. */
+/** Adjacent rungs that bracket undPx. Exact hit uses this strike + the next higher. */
+export function undBracket(
+  strikes: number[],
+  px: number | null,
+): { lo: number; hi: number } | null {
+  if (px == null || !Number.isFinite(px) || strikes.length < 2) return null;
+  const ks = [...new Set(strikes)].sort((a, b) => a - b);
+  let lo: number | null = null;
+  let hi: number | null = null;
+  for (const k of ks) {
+    if (k <= px) lo = k;
+    if (k >= px && hi == null) hi = k;
+  }
+  if (lo == null || hi == null) return null;
+  if (lo !== hi) return { lo, hi };
+  const i = ks.indexOf(lo);
+  if (i >= 0 && i + 1 < ks.length) return { lo: ks[i], hi: ks[i + 1] };
+  if (i > 0) return { lo: ks[i - 1], hi: ks[i] };
+  return null;
+}
+
+/** 隐藏实值侧: 夹档 (或 ATM 回落) 两边都留; 购实值=strike<fwd, 沽实值=strike>fwd. */
 export function hideItmSide(
   side: "call" | "put",
   strike: number,
   fwd: number | null,
-  atm: number | null,
+  keep: number | readonly number[] | null,
   hide: boolean,
 ): boolean {
   if (!hide || fwd === null) return false;
-  if (atm != null && strike === atm) return false;
+  const kept = keep == null ? [] : typeof keep === "number" ? [keep] : keep;
+  if (kept.includes(strike)) return false;
   return side === "call" ? strike < fwd : strike > fwd;
+}
+
+/** Full-width blue line between the two bracketing strikes; label is und last. */
+function SpotUndRow({ px, rowRef }: { px: number; rowRef: Ref<HTMLTableRowElement> }) {
+  const line = "absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 bg-blue-500";
+  return (
+    <tr
+      ref={rowRef}
+      className="spot-und pointer-events-none !border-t-0 !bg-transparent hover:!bg-transparent hover:!shadow-none"
+    >
+      <td colSpan={4} className="relative !h-5 !p-0">
+        <span className={line} />
+      </td>
+      <td className="relative !px-0 !py-0 text-center">
+        <span className={line} />
+        <span
+          className="relative z-[1] inline-block bg-slate-950 px-1 text-[11px] font-semibold tabular-nums leading-none text-blue-400"
+          title="当月期货现价"
+        >
+          {fmtPrice(px)}
+        </span>
+      </td>
+      <td colSpan={4} className="relative !h-5 !p-0">
+        <span className={line} />
+      </td>
+    </tr>
+  );
 }
 
 /** 可见档购+沽持仓最大值, 给横条定标尺. */
@@ -214,7 +263,7 @@ function SideCells({ s, itm, side, selected, maxOi, oiMax, atmIv, onPick }: {
 /** T 型报价: 行权价链 (理论价/IV/Delta/持仓横条) x 到期月. 数据 OpenVlab volatility-surface + Black-76.
  *  品种受控于驾驶舱 (点品种行联动); 点单侧格子发出 kind=option 联动日K/分时卡.
  *  换品种/到期月且当前选中不在链上时, 自动点 ATM 购; kind=und (行情观察标的图) 不覆盖.
- *  标的最新/涨跌挂 d.rows (ovlab_market), 不另开轮询. */
+ *  标的最新/涨跌优先当月期货 (tquote.futPx, 切月跟着变); ETF 无期货回落 d.rows. */
 export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   d: DerivData;
   product?: string;
@@ -264,27 +313,43 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   const cur: OvlabTQuoteExpiry | undefined = expiries.find((e) => e.exp === exp) ?? expiries[0];
   const fwd = num(cur?.forward);
   const atm = cur?.atm ?? null;
+  const mkt = useMemo(
+    () => (d.rows ?? []).find((r) => String(r.prodUnd ?? "").trim() === prod),
+    [d.rows, prod],
+  );
+  const futPx = num(cur?.futPx);
+  const futPct = num(cur?.futPct);
+  const undPx = futPx ?? num(mkt?.price);
+  const undCtn = futPx != null ? futPct : num(mkt?.ctn);
+  const bracket = useMemo(
+    () => undBracket((cur?.strikes ?? []).map((s) => s.strike), undPx),
+    [cur, undPx],
+  );
+  const keepStrikes = useMemo(
+    () => (bracket ? [bracket.lo, bracket.hi] : (atm != null ? [atm] : [])),
+    [bracket, atm],
+  );
 
   const maxCall = useMemo(() => {
     if (!cur) return null as number | null;
     let best = -1, k: number | null = null;
     for (const s of cur.strikes ?? []) {
-      if (hideItmSide("call", s.strike, fwd, atm, hideItm)) continue;
+      if (hideItmSide("call", s.strike, fwd, keepStrikes, hideItm)) continue;
       const v = num(s.call.oi);
       if (v !== null && v > best) { best = v; k = s.strike; }
     }
     return k;
-  }, [cur, hideItm, fwd, atm]);
+  }, [cur, hideItm, fwd, keepStrikes]);
   const maxPut = useMemo(() => {
     if (!cur) return null as number | null;
     let best = -1, k: number | null = null;
     for (const s of cur.strikes ?? []) {
-      if (hideItmSide("put", s.strike, fwd, atm, hideItm)) continue;
+      if (hideItmSide("put", s.strike, fwd, keepStrikes, hideItm)) continue;
       const v = num(s.put.oi);
       if (v !== null && v > best) { best = v; k = s.strike; }
     }
     return k;
-  }, [cur, hideItm, fwd, atm]);
+  }, [cur, hideItm, fwd, keepStrikes]);
 
   const rows = useMemo(() => {
     if (!cur) return [];
@@ -295,24 +360,17 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   const oiMax = useMemo(() => {
     let m = 0;
     for (const s of rows) {
-      if (!hideItmSide("call", s.strike, fwd, atm, hideItm)) {
+      if (!hideItmSide("call", s.strike, fwd, keepStrikes, hideItm)) {
         const c = num(s.call.oi);
         if (c !== null && c > m) m = c;
       }
-      if (!hideItmSide("put", s.strike, fwd, atm, hideItm)) {
+      if (!hideItmSide("put", s.strike, fwd, keepStrikes, hideItm)) {
         const p = num(s.put.oi);
         if (p !== null && p > m) m = p;
       }
     }
     return m;
-  }, [rows, hideItm, fwd, atm]);
-
-  const mkt = useMemo(
-    () => (d.rows ?? []).find((r) => String(r.prodUnd ?? "").trim() === prod),
-    [d.rows, prod],
-  );
-  const undPx = num(mkt?.price);
-  const undCtn = num(mkt?.ctn);
+  }, [rows, hideItm, fwd, keepStrikes]);
   const fwdYd = num(cur?.forwardYd);
   const fwdChg = fwd !== null && fwdYd !== null && fwdYd !== 0 ? ((fwd - fwdYd) / fwdYd) * 100 : null;
   const atmIvChg = cur?.atmIv != null && cur?.atmIvYd != null ? cur.atmIv - cur.atmIvYd : null;
@@ -334,10 +392,10 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
     onPickContract({ kind: "option", code: atm.callCode, und: cur.und ?? "", name: optionName(atm.callCode) });
   }, [prod, cur?.exp, cur?.und, pick?.code, pick?.kind, onPickContract]);
 
-  const atmRowRef = useRef<HTMLTableRowElement | null>(null);
+  const spotRowRef = useRef<HTMLTableRowElement | null>(null);
   useEffect(() => {
-    atmRowRef.current?.scrollIntoView({ block: "center", inline: "nearest" });
-  }, [prod, cur?.exp]);
+    spotRowRef.current?.scrollIntoView({ block: "center", inline: "nearest" });
+  }, [prod, cur?.exp, bracket?.lo, bracket?.hi]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -348,7 +406,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
           onChange={(v) => onProduct?.(v)}
         />
         {undPx !== null && (
-          <span className="flex shrink-0 items-baseline gap-1.5 px-1" title="标的最新价 / 涨跌幅 (与行情观察同一快照)">
+          <span className="flex shrink-0 items-baseline gap-1.5 px-1" title="当月期货最新/涨跌, 切到期月跟着变">
             <span className={cn(
               "text-[17px] font-semibold tabular-nums leading-none",
               undCtn != null && undCtn > 0 ? "text-red-400"
@@ -358,7 +416,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
               {fmtPrice(undPx)}
             </span>
             <span className="text-[13px] font-medium leading-none">
-              <CtnText value={mkt?.ctn} />
+              <CtnText value={undCtn} />
             </span>
           </span>
         )}
@@ -386,7 +444,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
             type="button"
             role="switch"
             aria-checked={hideItm}
-            title="隐藏实值侧, ATM 档两边都留"
+            title="隐藏实值侧, 现价夹档两边都留"
             onClick={toggleHideItm}
             className={cn(
               "relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors",
@@ -457,7 +515,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
           <table className="data-table dense text-[11px]">
             <thead>
               <tr>
-                <th colSpan={4} className="text-center text-[12px] font-semibold text-red-300">购 Call</th>
+                <th colSpan={4} className="text-center text-[12px] font-semibold text-red-400">看涨期权Call</th>
                 <th rowSpan={2} className="text-center align-middle font-semibold text-slate-200">
                   <SortableHd
                     k="strike"
@@ -468,7 +526,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
                     title="点此按行权价升/降序"
                   />
                 </th>
-                <th colSpan={4} className="text-center text-[12px] font-semibold text-emerald-300">沽 Put</th>
+                <th colSpan={4} className="text-center text-[12px] font-semibold text-emerald-400">看跌期权Put</th>
               </tr>
               <tr>
                 <th className="num !top-5 font-semibold text-slate-200">IV</th>
@@ -483,14 +541,18 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
             </thead>
             <tbody>
               {rows.map((s) => {
-                const isAtm = s.strike === atm;
                 const callItm = fwd !== null && s.strike < fwd;
                 const putItm = fwd !== null && s.strike > fwd;
-                const hideCall = hideItmSide("call", s.strike, fwd, atm, hideItm);
-                const hidePut = hideItmSide("put", s.strike, fwd, atm, hideItm);
+                const hideCall = hideItmSide("call", s.strike, fwd, keepStrikes, hideItm);
+                const hidePut = hideItmSide("put", s.strike, fwd, keepStrikes, hideItm);
                 const mny = fwd !== null && fwd !== 0 ? ((s.strike / fwd) - 1) * 100 : null;
+                const after = Boolean(
+                  bracket && undPx != null
+                  && s.strike === (strikeDir === "desc" ? bracket.hi : bracket.lo),
+                );
                 return (
-                  <tr key={s.strike} ref={isAtm ? atmRowRef : undefined} className={cn(isAtm && "bg-cyan-500/10")}>
+                  <Fragment key={s.strike}>
+                  <tr>
                     {hideCall ? (
                       <td colSpan={4} className="bg-slate-950/30" />
                     ) : (
@@ -506,14 +568,10 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
                       />
                     )}
                     <td
-                      className={cn(
-                        "text-center text-[12px] font-medium tabular-nums",
-                        isAtm ? "text-cyan-300" : "text-slate-200",
-                      )}
+                      className="text-center text-[12px] font-medium tabular-nums text-slate-200"
                       title={mny !== null ? `相对远期 ${fmtPct(mny, 2)}` : undefined}
                     >
                       {fmtStrike(s.strike)}
-                      {isAtm && <span className="ml-0.5 text-[9px] text-cyan-500/80">ATM</span>}
                     </td>
                     {hidePut ? (
                       <td colSpan={4} className="bg-slate-950/30" />
@@ -530,6 +588,8 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
                       />
                     )}
                   </tr>
+                  {after && <SpotUndRow px={undPx!} rowRef={spotRowRef} />}
+                  </Fragment>
                 );
               })}
             </tbody>

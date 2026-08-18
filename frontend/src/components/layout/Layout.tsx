@@ -80,7 +80,7 @@ export function Layout() {
       <TickerTape items={tapeItems} />
       {pathname.startsWith("/a-share") && (
         <nav
-          className={cn(NAV_RAIL_CLASS, "mx-2 mt-1 shrink-0 lg:hidden")}
+          className={cn(NAV_RAIL_CLASS, "mx-2 mt-1 shrink-0")}
           aria-label="A股页签"
         >
           {A_SHARE_TABS.map((t) => {
@@ -95,7 +95,7 @@ export function Layout() {
       )}
       {pathname.startsWith("/derivatives") && (
         <nav
-          className={cn(NAV_RAIL_CLASS, "mx-2 mt-1 shrink-0 lg:hidden")}
+          className={cn(NAV_RAIL_CLASS, "mx-2 mt-1 shrink-0")}
           aria-label="期权期货页签"
         >
           {OVL_TABS.map((t) => {

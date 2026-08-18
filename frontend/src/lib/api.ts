@@ -1209,6 +1209,10 @@ export interface OvlabTQuoteExpiry {
   dte?: number | null;
   forward?: number | null;
   forwardYd?: number | null;
+  /** 当月期货最新 (future-ts future_tday). ETF 无期货则空, 前端回落行情观察. */
+  futPx?: number | null;
+  /** 当月期货涨幅 (今-昨)/昨. */
+  futPct?: number | null;
   atmIv?: number | null;
   atmIvYd?: number | null;
   pcr?: number | null;

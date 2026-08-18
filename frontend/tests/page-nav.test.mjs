@@ -45,11 +45,16 @@ test("/derivatives sits right after /a-share and is primary", () => {
   assert.doesNotMatch(ovlab, /VolSurfacePanel|FlowAlertPanel/);
 });
 
-test("brand link returns to current section home", () => {
+test("brand is fixed so PAGE_NAV chips do not shift", () => {
   const header = readFileSync(join(root, "src/components/cockpit/CockpitHeader.tsx"), "utf8");
-  assert.match(header, /<Link to=\{brand\.to\}/);
-  assert.match(header, /title: "期权期货", subtitle: "OPTIONS & FUTURES", to: "\/derivatives"/);
-  assert.match(header, /MARKET RESEARCH COCKPIT", to: "\/a-share"/);
+  const layout = readFileSync(join(root, "src/components/layout/Layout.tsx"), "utf8");
+  assert.match(header, /<Link to="\/a-share"/);
+  assert.match(header, /市场研究驾驶舱/);
+  assert.doesNotMatch(header, /PAGE_TITLES|brand\.to/);
+  assert.doesNotMatch(header, /aria-label="A股页签"|aria-label="期权期货页签"/);
+  assert.match(layout, /aria-label="A股页签"/);
+  assert.match(layout, /aria-label="期权期货页签"/);
+  assert.doesNotMatch(layout, /shrink-0 lg:hidden/);
 });
 
 test("A-share portfolio jumps to backtest and autostarts", () => {

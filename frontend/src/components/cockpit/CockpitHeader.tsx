@@ -1,21 +1,7 @@
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { useClock } from "@/hooks/useClock";
 import { cn } from "@/lib/utils";
-
-const PAGE_TITLES: { match: (p: string) => boolean; title: string; subtitle: string; to: string }[] = [
-  { match: (p) => p.startsWith("/fin"), title: "财报窗口", subtitle: "EARNINGS WINDOW", to: "/fin" },
-  { match: (p) => p.startsWith("/us-market"), title: "美股观察", subtitle: "US MARKET", to: "/us-market" },
-  { match: (p) => p.startsWith("/research"), title: "研究桌", subtitle: "RESEARCH DESK", to: "/research" },
-  { match: (p) => p.startsWith("/backtest"), title: "回测", subtitle: "BACKTEST", to: "/backtest" },
-  { match: (p) => p.startsWith("/data"), title: "本机数据", subtitle: "LOCAL STORE", to: "/data" },
-  { match: (p) => p.startsWith("/ai-watch"), title: "AI 观察", subtitle: "AI INDUSTRY WATCH", to: "/ai-watch" },
-  { match: (p) => p.startsWith("/derivatives"), title: "期权期货", subtitle: "OPTIONS & FUTURES", to: "/derivatives" },
-  { match: (p) => p.startsWith("/portfolio"), title: "我的持仓", subtitle: "PORTFOLIO", to: "/portfolio" },
-  { match: (p) => p.startsWith("/settings"), title: "接入 AI", subtitle: "YOUR MODEL", to: "/settings" },
-];
-
-const DEFAULT_TITLE = { title: "市场研究驾驶舱", subtitle: "MARKET RESEARCH COCKPIT", to: "/a-share" };
 
 export type PageNavItem = {
   to: string;
@@ -85,13 +71,7 @@ export function CockpitHeader({
   extra?: React.ReactNode;
 }) {
   const { pathname } = useLocation();
-  const [params] = useSearchParams();
   const now = useClock(1000);
-  const aTab = parseAShareTab(params.get("tab"));
-  const onAShare = pathname.startsWith("/a-share");
-  const oTab = parseOvlabTab(params.get("tab"));
-  const onOvlab = pathname.startsWith("/derivatives");
-  const brand = PAGE_TITLES.find((t) => t.match(pathname)) ?? DEFAULT_TITLE;
 
   const hh = String(now.getHours()).padStart(2, "0");
   const mm = String(now.getMinutes()).padStart(2, "0");
@@ -101,19 +81,19 @@ export function CockpitHeader({
 
   return (
     <header className="flex h-11 shrink-0 items-center gap-2 border-b border-white/[0.07] bg-background px-2 sm:gap-2.5 sm:px-3">
-      <Link to={brand.to} title="返回本区首页" className="flex shrink-0 items-center gap-2">
+      <Link to="/a-share" title="返回首页" className="flex shrink-0 items-center gap-2">
         <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-cyan-400/20 text-[12px] font-bold text-cyan-200 shadow-[0_0_14px_rgba(34,211,238,0.4)]">
           V
         </span>
         <h1 className="text-[14px] font-semibold tracking-wide text-slate-50">
-          {brand.title}
+          市场研究驾驶舱
           <span className="ml-2 hidden text-[9px] font-medium tracking-[0.18em] text-cyan-400/70 xl:inline">
-            {brand.subtitle}
+            MARKET RESEARCH COCKPIT
           </span>
         </h1>
       </Link>
       <div className="mx-0.5 hidden h-5 w-px bg-white/[0.08] md:block" />
-      <nav className={cn(NAV_RAIL_CLASS, "hidden flex-1 md:flex")} aria-label="主导航">
+      <nav className={cn(NAV_RAIL_CLASS, "hidden min-w-0 flex-1 md:flex")} aria-label="主导航">
         {PAGE_NAV.map((l) => {
           const active = l.match(pathname);
           return (
@@ -129,30 +109,6 @@ export function CockpitHeader({
           );
         })}
       </nav>
-      {onAShare && (
-        <nav className={cn(NAV_RAIL_CLASS, "hidden shrink-0 lg:flex")} aria-label="A股页签">
-          {A_SHARE_TABS.map((t) => {
-            const active = t.tab === null ? aTab === "review" : aTab === t.tab;
-            return (
-              <Link key={t.label} to={t.to} aria-current={active ? "page" : undefined} className={navChipClass(active)}>
-                {t.label}
-              </Link>
-            );
-          })}
-        </nav>
-      )}
-      {onOvlab && (
-        <nav className={cn(NAV_RAIL_CLASS, "hidden shrink-0 lg:flex")} aria-label="期权期货页签">
-          {OVL_TABS.map((t) => {
-            const active = t.tab === null ? oTab === "review" : oTab === t.tab;
-            return (
-              <Link key={t.label} to={t.to} aria-current={active ? "page" : undefined} className={navChipClass(active)}>
-                {t.label}
-              </Link>
-            );
-          })}
-        </nav>
-      )}
       <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
         <div id="cockpit-header-actions" className="flex items-center gap-1.5" />
         {extra}

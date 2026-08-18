@@ -19,6 +19,17 @@ test("期限结构卡叠仓单条, 复用 warehouse-receipt", async () => {
   assert.ok(src.includes("function ptLabel"), "现值涨幅标在今曲线点上");
 });
 
+test("ProdSearchSelect 左点搜索、右箭头展开", async () => {
+  const src = await readFile(new URL("../src/components/deriv/derivShared.tsx", import.meta.url), "utf8");
+  const block = src.slice(src.indexOf("export function ProdSearchSelect"));
+  assert.ok(block.includes("startSearch"), "左边点开搜索");
+  assert.ok(block.includes("toggleList"), "右边箭头展开列表");
+  assert.ok(block.includes("点此搜索品种"), "左区是搜索");
+  assert.ok(block.includes('aria-label="展开列表"'), "右区是下拉箭头");
+  assert.ok(block.includes("placeholder=\"搜代码 / 名称\""), "搜索框在控件左侧");
+  assert.ok(!block.includes("search box inside the menu"), "搜索不在菜单里");
+});
+
 function filterProdOptions(opts, q) {
   const s = q.trim().toLowerCase().replace(/\s+/g, "");
   if (!s) return opts;

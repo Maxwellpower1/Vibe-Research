@@ -60,6 +60,12 @@ test("异动卡对齐 OpenVlab option-flow: 三类可关 + 额/量阈值", async
   assert.ok(src.includes("movePrem"), "走势异动筛额");
   assert.ok(src.includes("burstPrem"), "连续成交筛额");
   assert.ok(src.includes("type=\"checkbox\""), "三类可勾选");
+  assert.ok(src.includes('label="成交异动"'), "成交开关在阈值里");
+  assert.ok(src.includes('label="走势异动"'), "走势开关在阈值里");
+  assert.ok(src.includes('label="连续成交"'), "连续开关在阈值里");
+  assert.ok(!src.includes(">成交</button>"), "顶栏不再单独切成交");
+  assert.ok(!src.includes(">走势</button>"), "顶栏不再单独切走势");
+  assert.ok(!src.includes(">连续</button>"), "顶栏不再单独切连续");
   assert.ok(src.includes("未勾选类型"), "全关空态");
   assert.doesNotMatch(src, /r002_volume_surge|r003_oi_surge|单笔异动/);
 });

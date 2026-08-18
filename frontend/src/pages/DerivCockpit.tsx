@@ -210,7 +210,7 @@ export function DerivCockpit({ onPickSymbol }: { onPickSymbol?: (sym: string) =>
         {
           id: "alert",
           title: "异动",
-          hint: "成交 / 走势 / 连续",
+          hint: "阈值可关三类",
           icon: <Zap size={14} />,
           accent: "#f59e0b",
           defaultW: 0.22,

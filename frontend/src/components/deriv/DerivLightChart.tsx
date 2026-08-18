@@ -308,11 +308,11 @@ export function DerivLightChart() {
           };
         });
       } else {
-        // 分时/5日: 数组格式 [datetime, price, pct, volume, open, high, low, oi]
+        // 分时/5日: [datetime, price, pct, oi, open, high, low, vol]
         nextBars = klRows.map((b) => {
           const r = b as unknown[];
-          const vol = Number(r[3]);
-          const oi = Number(r[7]);
+          const vol = Number(r[7]);
+          const oi = Number(r[3]);
           return {
             datetime: String(r[0] ?? ""),
             open: Number(r[4] ?? 0), close: Number(r[1] ?? 0),

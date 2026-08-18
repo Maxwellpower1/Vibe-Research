@@ -319,6 +319,12 @@
   .data-table.dense td {
     padding: 0.2rem 0.4rem;
   }
+  .data-table tbody tr.spot-und,
+  .data-table tbody tr.spot-und:nth-child(even),
+  .data-table tbody tr.spot-und:hover {
+    background: transparent;
+    box-shadow: none;
+  }
 
   /* —— 市场概览表: 冻首列 + 稍大字号 —— */
   .market-table {

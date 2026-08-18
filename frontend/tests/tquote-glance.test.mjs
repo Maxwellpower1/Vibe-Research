@@ -43,10 +43,28 @@ function mk(strike, callOi = 0, putOi = 0, callIv = 20, putIv = 20) {
   };
 }
 
-function hideItmSide(side, strike, fwd, atm, hide) {
+function hideItmSide(side, strike, fwd, keep, hide) {
   if (!hide || fwd === null) return false;
-  if (atm != null && strike === atm) return false;
+  const kept = keep == null ? [] : typeof keep === "number" ? [keep] : keep;
+  if (kept.includes(strike)) return false;
   return side === "call" ? strike < fwd : strike > fwd;
+}
+
+function undBracket(strikes, px) {
+  if (px == null || !Number.isFinite(px) || strikes.length < 2) return null;
+  const ks = [...new Set(strikes)].sort((a, b) => a - b);
+  let lo = null;
+  let hi = null;
+  for (const k of ks) {
+    if (k <= px) lo = k;
+    if (k >= px && hi == null) hi = k;
+  }
+  if (lo == null || hi == null) return null;
+  if (lo !== hi) return { lo, hi };
+  const i = ks.indexOf(lo);
+  if (i >= 0 && i + 1 < ks.length) return { lo: ks[i], hi: ks[i + 1] };
+  if (i > 0) return { lo: ks[i - 1], hi: ks[i] };
+  return null;
 }
 
 test("ivSkew 沽虚值更贵为正", () => {
@@ -67,9 +85,9 @@ test("TQuotePanel 默认全部档位 / 自动 ATM 购", async () => {
   assert.ok(src.includes('useState<"asc" | "desc">("desc")'), "行权价默认降序");
   assert.ok(src.includes('label="行权价"'), "点行权价列头排序");
   assert.ok(src.includes("b.strike - a.strike"), "降序高档在上");
-  assert.ok(src.includes("购 Call"), "表头分组购/沽");
-  assert.ok(src.includes('colSpan={4} className="text-center text-[12px] font-semibold text-red-300">购 Call'), "购 Call 居中");
-  assert.ok(src.includes('colSpan={4} className="text-center text-[12px] font-semibold text-emerald-300">沽 Put'), "沽 Put 居中");
+  assert.ok(src.includes("看涨期权Call"), "表头看涨期权Call");
+  assert.ok(src.includes('colSpan={4} className="text-center text-[12px] font-semibold text-red-400">看涨期权Call'), "看涨期权Call 红字居中");
+  assert.ok(src.includes('colSpan={4} className="text-center text-[12px] font-semibold text-emerald-400">看跌期权Put'), "看跌期权Put 绿字居中");
   assert.ok(src.includes(">Delta</th>"), "表头 Delta 不用 Δ");
   assert.ok(src.includes("相对昨理论价"), "价旁标涨幅");
   assert.ok(src.includes("s.pct"), "涨幅用 tquote pct, 不另轮询");
@@ -78,18 +96,36 @@ test("TQuotePanel 默认全部档位 / 自动 ATM 购", async () => {
   assert.ok(src.includes("function OiBar"), "持仓用横向柱");
   assert.ok(src.includes("export function maxOiVal"), "横条标尺按可见档最大仓");
   assert.ok(src.includes("undPx"), "顶栏标的最新价");
-  assert.ok(src.includes("<CtnText value={mkt?.ctn}"), "顶栏标的涨跌复用行情观察 ctn");
-  assert.ok(src.includes('.trim() === prod'), "标的价对应当前品种, 不新开轮询");
+  assert.ok(src.includes("cur?.futPx"), "顶栏价走当月期货 futPx");
+  assert.ok(src.includes("<CtnText value={undCtn}"), "涨跌跟当月期货, ETF 回落行情观察");
+  assert.ok(src.includes("futPx ?? num(mkt?.price)"), "无当月期货才回落主力快照");
+  assert.ok(src.includes('.trim() === prod'), "ETF 回落对应当前品种, 不新开轮询");
   assert.ok(src.includes("ProdSearchSelect"), "品种下拉可搜索");
   assert.ok(!/<select[\s\S]*品种/.test(src), "不再用原生 select 选品种");
   assert.ok(src.includes("更新 {cur.lastTime.slice(11, 19)"), "更新时间带标签且到秒");
   assert.ok(src.includes("隐藏实值"), "顶栏有隐藏实值开关");
   assert.ok(src.includes("deriv.tquote.hideItm"), "开关记本机");
   assert.ok(src.includes("hideItmSide"), "实值侧用 hideItmSide");
+  assert.ok(src.includes("undBracket"), "现价卡在相邻两档");
+  assert.ok(src.includes("SpotUndRow"), "两档之间插蓝线行");
+  assert.ok(src.includes("bg-blue-500"), "蓝线横穿");
+  assert.ok(src.includes("spot-und"), "现价行可识别");
+  assert.ok(!src.includes("isAtm"), "不再把某一档标成 ATM");
+  assert.ok(!src.includes(">ATM</span>"), "行权价旁不写 ATM 字母");
   assert.ok(!src.includes("lastTime.slice(5, 16)"), "不再截成月日暗字");
 });
 
-test("hideItmSide 藏实值侧, ATM 两边都留", () => {
+test("undBracket 现价夹在相邻两档, 贴档用本档与更高档", () => {
+  assert.deepEqual(undBracket([90, 100, 110], 105), { lo: 100, hi: 110 });
+  assert.deepEqual(undBracket([90, 100, 110], 100), { lo: 100, hi: 110 });
+  assert.deepEqual(undBracket([90, 100, 110], 90), { lo: 90, hi: 100 });
+  assert.equal(undBracket([90, 100, 110], 80), null);
+  assert.equal(undBracket([90, 100, 110], 120), null);
+  assert.equal(undBracket([100], 100), null);
+  assert.equal(undBracket([90, 100], null), null);
+});
+
+test("hideItmSide 藏实值侧, 夹档两边都留", () => {
   assert.equal(hideItmSide("call", 90, 100, 100, true), true);
   assert.equal(hideItmSide("put", 90, 100, 100, true), false);
   assert.equal(hideItmSide("put", 110, 100, 100, true), true);
@@ -98,6 +134,9 @@ test("hideItmSide 藏实值侧, ATM 两边都留", () => {
   assert.equal(hideItmSide("put", 100, 100, 100, true), false);
   assert.equal(hideItmSide("call", 90, 100, 100, false), false);
   assert.equal(hideItmSide("call", 90, null, 100, true), false);
+  assert.equal(hideItmSide("call", 90, 105, [100, 110], true), true);
+  assert.equal(hideItmSide("put", 110, 105, [100, 110], true), false);
+  assert.equal(hideItmSide("call", 100, 105, [100, 110], true), false);
 });
 
 test("maxOiVal 取购沽两侧最大值", () => {

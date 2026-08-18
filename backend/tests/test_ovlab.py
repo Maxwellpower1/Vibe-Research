@@ -334,6 +334,7 @@ _SURFACE = {
 def test_build_tquote_parses_str_fields(monkeypatch):
     """surface 的 str 字段 (JSON 字符串/标量) 全部解析成数值, 理论价非空."""
     monkeypatch.setattr(ovlab, "get_volatility_surface", lambda p: _SURFACE)
+    monkeypatch.setattr(ovlab, "get_future_term_structure", lambda p: {})
     out = ovlab._build_tquote("AU")
     assert out["product"] == "AU"
     exp = out["expiries"][0]
@@ -363,6 +364,31 @@ def test_theo_chg():
     assert ovlab.theo_chg(8.0, 10.0) == pytest.approx(-0.2)
     assert ovlab.theo_chg(1.0, 0) is None
     assert ovlab.theo_chg(None, 10.0) is None
+
+
+def test_fut_months_skips_etf(monkeypatch):
+    called: list[str] = []
+    monkeypatch.setattr(ovlab, "get_future_term_structure", lambda p: called.append(p) or {})
+    assert ovlab._fut_months("510300") == {}
+    assert called == []
+
+
+def test_build_tquote_attaches_month_futures(monkeypatch):
+    """Header/spot line use this expiry's futures last, not the main-contract snapshot."""
+    monkeypatch.setattr(ovlab, "get_volatility_surface", lambda p: _SURFACE)
+    monkeypatch.setattr(
+        ovlab, "get_future_term_structure",
+        lambda p: {"202609": {"future_tday": "960.5", "future_yday": "950.0"}},
+    )
+    e = ovlab._build_tquote("AU")["expiries"][0]
+    assert e["futPx"] == pytest.approx(960.5)
+    assert e["futPct"] == pytest.approx((960.5 - 950.0) / 950.0)
+    monkeypatch.setattr(
+        ovlab, "get_future_term_structure",
+        lambda p: {"2609": {"future_tday": "961.0", "future_yday": "950.0"}},
+    )
+    e2 = ovlab._build_tquote("AU")["expiries"][0]
+    assert e2["futPx"] == pytest.approx(961.0)
 
 
 def test_extend_index_strikes_pads_atm_stub():
@@ -401,6 +427,7 @@ def test_build_tquote_index_fills_stub(monkeypatch):
     blk["strike_oid_c"] = '{"4700.0": 1}'
     blk["strike_oid_p"] = '{"4700.0": 2}'
     monkeypatch.setattr(ovlab, "get_volatility_surface", lambda p: {"202608": blk})
+    monkeypatch.setattr(ovlab, "get_future_term_structure", lambda p: {})
     out = ovlab._build_tquote("IF")
     strikes = out["expiries"][0]["strikes"]
     assert len(strikes) >= 25
@@ -491,14 +518,14 @@ def test_trading_day_night_session():
 
 
 _MIN_BARS = [
-    # 夜盘 (归 8-18): open 11.0, high 12.0, low 10.5
-    ["2026-08-17 21:00:00", 11.5, "0%", 100, 11.0, 11.5, 11.0, 0],
-    ["2026-08-17 22:00:00", 11.8, "0%", 200, 11.5, 12.0, 10.5, 0],
+    # 夜盘 (归 8-18): open 11.0, high 12.0, low 10.5; [t, close, pct, oi, o, h, l, vol]
+    ["2026-08-17 21:00:00", 11.5, "0%", 5000, 11.0, 11.5, 11.0, 100],
+    ["2026-08-17 22:00:00", 11.8, "0%", 5100, 11.5, 12.0, 10.5, 200],
     # 日盘 (8-18): close 12.2
-    ["2026-08-18 09:30:00", 12.0, "0%", 300, 11.8, 12.1, 11.7, 0],
-    ["2026-08-18 15:00:00", 12.2, "0%", 150, 12.0, 12.2, 11.9, 0],
+    ["2026-08-18 09:30:00", 12.0, "0%", 5200, 11.8, 12.1, 11.7, 300],
+    ["2026-08-18 15:00:00", 12.2, "0%", 5300, 12.0, 12.2, 11.9, 150],
     # 次日
-    ["2026-08-19 09:30:00", 12.5, "0%", 80, 12.3, 12.6, 12.2, 0],
+    ["2026-08-19 09:30:00", 12.5, "0%", 80, 12.3, 12.6, 12.2, 80],
 ]
 
 
@@ -519,6 +546,16 @@ def test_build_option_daily_aggregates(monkeypatch):
     assert d1["close"] == pytest.approx(12.2)  # 日盘最后一根 close
     assert d1["vol"] == pytest.approx(750.0)   # 100+200+300+150
     assert out["iv"] == [["2026-08-18", 20.03]]
+
+
+def test_build_option_daily_vol_is_last_col_not_oi(monkeypatch):
+    """history 1m [t, close, pct, oi, o, h, l, vol]: 日K 成交量累加第8列, 不把持仓当量."""
+    monkeypatch.setattr(ovlab, "get_kline_history", lambda *a, **k: {"data": [
+        ["2026-08-18 23:08:00", 950.98, "-0.57%", 199971, 951.92, 951.92, 950.76, 768],
+    ]})
+    monkeypatch.setattr(ovlab, "get_atmvol_history", lambda *a, **k: {"data": []})
+    out = ovlab._build_option_daily("AU2610", "AU2610")
+    assert out["bars"][0]["vol"] == pytest.approx(768.0)
 
 
 def test_build_option_daily_no_data(monkeypatch):

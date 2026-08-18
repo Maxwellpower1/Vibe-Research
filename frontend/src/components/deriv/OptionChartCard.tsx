@@ -12,6 +12,7 @@ import type { OptionPick } from "./TQuotePanel";
 const UP = "#ef4444";
 const DN = "#22c55e";
 const IV_COLOR = "#a78bfa";
+const OI_COLOR = "#eab308";
 
 /** Narrow glance card: hide Y ticks, keep the shape. */
 const GLANCE_GRID = [
@@ -19,17 +20,28 @@ const GLANCE_GRID = [
   { left: 6, right: 6, top: "78%", height: "14%" },
 ];
 
-interface MinBar { t: string; close: number; vol: number }
+interface MinBar { t: string; close: number; vol: number; oi: number | null }
 
-/** 分钟 bar 数组 -> {t, close, vol}; bar: [time, close, pct, vol, open, high, low, ?]. */
-function parseMinute(raw: unknown): MinBar[] {
+/** Compact OI for glance header. */
+function fmtOi(v: number): string {
+  return v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(Math.round(v));
+}
+
+/** 分钟 bar 数组 -> {t, close, vol, oi}; bar: [time, close, pct, oi, open, high, low, vol]. */
+export function parseMinute(raw: unknown): MinBar[] {
   if (!Array.isArray(raw)) return [];
   const out: MinBar[] = [];
   for (const b of raw) {
     if (!Array.isArray(b) || b.length < 2) continue;
     const close = num(b[1]);
     if (close === null) continue;
-    out.push({ t: String(b[0]), close, vol: num(b[3]) ?? 0 });
+    const oi = num(b[3]);
+    out.push({
+      t: String(b[0]),
+      close,
+      vol: num(b[7]) ?? 0,
+      oi: oi != null && oi > 0 ? oi : null,
+    });
   }
   return out;
 }
@@ -140,7 +152,7 @@ function fmtPx(v: number): string {
 
 export { tradingDayOf } from "@/lib/derivMinuteAxis";
 
-/** 期权联动图卡: mode=daily 日K(分钟聚合+量+标的IV日线) / minute 分时(价线+量+合约IV分钟). */
+/** 期权联动图卡: mode=daily 日K(分钟聚合+量+标的IV日线) / minute 分时(价线+量+仓+合约IV分钟). */
 export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode: "daily" | "minute" }) {
   const { ref, inst } = useChart();
   const [hover, setHover] = useState<number | null>(null);
@@ -177,6 +189,7 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
       cats: [] as string[],
       prices: [] as Array<number | null>,
       vols: [] as Array<number | null>,
+      oi: [] as Array<number | null>,
       iv: [] as Array<number | null>,
       pre: null as number | null,
     };
@@ -188,9 +201,10 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
     const padded = padToSlots(bars, cats, (b) => b.t);
     const prices = padded.map((b) => b?.close ?? null);
     const vols = padded.map((b) => b?.vol ?? null);
+    const oi = padded.map((b) => b?.oi ?? null);
     const ivPairs = (av?.data ?? []) as Array<[string, number | null]>;
     const iv = alignSeries(ivPairs, cats, true);
-    return { bars, cats, prices, vols, iv, pre: preCloseOf(kl?.data, lastTd) };
+    return { bars, cats, prices, vols, oi, iv, pre: preCloseOf(kl?.data, lastTd) };
   }, [minute.data, mode, pick?.code, pick?.und]);
 
   const dailyStale = Boolean(daily.data?.code && daily.data.code !== pick?.code);
@@ -363,6 +377,13 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
           splitNumber: 1,
           axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { label: { show: false } },
         },
+        {
+          ...(overlayAxis(minData?.oi ?? [], 0.72) ?? { min: 0, max: 1 }),
+          scale: false, gridIndex: 1, position: "right" as const,
+          splitLine: { show: false },
+          axisLabel: { show: false },
+          axisPointer: { label: { show: false } },
+        },
       ],
       series: [
         {
@@ -387,6 +408,12 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
         {
           name: "成交量", type: "bar" as const, xAxisIndex: 1, yAxisIndex: 2, z: 1,
           data: volData, emphasis: { focus: "none" as const },
+        },
+        {
+          name: "持仓量", type: "line" as const, xAxisIndex: 1, yAxisIndex: 3, z: 5,
+          data: minData?.oi ?? [], connectNulls: true, showSymbol: false,
+          lineStyle: { width: 1.2, color: OI_COLOR },
+          emphasis: { focus: "none" as const },
         },
       ],
     }, { notMerge: true });
@@ -433,12 +460,14 @@ export function OptionChartCard({ pick, mode }: { pick: OptionPick | null; mode:
           const pre = minData!.pre;
           const pct = pre ? ((px - pre) / pre) * 100 : null;
           const iv = minData!.iv[i];
+          const oi = minData!.oi[i];
           const t = minData!.cats[i] ?? "";
           head = {
             label: [
               `${t.slice(11, 16) || t} ${fmtPx(px)}`,
               pct !== null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` : "",
               iv != null ? `IV ${iv.toFixed(0)}` : "",
+              oi != null ? `仓 ${fmtOi(oi)}` : "",
             ].filter(Boolean).join("  "),
             toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-red-400" : "text-emerald-400",
           };

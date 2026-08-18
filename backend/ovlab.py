@@ -761,10 +761,42 @@ def extend_index_strikes(
     return sorted(out)
 
 
+def _fut_months(product: str) -> dict[str, dict[str, float | None]]:
+    """Per-expiry futures last from future-ts. ETF (digit product) has no futures."""
+    if not product or product.isdigit():
+        return {}
+    raw = get_future_term_structure(product)
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict[str, float | None]] = {}
+    for k, blk in raw.items():
+        if not isinstance(blk, dict):
+            continue
+        td = _sfloat(blk.get("future_tday"))
+        if td is None:
+            continue
+        yd = _sfloat(blk.get("future_yday"))
+        key = str(k)
+        rec = {"px": td, "pct": theo_chg(td, yd)}
+        out[key] = rec
+        if len(key) >= 6:
+            out[key[2:]] = rec
+    return out
+
+
+def _fut_of(futs: dict[str, dict[str, float | None]], exp: str) -> dict[str, float | None]:
+    got = futs.get(exp)
+    if got:
+        return got
+    tail = exp[2:] if len(exp) >= 6 else exp
+    return futs.get(tail) or {}
+
+
 def _build_tquote(product: str) -> dict[str, Any]:
     raw = get_volatility_surface(product)
     if not isinstance(raw, dict):
         return {}
+    futs = _fut_months(product)
     expiries: list[dict[str, Any]] = []
     for exp_key in sorted(raw.keys()):
         blk = raw[exp_key]
@@ -825,6 +857,7 @@ def _build_tquote(product: str) -> dict[str, Any]:
         if fwd and keys:
             f = float(fwd)
             atm = min(keys, key=lambda k: abs(k - f))
+        fut = _fut_of(futs, exp_str)
         expiries.append({
             "exp": exp_str,
             "und": und_code(product, exp_str),
@@ -832,6 +865,8 @@ def _build_tquote(product: str) -> dict[str, Any]:
             "dte": _sfloat(blk.get("days_to_expiry")),
             "forward": fwd,
             "forwardYd": _sfloat(blk.get("forward_yd")),
+            "futPx": fut.get("px"),
+            "futPct": fut.get("pct"),
             "atmIv": _sfloat(blk.get("atmvol_tday")),
             "atmIvYd": _sfloat(blk.get("atmvol_yday")),
             "pcr": _sfloat(blk.get("rho_tday")),
@@ -896,7 +931,7 @@ def _build_option_daily(code: str, und: str) -> dict[str, Any]:
     bars_in = minute.get("data") if isinstance(minute, dict) else None
     if not isinstance(bars_in, list) or not bars_in:
         return {}
-    # 分钟 bar: [time, close, pct, vol, open, high, low, ?]
+    # 分钟 bar: [time, close, pct, oi, open, high, low, vol]
     days: dict[str, dict[str, Any]] = {}
     for b in bars_in:
         if not isinstance(b, (list, tuple)) or len(b) < 7:
@@ -904,7 +939,7 @@ def _build_option_daily(code: str, und: str) -> dict[str, Any]:
         close = _sfloat(b[1])
         if close is None:
             continue
-        vol = _sfloat(b[3]) or 0.0
+        vol = _sfloat(b[7]) or 0.0
         op = _sfloat(b[4])
         hi = _sfloat(b[5])
         lo = _sfloat(b[6])
