@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 import fin_window
-from api_common import _cached, _read
+from api_common import _cached, _dc, _read
 
 router = APIRouter(tags=["fin"])
 
@@ -13,7 +13,7 @@ def fin_board(period: str = Query("", description="YYYY-MM-DD report date")):
     """盈利榜 + 行业聚合 + 披露日历. 并行拉东财, 缓存 1 小时."""
     p = fin_window.valid_period(period)
     try:
-        data = _cached("fin_board", p, 3600, lambda: fin_window.finance_board(p))
+        data = _dc("fin_board", p, 3600, lambda: fin_window.finance_board(p))
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"财报宏观包异常：{e}") from e
@@ -24,7 +24,7 @@ def fin_forecast(period: str = Query("", description="YYYY-MM-DD report date")):
     """业绩预告. 缓存 1 小时."""
     p = fin_window.valid_period(period)
     try:
-        data = _cached("fin_forecast", p, 3600, lambda: fin_window.finance_forecast(p))
+        data = _dc("fin_forecast", p, 3600, lambda: fin_window.finance_forecast(p))
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"业绩预告异常：{e}") from e

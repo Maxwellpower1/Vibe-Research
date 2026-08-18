@@ -264,9 +264,9 @@ def get_turnover_top() -> dict:
             "stocks": stocks,
             "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M"),
         }
-    from api_common import _cached
+    from api_common import _read
 
-    return _cached("turnover_top", "live", _TTL, build, valid=lambda v: bool(v.get("stocks")))
+    return _read("turnover_top", "live", _TTL, build, valid=lambda v: bool(v.get("stocks")))
 
 
 def get_global_indices() -> list[dict]:

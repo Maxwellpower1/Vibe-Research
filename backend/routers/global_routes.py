@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 import gstock
 import gstock_deep
-from api_common import _cached
+from api_common import _dc
 
 router = APIRouter(tags=["global"])
 
@@ -35,7 +35,7 @@ def global_us_kline(
     """美股日 K（新浪）。symbol 如 AAPL / TSLA。缓存 5 分钟。"""
     sym = symbol.strip().upper()
     try:
-        data = _cached(
+        data = _dc(
             f"us_kline:{num}", sym, 300, lambda: gstock.us_stock_kline(sym, num=num)
         )
         if not data:
@@ -67,7 +67,7 @@ def global_hk_cashflow(symbol: str = Query(..., min_length=1, max_length=16)):
 def global_stock_fundamentals(symbol: str = Query(..., min_length=1, max_length=16)):
     """美/港股估值+分析师+机构持仓（Yahoo）。韩股无此层。"""
     try:
-        data = _cached(
+        data = _dc(
             "g_fundamentals",
             symbol.strip().upper(),
             900,
@@ -93,7 +93,7 @@ def global_stock_statements(
     if st not in ("income", "balance", "cashflow"):
         raise HTTPException(400, "statement 须为 income / balance / cashflow")
     try:
-        data = _cached(
+        data = _dc(
             f"g_stmt:{st}:{periods}",
             symbol.strip().upper(),
             1800,
@@ -115,7 +115,7 @@ def global_stock_sec_filings(
 ):
     """美股个股 SEC 申报列表。需设置 VR_SEC_CONTACT。"""
     try:
-        data = _cached(
+        data = _dc(
             f"g_sec:{limit}",
             symbol.strip().upper(),
             1800,
@@ -140,7 +140,7 @@ def global_sec_daily(
     """全市场 SEC 当日申报流（默认 Form4 / 8-K / 13F）。需 VR_SEC_CONTACT。"""
     try:
         key = f"{date or 'latest'}:{limit}"
-        data = _cached(
+        data = _dc(
             "g_sec_daily",
             key,
             900,
@@ -166,7 +166,7 @@ def global_earnings_calendar(
     """
     try:
         start = (date or "").strip() or None
-        data = _cached(
+        data = _dc(
             "g_earn_cal",
             f"{start or 'today'}:{days}",
             900,
@@ -192,7 +192,7 @@ def global_edgar_screener(
     """SEC EDGAR frames 全市场横截面 screener（S 级）。"""
     try:
         key = f"{tag}:{year or 'y'}:{quarter or 'A'}:{top}:{int(ascending)}"
-        data = _cached(
+        data = _dc(
             "g_edgar_screen",
             key,
             1800,
@@ -217,7 +217,7 @@ def global_movers(
 ):
     """美/港全市场涨跌与成交额榜（东财 clist）。"""
     try:
-        data = _cached(
+        data = _dc(
             "g_movers",
             f"{board}:{top}",
             120,
@@ -239,7 +239,7 @@ def global_stock_news(
 ):
     """美/港个股新闻（Yahoo Finance search，合规 C 级）。缓存 5 分钟。"""
     try:
-        data = _cached(
+        data = _dc(
             f"g_news:{count}",
             symbol.strip().upper(),
             300,
@@ -264,7 +264,7 @@ def global_stock_options(
     合规 C 级：仅供个人研究；商用须先取得 Cboe 授权。不返回全链（体量过大）。
     """
     try:
-        data = _cached(
+        data = _dc(
             f"g_opt:{unusual_top}",
             symbol.strip().upper(),
             300,

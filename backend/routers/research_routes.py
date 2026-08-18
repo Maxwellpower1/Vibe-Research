@@ -7,7 +7,7 @@ import correlation
 import etf_lookthrough
 import ext_feeds
 import inst_13f
-from api_common import _cached
+from api_common import _dc
 
 router = APIRouter(tags=["research"])
 
@@ -29,7 +29,7 @@ def research_kline(
     if src not in allowed:
         raise HTTPException(400, f"source 仅支持 {sorted(allowed)}")
     try:
-        data = _cached(
+        data = _dc(
             f"rs_kline:{src}:{interval}:{num}",
             symbol.strip(),
             300,
@@ -54,7 +54,7 @@ def research_correlation(
     if len(symbols) < 2:
         raise HTTPException(400, "至少 2 个代码")
     try:
-        data = _cached(
+        data = _dc(
             f"rs_corr:{window}",
             ",".join(s.upper() for s in symbols),
             600,

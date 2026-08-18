@@ -70,8 +70,8 @@ def _serve(endpoint: str, code: str, default=None) -> Any:
     return _DC_CACHE.get_last((endpoint, code), default)
 
 
-def _dc(endpoint: str, code: str, ttl: float, fetch, valid=is_nonempty, *, last: bool = False, default=None) -> Any:
-    """One key. last=True serves last-good after first fill; last=False may refetch."""
+def _dc(endpoint: str, code: str, ttl: float, fetch, valid=is_nonempty, *, last: bool = True, default=None) -> Any:
+    """HTTP default: last-good after first fill. last=False may refetch on expire."""
     val = _DC_CACHE.get_or_set(
         (endpoint, code),
         fetch,
@@ -84,13 +84,13 @@ def _dc(endpoint: str, code: str, ttl: float, fetch, valid=is_nonempty, *, last:
 
 
 def _cached(endpoint: str, code: str, ttl: float, fetch, valid=is_nonempty):
-    """First-ask keys. TTL expire may fetch again."""
-    return _dc(endpoint, code, ttl, fetch, valid)
+    """Expire may fetch again: watchlist minutes, board stocks, concept 120, rank up/down, lives."""
+    return _dc(endpoint, code, ttl, fetch, valid, last=False)
 
 
 def _read(endpoint: str, code: str, ttl: float, fetch, valid=is_nonempty, default=None) -> Any:
     """Last-good after the first fill. Clock force-write via _put."""
-    return _dc(endpoint, code, ttl, fetch, valid, last=True, default=default)
+    return _dc(endpoint, code, ttl, fetch, valid, default=default)
 
 
 def serve_light_kline(sym: str, res: str, num: int):

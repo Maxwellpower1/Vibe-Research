@@ -95,6 +95,41 @@ def test_stock_flow_warmup_uses_http_key():
     assert "all:15" not in mins
 
 
+def test_dc_default_serves_last_after_expire():
+    api_common._DC_CACHE.clear()
+    calls: list[int] = []
+    api_common._dc("world_indices", "live", 20, lambda: calls.append(1) or [{"price": 1}])
+    api_common._DC_CACHE.expire(("world_indices", "live"))
+    out = api_common._dc("world_indices", "live", 20, lambda: calls.append(1) or [{"price": 2}])
+    assert out[0]["price"] == 1
+    assert calls == [1]
+
+
+def test_cached_refetches_after_expire():
+    api_common._DC_CACHE.clear()
+    calls: list[int] = []
+    api_common._cached("market_lives", "1:40", 8, lambda: calls.append(1) or [{"id": 1}])
+    api_common._DC_CACHE.expire(("market_lives", "1:40"))
+    out = api_common._cached("market_lives", "1:40", 8, lambda: calls.append(1) or [{"id": 2}])
+    assert out[0]["id"] == 2
+    assert calls == [1, 1]
+
+
+def test_routes_default_last_explicit_refetch():
+    import inspect
+
+    from routers import ashare, fin_routes, market_routes
+
+    src = inspect.getsource(market_routes)
+    assert "last=" not in src
+    assert 'op = _cached if k == "02" else _dc' in src
+    assert 'op = _cached if key == "changepercent" else _dc' in src
+    assert "_cached" in inspect.getsource(market_routes.market_board_stocks)
+    assert "_cached" in inspect.getsource(market_routes.market_lives)
+    assert "_cached" in inspect.getsource(ashare.fund_flow_minute)
+    assert "_cached" in inspect.getsource(fin_routes.fin_suggest)
+
+
 def test_peek_codes_falls_back_to_last():
     api_common._DC_CACHE.clear()
     api_common._put("stock_rank", "amount:0:30", [{"code": "600519"}], 20)

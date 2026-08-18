@@ -176,7 +176,6 @@ def market_stock_flow(
             key,
             120,
             lambda: astock_boards.stock_moneyflow(top, board),
-            last=key == "ALL:15",
         )
         return {"data": data}
     except Exception as e:
@@ -188,7 +187,7 @@ def market_hsgt():
     """北向资金分钟流向（同花顺；深股通仅供参考）。缓存 2 分钟。"""
     import astock_boards
     try:
-        data = _dc("hsgt", "live", 120, astock_boards.hsgt_realtime, last=True)
+        data = _dc("hsgt", "live", 120, astock_boards.hsgt_realtime)
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"北向资金异常：{e}") from e
@@ -264,7 +263,6 @@ def cls_telegraph(limit: int = Query(50, ge=10, le=100)):
             str(limit),
             120,
             lambda: astock.cls_telegraph(limit),
-            last=limit == 40,
         )
         if not data:
             raise HTTPException(404, "财联社电报暂无数据")
@@ -292,11 +290,10 @@ def market_etf_shares(
                 key,
                 600,
                 lambda: etf_shares.etf_shares_many(many, n),
-                last=key == f"{','.join(etf_shares.DEFAULT_CODES)}:80",
             )
         else:
             raw = (code or "").strip()
-            data = _cached(
+            data = _dc(
                 "etf_shares",
                 f"{raw}:{n}",
                 600,
@@ -323,7 +320,6 @@ def market_etf_flow(
             key,
             180,
             lambda: astock.etf_fund_flow(sb, limit),
-            last=key == "net_inflow:40",
         )
         return {
             "data": {
@@ -341,7 +337,7 @@ def market_etf_flow(
 def market_lpr(days: int = Query(365, ge=30, le=2000)):
     """LPR 贷款市场报价利率（全国银行间同业拆借中心）。缓存 1 小时。"""
     try:
-        rows = _dc("lpr", str(days), 3600, lambda: astock.lpr_rates(days), last=days == 730)
+        rows = _dc("lpr", str(days), 3600, lambda: astock.lpr_rates(days))
         latest = rows[0] if rows else None
         return {
             "data": {
@@ -383,12 +379,12 @@ def market_boards(
     d = "1" if direction == "1" else "0"
     try:
         key = f"{k}:{d}:{n}"
-        data = _dc(
+        op = _cached if k == "02" else _dc
+        data = op(
             "sector_boards",
             key,
             10,
             lambda: cockpit_live.sector_boards(k, d, n),
-            last=k == "01" and n == 80,
         )
         return {"data": data}
     except Exception as e:
@@ -426,12 +422,12 @@ def market_rank(
     key = sort if sort in ("amount", "changepercent", "turnoverratio") else "amount"
     try:
         slot = f"{key}:{asc}:{n}"
-        data = _dc(
+        op = _cached if key == "changepercent" else _dc
+        data = op(
             "stock_rank",
             slot,
             20,
             lambda: cockpit_live.stock_rank(key, asc, n),
-            last=slot == "amount:0:30",
         )
         return {"data": data}
     except Exception as e:
@@ -446,14 +442,12 @@ def market_board_flow_intraday(
     """板块资金流向. curves=0 只回流入/流出榜; curves=1 再补分钟曲线. 120s 缓存."""
     import cockpit_live
     try:
-        last = n == BOARD_FLOW_N
         if curves:
             data = _dc(
                 "board_flow_intraday",
                 str(n),
                 BOARD_FLOW_TTL,
                 lambda: cockpit_live.board_flow_intraday(n, curves=True),
-                last=last,
             )
         else:
             data = _dc(
@@ -462,7 +456,6 @@ def market_board_flow_intraday(
                 BOARD_FLOW_TTL,
                 lambda: cockpit_live.board_flow_intraday(n, curves=False),
                 valid=lambda d: isinstance(d, list) and len(d) > 0,
-                last=last,
             )
         return {"data": data}
     except Exception as e:
@@ -482,7 +475,6 @@ def market_commodities(
             raw,
             commodity_quote_ttl(),
             lambda: cockpit_live.futures_quotes(raw),
-            last=raw == cockpit_live.DEFAULT_FUTURES,
         )
         return {"data": data}
     except Exception as e:
@@ -502,7 +494,6 @@ def market_commodity_minutes(
             raw,
             90,
             lambda: cockpit_live.future_minutes([c.strip() for c in raw.split(",") if c.strip()]),
-            last=raw == cockpit_live.DEFAULT_FUTURES,
         )
         return {"data": data}
     except Exception as e:
@@ -521,7 +512,6 @@ def market_bond_yield(
             ct,
             3600,
             lambda: astock.bond_yield_curve(ct),
-            last=ct == "treasury",
         )
         return {"data": data}
     except Exception as e:
@@ -533,7 +523,7 @@ def market_spot_table():
     """生意社现货/期货基差对照表. 缓存 8 小时."""
     import sunsirs
     try:
-        data = _cached("spot_table", "sf", 8 * 3600, sunsirs.spot_table)
+        data = _dc("spot_table", "sf", 8 * 3600, sunsirs.spot_table)
         return {"data": data}
     except Exception as e:
         raise HTTPException(502, f"生意社现期表异常：{e}") from e
@@ -547,7 +537,7 @@ def market_chem_spot(
     """生意社化工现货中位数. 缓存 8 小时."""
     import sunsirs
     try:
-        data = _cached(
+        data = _dc(
             "chem_spot",
             f"{cid}:{name}",
             8 * 3600,
@@ -568,7 +558,7 @@ def market_future_daily(
     """新浪期货日 K (hf_ 外盘 / nf_ 内盘). 缓存 1 小时."""
     import cockpit_live
     try:
-        data = _cached(
+        data = _dc(
             "future_daily",
             f"{code}:{n}",
             3600,
@@ -586,7 +576,7 @@ def market_stock_boards(code: str = Query(..., min_length=6, max_length=8)):
     """个股所属行业/地域/概念 (东财 f127/f128/f129). 缓存 24 小时."""
     import cockpit_live
     try:
-        data = _cached(
+        data = _dc(
             "stock_boards",
             code.strip().lower(),
             24 * 3600,
@@ -614,7 +604,7 @@ def market_stock_boards_batch(codes: str = Query(..., min_length=6, max_length=2
         if len(raw) >= 12:
             break
     def _one(c: str) -> dict:
-        return _cached(
+        return _dc(
             "stock_boards",
             c.lower(),
             24 * 3600,

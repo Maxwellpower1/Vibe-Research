@@ -59,9 +59,9 @@ _Avoid_: 第二套 parquet 目录, 盘后 enriched 管道, 启动就扫 5000 只
 
 **缓存键**:
 同一份数只用一把钥匙。`TTLCache` 有效值过期不删，留作上一笔：`get()` 只认热槽，`get_last()` 可读上一笔，`get_or_set(serve_last=True)` 第一次填过之后不再出网。空结果仍是短负缓存，过期就扔，不留下一笔。
-钟养的格子：预热 `_put` / `put_fetch` 强制写，HTTP `_dc(..., last=True)` / `_read`。自选分时 / 点开的板块成分 / 五日和日 K / 概念 120 / 涨跌幅榜仍走 `_cached`，过期可以再拉。个股 F10（估值分位 / 公告 / 财务 / 基本资料 / 公司财报包等）、ovlab、fino、gstock 解析也走上一笔。
+HTTP `_dc` 默认上一笔。过期再拉只走 `_cached`：自选分时 / 五日和日 K、点开的板块成分、概念板块、涨跌幅榜、直播快讯、分钟资金流、搜索联想。钟养的格子预热 `_put` / `put_fetch` 强制写。个股 F10（估值分位 / 公告 / 财务 / 基本资料 / 公司财报包等）、ovlab、fino、gstock 解析也走上一笔。
 全球指数是 `("world_indices", "live")`；总览 / 情绪 / 成交额榜也挂这套，不另开 `market._CACHE`。
-_Avoid_: 第二份 TTL、market._CACHE 再包一层、过期就打上游、旁路第二份 last dict、F10 再开三份 TTLCache
+_Avoid_: 第二份 TTL、market._CACHE 再包一层、过期就打上游、旁路第二份 last dict、路由按键名写 last=、F10 再开三份 TTLCache
 
 **问 AI**:
 使用者把自己的模型接到复盘页。产品只提供复盘上下文和只读数据工具，不校准结论。
