@@ -8,10 +8,13 @@ import {
 } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { useSegment } from "@/components/ui/SegmentNav";
+import { getAShareSession, primeTradingDay } from "@/lib/ashareSession";
 import { formatClock } from "@/lib/freshness";
 import { useWatchCodes } from "@/lib/watchlist";
 
 const SEG_KEYS = ["boards", "money", "chain"] as const;
+/** Match review warmup open cadence. Reads last-good; warmup put_emotion fills it. */
+const TOP_POLL_MS = 90_000;
 
 export type ReviewSeg = "boards" | "money" | "chain";
 
@@ -135,6 +138,34 @@ export function useReviewData() {
     // bootstrap once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    void primeTradingDay();
+  }, []);
+
+  useEffect(() => {
+    if (!emoDone) return;
+    const tick = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (getAShareSession().kind !== "open") return;
+      if (topRefreshingRef.current) return;
+      void api.reviewSnapshot({ scope: "top" })
+        .then((s) => {
+          applyTop(s);
+          setTopUpdatedAt(new Date());
+        })
+        .catch(() => {});
+    };
+    const id = window.setInterval(tick, TOP_POLL_MS);
+    const onVis = () => {
+      if (!document.hidden) tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [emoDone, applyTop]);
 
   useEffect(() => {
     let cancelled = false;

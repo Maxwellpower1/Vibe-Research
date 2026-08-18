@@ -249,6 +249,9 @@ export function DailyReview() {
           accent: "#fb7185",
           defaultW: chainOn ? 0.16 : 0.22,
           mobileH: "h-[380px]",
+          right: (
+            <span className="text-[10px] tabular-nums text-slate-500">盘中 90s</span>
+          ),
           body: (
             <ReviewRiskSeg
               emotion={d.emotion}

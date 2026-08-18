@@ -13,9 +13,11 @@ const SPOT_MS = 8 * 3600_000;
 const DAILY_MS = 3600_000;
 const FUT_CODES = COMMODITIES.map((c) => c.code);
 const MACRO_CODES = MACRO_INDEX_DEFS.map((d) => d.code);
-const NQ_AT = COMMODITIES.findIndex((c) => c.code === "hf_NQ");
-const FUT_HEAD = NQ_AT >= 0 ? COMMODITIES.slice(0, NQ_AT + 1) : COMMODITIES;
-const FUT_TAIL = NQ_AT >= 0 ? COMMODITIES.slice(NQ_AT + 1) : [];
+const FUT_HEAD = COMMODITIES.filter((c) => c.code === "hf_NQ");
+const FUT_TAIL = [
+  ...COMMODITIES.filter((c) => c.code === "hf_BTC"),
+  ...COMMODITIES.filter((c) => c.code !== "hf_NQ" && c.code !== "hf_BTC"),
+];
 
 export function CommodityPanel() {
   const [tab, setTab] = useState<"fut" | "spot" | "daily">("fut");

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+### 改进：涨跌停格盘中 90 秒刷新
+
+复盘涨跌停挂回已有 `reviewSnapshot(top)`，连续竞价时静默再读，不把格子打回加载中。休市 / 切走页面不拉。
+
 ### 改进：去掉 Binance / OKX / CCXT
 
 比特币只走新浪 `hf_BTC`。研究桌日 K 只留 Stooq / Baostock / pykrx，不再接加密所。

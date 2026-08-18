@@ -28,6 +28,13 @@ test("reviewContext is a thin client of the backend packer", () => {
   assert.match(apiSrc, /\/market\/review-context/);
 });
 
+test("limit-up card polls review snapshot top while A-share is open", () => {
+  assert.match(hookSrc, /TOP_POLL_MS = 90_000/);
+  assert.match(hookSrc, /getAShareSession\(\)\.kind !== "open"/);
+  assert.match(hookSrc, /reviewSnapshot\(\{ scope: "top" \}\)/);
+  assert.match(reviewSrc, /盘中 90s/);
+});
+
 test("breadth panel clock is last fetch, not legu session close", () => {
   assert.match(reviewSrc, /breadthLabel/);
   assert.doesNotMatch(reviewSrc, /sentiment\?\.date/);
