@@ -39,6 +39,8 @@ export function ModelPanel({
   const [tune, setTune] = useState(true);
   const [maxWeight, setMaxWeight] = useState(0);
   const [industryNeutral, setIndustryNeutral] = useState(false);
+  const [excludeSt, setExcludeSt] = useState(true);
+  const [minListDays, setMinListDays] = useState(60);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<BacktestModelResult | null>(null);
@@ -76,6 +78,8 @@ export function ModelPanel({
         max_positions: topK,
         max_weight: maxWeight > 0 ? maxWeight / 100 : 0,
         industry_neutral: industryNeutral,
+        exclude_st: excludeSt,
+        min_list_days: minListDays,
         commission_pct: 0.00025,
         commission_min: 5,
         stamp_tax_pct: 0.0005,
@@ -148,6 +152,20 @@ export function ModelPanel({
             onChange={(e) => setIndustryNeutral(e.target.checked)}
           />
           行业中性 (缺归属单独一组)
+        </label>
+        <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
+          <input type="checkbox" checked={excludeSt} onChange={(e) => setExcludeSt(e.target.checked)} />
+          剔除 ST / 退
+        </label>
+        <label className="block text-[11px] text-slate-400">
+          次新天数 (0=关)
+          <input
+            type="number"
+            min={0}
+            value={minListDays}
+            onChange={(e) => setMinListDays(Number(e.target.value) || 0)}
+            className="mt-1 w-full rounded border border-slate-700 bg-slate-950/60 px-2 py-1 text-[12px] text-slate-100"
+          />
         </label>
         <button
           type="button"

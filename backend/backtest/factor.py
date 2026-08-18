@@ -21,6 +21,7 @@ DISCLAIMER = (
     "静态池有幸存者偏差。少于 30 只时 IC 很噪。"
     "从本机日 K 现场算, 不是 TickFlow enriched, 也不是整库 Alpha Zoo。"
     "换手率要流通股本, 库存没有, 所以没加。"
+    "周/月调仓用交易周/月最后一根, 不是日历周一或月初。"
 )
 
 # TickFlow factor page minus turnover_rate (needs float shares).
@@ -91,21 +92,26 @@ def spearman(x: np.ndarray, y: np.ndarray) -> float:
     return _pearson(_rank(x), _rank(y))
 
 
+def _period_last_indices(dates: list[str], key_fn) -> list[int]:
+    """Last bar of each group. Panel dates are already sessions."""
+    last: dict = {}
+    for i, raw in enumerate(dates):
+        try:
+            day = date.fromisoformat(raw)
+        except ValueError:
+            continue
+        last[key_fn(day)] = i
+    return [last[k] for k in sorted(last)]
+
+
 def rebalance_indices(dates: list[str], mode: str) -> list[int]:
     if mode not in REBALANCES:
         raise ValueError(f"rebalance 仅支持 {list(REBALANCES)}")
     if mode == "daily":
         return list(range(len(dates)))
     if mode == "weekly":
-        return [i for i, day in enumerate(dates) if date.fromisoformat(day).weekday() == 0]
-    out: list[int] = []
-    prev = ""
-    for i, day in enumerate(dates):
-        ym = day[:7]
-        if ym != prev:
-            out.append(i)
-            prev = ym
-    return out
+        return _period_last_indices(dates, lambda d: d.isocalendar()[:2])
+    return _period_last_indices(dates, lambda d: (d.year, d.month))
 
 
 def _adj_ohlc(panel: Panel) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -494,9 +500,10 @@ def evaluate(
     warnings = [
         "因子研究不是账户撮合, 没有 T+1 / 整手 / 共享现金",
         "从本机日 K 现场算, 不是 TickFlow enriched, 也不是整库 Alpha Zoo",
+        "周/月调仓用交易周/月最后一根",
     ]
     if member_mask is not None:
-        warnings.append("因子截面已按日成分掩码")
+        warnings.append("因子截面已按可交易掩码 (成分 / ST / 次新)")
     else:
         warnings.append("静态池按整段都在, 不是按日成分, 有幸存者偏差")
     if panel.S < 30:
@@ -637,6 +644,11 @@ def _run_factor_body(
             member_mask = membership_mask(index_id, panel.dates, panel.symbols)
         else:
             warnings.append("没有覆盖这段的按日成分, 因子仍是静态池")
+    from backtest.screen import apply_from_body, parse_screen
+
+    member_mask, screen_notes = apply_from_body(panel, body, member_mask)
+    warnings.extend(screen_notes)
+    exclude_st, min_list_days = parse_screen(body)
     out = evaluate(
         panel,
         factor_id,
@@ -672,6 +684,8 @@ def _run_factor_body(
         "start": start,
         "end": end,
         "index": index_id or None,
+        "exclude_st": exclude_st,
+        "min_list_days": min_list_days,
     }
     persist = body.get("persist")
     if persist is None:
@@ -752,7 +766,7 @@ def run_factor_compare(body: dict, *, bars_by_symbol: dict[str, list[dict]] | No
     begin(kind="factor", step="load", total=len(symbols), note=f"对照 {len(ids)} 个因子")
     try:
         return _run_factor_compare_body(
-            ids, rebalance, n_groups, direction, weight, ls_fee, pool,
+            body, ids, rebalance, n_groups, direction, weight, ls_fee, pool,
             start, end, symbols, load_start,
             bars_by_symbol=bars_by_symbol, fetch_fn=fetch_fn,
         )
@@ -761,6 +775,7 @@ def run_factor_compare(body: dict, *, bars_by_symbol: dict[str, list[dict]] | No
 
 
 def _run_factor_compare_body(
+    body: dict,
     ids: list[str],
     rebalance: str,
     n_groups: int,
@@ -787,6 +802,10 @@ def _run_factor_compare_body(
         fetch_fn=fetch_fn,
         use_cache=bars_by_symbol is None,
     )
+    from backtest.screen import apply_from_body
+
+    member_mask, screen_notes = apply_from_body(panel, body, None)
+    warnings.extend(screen_notes)
     rows: list[dict] = []
     series: dict[str, dict[str, float]] = {}
     mark(step="compare", done=0, total=len(ids))
@@ -801,6 +820,7 @@ def _run_factor_compare_body(
             direction=direction,
             weight=weight,
             ls_fee=ls_fee,
+            member_mask=member_mask,
         )
         q1 = next((g for g in ev["group_stats"] if g["label"] == "Q1"), None)
         qn = next((g for g in ev["group_stats"] if g["label"] == f"Q{n_groups}"), None)

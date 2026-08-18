@@ -241,6 +241,11 @@ def run_model(body: dict, *, bars_by_symbol: dict[str, list[dict]] | None = None
             missing = sum(1 for lab in industries if not lab)
             if missing:
                 warnings.append(f"行业中性: {missing} 只没有板块归属, 单独一组, 不假装中性")
+        from backtest.screen import apply_from_body, parse_screen
+
+        member_mask, screen_notes = apply_from_body(panel, body, None)
+        warnings.extend(screen_notes)
+        exclude_st, min_list_days = parse_screen(body)
         mark(step="match")
         entries, exits, notes, targets = build_signals(
             panel,
@@ -248,6 +253,7 @@ def run_model(body: dict, *, bars_by_symbol: dict[str, list[dict]] | None = None
             mom_win=int(body.get("mom_win") or 20),
             rebalance=int(body.get("rebalance") or 20),
             top_k=cfg.max_positions,
+            member_mask=member_mask,
             score_matrix=scores,
             max_weight=cfg.max_weight,
             industry_neutral=cfg.industry_neutral,
@@ -265,6 +271,7 @@ def run_model(body: dict, *, bars_by_symbol: dict[str, list[dict]] | None = None
             mom_win=int(body.get("mom_win") or 20),
             rebalance=int(body.get("rebalance") or 20),
             top_k=cfg.max_positions,
+            member_mask=member_mask,
             score_matrix=scores,
             max_weight=cfg.max_weight,
             industry_neutral=cfg.industry_neutral,
@@ -320,6 +327,8 @@ def run_model(body: dict, *, bars_by_symbol: dict[str, list[dict]] | None = None
                 "max_weight": cfg.max_weight,
                 "industry_neutral": cfg.industry_neutral,
             },
+            "exclude_st": exclude_st,
+            "min_list_days": min_list_days,
         }
         out["config"] = cfg_payload
         mark(step="write")

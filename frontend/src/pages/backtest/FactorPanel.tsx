@@ -141,6 +141,8 @@ export function FactorPanel({
   const [direction, setDirection] = useState<"high" | "low">("high");
   const [nGroups, setNGroups] = useState(5);
   const [weight, setWeight] = useState<"equal" | "factor_weight">("equal");
+  const [excludeSt, setExcludeSt] = useState(true);
+  const [minListDays, setMinListDays] = useState(60);
   const [compare, setCompare] = useState<BacktestFactorCompare | null>(null);
   const [running, setRunning] = useState(false);
   const job = useBacktestJob(running);
@@ -195,6 +197,8 @@ export function FactorPanel({
         direction,
         weight,
         index: indexId || undefined,
+        exclude_st: excludeSt,
+        min_list_days: minListDays,
       }));
       void refreshRuns();
     } catch (e) {
@@ -211,6 +215,7 @@ export function FactorPanel({
         先问因子有没有预测力: Rank IC、五档净值、多空。不是账户撮合, 没有 T+1 / 整手。
         从本机日 K 现场算: TickFlow 那组技术因子 + 3 条 WorldQuant 公式。不是 enriched, 也不是 460 条整库。换手率要股本, 没加。少于 30 只 IC 很噪。库存已覆盖最多 600 只, 不是全 A。
         财务 ROE/净利润/营收按公告日 PIT, 不是报告期偷看. 点指数导入后因子截面可按日成分掩码.
+        周/月调仓用交易期末最后一根. 默认剔 ST (今天的名字) 和次新 (这段第一根 bar).
         实验落本机 runs/ 写完不改, 和账户实验分开列。
       </div>
       {runs.length > 0 && (
@@ -331,7 +336,22 @@ export function FactorPanel({
               </button>
             ))}
           </div>
+          <p className="mt-1 text-[10px] text-slate-500">周/月 = 交易期末最后一根</p>
         </div>
+        <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
+          <input type="checkbox" checked={excludeSt} onChange={(e) => setExcludeSt(e.target.checked)} />
+          剔除 ST / 退
+        </label>
+        <label className="block text-[11px] text-slate-400">
+          次新天数 (0=关)
+          <input
+            type="number"
+            min={0}
+            value={minListDays}
+            onChange={(e) => setMinListDays(Number(e.target.value) || 0)}
+            className="mt-1 w-full rounded border border-slate-700 bg-slate-950/60 px-2 py-1 text-[12px] text-slate-100"
+          />
+        </label>
         <div>
           <p className="mb-1 text-[10px] text-slate-500">池子</p>
           <div className="flex gap-1">
@@ -434,6 +454,8 @@ export function FactorPanel({
               direction,
               weight,
               index: indexId || undefined,
+              exclude_st: excludeSt,
+              min_list_days: minListDays,
             }).then((out) => {
               setCompare(out);
             }).catch((e) => {

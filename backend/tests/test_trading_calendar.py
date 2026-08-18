@@ -180,3 +180,26 @@ def test_last_closed_weekend_is_friday():
     tc.load_dates([date(2026, 8, 13), date(2026, 8, 14)])
     now = datetime(2026, 8, 15, 10, 0, tzinfo=BEIJING)
     assert tc.last_closed_session(now) == date(2026, 8, 14)
+
+
+def test_day_shift_uses_loaded_calendar():
+    tc.load_dates([
+        date(2026, 8, 13),
+        date(2026, 8, 14),
+        date(2026, 8, 17),
+        date(2026, 8, 18),
+    ])
+    assert tc.day_shift(date(2026, 8, 14), 1) == date(2026, 8, 17)
+    assert tc.day_shift(date(2026, 8, 17), -1) == date(2026, 8, 14)
+    assert tc.day_shift(date(2026, 8, 15), 0) == date(2026, 8, 14)
+    assert tc.day_shift(date(2026, 8, 15), 1) == date(2026, 8, 17)
+    assert tc.floor_day(date(2026, 8, 16)) == date(2026, 8, 14)
+    assert tc.ceiling_day(date(2026, 8, 15)) == date(2026, 8, 17)
+    assert tc.count_day_frames(date(2026, 8, 13), date(2026, 8, 18)) == 4
+    assert tc.count_day_frames(date(2026, 8, 18), date(2026, 8, 13)) == 0
+
+
+def test_day_shift_without_calendar_skips_weekend():
+    assert tc.day_shift(date(2026, 8, 14), 1) == date(2026, 8, 17)
+    assert tc.day_shift(date(2026, 8, 17), -1) == date(2026, 8, 14)
+    assert tc.count_day_frames(date(2026, 8, 14), date(2026, 8, 17)) == 2

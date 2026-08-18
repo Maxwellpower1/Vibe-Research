@@ -66,6 +66,8 @@ interface Draft {
   pitMembers: boolean;
   maxWeight: number;
   industryNeutral: boolean;
+  excludeSt: boolean;
+  minListDays: number;
 }
 
 const STRATS: { id: BacktestStrategy; label: string; hint: string }[] = [
@@ -102,6 +104,8 @@ function defaultDraft(): Draft {
     pitMembers: false,
     maxWeight: 0,
     industryNeutral: false,
+    excludeSt: true,
+    minListDays: 60,
   };
 }
 
@@ -173,6 +177,8 @@ function draftFromResult(result: BacktestResult, base: Draft): Draft {
     pitMembers: Boolean(cfg.pit_members),
     maxWeight: Number(matcher.max_weight ?? 0) * 100,
     industryNeutral: Boolean(matcher.industry_neutral),
+    excludeSt: cfg.exclude_st !== false,
+    minListDays: Number(cfg.min_list_days ?? 60),
   };
 }
 
@@ -457,6 +463,8 @@ export function Backtest() {
         pit_members: Boolean(next.pitMembers && next.indexId),
         max_weight: next.maxWeight > 0 ? next.maxWeight / 100 : 0,
         industry_neutral: next.industryNeutral,
+        exclude_st: next.excludeSt,
+        min_list_days: next.minListDays,
       };
       const out = await api.backtestRun(body);
       setResult(out);
@@ -716,6 +724,25 @@ export function Backtest() {
                 onChange={(e) => patch({ pitMembers: e.target.checked })}
               />
               按日成分回放{draft.indexId ? ` (${draft.indexId})` : " (先点沪深300等)"}
+            </label>
+            <label className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">
+              <input
+                type="checkbox"
+                checked={draft.excludeSt}
+                onChange={(e) => patch({ excludeSt: e.target.checked })}
+              />
+              剔除 ST / 退 (今天的名字, 有前视)
+            </label>
+            <label className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">
+              次新
+              <input
+                type="number"
+                min={0}
+                value={draft.minListDays}
+                onChange={(e) => patch({ minListDays: Number(e.target.value) || 0 })}
+                className="w-14 rounded border border-slate-700 bg-slate-950/60 px-1 py-0.5 text-[11px] text-slate-100"
+              />
+              日 (0=关; 按这段第一根 bar)
             </label>
           </label>
 

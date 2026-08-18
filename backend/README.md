@@ -62,8 +62,8 @@ python3 -m venv .venv
 | `GET /api/research/etf-holdings?symbol=` | ETF 穿透（东财 / N-PORT） | requests；美股需 VR_SEC_CONTACT |
 | `GET /api/research/13f?manager=` | 13F 持仓 + 两季环比；`ticker=` 列持有人 | VR_SEC_CONTACT |
 | `GET /api/backtest/meta` | 回测策略 / 默认费用 / 免责声明 | — |
-| `POST /api/backtest/run` | A 股日线账户回测（次日开盘、T+1、整手、印花税只卖；`top_k` 按目标权重加减仓） | 腾讯日 K |
-| `POST /api/backtest/factor` | 因子 Rank IC / Pearson IC / 五档 / 多空（技术因子 + OHLCV 公式 + 3 条 WorldQuant，日 K 现场算） | 本机库存 |
+| `POST /api/backtest/run` | A 股日线账户回测（次日开盘、T+1、整手、印花税只卖；`top_k` 按目标权重加减仓；`exclude_st` / `min_list_days`） | 腾讯日 K |
+| `POST /api/backtest/factor` | 因子 Rank IC / Pearson IC / 五档 / 多空（技术因子 + OHLCV 公式 + 3 条 WorldQuant，日 K 现场算；周/月=交易期末） | 本机库存 |
 | `POST /api/backtest/factor/compare` | 同一面板对照最多 6 个因子 + IC 相关 | 本机库存 |
 | `POST /api/backtest/model` | 模型研究：样本内训 LightGBM，分数进 Top-K；没装则提示 | 本机库存；可选 lightgbm |
 | `GET /api/backtest/store` | 本机日历 / 日 K 覆盖 / 实验；`?codes=` 看这批是否齐 | — |

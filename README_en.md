@@ -39,7 +39,7 @@ It does not make decisions for you. It pulls together quotes, analyst reports, v
 | ⭐&nbsp;**Watchlist** | **Paste a whole batch of tickers at once** (commas, spaces or newlines) · one-screen table (price, change, PE, PB, turnover) · **live quotes toggle** (top right, off by default; refreshes every 3s during trading hours, auto-pauses outside them and when the tab is hidden) · hand the whole list to your AI. Stored locally |
 | 💼&nbsp;**Portfolio** | Enter cost and size, see live P&L · closed-position log (local only, never uploaded) |
 | 🔬&nbsp;**Research desk** | Header `/research`: correlation heatmap · ETF look-through (Eastmoney full book / SEC N-PORT) · 13F QoQ · Stooq/Baostock/pykrx candles. Public filings only; holdings are stale by construction |
-| 🧪&nbsp;**Backtest** | Header `/backtest`: account + factor + model. `top_k` target weights, name cap, industry-neutral, Sortino. Optional LightGBM scores feed the same matcher. Grid fits on the IS cut |
+| 🧪&nbsp;**Backtest** | Header `/backtest`: account + factor + model. Weekly/monthly factor rebalance uses the last session of the trading week/month. Default ST / new-list screen. `top_k` target weights, name cap, industry-neutral, Sortino. Optional LightGBM scores feed the same matcher. Grid fits on the IS cut |
 | 🗄️&nbsp;**Data** | More menu `/data`: local calendar, daily-bar coverage, experiments. Can fill the last 3y of closed bars for the A-share universe |
 | 🔌&nbsp;**Bring Your AI** | Subscription mode (local CLI, no API key) · API mode (any OpenAI-compatible endpoint) · MCP (mount into Claude Code and other agents) |
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from backtest.factor import evaluate, factor_matrix, run_factor, spearman
+from backtest.factor import evaluate, factor_matrix, rebalance_indices, run_factor, spearman
 from backtest.panel import build_panel
 from backtest.service import meta
 
@@ -30,6 +30,19 @@ def _panel(n_names: int = 20, n_days: int = 80):
             for d, c in zip(days, closes)
         ]
     return build_panel(bars), days
+
+
+def test_rebalance_last_session_of_week_and_month():
+    days = _weekdays(12, "2023-01-02")
+    # 2023-01-02 Mon ... 2023-01-06 Fri, then 01-09..01-13, then 01-16..
+    weekly = rebalance_indices(days, "weekly")
+    assert days[weekly[0]] == "2023-01-06"
+    assert days[weekly[1]] == "2023-01-13"
+    monthly = rebalance_indices(
+        ["2023-01-03", "2023-01-31", "2023-02-01", "2023-02-28"],
+        "monthly",
+    )
+    assert monthly == [1, 3]
 
 
 def test_spearman_perfect():
@@ -313,6 +326,7 @@ def test_factor_compare_two(monkeypatch, tmp_path):
             "end": days[-1],
             "factors": ["momentum_10", "change_1"],
             "rebalance": "weekly",
+            "min_list_days": 0,
             "persist": False,
         },
         bars_by_symbol=bars,

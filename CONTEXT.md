@@ -70,8 +70,9 @@ _Avoid_: chat widget, LLM service
 **交易日历**:
 A 股这一天开不开市。复盘邮件、预热、网页报价中心/分时中心的休市间隔只问这个，不各自判 weekday。
 入口: `backend/trading_calendar.py`。`is_cn_trading_day()` 不打网上游；后台刷新上证日 K 日期（东财 push2his，挂了走 push2delay，再挂走已有 `astock.daily_bars("sh000001")`）。网页读预热状态的 `trading_day`。
+回测加减交易日也走这里: `day_shift` / `floor_day` / `ceiling_day` / `count_day_frames`，用同一份日期集，不另开日历表。
 拿不到日历或日期超出覆盖：只判周末。
-_Avoid_: 第二份 weekday 列表、akshare 日历
+_Avoid_: 第二份 weekday 列表、akshare 日历、Omicron / 第二套 int 日期表
 
 **回测**:
 自选 / 持仓的日线账户模拟。信号日不等于成交日。默认次日开盘。一笔共享现金。T+1、整手 100、佣金双边、印花税只卖。涨跌停看成交价对昨收带宽。净值只从现金+市值来。
@@ -84,7 +85,7 @@ _Avoid_: 第二份 weekday 列表、akshare 日历
 本机数据页看日历 / 标的池日 K / 按日成分 / 财务 PIT / 实验。可点补齐近 3 年、按日成分、财务 PIT，只写已收盘 bar，不清库。回测页 `GET /api/backtest/store?codes=` 看这批齐不齐，缺的跑的时候现拉。`POST /api/backtest/store/members` · `POST /api/backtest/store/fundamentals`。回测优先读库存，缺的再补。
 问 AI 工具 `run_backtest` 读成交摘要和净值。
 样本外: 参数只在切点前选；`stats_oos_fresh` 是切点后新开的一笔钱（均线仍用切点前历史）。滚动切窗每折新开账户，开着时不再叠单点切窗。回看账户实验用本机 parquet 对 `data_hash`（超过 40 只跳过，避免打开卡死服务）；因子回看只读落盘结果，不重算哈希。对不上只提示、不改 run。持仓页「回测这些」进 `/backtest?codes=&from=portfolio&autostart=1`。
-因子页：Rank IC / Pearson IC / 五档净值 / 多空，可改方向 / 分层 / 等权或因子加权；对照最多 6 个因子。财务 PIT 因子（ROE/净利润/营收）按公告日。账户有止损、最长持有、月收益和回撤段、Sortino。均线 / 动量 / 模型网格只在样本内选。模型实验 `kind=model`，分数进同一套撮合。因子 / 模型实验也落 runs/，和账户分开列。写明幸存者偏差。实验条可叠对照；成交按标的汇总；可填回表单再跑。
+因子页：Rank IC / Pearson IC / 五档净值 / 多空，可改方向 / 分层 / 等权或因子加权；对照最多 6 个因子。周/月调仓用交易周/月最后一根，不是日历周一或月初。默认剔 ST / 退（今天的名称，有前视）和次新（这段日 K 第一根 bar，面板不够长则跳过）；账户 / 因子 / 模型同一套掩码。财务 PIT 因子（ROE/净利润/营收）按公告日。账户有止损、最长持有、月收益和回撤段、Sortino。均线 / 动量 / 模型网格只在样本内选。模型实验 `kind=model`，分数进同一套撮合。因子 / 模型实验也落 runs/，和账户分开列。写明幸存者偏差。实验条可叠对照；成交按标的汇总；可填回表单再跑。
 _Avoid_: 第二条日历, 第二条报价轮询, 重叠持有期×252/horizon 年化, SQLite/.db, 用已跑完净值切窗冒充 walk-forward, 第二份代码名单, 第二份板块 JSON, 第二套行情目录
 
 ## 就地改
@@ -106,7 +107,8 @@ _Avoid_: 第二条日历, 第二条报价轮询, 重叠持有期×252/horizon �
 - 缓存键：预热填过 `world_indices` 后，`get_global_indices` 不再打上游；热槽过期仍读上一笔（`backend/tests/test_clock_serve.py`、`backend/tests/test_cache.py`）
 - 标的池 / 横截面：`backend/tests/test_cross_section.py`（只有 `a-share-codes.json`；快照不写报价 5 秒缓存）
 - 全 A 库存：`backend/tests/test_universe_sync.py`（补齐走 `ensure_bars`，已齐跳过，不进预热）
-- 因子：`backend/tests/test_backtest_factor.py`（IC / 五档走日 K 面板，不建 enriched）
+- 因子：`backend/tests/test_backtest_factor.py`（IC / 五档走日 K 面板，不建 enriched；周/月调仓是交易期末）
+- 可交易掩码 / 日历加减：`backend/tests/test_backtest_screen.py` · `backend/tests/test_trading_calendar.py`（不引入 Omicron）
 - 目标权重 / 模型：`backend/tests/test_backtest_matcher.py` · `backend/tests/test_backtest_model.py`（同一套撮合，不建 .db，不引入 quantide）
 - 指数成分导入：`backend/tests/test_backtest_index_pool.py`（今日快照走 members/，fetch 可注入，不扫全 A）
 - 按日成分 / 财务 PIT / 可交易基准：`backend/tests/test_backtest_pit.py`（调整公告可注入，不打中证/东财；没有快照时基准才用价格比）

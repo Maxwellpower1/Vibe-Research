@@ -33,7 +33,9 @@ DISCLAIMER = (
     "研究模拟, 不是实盘, 不荐股、不预测。"
     "信号日不等于成交日; 默认次日开盘。"
     "净值只来自现金加市值, 不用持有期去乘年化。"
-    "ST 5% 涨跌停从代码看不出来, 按板块默认带宽。"
+    "ST 5% 涨跌停从代码看不出来, 按板块默认带宽; 默认按今天的名称剔 ST / 退, 有前视。"
+    "次新按这段日 K 第一根 bar 计, 日 K 不够长则跳过。"
+    "因子周/月调仓用交易周/月最后一根。"
     "原始价和复权因子分开; 只写已收盘 bar。"
     "优先读本机库存, 缺的再补。"
     "自选默认是静态池, 有幸存者偏差; 勾选按日成分才按 members_on 回放。"
@@ -390,6 +392,11 @@ def _run_backtest_body(
         member_mask = membership_mask(index_id, panel.dates, panel.symbols)
         if not member_mask.any():
             raise BacktestError("按日成分掩码是空的, 快照和这段日 K 对不上")
+    from backtest.screen import apply_from_body, parse_screen
+
+    member_mask, screen_notes = apply_from_body(panel, body, member_mask)
+    warnings.extend(screen_notes)
+    exclude_st, min_list_days = parse_screen(body)
     split_idx = None
     split_date = None
     tune_grid: list[dict] = []
@@ -557,6 +564,8 @@ def _run_backtest_body(
         "walk_forward": walk,
         "index": index_id or None,
         "pit_members": bool(pit and index_id),
+        "exclude_st": exclude_st,
+        "min_list_days": min_list_days,
     }
     out["config"] = cfg_payload
     mark(step="write")
@@ -606,6 +615,7 @@ def meta() -> dict:
         "lookbacks": list(LOOKBACKS),
         "defaults": asdict(MatcherConfig()),
         "limits": {"max_codes": MAX_CODES, "max_bars": 1000, "factor_max_codes": MAX_CODES},
+        "screen": {"exclude_st": True, "min_list_days": 60},
         "factors": _factor_meta(),
         "index_pools": _index_pool_meta(),
         "disclaimer": DISCLAIMER,
@@ -614,7 +624,9 @@ def meta() -> dict:
             "一笔共享现金; 每只预算 = 净值 / 最大持仓数",
             "T+1, 整手 100, 佣金双边, 印花税只卖",
             "涨跌停看成交价对昨收带宽, 不是只拦一字板",
-            "ST 5% 从代码看不出来",
+            "ST 5% 从代码看不出来; 默认按今天名称剔 ST / 退, 有前视",
+            "次新按本段日 K 第一根 bar 计, 面板不够长则跳过",
+            "因子周/月调仓用交易周/月最后一根, 不是日历周一或月初",
             "净值只从现金+市值来, 不用持有期 x 252/horizon",
             "原始价和复权因子分开, 只写已收盘 bar, 实验落 runs/<id>/ 写完不改",
             "成分股按日存; 财务用 (start, end) + 公告日。自选仍是静态池",

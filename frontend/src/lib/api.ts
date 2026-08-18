@@ -1844,6 +1844,8 @@ export interface BacktestRunBody {
   max_weight?: number;
   industry_neutral?: boolean;
   weight?: "equal" | "factor_weight";
+  exclude_st?: boolean;
+  min_list_days?: number;
 }
 
 export interface BacktestSymbolRow {
@@ -1936,6 +1938,8 @@ export interface BacktestResult {
     oos_frac?: number | string | null;
     index?: string;
     pit_members?: boolean;
+    exclude_st?: boolean;
+    min_list_days?: number;
     matcher?: {
       fill?: "open_t+1" | "close_t";
       commission_pct?: number;
@@ -2123,6 +2127,8 @@ export interface BacktestFactorBody {
   ls_fee?: number;
   factors?: string[];
   index?: string;
+  exclude_st?: boolean;
+  min_list_days?: number;
 }
 
 export interface BacktestFactorCompareBody extends BacktestFactorBody {
@@ -2226,6 +2232,8 @@ export interface BacktestModelBody {
   max_positions?: number;
   max_weight?: number;
   industry_neutral?: boolean;
+  exclude_st?: boolean;
+  min_list_days?: number;
   commission_pct?: number;
   commission_min?: number;
   stamp_tax_pct?: number;

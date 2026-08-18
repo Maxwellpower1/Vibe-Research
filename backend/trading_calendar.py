@@ -7,6 +7,7 @@ to weekend-only so a fetch failure cannot skip a real trading day.
 """
 from __future__ import annotations
 
+import bisect
 import json
 import logging
 import os
@@ -21,6 +22,7 @@ BEIJING = timezone(timedelta(hours=8))
 log = logging.getLogger("trading_calendar")
 
 _DATES: frozenset[date] | None = None
+_SORTED: list[date] | None = None
 _RANGE: tuple[date, date] | None = None
 _LOADED_ON: date | None = None
 _SOURCE = ""
@@ -44,8 +46,9 @@ _MIN_DATES = 200
 
 def reset() -> None:
     """Clear memory (tests). Do not resurrect from disk until start_background/refresh."""
-    global _DATES, _RANGE, _LOADED_ON, _SOURCE, _ALLOW_DISK
+    global _DATES, _SORTED, _RANGE, _LOADED_ON, _SOURCE, _ALLOW_DISK
     _DATES = None
+    _SORTED = None
     _RANGE = None
     _LOADED_ON = None
     _SOURCE = ""
@@ -65,11 +68,12 @@ def _as_beijing_date(d: date | datetime | None) -> date:
 
 
 def _set(dates: frozenset[date], source: str) -> None:
-    global _DATES, _RANGE, _LOADED_ON, _SOURCE
+    global _DATES, _SORTED, _RANGE, _LOADED_ON, _SOURCE
     if not dates:
         return
     _DATES = dates
-    _RANGE = (min(dates), max(dates))
+    _SORTED = sorted(dates)
+    _RANGE = (_SORTED[0], _SORTED[-1])
     _LOADED_ON = datetime.now(BEIJING).date()
     _SOURCE = source
 
@@ -183,6 +187,88 @@ def is_cn_trading_day(d: date | datetime | None = None) -> bool:
     return True
 
 
+def _covered(d: date) -> bool:
+    return bool(_SORTED and _RANGE and _RANGE[0] <= d <= _RANGE[1])
+
+
+def _shift_fallback(start: date, offset: int) -> date:
+    """Walk is_cn_trading_day. Same weekend/holiday rule as the boolean check."""
+    if offset == 0:
+        cur = start
+        for _ in range(21):
+            if is_cn_trading_day(cur):
+                return cur
+            cur -= timedelta(days=1)
+        return start
+    step = 1 if offset > 0 else -1
+    left = abs(offset)
+    cur = start
+    guard = 0
+    while left and guard < 4000:
+        cur += timedelta(days=step)
+        guard += 1
+        if is_cn_trading_day(cur):
+            left -= 1
+    return cur
+
+
+def day_shift(start: date | datetime, offset: int) -> date:
+    """Move `offset` A-share sessions. 0 = last session on or before start.
+
+    Positive skips to later sessions (Friday + 1 = next Monday).
+    Uses the loaded calendar inside its range; otherwise the same
+    weekend fallback as is_cn_trading_day. Clamps at calendar ends.
+    """
+    start = _as_beijing_date(start)
+    _ensure_memory()
+    days = _SORTED
+    if days and _covered(start):
+        if offset == 0:
+            i = bisect.bisect_right(days, start) - 1
+            return days[i] if i >= 0 else days[0]
+        if offset > 0:
+            i = bisect.bisect_right(days, start) + offset - 1
+            if i >= len(days):
+                return days[-1]
+            return days[max(i, 0)]
+        i = bisect.bisect_left(days, start) + offset
+        if i < 0:
+            return days[0]
+        return days[min(i, len(days) - 1)]
+    return _shift_fallback(start, offset)
+
+
+def floor_day(d: date | datetime | None = None) -> date:
+    """Last trading day on or before d."""
+    return day_shift(_as_beijing_date(d), 0)
+
+
+def ceiling_day(d: date | datetime | None = None) -> date:
+    """First trading day on or after d."""
+    target = _as_beijing_date(d)
+    if is_cn_trading_day(target):
+        return target
+    return day_shift(target, 1)
+
+
+def count_day_frames(start: date | datetime, end: date | datetime) -> int:
+    """Inclusive trading-day count. 0 if start > end."""
+    a = _as_beijing_date(start)
+    b = _as_beijing_date(end)
+    if a > b:
+        return 0
+    _ensure_memory()
+    if _SORTED and _RANGE and _RANGE[0] <= a and b <= _RANGE[1]:
+        return bisect.bisect_right(_SORTED, b) - bisect.bisect_left(_SORTED, a)
+    n = 0
+    cur = a
+    while cur <= b:
+        if is_cn_trading_day(cur):
+            n += 1
+        cur += timedelta(days=1)
+    return n
+
+
 # Regular session close. Do not persist today's bar before this.
 _A_SHARE_CLOSE = (15, 0)
 
@@ -190,7 +276,7 @@ _A_SHARE_CLOSE = (15, 0)
 def last_closed_session(now: date | datetime | None = None) -> date:
     """Last A-share session that has already closed (15:00 Beijing).
 
-    Uses is_cn_trading_day. No second weekday list.
+    Uses is_cn_trading_day / day_shift. No second weekday list.
     """
     if isinstance(now, date) and not isinstance(now, datetime):
         current = datetime(now.year, now.month, now.day, 23, 59, tzinfo=BEIJING)
@@ -205,11 +291,7 @@ def last_closed_session(now: date | datetime | None = None) -> date:
     day = current.date()
     if is_cn_trading_day(day) and (current.hour, current.minute) >= _A_SHARE_CLOSE:
         return day
-    for i in range(1, 30):
-        cand = day - timedelta(days=i)
-        if is_cn_trading_day(cand):
-            return cand
-    return day - timedelta(days=1)
+    return day_shift(day, -1)
 
 
 def status() -> dict[str, Any]:
