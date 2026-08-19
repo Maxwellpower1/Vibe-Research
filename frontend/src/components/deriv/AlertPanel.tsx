@@ -5,7 +5,7 @@ import type { DerivData } from "@/hooks/useDerivData";
 import { cn } from "@/lib/utils";
 import { daysToExpiry, num } from "@/components/ovlab/shared";
 import { storageGet, storageSet } from "@/lib/storage";
-import { CellEmpty, useAlertSeen } from "./derivShared";
+import { CellEmpty, alertOptionName, useAlertSeen } from "./derivShared";
 
 /** OpenVlab flow-alert rule_id -> 异动类型. Aligns with openvlab.cn/flow/option-flow. */
 export const FLOW_RULE_LABEL: Record<string, string> = {
@@ -437,8 +437,11 @@ export function AlertPanel({ d }: { d: DerivData }) {
                     <td className="px-1.5 py-0.5 tabular-nums text-slate-500">
                       {String(a.time ?? "").slice(11, 16)}
                     </td>
-                    <td className="max-w-[6.5rem] truncate px-1 py-0.5 text-slate-300" title={String(a.instrument ?? a.contract_code ?? "")}>
-                      {String(a.contract_code ?? "-")}
+                    <td
+                      className="max-w-[8rem] truncate px-1 py-0.5 text-slate-300"
+                      title={`${String(a.instrument ?? "")} ${String(a.contract_code ?? "")}`.trim()}
+                    >
+                      {alertOptionName(a)}
                     </td>
                     <td className={cn("whitespace-nowrap px-1 py-0.5", ruleToneOf(a))}>
                       {ruleLabelOf(a)}

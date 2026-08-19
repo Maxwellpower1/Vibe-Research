@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { num } from "@/components/ovlab/shared";
 import { formatAge } from "@/lib/freshness";
 import { storageGet, storageSet } from "@/lib/storage";
+import { DERIV_DEFS } from "@/config/deriv";
 
 /** 主力合约码: prodUnd + exp tail (e.g. IF2608). */
 export function klineSym(r: Pick<OvlabMarketRow, "prodUnd" | "exp">): string {
@@ -18,6 +19,31 @@ export function contractCode(r: Pick<OvlabMarketRow, "prodUnd" | "exp">): string
   const und = String(r.prodUnd ?? "").trim();
   if (!und) return "";
   return /^\d+$/.test(und) ? und : klineSym(r);
+}
+
+/** 异动标的 -> 中文名: 目录码双向 (IO/IF 都指沪深300) + 目录外 ETF 补充. */
+const ALERT_UND_NAME: Record<string, string> = (() => {
+  const m: Record<string, string> = {
+    "588080": "科创板50",
+    "159901": "深100ETF",
+    "159919": "300ETF",
+    "159922": "500ETF",
+  };
+  for (const d of DERIV_DEFS) {
+    m[d.product] = d.label;
+    m[d.und] = d.label;
+  }
+  return m;
+})();
+
+/** 异动合约中文名: OPT_SHSE_588000:202608:P:1.8 -> 科创50沽8月1.8; 解析不了回落 contract_code. */
+export function alertOptionName(a: { instrument?: string; contract_code?: string }): string {
+  const raw = String(a.instrument ?? "").trim();
+  const m = raw.match(/^OPT_[A-Z]+_([A-Z0-9]+):(\d{6}):([CP]):(.+)$/i);
+  if (!m) return String(a.contract_code ?? "") || raw || "-";
+  const [, und, ym, side, strike] = m;
+  const name = ALERT_UND_NAME[und.toUpperCase()] ?? und;
+  return `${name}${side.toUpperCase() === "C" ? "购" : "沽"}${Number(ym.slice(4))}月${strike}`;
 }
 
 /** Panel header right slot: freshness age label, same language as A-share cells. */
