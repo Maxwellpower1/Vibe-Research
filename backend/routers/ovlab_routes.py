@@ -98,9 +98,18 @@ def ovlab_flow_alert():
 
 
 @router.get("/api/ovlab/mqtt")
-def ovlab_mqtt_status():
-    """OpenVlab MQTT snapshot: optionflow / ctamap / dataview. Does not write REST cache."""
+def ovlab_mqtt_status(pin: str | None = Query(default=None, max_length=400)):
+    """OpenVlab MQTT snapshot: optionflow / ctamap / dataview. Does not write REST cache.
+
+    Optional pin=CODE,UND keeps those instr in the 800-slot dataview LRU
+    and extra-subscribes instr/{alias}. Omit pin to leave pins as-is
+    (arb cockpit shares this poller).
+    """
     import ovlab_mqtt
+    if pin:
+        codes = [p.strip() for p in pin.split(",") if p.strip()][:12]
+        if codes:
+            ovlab_mqtt.pin_dataview(codes)
     return {"data": ovlab_mqtt.snapshot()}
 
 

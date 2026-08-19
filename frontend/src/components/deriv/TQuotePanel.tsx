@@ -4,7 +4,7 @@ import type { DerivData } from "@/hooks/useDerivData";
 import { usePolling } from "@/hooks/usePolling";
 import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
-import { CellEmpty, CtnText, ProdSearchSelect, SortableHd } from "./derivShared";
+import { CellEmpty, CtnText, ProdSearchSelect, SortableHd, contractCode, findRowByUnd, tickFresh, undOfRow } from "./derivShared";
 import { storageGet, storageSet } from "@/lib/storage";
 
 /** 右下日K/分时: 点行情观察出标的, 点 T 表出期权合约. */
@@ -262,8 +262,8 @@ function SideCells({ s, itm, side, selected, maxOi, oiMax, atmIv, onPick }: {
 
 /** T 型报价: 行权价链 (理论价/IV/Delta/持仓横条) x 到期月. 数据 OpenVlab volatility-surface + Black-76.
  *  品种受控于驾驶舱 (点品种行联动); 点单侧格子发出 kind=option 联动日K/分时卡.
- *  换品种/到期月且当前选中不在链上时, 自动点 ATM 购; kind=und (行情观察标的图) 不覆盖.
- *  标的最新/涨跌优先 dataview 当月期货 last, 再 tquote.futPx, ETF 无期货回落 d.rows. */
+ *  换品种下拉出主力期货图; 换到期月且当前期权不在链上时才 ATM 购; kind=und 不覆盖.
+ *  点顶栏当月期货价也切 kind=und. 标的最新: 新鲜 dataview, 当月=主力则 ctamap, 再 futPx. */
 export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   d: DerivData;
   product?: string;
@@ -275,7 +275,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
     const seen = new Set<string>();
     const out: Array<{ code: string; alias: string }> = [];
     for (const r of d.rows ?? []) {
-      const code = String(r.prodUnd ?? "").trim();
+      const code = undOfRow(r);
       if (!code || seen.has(code)) continue;
       seen.add(code);
       out.push({ code, alias: String(r.product_alias ?? code) });
@@ -287,7 +287,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   useEffect(() => {
     if (prod || products.length === 0 || !onProduct) return;
     const preferred = d.rows?.find((r) => num(r.atmv_current) !== null);
-    onProduct(String(preferred?.prodUnd ?? products[0].code));
+    onProduct(undOfRow(preferred ?? {}) || products[0].code);
   }, [prod, products, d.rows, onProduct]);
 
   const [exp, setExp] = useState<string>("");
@@ -313,23 +313,28 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
   const cur: OvlabTQuoteExpiry | undefined = expiries.find((e) => e.exp === exp) ?? expiries[0];
   const fwd = num(cur?.forward);
   const atm = cur?.atm ?? null;
-  const mkt = useMemo(
-    () => (d.rows ?? []).find((r) => String(r.prodUnd ?? "").trim() === prod),
-    [d.rows, prod],
-  );
-  const futPx = num(cur?.futPx);
+  const mkt = useMemo(() => findRowByUnd(d.rows, prod), [d.rows, prod]);
+  const futLast = num(cur?.futPx);
   const futPct = num(cur?.futPct);
-  const tickLast = num(d.ticks[String(cur?.und ?? "").toUpperCase()]?.last);
-  const basePx = futPx ?? num(mkt?.price);
-  const baseCtn = futPx != null ? futPct : num(mkt?.ctn);
-  let undPx = basePx;
-  let undCtn = baseCtn;
+  const undCode = String(cur?.und ?? "").trim().toUpperCase();
+  const tick = d.ticks[undCode];
+  const tickLast = tickFresh(tick) ? num(tick?.last) : null;
+  const mainCode = mkt ? contractCode(mkt).toUpperCase() : "";
+  const mktPx = undCode && mainCode === undCode ? num(mkt?.price) : null;
+  let undPx = tickLast ?? mktPx ?? futLast;
+  let undCtn: number | null = null;
   if (tickLast != null) {
-    undPx = tickLast;
+    const basePx = mktPx ?? futLast;
+    const baseCtn = mktPx != null ? num(mkt?.ctn) : futPct;
+    undCtn = baseCtn;
     if (basePx != null && baseCtn != null && 1 + baseCtn !== 0) {
       const prev = basePx / (1 + baseCtn);
       if (prev !== 0) undCtn = (tickLast - prev) / prev;
     }
+  } else if (mktPx != null) {
+    undCtn = num(mkt?.ctn);
+  } else {
+    undCtn = futPct ?? num(mkt?.ctn);
   }
   const bracket = useMemo(
     () => undBracket((cur?.strikes ?? []).map((s) => s.strike), undPx),
@@ -416,7 +421,16 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
           onChange={(v) => onProduct?.(v)}
         />
         {undPx !== null && (
-          <span className="flex shrink-0 items-baseline gap-1.5 px-1" title="当月期货最新/涨跌, 切到期月跟着变">
+          <button
+            type="button"
+            className="flex shrink-0 items-baseline gap-1.5 px-1"
+            title="看当月期货日K/分时"
+            disabled={!cur?.und || !onPickContract}
+            onClick={() => {
+              if (!cur?.und || !onPickContract) return;
+              onPickContract({ kind: "und", code: cur.und, und: cur.und, name: cur.und });
+            }}
+          >
             <span className={cn(
               "text-[17px] font-semibold tabular-nums leading-none",
               undCtn != null && undCtn > 0 ? "text-red-400"
@@ -428,7 +442,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
             <span className="text-[13px] font-medium leading-none">
               <CtnText value={undCtn} />
             </span>
-          </span>
+          </button>
         )}
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {expiries.map((e) => (

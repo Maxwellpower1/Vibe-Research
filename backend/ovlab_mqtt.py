@@ -9,7 +9,9 @@ optionflow is overlaid on the cockpit 异动 card (REST flow-alert is the
 seed; MQTT does not write ovlab_flow_alert). ctamap overlays 行情观察
 (REST ovlab_market is the seed; MQTT does not write that key). dataview
 overlays watch last / T-quote und / minute last print (does not write
-last-bar, does not replace T-quote theo prices).
+last-bar, does not replace T-quote theo prices). Cockpit GET /ovlab/mqtt?pin=
+keeps the chart contract in the 800-slot LRU and extra-subscribes
+instr/{alias} (OpenVlab page case mix: ag2609C16000).
 
 Default sources: optionflow, ctamap, dataview (dataview uses MQTT '+'
 wildcard because their JS only subscribes with an instrument code).
@@ -26,10 +28,12 @@ import json
 import logging
 import math
 import os
+import re
 import secrets
 import threading
 import time
 from collections import OrderedDict, deque
+from collections.abc import Sequence
 from typing import Any
 from urllib.parse import quote, unquote
 
@@ -51,6 +55,8 @@ _BARE_SOURCES = frozenset({"optionflow", "ctamap"})
 _KEEP = 8
 _FLOW_MAX = 200
 _DV_MAX = 800
+_PIN_MAX = 12
+_OPT_RE = re.compile(r"^([A-Za-z]+)(\d{4})([CPcp])(\d+(?:\.\d+)?)$")
 _lock = threading.Lock()
 _started = False
 _client: Any = None
@@ -65,6 +71,7 @@ _recent: deque[dict[str, Any]] = deque(maxlen=_KEEP)
 _flow: OrderedDict[str, dict[str, Any]] = OrderedDict()
 _cta: OrderedDict[str, dict[str, Any]] = OrderedDict()
 _dv: OrderedDict[str, dict[str, Any]] = OrderedDict()
+_pinned: set[str] = set()
 
 # Live fields from the market table tick. Identity keys stay so the UI can join.
 _CTA_PASS = frozenset(
@@ -293,6 +300,10 @@ def _slim_cta(row: dict[str, Any]) -> dict[str, Any]:
         if k not in _CTA_PASS or v is None or v == "":
             continue
         out[k] = _cta_ctn(v) if k == "ctn" else v
+    # OpenVlab commodity ticks are AG_O / AU_O with empty prodUnd.
+    prod = str(out.get("product") or "")
+    if not out.get("prodUnd") and prod.upper().endswith("_O"):
+        out["prodUnd"] = prod[:-2]
     return out
 
 
@@ -381,7 +392,7 @@ def _ingest_dv(topic: str, data: Any) -> None:
         oi = _dv_oi(row)
         if last is None and oi is None:
             continue
-        tick: dict[str, Any] = {"instr": code}
+        tick: dict[str, Any] = {"instr": code, "at": time.time()}
         if last is not None:
             tick["last"] = last
         if oi is not None:
@@ -391,7 +402,10 @@ def _ingest_dv(topic: str, data: Any) -> None:
             del _dv[key]
         _dv[key] = tick
         while len(_dv) > _DV_MAX:
-            _dv.popitem(last=False)
+            victim = next((k for k in _dv if k not in _pinned), None)
+            if victim is None:
+                break
+            del _dv[victim]
 
 
 def _trim_flow() -> None:
@@ -416,6 +430,58 @@ def _ingest_flow(data: Any) -> None:
             del _flow[key]
         _flow[key] = row
     _trim_flow()
+
+
+def dv_aliases(code: str) -> list[str]:
+    """MQTT topic spellings OpenVlab uses (al2609 / ag2609C16000)."""
+    c = (code or "").strip()
+    if not c:
+        return []
+    out: list[str] = []
+    for v in (c, c.upper(), c.lower()):
+        if v not in out:
+            out.append(v)
+    m = _OPT_RE.match(c)
+    if m:
+        mixed = f"{m.group(1).lower()}{m.group(2)}{m.group(3).upper()}{m.group(4)}"
+        if mixed not in out:
+            out.append(mixed)
+    return out
+
+
+def pin_dataview(codes: Sequence[str]) -> None:
+    """Keep these contracts in the dataview LRU; extra-sub instr/{alias} when connected."""
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for raw in list(codes)[:_PIN_MAX]:
+        for a in dv_aliases(raw):
+            if a in seen:
+                continue
+            seen.add(a)
+            aliases.append(a)
+    keys = {a.upper() for a in aliases}
+    wanted: list[str] = []
+    for a in aliases:
+        t = topic_of("dataview", instr=a)
+        if t and t not in wanted:
+            wanted.append(t)
+    with _lock:
+        _pinned.clear()
+        _pinned.update(keys)
+        client = _client
+        connected = _connected
+        new_topics: list[str] = []
+        for t in wanted:
+            if t not in _topics:
+                _topics.append(t)
+                new_topics.append(t)
+    if not client or not connected:
+        return
+    for t in new_topics:
+        try:
+            client.subscribe(t, qos=0)
+        except Exception:
+            logger.warning("ovlab mqtt pin subscribe failed %s", t)
 
 
 def _instr_from_topic(topic: str) -> str:
@@ -548,6 +614,7 @@ def reset_for_tests() -> None:
         _flow.clear()
         _cta.clear()
         _dv.clear()
+        _pinned.clear()
 
 
 def _paho_mod():

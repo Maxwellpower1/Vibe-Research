@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import {
@@ -23,7 +23,7 @@ import { WatchPanel } from "@/components/deriv/WatchPanel";
 import { ThsCmdIndexPanel } from "@/components/deriv/ThsCmdIndexPanel";
 import { TQuotePanel, type OptionPick } from "@/components/deriv/TQuotePanel";
 import { OptionChartCard } from "@/components/deriv/OptionChartCard";
-import { FreshTag, NightOnlySwitch, SessionBadge } from "@/components/deriv/derivShared";
+import { FreshTag, NightOnlySwitch, SessionBadge, contractCode, findRowByUnd, undSpotLast } from "@/components/deriv/derivShared";
 
 /** Pack the visible cells in-browser for Ask AI; missing cells say 未取到. */
 function packDerivContext(d: DerivData): string {
@@ -81,21 +81,31 @@ function packDerivContext(d: DerivData): string {
 }
 
 export function DerivCockpit() {
-  const d = useDerivData();
+  const [optPick, setOptPick] = useState<OptionPick | null>(null);
+  const d = useDerivData(optPick ? [optPick.code, optPick.und] : []);
+  const chartTick = useMemo(() => {
+    if (!optPick) return undefined;
+    const t = d.ticks[optPick.code.toUpperCase()];
+    if (optPick.kind !== "und") return t;
+    const last = undSpotLast(optPick.code, d.ticks, d.rows);
+    if (last == null) return t;
+    return { instr: optPick.code, last, oi: t?.oi };
+  }, [optPick, d.ticks, d.rows]);
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [nightOnly, setNightOnly] = useState(false);
   const [boardTab, setBoardTab] = useState<"spot" | "watch" | "index">("spot");
   // T 型报价联动: 点行情观察出标的图; 点 T 表出期权图
   const [tqProd, setTqProd] = useState("");
-  const [optPick, setOptPick] = useState<OptionPick | null>(null);
   const pickProduct = (p: string, undChart?: { code: string; name: string }) => {
-    if (!p) return;
-    setTqProd(p);
-    if (undChart?.code) {
-      setOptPick({ kind: "und", code: undChart.code, und: undChart.code, name: undChart.name });
+    const prod = p.trim();
+    if (prod) setTqProd(prod);
+    const row = findRowByUnd(d.rows, prod);
+    const code = (undChart?.code || (row ? contractCode(row) : "")).trim();
+    if (code) {
+      setOptPick({ kind: "und", code, und: code, name: undChart?.name ?? `${prod} ${code}` });
       return;
     }
-    setOptPick(null);
+    if (prod) setOptPick(null);
   };
   const [review, setReview] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -258,13 +268,17 @@ export function DerivCockpit() {
           body: (
             <div className="flex h-full min-h-0 flex-col overflow-hidden">
               <div className="min-h-0 flex-1 border-b border-slate-800/80">
-                <OptionChartCard pick={optPick} mode="daily" />
+                <OptionChartCard
+                  pick={optPick}
+                  mode="daily"
+                  tick={chartTick}
+                />
               </div>
               <div className="min-h-0 flex-1">
                 <OptionChartCard
                   pick={optPick}
                   mode="minute"
-                  tick={optPick ? d.ticks[optPick.code.toUpperCase()] : undefined}
+                  tick={chartTick}
                 />
               </div>
             </div>

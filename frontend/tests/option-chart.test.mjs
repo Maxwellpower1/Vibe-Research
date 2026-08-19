@@ -177,12 +177,15 @@ test("驾驶舱日K分时叠在同一张卡", async () => {
   assert.ok(src.includes("defaultH: 0.29") && src.includes("defaultH: 0.71"), "首行回原高, T 区加高");
   assert.ok(src.includes('kind: "und"'), "点行情观察出标的日K/分时");
   assert.ok(src.includes("undChart"), "行情观察行带标的码给图卡");
+  assert.ok(src.includes("findRowByUnd"), "T 表换品种从行情观察行出主力码");
+  assert.ok(src.includes("undChart?.code"), "有标的码时空 prodUnd 也出图");
 });
 
 test("IndexFutPanel 行点击出标的图, 不再跳独立 K线页", async () => {
   const src = await readFile(new URL("../src/components/deriv/IndexFutPanel.tsx", import.meta.url), "utf8");
   assert.ok(src.includes("undChart?: { code: string; name: string }"), "行点击第二参是标的图");
-  assert.ok(src.includes("contractCode(row) || klineSym(row)"), "标的码用主力合约");
+  assert.ok(src.includes("contractCode(row)"), "标的码用主力合约");
+  assert.ok(src.includes("undOfRow(row)"), "空 prodUnd 用目录 und 调 T 表");
   assert.ok(!src.includes("onPickSymbol"), "不再跳独立 K线页");
 });
 
@@ -196,14 +199,25 @@ test("分时卡可切两日, 按交易日拼轴", async () => {
   assert.ok(src.includes("tradingDayOf(c) === td && hmOf(c) === hm"), "夜盘槽按交易日对齐");
 });
 
-test("驾驶舱分时吃 dataview tick", async () => {
+test("驾驶舱日K分时吃 dataview tick", async () => {
   const src = await readFile(new URL("../src/pages/DerivCockpit.tsx", import.meta.url), "utf8");
-  assert.ok(src.includes("d.ticks[optPick.code.toUpperCase()]"), "分时卡吃当前合约 tick");
+  const card = await readFile(new URL("../src/components/deriv/OptionChartCard.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("undSpotLast"), "期货图叠行情观察主力价");
+  assert.ok(src.includes('optPick.kind !== "und"'), "期权图只叠 dataview");
+  assert.ok((src.match(/tick=\{chartTick\}/g) || []).length >= 2, "日K和分时都叠 chartTick");
+  assert.ok(src.includes("useDerivData(optPick ? [optPick.code, optPick.und] : [])"), "钉住当前图合约");
+  assert.ok(card.includes("export function applyDailyTick"), "日K叠当日最后一根");
+  assert.ok(card.includes("live ? 15_000 : 60_000"), "盘中分时加快拉 history");
+  assert.ok(card.includes("num(tick?.last)"), "驾驶舱已拼好的主力价直接叠");
+  assert.ok(card.includes("Math.abs(v) >= 10_000"), "金价两位小数, 银价一位");
+  assert.ok(card.includes('pick?.kind === "und"') && card.includes("ovlabLastBar"), "期货标的 last-bar 做底");
+  assert.ok(card.includes("liveAxisKind"), "夜盘无分钟点也铺当夜轴");
 });
 
 test("自选最新叠 dataview", async () => {
   const src = await readFile(new URL("../src/components/deriv/WatchPanel.tsx", import.meta.url), "utf8");
   assert.ok(src.includes("d.ticks[code.toUpperCase()]"), "自选最新叠 dataview");
+  assert.ok(src.includes("tickFresh"), "陈旧 dataview 回落 last-bar");
   assert.ok(src.includes("api.ovlabLastBar"), "last-bar 仍做底");
 });
 
@@ -267,6 +281,45 @@ test("applyMinuteTick 周五夜盘凌晨对交易日槽, 不改写周五 23:xx",
   assert.equal(out.prices[2], 102);
   assert.equal(out.oi[2], 9);
   assert.equal(out.prices[1], 101);
+});
+
+function applyDailyTick(bars, tick, now) {
+  const last = Number(tick?.last);
+  if (!Number.isFinite(last) || bars.length === 0) return bars;
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
+  const td = tradingDayOf(stamp);
+  const i = bars.length - 1;
+  const b = bars[i];
+  if (b.t === td) {
+    return [...bars.slice(0, i), { ...b, close: last, high: Math.max(b.high, last), low: Math.min(b.low, last) }];
+  }
+  const day = now.getDay();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const live = mins < 150 ? day >= 2 && day <= 6
+    : (day === 0 || day === 6) ? false
+      : (mins >= 540 && mins < 690) || (mins >= 810 && mins < 900) || mins >= 1260;
+  if (live && td > b.t) {
+    return [...bars, { t: td, open: last, high: last, low: last, close: last, vol: 0 }];
+  }
+  return bars;
+}
+
+test("applyDailyTick 叠当日最后一根高低收, 新交易日盘中另开一根", () => {
+  const bars = [{ t: "2026-08-18", open: 10, high: 12, low: 9, close: 11, vol: 100 }];
+  const same = applyDailyTick(bars, { last: 12.5 }, new Date(2026, 7, 18, 10, 0, 0));
+  assert.equal(same.length, 1);
+  assert.equal(same[0].close, 12.5);
+  assert.equal(same[0].high, 12.5);
+  assert.equal(same[0].low, 9);
+  assert.equal(same[0].open, 10);
+  const next = applyDailyTick(bars, { last: 13 }, new Date(2026, 7, 19, 10, 0, 0));
+  assert.equal(next.length, 2);
+  assert.equal(next[1].t, "2026-08-19");
+  assert.equal(next[1].close, 13);
+  const weekend = applyDailyTick(bars, { last: 99 }, new Date(2026, 7, 16, 10, 0, 0));
+  assert.equal(weekend.length, 1);
+  assert.equal(weekend[0].close, 11);
 });
 
 function pad2(n) {

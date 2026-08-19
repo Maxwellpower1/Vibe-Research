@@ -151,6 +151,7 @@ export function candleOpts(_glance = false) {
     priceLineWidth: 1 as const,
     priceLineStyle: LineStyle.SparseDotted,
     priceLineColor: UP,
+    priceFormat: { type: "price" as const, precision: 2, minMove: 0.01 },
   };
 }
 
@@ -171,6 +172,7 @@ export function baselineOpts(base: number, glance = false) {
     priceLineWidth: 1 as const,
     priceLineStyle: LineStyle.SparseDotted,
     priceLineColor: UP,
+    priceFormat: { type: "price" as const, precision: 2, minMove: 0.01 },
     baseValue: { type: "price" as const, price: base },
     relativeGradient: true,
     topLineColor: UP,

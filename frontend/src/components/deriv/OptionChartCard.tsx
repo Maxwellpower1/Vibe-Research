@@ -5,10 +5,11 @@ import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
 import { storageGet, storageSet } from "@/lib/storage";
 import {
-  concatDaySlots, hmOf, kindOfUnd, lastFiniteIdx, minuteKey, padToSlots, tradingDayOf, tradingDaysOf, ymdOf,
+  concatDaySlots, frameTradingDays, hmOf, lastFiniteIdx, liveAxisKind, minuteKey, padToSlots, tradingDayOf, ymdOf,
 } from "@/lib/derivMinuteAxis";
 import type { OptionPick } from "./TQuotePanel";
-import type { OvlabDataviewTick } from "@/lib/api";
+import type { OvlabDataviewTick, OvlabOptionDailyBar } from "@/lib/api";
+import { derivSession } from "./derivShared";
 import {
   BaselineSeries, CandlestickSeries, HistogramSeries, LineSeries, applyTimeLabels,
   baselineOpts, candleOpts, candleValues, finiteLine, hoverIdxFromParam,
@@ -102,12 +103,14 @@ export function minuteFrame(
   und: string | undefined,
   days: MinuteDays,
   rawKl: unknown,
+  now = new Date(),
 ): typeof EMPTY_MIN {
-  if (all.length === 0) return { ...EMPTY_MIN, days };
-  const tds = tradingDaysOf(all.map((b) => b.t)).slice(-(days === 2 ? 2 : 1));
+  const stamp = `${ymdOf(now)} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:00`;
+  const tds = frameTradingDays(all.map((b) => b.t), days, now);
+  if (tds.length === 0) return { ...EMPTY_MIN, days };
   const want = new Set(tds);
   const bars = all.filter((b) => want.has(tradingDayOf(b.t)));
-  const kind = kindOfUnd(und, bars.map((b) => b.t));
+  const kind = liveAxisKind(und, [...bars.map((b) => b.t), stamp], now);
   const { cats, splitAt } = concatDaySlots(tds, kind);
   const padded = padToSlots(bars, cats, (b) => b.t);
   const prices = padded.map((b) => b?.close ?? null);
@@ -152,6 +155,36 @@ export function applyMinuteTick(
   const oiv = num(tick?.oi);
   if (oiv != null && oiv > 0) oi[i] = oiv;
   return { ...frame, prices, oi };
+}
+
+/** Patch today's last daily candle with a dataview last. Live session may open a new day. */
+export function applyDailyTick(
+  bars: OvlabOptionDailyBar[],
+  tick: Pick<OvlabDataviewTick, "last"> | null | undefined,
+  now = new Date(),
+): OvlabOptionDailyBar[] {
+  const last = num(tick?.last);
+  if (last == null || bars.length === 0) return bars;
+  const stamp = `${ymdOf(now)} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:00`;
+  const td = tradingDayOf(stamp);
+  const i = bars.length - 1;
+  const b = bars[i];
+  if (b.t === td) {
+    if (b.close === last && last <= b.high && last >= b.low) return bars;
+    return [
+      ...bars.slice(0, i),
+      {
+        ...b,
+        close: last,
+        high: Math.max(b.high, last),
+        low: Math.min(b.low, last),
+      },
+    ];
+  }
+  if (derivSession(now).live && td > b.t) {
+    return [...bars, { t: td, open: last, high: last, low: last, close: last, vol: 0 }];
+  }
+  return bars;
 }
 
 /** Align [[time, v], ...] onto categories. Dated stamps stay on their day; bare HH:MM only on a 1-day axis. */
@@ -224,7 +257,7 @@ export function hoverIdxOf(raw: unknown, cats: string[]): number | null {
 }
 
 function fmtPx(v: number): string {
-  return Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2);
+  return Math.abs(v) >= 10_000 ? v.toFixed(1) : v.toFixed(2);
 }
 
 export { tradingDayOf } from "@/lib/derivMinuteAxis";
@@ -238,6 +271,12 @@ export function OptionChartCard({ pick, mode, tick }: {
   const { ref, chartRef, labelsRef, onHoverRef } = useLcChart("glance");
   const [hover, setHover] = useState<number | null>(null);
   const [days, setDays] = useState<MinuteDays>(loadDays);
+  const [, pulse] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => pulse((n) => n + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const live = derivSession().live;
   const bag = useRef<{
     kind: "daily" | "minute" | null;
     px: ISeriesApi<"Candlestick"> | ISeriesApi<"Baseline"> | null;
@@ -252,7 +291,7 @@ export function OptionChartCard({ pick, mode, tick }: {
   };
   const daily = usePolling(
     () => (pick && mode === "daily" ? api.ovlabOptionDaily(pick.code, pick.und) : Promise.resolve(null)),
-    300_000,
+    live ? 60_000 : 300_000,
     [pick?.code, pick?.und, mode],
     Boolean(pick && mode === "daily"),
   );
@@ -267,10 +306,27 @@ export function OptionChartCard({ pick, mode, tick }: {
         api.ovlabAtmvolHistory(code, "1", from, now).catch(() => null),
       ]).then(([kl, av]) => ({ code, kl, av }));
     },
-    60_000,
+    live ? 15_000 : 60_000,
     [pick?.code, mode, days],
     Boolean(pick && mode === "minute"),
   );
+
+  const lastBar = usePolling(
+    () => (pick?.kind === "und" && pick.code
+      ? api.ovlabLastBar(pick.code).catch(() => null)
+      : Promise.resolve(null)),
+    live ? 60_000 : 300_000,
+    [pick?.code, pick?.kind],
+    Boolean(pick?.kind === "und" && pick.code),
+  );
+  const liveTick = useMemo(() => {
+    if (num(tick?.last) != null) return tick;
+    if (pick?.kind !== "und") return tick;
+    const close = num(lastBar.data?.close);
+    if (close == null) return tick;
+    const oi = num(lastBar.data?.oi);
+    return { instr: pick.code, last: close, oi: oi != null && oi >= 0 ? oi : undefined };
+  }, [tick, lastBar.data, pick?.kind, pick?.code]);
 
   const minData = useMemo(() => {
     if (mode !== "minute" || !minute.data || minute.data.code !== pick?.code) return null;
@@ -282,12 +338,15 @@ export function OptionChartCard({ pick, mode, tick }: {
       days,
       kl?.data,
     );
-    return applyMinuteTick(frame, tick);
-  }, [minute.data, mode, pick?.code, pick?.und, days, tick]);
+    return applyMinuteTick(frame, liveTick);
+  }, [minute.data, mode, pick?.code, pick?.und, days, liveTick]);
 
   const dailyStale = Boolean(daily.data?.code && daily.data.code !== pick?.code);
   const dailyMatch = mode === "daily" && daily.data && daily.data.code === pick?.code ? daily.data : null;
-  const dailyBars = useMemo(() => dailyMatch?.bars ?? [], [dailyMatch]);
+  const dailyBars = useMemo(
+    () => applyDailyTick(dailyMatch?.bars ?? [], liveTick),
+    [dailyMatch, liveTick],
+  );
   const dailyIv = useMemo(
     () => alignSeries(dailyMatch?.iv, dailyBars.map((b) => b.t)),
     [dailyMatch, dailyBars],

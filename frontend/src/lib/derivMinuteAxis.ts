@@ -81,6 +81,48 @@ export function kindOfUnd(und: string | undefined, times: string[]): DerivAxisKi
   return times.some(isNightTime) ? "cmd" : "cmdDay";
 }
 
+/** Same clock windows as derivShared.derivSession (local, no holiday). */
+export function derivLiveNow(now = new Date()): boolean {
+  const day = now.getDay();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (mins < 150) return day >= 2 && day <= 6;
+  if (day === 0 || day === 6) return false;
+  return (mins >= 540 && mins < 690) || (mins >= 810 && mins < 900) || mins >= 1260;
+}
+
+function clockStamp(now: Date): string {
+  return `${ymdOf(now)} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:00`;
+}
+
+/** Night window: commodities/index use the overnight axis even if history has no print yet. */
+export function liveAxisKind(
+  und: string | undefined,
+  times: string[],
+  now = new Date(),
+): DerivAxisKind {
+  const base = kindOfUnd(und, times);
+  if (!isNightTime(clockStamp(now))) return base;
+  const u = undRootOf(und || "");
+  if (/^85[01]\d{3}$/.test(u)) return "cmd";
+  if (/^\d{6}$/.test(u)) return "etf";
+  if (INDEX_ROOTS.has(u)) return "index";
+  return "cmd";
+}
+
+/** History days plus the live trading day, so tonight is on the axis before the first print. */
+export function frameTradingDays(
+  times: string[],
+  days: 1 | 2,
+  now = new Date(),
+): string[] {
+  let tds = tradingDaysOf(times).slice(-(days === 2 ? 2 : 1));
+  const nowTd = tradingDayOf(clockStamp(now));
+  if (derivLiveNow(now) && nowTd && tds[tds.length - 1] !== nowTd) {
+    tds = days === 2 && tds.length ? [...tds.slice(-1), nowTd] : [nowTd];
+  }
+  return tds;
+}
+
 /** start inclusive, end exclusive, minutes from midnight. */
 function expand(date: string, start: number, end: number): string[] {
   const out: string[] = [];

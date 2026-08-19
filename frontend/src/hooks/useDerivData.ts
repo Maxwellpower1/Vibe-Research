@@ -99,13 +99,18 @@ export function ticksByInstr(list: OvlabDataviewTick[] | null | undefined): Reco
 }
 
 /** One hook per cockpit: market frame + flow alerts + catalog spark series. No CTP. */
-export function useDerivData(): DerivData {
+export function useDerivData(pinInstr: string[] = []): DerivData {
   const [nonce, setNonce] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const pinKey = pinInstr.map((c) => c.trim().toUpperCase()).filter(Boolean).join(",");
 
   const market = usePolling(() => api.ovlabMarket(), 60_000, [nonce]);
   const alertPoll = usePolling(() => api.ovlabFlowAlert(), 60_000, [nonce]);
-  const mqttPoll = usePolling(() => api.ovlabMqtt(), 2_000, [nonce]);
+  const mqttPoll = usePolling(
+    () => api.ovlabMqtt(pinKey ? pinKey.split(",") : undefined),
+    2_000,
+    [nonce, pinKey],
+  );
   const expPoll = usePolling(() => api.ovlabProductExps(), 300_000, [nonce]);
 
   const rows = useMemo(

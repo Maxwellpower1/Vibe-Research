@@ -1209,6 +1209,8 @@ export interface OvlabDataviewTick {
   instr: string;
   last?: number | null;
   oi?: number | null;
+  /** unix seconds when the sidecar ingested this print */
+  at?: number | null;
 }
 export interface OvlabWarehouseHistory {
   last_update_time?: string; value?: unknown; category?: string;
@@ -1728,7 +1730,11 @@ export const api = {
   ovlabFutureTs: (prodUnd: string) => get<OvlabFutureTs>(`/ovlab/future-ts?prod_und=${encodeURIComponent(prodUnd)}`),
   ovlabArbBoard: () => get<ArbBoard>("/ovlab/arb-board"),
   ovlabFlowAlert: () => get<OvlabFlowAlert[]>("/ovlab/flow-alert"),
-  ovlabMqtt: () => get<OvlabMqttStatus>("/ovlab/mqtt"),
+  ovlabMqtt: (pin?: string[]) => {
+    const q = (pin ?? []).map((c) => c.trim()).filter(Boolean).slice(0, 12);
+    const s = q.length ? `?pin=${encodeURIComponent(q.join(","))}` : "";
+    return get<OvlabMqttStatus>(`/ovlab/mqtt${s}`);
+  },
   ovlabFlowData: (product?: string, page = 1, pageSize = 50) =>
     request<OvlabFlowData>("/ovlab/flow-data", "POST", { product: product?.trim() || null, page, page_size: pageSize }),
   ovlabWarehouseHistory: (product: string) =>

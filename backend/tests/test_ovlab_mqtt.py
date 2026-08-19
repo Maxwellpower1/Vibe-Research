@@ -161,7 +161,21 @@ def test_remember_ctamap_and_dataview_counts():
     assert tick["instr"] == "al2609"
     assert tick["last"] == 18510
     assert tick["oi"] == 12
+    assert isinstance(tick.get("at"), float)
     assert ovlab._CACHE.get("ovlab_market") is None
+
+
+def test_cta_ag_o_fills_prod_und():
+    ovlab_mqtt.remember(
+        {
+            "topic": CTA,
+            "source": "ctamap",
+            "data": {"product": "AG_O", "price": 16057, "ctn": 0.04, "exp": "202609"},
+        }
+    )
+    ag = next(r for r in ovlab_mqtt.snapshot()["ctamap"] if r.get("product") == "AG_O")
+    assert ag["prodUnd"] == "AG"
+    assert ag["price"] == 16057
 
 
 def test_cta_upsert_same_product():
@@ -199,6 +213,38 @@ def test_start_noop_when_disabled(monkeypatch):
     assert snap["recv"] == 0
 
 
+def test_dv_aliases_option_mixed_case():
+    aliases = ovlab_mqtt.dv_aliases("AG2609C16000")
+    assert "AG2609C16000" in aliases
+    assert "ag2609c16000" in aliases
+    assert "ag2609C16000" in aliases
+    t = ovlab_mqtt.topic_of("dataview", instr="ag2609C16000")
+    assert t == "vlab/stream/dataview/guest/instr/ag2609C16000"
+
+
+def _dv_tick(code: str, last: float = 1.0) -> None:
+    ovlab_mqtt.remember(
+        {
+            "topic": f"vlab/stream/dataview/guest/instr/{code}",
+            "source": "dataview",
+            "data": {"instr": code, "last_trade_price": last, "oi": 1},
+        }
+    )
+
+
+def test_pinned_dataview_survives_lru():
+    ovlab_mqtt.pin_dataview(["AG2609C16000"])
+    _dv_tick("ag2609C16000", 1.2)
+    for i in range(ovlab_mqtt._DV_MAX + 20):
+        _dv_tick(f"x{i}")
+    snap = ovlab_mqtt.snapshot()
+    keys = {str(t.get("instr") or "").upper() for t in snap["dataview"]}
+    assert "AG2609C16000" in keys
+    assert snap["dataview_n"] == ovlab_mqtt._DV_MAX
+    ag = next(t for t in snap["dataview"] if str(t.get("instr")).upper() == "AG2609C16000")
+    assert ag["last"] == 1.2
+
+
 def test_mqtt_status_endpoint():
     from fastapi.testclient import TestClient
 
@@ -214,3 +260,26 @@ def test_mqtt_status_endpoint():
     assert "optionflow" in body
     assert "ctamap" in body
     assert "dataview" in body
+
+
+def test_mqtt_status_pin_query():
+    from fastapi.testclient import TestClient
+
+    import app as app_module
+
+    r = TestClient(app_module.app).get("/api/ovlab/mqtt?pin=AG2609C16000,AG2609")
+    assert r.status_code == 200
+    _dv_tick("ag2609C16000", 9.5)
+    for i in range(ovlab_mqtt._DV_MAX + 5):
+        _dv_tick(f"y{i}")
+    snap = ovlab_mqtt.snapshot()
+    keys = {str(t.get("instr") or "").upper() for t in snap["dataview"]}
+    assert "AG2609C16000" in keys
+    assert "AG2609" in ovlab_mqtt._pinned
+
+
+def test_pin_queues_dataview_topics_offline():
+    ovlab_mqtt.pin_dataview(["AG2609"])
+    topics = ovlab_mqtt.snapshot()["topics"]
+    assert "vlab/stream/dataview/guest/instr/AG2609" in topics
+    assert "vlab/stream/dataview/guest/instr/ag2609" in topics

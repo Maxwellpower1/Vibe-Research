@@ -4,7 +4,7 @@ import { usePolling } from "@/hooks/usePolling";
 import type { DerivData } from "@/hooks/useDerivData";
 import { cn } from "@/lib/utils";
 import { nextSort, num, prevCloseOf, previewCode, toSparkMap, TrendSparkSvg, type SortState } from "@/components/ovlab/shared";
-import { CellEmpty, cmpVal, contractCode, CtnText, IV_SORT_COLS, IvTriple, klineSym, NightMoon, SortableHd } from "./derivShared";
+import { CellEmpty, cmpVal, contractCode, CtnText, IV_SORT_COLS, IvTriple, NightMoon, SortableHd, undOfRow } from "./derivShared";
 
 type BoardKey = "product_alias" | "price" | "ctn" | "atmv_current" | "atmv_percentile" | "carry";
 
@@ -107,14 +107,13 @@ export function IndexFutPanel({ d, nightOnly = false, onPickProduct }: {
           const pc = previewCode(row);
           const spark = d.sparks[pc] ?? extraSparks[pc];
           const price = num(row.price);
-          const prodUnd = String(row.prodUnd ?? row.product);
-          const undCode = contractCode(row) || klineSym(row);
+          const prodUnd = undOfRow(row);
           return (
             <button
               key={key}
               type="button"
               onClick={onPickProduct
-                ? () => onPickProduct(prodUnd, undCode ? { code: undCode, name: `${label} ${undCode}` } : undefined)
+                ? () => onPickProduct(prodUnd, code ? { code, name: `${label} ${code}` } : undefined)
                 : undefined}
               className={cn(
                 "flex w-full items-center gap-1.5 px-2 py-1 text-left transition-colors",
@@ -145,7 +144,7 @@ export function IndexFutPanel({ d, nightOnly = false, onPickProduct }: {
                   height={24}
                   fill
                   className="h-6"
-                  und={String(row.prodUnd ?? "")}
+                  und={undOfRow(row)}
                 />
               </span>
             </button>

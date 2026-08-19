@@ -1,24 +1,81 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown } from "lucide-react";
-import type { OvlabMarketRow } from "@/lib/api";
+import type { OvlabDataviewTick, OvlabMarketRow } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { num } from "@/components/ovlab/shared";
 import { formatAge } from "@/lib/freshness";
 import { storageGet, storageSet } from "@/lib/storage";
 import { DERIV_DEFS } from "@/config/deriv";
 
-/** 主力合约码: prodUnd + exp tail (e.g. IF2608). */
-export function klineSym(r: Pick<OvlabMarketRow, "prodUnd" | "exp">): string {
-  const und = String(r.prodUnd ?? "").trim();
+/** 主力合约码: prodUnd + exp tail (e.g. IF2608). MQTT ctamap 常空 prodUnd, 用目录 AG_O->AG. */
+export function undOfRow(r: Pick<OvlabMarketRow, "prodUnd" | "product">): string {
+  const u = String(r.prodUnd ?? "").trim();
+  if (u) return u;
+  const p = String(r.product ?? "").trim();
+  const def = DERIV_DEFS.find((d) => d.product.toUpperCase() === p.toUpperCase());
+  if (def) return def.und;
+  return p.replace(/_O$/i, "");
+}
+
+export function klineSym(r: Pick<OvlabMarketRow, "prodUnd" | "product" | "exp">): string {
+  const und = undOfRow(r);
   const tail = String(r.exp ?? "").trim().slice(-4);
   return und && tail ? `${und}${tail}` : "";
 }
 
 /** Main-contract code for display: futures prodUnd + exp tail (IM2609); pure-digit underlying (ETF) shows itself. */
-export function contractCode(r: Pick<OvlabMarketRow, "prodUnd" | "exp">): string {
-  const und = String(r.prodUnd ?? "").trim();
+export function contractCode(r: Pick<OvlabMarketRow, "prodUnd" | "product" | "exp">): string {
+  const und = undOfRow(r);
   if (!und) return "";
   return /^\d+$/.test(und) ? und : klineSym(r);
+}
+
+/** T-quote / 行情观察 product key: AU, AU_O, or catalog und. */
+export function findRowByUnd<T extends Pick<OvlabMarketRow, "prodUnd" | "product">>(
+  rows: T[] | null | undefined,
+  prod: string,
+): T | undefined {
+  const want = prod.trim().toUpperCase();
+  if (!want) return undefined;
+  return rows?.find((r) => {
+    const u = undOfRow(r).toUpperCase();
+    return u === want || String(r.product ?? "").trim().toUpperCase() === want;
+  });
+}
+
+/** Dataview last is only trusted this many seconds in a live session. */
+export const TICK_FRESH_S = 8;
+
+export function tickFresh(
+  tick: Pick<OvlabDataviewTick, "last" | "at"> | null | undefined,
+  nowSec = Date.now() / 1000,
+  live = derivSession().live,
+): boolean {
+  if (num(tick?.last) == null) return false;
+  if (!live) return true;
+  const at = num(tick?.at);
+  if (at == null) return false;
+  return nowSec - at <= TICK_FRESH_S;
+}
+
+/** Main-contract last from 行情观察, else a fresh dataview print. */
+export function undSpotLast(
+  code: string,
+  ticks: Record<string, OvlabDataviewTick>,
+  rows: OvlabMarketRow[] | null | undefined,
+  nowSec = Date.now() / 1000,
+  live = derivSession().live,
+): number | null {
+  const want = code.trim().toUpperCase();
+  if (!want) return null;
+  for (const r of rows ?? []) {
+    if (contractCode(r).toUpperCase() !== want) continue;
+    const px = num(r.price);
+    if (px != null) return px;
+  }
+  const tick = ticks[want];
+  if (tickFresh(tick, nowSec, live)) return num(tick.last);
+  return null;
 }
 
 /** 异动标的 -> 中文名: 目录码双向 (IO/IF 都指沪深300) + 目录外 ETF 补充. */

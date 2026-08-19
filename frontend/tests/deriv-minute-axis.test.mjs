@@ -177,6 +177,8 @@ test("分时图走交易时段轴, 不按点序均分", async () => {
   assert.match(spark, /derivSessionIdx/);
   assert.match(axis, /export function derivMinuteSlots/);
   assert.match(axis, /export function concatDaySlots/);
+  assert.match(axis, /export function liveAxisKind/);
+  assert.match(axis, /export function frameTradingDays/);
   assert.match(axis, /85\[01\]/, "850 商品指数走商品时段不是 ETF");
   assert.match(axis, /empty hover stays null/);
   assert.match(card, /hover != null && i == null/);
@@ -207,4 +209,62 @@ test("concatDaySlots 两日中间空档, 一日无空档", () => {
   assert.equal(two.cats.filter((c) => c === "").length, 1);
   assert.ok(two.cats[0].startsWith("2026-08-17"));
   assert.ok(two.cats[two.splitAt + 1].startsWith("2026-08-18"));
+});
+
+function tradingDayOf(t) {
+  const d = t.slice(0, 10);
+  const hh = Number(t.slice(11, 13));
+  if (hh >= 6 && hh < 20) return d;
+  const dt = new Date(`${d}T00:00:00`);
+  if (hh < 6) dt.setDate(dt.getDate() - 1);
+  do {
+    dt.setDate(dt.getDate() + 1);
+  } while (dt.getDay() === 0 || dt.getDay() === 6);
+  return ymdOf(dt);
+}
+function tradingDaysOf(times) {
+  return [...new Set(times.map(tradingDayOf).filter(Boolean))].sort();
+}
+function undRootOf(sym) {
+  const s = (sym || "").trim().toUpperCase();
+  if (/^\d{6}/.test(s)) return s.slice(0, 6);
+  const m = s.match(/^([A-Z]+)/);
+  return m ? m[1] : s;
+}
+function liveAxisKind(und, times, now) {
+  const base = kindOfUnd(und, times);
+  const stamp = `${ymdOf(now)} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:00`;
+  if (!isNightTime(stamp)) return base;
+  const u = undRootOf(und);
+  if (/^85[01]\d{3}$/.test(u)) return "cmd";
+  if (/^\d{6}$/.test(u)) return "etf";
+  if (["IF", "IH", "IM", "IO", "HO", "MO"].includes(u)) return "index";
+  return "cmd";
+}
+function derivLiveNow(now) {
+  const day = now.getDay();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (mins < 150) return day >= 2 && day <= 6;
+  if (day === 0 || day === 6) return false;
+  return (mins >= 540 && mins < 690) || (mins >= 810 && mins < 900) || mins >= 1260;
+}
+function frameTradingDays(times, days, now) {
+  let tds = tradingDaysOf(times).slice(-(days === 2 ? 2 : 1));
+  const stamp = `${ymdOf(now)} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:00`;
+  const nowTd = tradingDayOf(stamp);
+  if (derivLiveNow(now) && nowTd && tds[tds.length - 1] !== nowTd) {
+    tds = days === 2 && tds.length ? [...tds.slice(-1), nowTd] : [nowTd];
+  }
+  return tds;
+}
+
+test("夜盘无分钟点也切到当夜交易日轴", () => {
+  const now = new Date(2026, 7, 19, 23, 58, 0);
+  assert.equal(liveAxisKind("AG2609", ["2026-08-19 09:01:00"], now), "cmd");
+  assert.equal(liveAxisKind("IF2609", ["2026-08-19 09:31:00"], now), "index");
+  assert.equal(liveAxisKind("510050", ["2026-08-19 09:31:00"], now), "etf");
+  assert.deepEqual(
+    frameTradingDays(["2026-08-19 09:01:00", "2026-08-19 15:00:00"], 1, now),
+    ["2026-08-20"],
+  );
 });

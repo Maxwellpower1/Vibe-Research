@@ -78,7 +78,7 @@ test("异动卡 MQTT 实时 overlay: REST seed + 本机 mqtt 状态, 不另开 m
   const hook = await readFile(new URL("../src/hooks/useDerivData.ts", import.meta.url), "utf8");
   const panel = await readFile(new URL("../src/components/deriv/AlertPanel.tsx", import.meta.url), "utf8");
   const apiSrc = await readFile(new URL("../src/lib/api.ts", import.meta.url), "utf8");
-  assert.ok(hook.includes("api.ovlabMqtt()"), "驾驶舱读 MQTT 状态");
+  assert.ok(hook.includes("api.ovlabMqtt(pinKey ? pinKey.split(\",\") : undefined)"), "驾驶舱读 MQTT 状态");
   assert.ok(hook.includes("2_000"), "异动 MQTT 2s 读内存");
   assert.ok(hook.includes("mergeFlowAlerts"), "REST seed + MQTT 合并");
   assert.ok(hook.includes("mergeMarketRows"), "ctamap 叠行情观察");
@@ -89,6 +89,7 @@ test("异动卡 MQTT 实时 overlay: REST seed + 本机 mqtt 状态, 不另开 m
   assert.ok(panel.includes("MQTT未连"), "异动卡 MQTT 未连");
   assert.ok(panel.includes("MQTT关"), "异动卡 MQTT 关");
   assert.ok(apiSrc.includes("ovlabMqtt:"), "api 挂 /ovlab/mqtt");
+  assert.ok(apiSrc.includes("?pin="), "mqtt pin 查询串");
 });
 
 function mergeFlowAlerts(rest, live) {
@@ -179,6 +180,70 @@ test("dataview ticks 按合约大写", () => {
   const m = ticksByInstr([{ instr: "al2609", last: 18510, oi: 12 }]);
   assert.equal(m.AL2609.last, 18510);
   assert.equal(m.al2609, undefined);
+});
+
+function tickFresh(tick, nowSec, live = true) {
+  const last = Number(tick?.last);
+  if (!Number.isFinite(last)) return false;
+  if (!live) return true;
+  const at = Number(tick?.at);
+  if (!Number.isFinite(at)) return false;
+  return nowSec - at <= 8;
+}
+function undOfRow(r) {
+  const u = String(r.prodUnd ?? "").trim();
+  if (u) return u;
+  const p = String(r.product ?? "").trim();
+  const catalog = { AG_O: "AG", AU_O: "AU" };
+  return catalog[p] || (p.endsWith("_O") ? p.slice(0, -2) : p);
+}
+function contractCode(r) {
+  const und = undOfRow(r);
+  if (!und) return "";
+  const tail = String(r.exp ?? "").trim().slice(-4);
+  return /^\d+$/.test(und) ? und : (und && tail ? `${und}${tail}` : "");
+}
+function findRowByUnd(rows, prod) {
+  const want = prod.trim().toUpperCase();
+  if (!want) return undefined;
+  return (rows ?? []).find((r) => {
+    const u = undOfRow(r).toUpperCase();
+    return u === want || String(r.product ?? "").trim().toUpperCase() === want;
+  });
+}
+function undSpotLast(code, ticks, rows, nowSec, live = true) {
+  const want = code.trim().toUpperCase();
+  for (const r of rows ?? []) {
+    if (contractCode(r).toUpperCase() === want) {
+      const px = Number(r.price);
+      if (Number.isFinite(px)) return px;
+    }
+  }
+  const tick = ticks[want];
+  if (tickFresh(tick, nowSec, live)) return Number(tick.last);
+  return null;
+}
+
+test("主力图优先行情观察价, 不看停住的 dataview", () => {
+  const now = 1_000_000;
+  const rows = [{ prodUnd: "AG", exp: "202609", price: 10120 }];
+  const stale = { AG2609: { instr: "ag2609", last: 9900, at: now - 30 } };
+  assert.equal(undSpotLast("AG2609", stale, rows, now, true), 10120);
+  const fresh = { AG2609: { instr: "ag2609", last: 10111, at: now - 1 } };
+  assert.equal(undSpotLast("AG2609", fresh, rows, now, true), 10120);
+  assert.equal(tickFresh({ last: 1 }, now, true), false);
+});
+
+test("AG_O / AU_O 空 prodUnd 仍拼出主力码叠价", () => {
+  const now = 1_000_000;
+  const ag = [{ product: "AG_O", prodUnd: "", exp: "202609", price: 16057 }];
+  const au = [{ product: "AU_O", prodUnd: "", exp: "202609", price: 970.38 }];
+  assert.equal(contractCode(ag[0]), "AG2609");
+  assert.equal(undSpotLast("AG2609", {}, ag, now, true), 16057);
+  assert.equal(contractCode(au[0]), "AU2609");
+  assert.equal(undSpotLast("AU2609", {}, au, now, true), 970.38);
+  assert.equal(findRowByUnd(ag, "AG")?.product, "AG_O");
+  assert.equal(findRowByUnd(au, "AU_O")?.product, "AU_O");
 });
 
 test("成交异动: 额或量, 可关", () => {

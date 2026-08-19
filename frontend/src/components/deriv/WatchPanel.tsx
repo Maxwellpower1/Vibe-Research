@@ -6,7 +6,7 @@ import { usePolling } from "@/hooks/usePolling";
 import { cn } from "@/lib/utils";
 import { nextSort, num, TrendPreviewCell, type PreviewSeries, type SortState } from "@/components/ovlab/shared";
 import { storageGet, storageSet } from "@/lib/storage";
-import { CellEmpty, cmpVal, IvpBar, klineSym, NightMoon, SortableHd } from "./derivShared";
+import { CellEmpty, cmpVal, contractCode, findRowByUnd, IvpBar, NightMoon, SortableHd, tickFresh, undOfRow } from "./derivShared";
 
 const WATCH_KEY = "deriv.watch";
 const MAX_WATCH = 20;
@@ -63,11 +63,8 @@ export function WatchPanel({ d, onPick, compact = false }: {
     let changed = false;
     const next = watch.map((w) => {
       if (/\d/.test(w)) return w;
-      const row = d.rows!.find((r) =>
-        String(r.prodUnd ?? "").toUpperCase() === w.toUpperCase()
-        || String(r.product ?? "").toUpperCase() === w.toUpperCase(),
-      );
-      const sym = row ? klineSym(row) : "";
+      const row = findRowByUnd(d.rows, w);
+      const sym = row ? contractCode(row) : "";
       if (sym) changed = true;
       return sym || w;
     });
@@ -114,15 +111,15 @@ export function WatchPanel({ d, onPick, compact = false }: {
   }, [watch, sparkPoll.data]);
   const sparkLoading = sparkPoll.data === null && watch.length > 0;
 
-  // 合约 -> 品种行 (别名/夜盘/IV分位 上下文): 先精确主力合约, 再按字母前缀找 prodUnd
+  // 合约 -> 品种行: 先精确主力码, 再按字母前缀对目录 und.
   const productOf = useMemo(() => {
     const all = d.rows ?? [];
     return (ticker: string) => {
       const t = ticker.toUpperCase();
-      const exact = all.find((r) => klineSym(r).toUpperCase() === t);
+      const exact = all.find((r) => contractCode(r).toUpperCase() === t);
       if (exact) return exact;
       const head = t.match(/^[A-Z]+/)?.[0] ?? "";
-      return head ? all.find((r) => String(r.prodUnd ?? "").toUpperCase() === head) : undefined;
+      return head ? findRowByUnd(all, head) : undefined;
     };
   }, [d.rows]);
 
@@ -151,7 +148,7 @@ export function WatchPanel({ d, onPick, compact = false }: {
     const rows = watch.map((code) => {
       const lb = quotes[code];
       const tick = d.ticks[code.toUpperCase()];
-      const close = num(tick?.last) ?? num(lb?.close);
+      const close = (tickFresh(tick) ? num(tick?.last) : null) ?? num(lb?.close);
       const pre = num(lb?.pre_close);
       const pct = close !== null && pre ? ((close - pre) / pre) * 100 : null;
       return { code, close, pre, pct };
@@ -208,7 +205,7 @@ export function WatchPanel({ d, onPick, compact = false }: {
               <button
                 type="button"
                 onClick={onPick ? () => {
-                  const pu = prod ? String(prod.prodUnd ?? prod.product ?? "").trim() : "";
+                  const pu = prod ? undOfRow(prod) : "";
                   onPick(code, pu || undefined);
                 } : undefined}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
