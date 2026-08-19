@@ -93,7 +93,7 @@ def ovlab_flow_alert():
 
 @router.get("/api/ovlab/mqtt")
 def ovlab_mqtt_status():
-    """OpenVlab MQTT status + optionflow rows for the 异动 overlay. Does not write REST cache."""
+    """OpenVlab MQTT snapshot: optionflow / ctamap / dataview. Does not write REST cache."""
     import ovlab_mqtt
     return {"data": ovlab_mqtt.snapshot()}
 

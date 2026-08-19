@@ -158,7 +158,7 @@ def _start_ovlab_mqtt() -> None:
         pass
 
 
-# OpenVlab MQTT sidecar: optionflow into memory only, does not feed REST / UI.
+# OpenVlab MQTT sidecar: memory only, cockpit 2s overlay; does not write REST keys.
 threading.Thread(target=_start_ovlab_mqtt, name="ovlab-mqtt", daemon=True).start()
 # Opt-in: trading-day AI review email (VR_REVIEW_MAIL=1).
 review_mail.start_scheduler()

@@ -139,8 +139,11 @@ export function applyMinuteTick(
 ): typeof EMPTY_MIN {
   const last = num(tick?.last);
   if (last == null || frame.cats.length === 0) return frame;
-  const want = `${ymdOf(now)} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  let i = frame.cats.findIndex((c) => c && minuteKey(c) === want);
+  const stamp = `${ymdOf(now)} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:00`;
+  const td = tradingDayOf(stamp);
+  const hm = hmOf(stamp);
+  // Slot dates follow tradingDayOf (Fri night / Sat 00:xx use Monday stamps).
+  let i = frame.cats.findIndex((c) => c && tradingDayOf(c) === td && hmOf(c) === hm);
   if (i < 0) {
     i = -1;
     for (let k = frame.prices.length - 1; k >= 0; k--) {

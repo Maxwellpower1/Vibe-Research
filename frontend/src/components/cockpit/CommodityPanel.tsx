@@ -103,9 +103,12 @@ export function CommodityPanel() {
               const times = (kl?.bars || []).map((b) => b.datetime);
               const last = closes.length ? closes[closes.length - 1] : undefined;
               const prev = kl?.prev_close ?? q?.prev;
-              const pct = q?.pct ?? (
+              const rawPct = q?.pct ?? (
                 last != null && prev ? ((last - prev) / prev) * 100 : undefined
               );
+              const pct = rawPct != null && Number.isFinite(rawPct)
+                ? Number(rawPct.toFixed(2))
+                : undefined;
               return (
                 <QuoteLine
                   key={d.code}

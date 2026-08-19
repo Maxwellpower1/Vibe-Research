@@ -1070,10 +1070,11 @@ def get_surfacemap(params: dict[str, Any] | None = None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def warm_once() -> None:
-    """启动时填一次驾驶舱首屏钥匙 (market / flow-alert / product-exps / future-ts-all / 目录码分时).
+    """启动时填一次驾驶舱首屏钥匙 (market / flow-alert / product-exps / 目录码分时).
 
     盘后启动: 这是休市期间唯一一次出网, 之后冻结到下一交易时段.
     盘中启动: 只是提前预热, 之后仍按 TTL 刷新. 失败只记日志, 不阻塞启动.
+    future-ts-all 不预热: 期限结构卡走单品种 future-ts, 上游 all 只覆盖 6 个品种.
     """
     try:
         rows = get_market_overview()
@@ -1083,7 +1084,6 @@ def warm_once() -> None:
     for label, fn in (
         ("flow-alert", get_flow_alerts),
         ("product-exps", get_product_exps),
-        ("future-ts-all", get_future_term_structures_all),
     ):
         try:
             fn()

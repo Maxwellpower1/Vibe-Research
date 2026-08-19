@@ -189,6 +189,7 @@ test("分时卡可切两日, 按交易日拼轴", async () => {
   assert.ok(src.includes("concatDaySlots"), "交易日槽位拼接");
   assert.ok(src.includes("deriv.minute.days"), "本机记住一日/两日");
   assert.ok(src.includes("applyMinuteTick"), "dataview 叠分时最后一笔");
+  assert.ok(src.includes("tradingDayOf(c) === td && hmOf(c) === hm"), "夜盘槽按交易日对齐");
 });
 
 test("驾驶舱分时吃 dataview tick", async () => {
@@ -212,8 +213,10 @@ function applyMinuteTick(frame, tick, now) {
   const last = Number(tick?.last);
   if (!Number.isFinite(last) || frame.cats.length === 0) return frame;
   const pad = (n) => String(n).padStart(2, "0");
-  const want = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-  let i = frame.cats.findIndex((c) => c && minuteKey(c) === want);
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
+  const td = tradingDayOf(stamp);
+  const hm = stamp.slice(11, 16);
+  let i = frame.cats.findIndex((c) => c && tradingDayOf(c) === td && c.slice(11, 16) === hm);
   if (i < 0) {
     i = -1;
     for (let k = frame.prices.length - 1; k >= 0; k--) {
@@ -242,6 +245,24 @@ test("applyMinuteTick 填当前分钟槽, 否则改最后一笔", () => {
   assert.equal(out.prices[1], 11);
   const late = applyMinuteTick(frame, { last: 13 }, new Date(2026, 7, 18, 10, 0, 0));
   assert.equal(late.prices[1], 13);
+});
+
+test("applyMinuteTick 周五夜盘凌晨对交易日槽, 不改写周五 23:xx", () => {
+  const frame = {
+    cats: [
+      "2026-08-14 21:05:00",
+      "2026-08-14 23:59:00",
+      "2026-08-17 00:30:00",
+      "2026-08-17 09:00:00",
+    ],
+    prices: [100, 101, null, null],
+    oi: [1, 2, null, null],
+  };
+  const now = new Date(2026, 7, 15, 0, 30, 5);
+  const out = applyMinuteTick(frame, { last: 102, oi: 9 }, now);
+  assert.equal(out.prices[2], 102);
+  assert.equal(out.oi[2], 9);
+  assert.equal(out.prices[1], 101);
 });
 
 function pad2(n) {
