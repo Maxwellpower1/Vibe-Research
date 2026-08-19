@@ -69,6 +69,7 @@ test("browser-direct Tencent fallback keeps PE/PB/total mcap", () => {
   assert.match(directSrc, /f\[39\]/);
   assert.match(directSrc, /f\[45\]/);
   assert.match(directSrc, /f\[46\]/);
+  assert.match(directSrc, /is_stale/);
   assert.match(chartSrc, /selQuote\?\.mcap_yi/);
 });
 

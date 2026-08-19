@@ -102,6 +102,7 @@ export interface Quote {
   name: string; price: number; last_close: number; change_pct: number;
   pe_ttm: number; pb: number; mcap_yi: number; turnover_pct: number;
   limit_up: number; limit_down: number;
+  is_stale?: boolean; stale_reason?: string;
 }
 
 export interface Valuation {
@@ -273,6 +274,7 @@ export interface MarketQuote {
   symbol: string; name: string; price: number; pct: number;
   change?: number; prev?: number; amount?: number; turnover?: number;
   pe_ttm?: number; pb?: number; mcap_yi?: number;
+  is_stale?: boolean; stale_reason?: string;
 }
 export interface SectorBoard {
   code: string; raw_code?: string; name: string;
@@ -1642,7 +1644,6 @@ export const api = {
   percentile: (code: string) => get<ValPercentile>(`/valuation/percentile?code=${code}`),
   financials: (code: string) => get<Financials>(`/financials?code=${code}`),
   announcements: (code: string) => get<Announcement[]>(`/announcements?code=${code}`),
-  quote: (codes: string) => get<Record<string, Quote>>(`/quote?codes=${codes}`),
   /** 轻量图：resolution 1=分时 / 5=五日 / 1D=日K前复权（腾讯） */
   /** code: 6-digit / sh000001 / hkHSI / hkHSTECH / usIXIC */
   ashareLightKline: (code: string, resolution = "1D", num = 365) =>

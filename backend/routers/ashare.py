@@ -37,7 +37,7 @@ def stock_basic(code: str = Query(...)):
 
 @router.get("/api/quote")
 def quote(codes: str = Query(..., description="逗号分隔的 6 位代码")):
-    """实时行情：现价/涨跌/PE/PB/市值/换手/涨跌停。仅标准库，永远可用。"""
+    """遗留适配. 网页走 GET /api/market/quotes. 与 quotes 共用同一把腾讯缓存."""
     lst = [c.strip() for c in codes.split(",") if c.strip()]
     if not lst or any(not c.isdigit() or len(c) != 6 for c in lst):
         raise HTTPException(400, "codes 必须是逗号分隔的 6 位数字")
@@ -107,6 +107,8 @@ def reports(code: str = Query(...), pages: int = Query(2, ge=1, le=5)):
                 astock.pdf_url(r.get("infoCode", "")) if r.get("infoCode") else None
             )
         return {"data": rows}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     except Exception as e:
         raise HTTPException(502, f"研报源异常：{e}") from e
 

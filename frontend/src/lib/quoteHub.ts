@@ -18,6 +18,8 @@ export interface HubQuote {
   pe_ttm?: number;
   pb?: number;
   mcap_yi?: number;
+  is_stale?: boolean;
+  stale_reason?: string;
   updated: number;
 }
 
@@ -122,6 +124,7 @@ function applyQuote(
   q: {
     name?: string; price: number; pct: number; amount?: number; turnover?: number;
     prev?: number; pe_ttm?: number; pb?: number; mcap_yi?: number;
+    is_stale?: boolean; stale_reason?: string;
   },
   now: number,
 ): boolean {
@@ -136,12 +139,15 @@ function applyQuote(
     pe_ttm: q.pe_ttm,
     pb: q.pb,
     mcap_yi: q.mcap_yi,
+    is_stale: q.is_stale,
+    stale_reason: q.stale_reason,
     updated: now,
   };
   const old = entries.get(code);
   if (!old || old.price !== next.price || old.pct !== next.pct
     || old.amount !== next.amount || old.turnover !== next.turnover
-    || old.pe_ttm !== next.pe_ttm || old.pb !== next.pb || old.mcap_yi !== next.mcap_yi) {
+    || old.pe_ttm !== next.pe_ttm || old.pb !== next.pb || old.mcap_yi !== next.mcap_yi
+    || old.is_stale !== next.is_stale) {
     entries.set(code, next);
     return true;
   }

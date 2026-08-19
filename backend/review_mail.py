@@ -247,6 +247,7 @@ def run_once(*, force: bool = False) -> dict[str, Any]:
         _STATE["last_error"] = None
         data, collect_errors = collect_review_data()
         snap = review_context.pack_review_context(data)
+        review_context.save_archive(snap)
         prompt = review_context.build_user_prompt(snap)
         content = _run_llm(cfg, prompt, snap)
         subject = f"Vibe-Research 复盘 {day}"

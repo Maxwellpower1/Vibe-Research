@@ -22,7 +22,7 @@ python3 -m venv .venv
 | 端点 | 说明 | 依赖 |
 |---|---|---|
 | `GET /api/health` | 健康检查 | — |
-| `GET /api/quote?codes=600519,000858` | 实时行情（PE/PB/市值/涨跌停…，与 `/market/quotes` 共用 5s 腾讯缓存） | stdlib |
+| `GET /api/quote?codes=600519,000858` | **遗留**实时行情（与 `/market/quotes` 共用 5s 腾讯缓存；网页请走 quotes） | stdlib |
 | `GET /api/valuation?code=600519` | 完整估值（前向PE/PEG/消化年数） | requests+akshare |
 | `GET /api/valuation/percentile?code=600519` | 估值历史分位（近5年·百度股市通） | akshare |
 | `GET /api/financials?code=600519` | 财务关键指标（同花顺摘要，最新报告期，前端个股页用） | akshare |

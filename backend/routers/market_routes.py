@@ -84,6 +84,7 @@ def market_review_context(body: ReviewContextIn):
             watch_codes=codes,
         )
         text = review_context.pack_review_context(data)
+        review_context.save_archive(text)
     except Exception as e:
         raise HTTPException(502, f"复盘上下文异常：{e}") from e
     return {

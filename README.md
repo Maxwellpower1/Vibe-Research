@@ -57,10 +57,10 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 
 ### A 股全栈数据 · AStockData
 
-- **就在本仓库的 [`a-stock-data/`](a-stock-data/) 文件夹里**（v3.6.0）。十层数据架构、47 个端点、15 个数据源，`a-stock-data/SKILL.md` **内嵌全部调用代码**，自包含、零第三方数据封装依赖，东财接口已内置限流防封，主源被封还能降级到备用源。
+- **就在本仓库的 [`a-stock-data/`](a-stock-data/) 文件夹里**（v3.6.0，给 agent 的参考快照）。十层数据架构、47 个端点（44 主 + 3 官方备胎）、15 个数据源，`a-stock-data/SKILL.md` **内嵌全部调用代码**。 **真正跑服务的是 `backend/astock.py`**（从这份工具箱移植；`norm_ticker` / 僵尸报价 `is_stale` / 北交所老号段已进运行时）。东财接口已内置限流防封，主源被封还能降级到备用源。
 - **覆盖**：行情 / K线 / 研报 / 一致预期 / 估值 / 历史分位 / 财务三表 / 公告 / 龙虎榜 / 融资融券 / 大宗交易 / 股东户数 / 分红 / 资金流 / 解禁 / 概念板块 / 打板情绪 / ETF 期权 / 互动易 / 全市场行业排名 …
 - **轻量图表 API**：`GET /api/astock/light-kline?code=600519&resolution=1D`（`1` 分时 / `5` 五日 / `1D` 日K前复权，腾讯 ifzq，标准库即可，缓存 60 秒；美股指数如 `usIXIC` 走 `usMinute`；`whUSDCNY` 走东财离岸 `USDCNH` 1 分钟 K）· `GET /api/astock/light-kline-batch?codes=sh000001,usIXIC,whUSDCNY` 一次拉多只（驾驶舱指数/板块成分股/个股榜用）
-- **统一报价中心**：`GET /api/market/quotes?codes=` 与 `GET /api/quote` 共用腾讯解析和进程内一份报价（开市 5 秒新鲜、过期先给上一笔再补；多页共用，不各打一遍腾讯）。指数不写成裸 6 位，避免 `sh000001` 撞 `000001`。网页报价中心把上一帧价格/涨跌幅留在 localStorage（关 tab 再开也在），先画再补。VIX 空了走新浪。期货走 `/commodities`，和指数并行，互不拖死。驾驶舱指数/商品/榜单/自选/产业链/顶栏跑马灯共用同一快照；后端慢或挂了时浏览器直连 `qt.gtimg.cn` / `ifzq` 兜底。板块热点默认左领涨/右领跌，点板块后成分股出在另一半。
+- **统一报价中心**：网页走 `GET /api/market/quotes?codes=`（开市 5 秒新鲜、过期先给上一笔再补；多页共用，不各打一遍腾讯）。`GET /api/quote` 是遗留 HTTP 适配，与 quotes 共用同一把腾讯缓存，新页面不要再调。指数不写成裸 6 位，避免 `sh000001` 撞 `000001`。网页报价中心把上一帧价格/涨跌幅留在 localStorage（关 tab 再开也在），先画再补。VIX 空了走新浪。期货走 `/commodities`，和指数并行，互不拖死。驾驶舱指数/商品/榜单/自选/产业链/顶栏跑马灯共用同一快照；后端慢或挂了时浏览器直连 `qt.gtimg.cn` / `ifzq` 兜底。板块热点默认左领涨/右领跌，点板块后成分股出在另一半。
 - **分时中心**：全球指数分时自己立刻打 17 码 `light-kline-batch`（不进 minuteHub，行先画再补线）。个股迷你图仍合并成 20 秒一批。商品分钟后端并行拉新浪。K 线页分时走同一 `loadLightKline` 缓存（240 根）；五日/日 K 仍独立。分时由预热强制重写同一把钥匙（开市 20 秒、休市 60 秒），TTL 长过这个间隔，刷新网页读缓存。轮询换榜时保留上一帧，不先清空。
 - **自选 / 个股行 / 分时轴**：驾驶舱自选格可搜名称/代码/拼音（`GET /api/fin/suggest`）当场加减，下拉可用上下键高亮、回车加入；财报窗搜公司同一套键盘。榜单/成分/产业链点星加入自选。可见行批量补行业/概念（`GET /api/market/stock-boards-batch`，前端 5 分钟缓存）。分时迷你图按交易时段画 X 轴（A 股午休压缩，港股 09:30-16:00 午休压缩，日经/KOSPI 按东财北京时 08:00 起轴，商品/美股/汇率 24h）。
 - **产业链**：上/中/下游行复用驾驶舱 `QuoteStockRow`（分时 / 额 / 主力净 / 板块）。切到该页签时从涨跌停借横向空间（约 58%）；够宽则三列 + 右侧关键技术/按链快讯，窄则单列并把技术点摊在顶上。按关键词匹配相关板块涨跌。「+添加 / 更新」粘贴问财文本在前端按上中下游解析（6 位 A 股代码），自定义链只存本机；「从问财获取 / 问财刷新」走 `GET /api/iwencai/select`（需 `IWENCAI_API_KEY`）。客观呈现不附推荐。
@@ -73,14 +73,14 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
 - **板块热点成分股**：默认左领涨 / 右领跌；点板块后原来的成分股列表出在另一半（再点或关回双列）。成分股走腾讯 `getBoardRankList`（`pt*` 代码）；主力净流仍补东财 `ulist`（独有字段）
 - **ETF 份额**：`GET /api/market/etf-shares?code=510300` 或 `?codes=510050,510300,510500,588000,159915,159919`。沪市走上交所日频（万份/1e4），深市走深交所基金规模（份/1e8），本地缓存；季报申购/赎回仍走东财。复盘资金页一张图看这六只
 - **已去掉的闲置/兜底东财封装**：人气榜、akshare 个股概况、行业研报；板块排名/成分/个股榜/成交额/涨跌家数/全球指数不再用东财兜底。资金流、打板四池、公告研报等独有数据仍走东财。
-- **给 agent 用**：用 Claude Code 等 agent 跑本仓库时，要调 A 股数据就看 [`a-stock-data/SKILL.md`](a-stock-data/SKILL.md)——每个接口都有 copy-paste 即用的代码。Vibe-Research 后端的数据层（`backend/astock.py`）也是从它移植的。
+- **给 agent 用**：用 Claude Code 等 agent 跑本仓库时，要调 A 股数据就看 [`a-stock-data/SKILL.md`](a-stock-data/SKILL.md)——每个接口都有 copy-paste 即用的代码。线上实现以 `backend/astock.py` 为准；`norm_ticker` / 北交所老号段 / 报价 `is_stale` 已同步进运行时。
 - **运行依赖**：`pip install mootdx requests pandas stockstats`（自包含，v3.0 起已移除 akshare 依赖）。
 - **更新 / 上游**：<https://github.com/simonlin1212/a-stock-data> —— 想跟进最新端点、扩数据源，去这里看；**但即便你不更新，仓库自带的这份也是固定可用的快照，可以一直用。**
 
 ### 美股 / 港股数据 · global-stock-data
 
 - **就在本仓库的 [`global-stock-data/`](global-stock-data/) 文件夹里**（v2.0.3）。13 层数据架构、30+ 个端点、11 个数据源、零鉴权，覆盖美港股行情 / K线 / 技术指标 / 三表财报 / 资金流 / 期权（CBOE 官方期权链含完整希腊字母与 0DTE 流）/ FINRA 空头成交量 / SEC EDGAR 申报流与全市场筛选。每个数据源都标注了合规级别。
-- 后端 `backend/gstock.py` + `gstock_deep.py`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo quoteSummary；挂了就空）** + **三表关键科目（东财）** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo search，crumb 被拦时走 RSS）**。个股页输 `AAPL` / `00700` 即可。
+- 后端 `backend/gstock.py` + `gstock_deep/`：全球指数 + 美港股行情/关键财务 + **估值/分析师/机构持仓（Yahoo quoteSummary；挂了就空）** + **三表关键科目（东财）** + **CBOE 期权 0DTE/异动** + **SEC 申报 / EDGAR Screener / 财报日历** + **美/港涨跌榜（market_stock_list）** + **个股新闻（Yahoo search，crumb 被拦时走 RSS）**。个股页输 `AAPL` / `00700` 即可。
 - **美股日 K**：`GET /api/global/us/kline?symbol=AAPL&num=180`（新浪；Yahoo chart 在国内 403）。A 股日 K 腾讯/mootdx 空时回退 **Baostock**（可选包）。
 - **研究桌**：`GET /api/research/kline`（Stooq / Baostock / pykrx）· `/correlation` · `/etf-holdings` · `/13f`。韩股日 K 需 `pip install pykrx`（Naver 复权，不是 KRX 原始盘）。
 - **回测**：`GET /api/backtest/meta` · `GET /api/backtest/index-pool`（沪深300 / 中证500 / 科创50 / 创业板指；`history=1` 同时写入中证变动日快照）· `POST /api/backtest/run`（可 `index` + `pit_members` 按日成分回放；策略含 `top_k` 目标权重，可 `max_weight` / `industry_neutral`；`exclude_st` / `min_list_days` 可交易掩码）· `POST /api/backtest/factor`（含 ROE/净利润/营收公告日 PIT；周/月=交易期末）· `POST /api/backtest/model`（LightGBM 可选，分数进 Top-K）· `GET/DELETE /api/backtest/runs` · `GET /api/backtest/store`（可带 `?codes=` 看这批覆盖）· `POST /api/backtest/store/sync` · `POST /api/backtest/store/members` · `POST /api/backtest/store/fundamentals`。库存不齐会现拉, 会慢。日 K 走 `daily_bars`（腾讯，与 light_kline 同源）。实验在 `~/.vibe-research/backtest/runs/<id>/`。表单默认仍是最新名单静态池；勾选按日成分才回放。沪深300 基准有快照时是等权可交易账户，不是指数价格比。北交所 920 按 30% 涨跌停。
@@ -133,7 +133,7 @@ Vibe-Research/
 │   ├── ext_feeds.py     Stooq / Baostock / pykrx
 │   ├── etf_lookthrough.py  ETF 穿透（东财 + N-PORT）
 │   ├── inst_13f.py      13F 持仓与环比
-│   ├── gstock_deep.py   估值/三表/资金流/SEC/财报日历
+│   ├── gstock_deep/     估值/三表/资金流/SEC/财报日历
 │   ├── ai_watch/        AI 观察：OpenRouter / TTSI / AA / 基建 ROI
 │   ├── newsradar.py     资讯雷达（移植自 investment-news）
 │   ├── market.py        市场情绪 + 板块资金流 + 全球指数
@@ -252,7 +252,7 @@ Vibe-Research 用到的数据 / 工具，来自同一套自研开源体系（都
 
 | 仓库 | 定位 |
 |---|---|
-| [**a-stock-data**](https://github.com/simonlin1212/a-stock-data) | A 股全栈数据工具包（10 层 · 44 端点 · 15 数据源）—— 本项目的 A 股数据引擎 |
+| [**a-stock-data**](https://github.com/simonlin1212/a-stock-data) | A 股全栈数据工具包（10 层 · 47 端点 · 15 数据源）—— 本项目的 A 股数据引擎 |
 | [**global-stock-data**](https://github.com/simonlin1212/global-stock-data) | 美股 / 港股全栈数据工具包（13 层 · 30+ 端点 · 11 数据源） |
 | [**investment-news**](https://github.com/simonlin1212/investment-news) | 全球产业链资讯看板（12 赛道一一对应 A 股板块）—— 本项目的资讯源 |
 | [**Agent-Staff**](https://github.com/simonlin1212/Agent-Staff) | 把公司 Agent 化：每部门一个 AI agent + CEO 参谋长，常驻飞书 |

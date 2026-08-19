@@ -14,6 +14,8 @@ export interface DirectQuote {
   pe_ttm?: number;
   pb?: number;
   mcap_yi?: number;
+  is_stale?: boolean;
+  stale_reason?: string;
 }
 
 export interface DirectBoard {
@@ -86,11 +88,20 @@ export function parseTencentQuotes(text: string): Record<string, DirectQuote> {
     }
     if (f.length < 33) continue;
     const rawAmt = f.length > 37 ? num(f[37]) : 0;
+    const price = num(f[3]);
+    const prev = num(f[4]);
+    const isStale = rawAmt === 0 && price === prev && price > 0;
+    const digits = /^(?:sh|sz|bj)(\d{6})$/i.exec(symbol)?.[1] || "";
+    const staleReason = !isStale
+      ? ""
+      : (["43", "83", "87"].includes(digits.slice(0, 2))
+        ? "北交所老号段, 多数已迁至 920xxx, 请按名称反查现行代码"
+        : "成交量为 0 (停牌 / 未开盘 / 废码), 报价非当日真实成交");
     out[symbol] = {
       symbol,
       name: f[1] || symbol,
-      price: num(f[3]),
-      prev: num(f[4]),
+      price,
+      prev,
       change: num(f[31]),
       pct: num(f[32]),
       amount: hasTurnoverAmount(symbol) && rawAmt ? rawAmt * 10000 : 0,
@@ -99,6 +110,8 @@ export function parseTencentQuotes(text: string): Record<string, DirectQuote> {
       pb: f.length > 46 ? num(f[46]) : 0,
       // 45=总市值(亿); 44 is float mcap and can be much smaller on STAR names.
       mcap_yi: f.length > 45 ? num(f[45]) : 0,
+      is_stale: isStale,
+      stale_reason: staleReason,
     };
   }
   return out;

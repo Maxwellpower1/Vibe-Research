@@ -14,8 +14,10 @@ import ths_quote
 @pytest.fixture(autouse=True)
 def _clear_cache():
     ths_quote._CACHE.clear()
+    ths_quote._SESSION = None
     yield
     ths_quote._CACHE.clear()
+    ths_quote._SESSION = None
 
 
 # ---------- detect_market / split_code ----------
@@ -128,3 +130,37 @@ def test_kline_cached_ttl(monkeypatch):
     ths_quote.kline_cached("64", "850001", "min_1", 300)
     ths_quote.kline_cached("64", "850001", "min_1", 300)
     assert len(calls) == 1
+
+
+def test_http_reuses_session(monkeypatch):
+    ths_quote._SESSION = None
+    hits: list[str] = []
+
+    class FakeResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"status_code": 0, "data": {}}
+
+    class FakeSess:
+        def post(self, *a, **k):
+            hits.append("p")
+            return FakeResp()
+
+    sess = FakeSess()
+
+    class ReqMod:
+        class Session:
+            def __new__(cls):
+                hits.append("new")
+                return sess
+
+    monkeypatch.setattr(ths_quote, "_requests", lambda: ReqMod)
+    try:
+        ths_quote._post("multi_last_snapshot", {}, "600519")
+        ths_quote._post("single_kline", {}, "600519")
+        assert hits.count("new") == 1
+        assert hits.count("p") == 2
+    finally:
+        ths_quote._SESSION = None

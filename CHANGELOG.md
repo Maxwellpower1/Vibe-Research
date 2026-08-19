@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+### 修复：运行时同步 SKILL v3.6.0 ticker / 僵尸报价
+
+`backend/astock.py` 补上 `norm_ticker`、腾讯报价 `is_stale`、北交所 4/43/83/87 老号段。个股 HTTP `_validate` 走同一份归一化；东财研报遇老码空结果改 400，不再假装没研报。ovlab / 同花顺复用 `requests.Session`。复盘上下文按日落 `VR_DATA_DIR/review-archive/`（预热 / 问 AI / 邮件挂同一打包口；`VR_REVIEW_ARCHIVE=0` 关）。
+
+### 修复：资讯雷达缓存迁到用户数据目录
+
+`radar.json` 不再写 `backend/.cache/`。跟持仓一样落 `VR_DATA_DIR`（默认 `~/.vibe-research/`），覆盖安装不丢；旧文件自动复制过去。
+
+### 文档：期权驾驶舱 MQTT 与运行时口径
+
+CHANGELOG 补上已落地的期权驾驶舱 MQTT 旁路（订 optionflow / ctamap / dataview，驾驶舱 2s 读本机内存叠 REST，不写钥匙；`VR_OVLAB_MQTT=0` 关）。README 端点口径统一为 SKILL 的 47（44 主 + 3 备胎），标明 `backend/astock.py` 才是运行时；`gstock_deep` 已是包。网页报价入口锁定 `/api/market/quotes`（`/api/quote` 标遗留）。
+
 ### 改进：回测挂上交易日加减、交易期末调仓、ST/次新掩码
 
 日历补 `day_shift` / `floor_day` / `count_day_frames`，仍用同一份上证交易日。因子周/月调仓改为该交易周/月最后一根。账户 / 因子 / 模型默认剔 ST（今天的名字，有前视）和次新（这段第一根 bar；日 K 不够长则跳过）。不引入 Omicron。

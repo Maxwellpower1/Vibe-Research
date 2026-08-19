@@ -187,6 +187,19 @@ def test_review_context_route(monkeypatch):
     assert "自选" in body["missing"] or "【自选】" in body["text"]
 
 
+def test_save_archive_once_per_day(monkeypatch, tmp_path):
+    import review_context as rc
+
+    monkeypatch.setenv("VR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("VR_REVIEW_ARCHIVE", "1")
+    p1 = rc.save_archive("hello snapshot", day="2026-08-19")
+    p2 = rc.save_archive("hello snapshot v2", day="2026-08-19")
+    assert p1 is not None and p1 == p2
+    assert p1.read_text(encoding="utf-8") == "hello snapshot v2"
+    monkeypatch.setenv("VR_REVIEW_ARCHIVE", "0")
+    assert rc.save_archive("nope", day="2026-08-19") is None
+
+
 def test_user_busy_skips_warmup(monkeypatch):
     monkeypatch.setattr("review_jobs.warm_minutes", lambda: (0, 0, []))
     with rw.user_fetch():

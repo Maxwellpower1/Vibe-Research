@@ -20,10 +20,11 @@ _SYMBOL_HINT = "代码须为 6 位数字、sh/sz/bj+6 位、hkHSI/hkHSTECH、usI
 
 
 def _validate(code: str) -> str:
-    code = (code or "").strip()
-    if not code.isdigit() or len(code) != 6:
-        raise HTTPException(400, "代码必须是 6 位数字")
-    return code
+    """Stock-only 6-digit (600519 / SH600519 / 600519.SH). Indices use _validate_symbol."""
+    try:
+        return astock.norm_ticker(code, stock_only=True)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 def _validate_symbol(code: str) -> str:

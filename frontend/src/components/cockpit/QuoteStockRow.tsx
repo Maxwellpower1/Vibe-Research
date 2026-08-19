@@ -158,8 +158,12 @@ export function QuoteStockRow({
       )}
       <div className="row-span-2 flex min-w-0 flex-col justify-center gap-1 leading-none">
         <span className="truncate text-[11px] text-slate-200">{name}</span>
-        <span className="truncate text-[10px] text-slate-500">
+        <span
+          className="truncate text-[10px] text-slate-500"
+          title={hub?.stale_reason || undefined}
+        >
           {tag ? `${symbol || code} · ${tag}` : (symbol || code)}
+          {hub?.is_stale ? " · 停/废" : ""}
         </span>
       </div>
       <div className="col-span-2 flex h-5 min-w-0 items-center self-center">

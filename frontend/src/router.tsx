@@ -12,7 +12,7 @@ function OvlabRedirect() {
 // Heavy pages load on demand; Suspense boundary lives in Layout around <Outlet />.
 const AShare = lazy(() => import("@/pages/AShare").then((m) => ({ default: m.AShare })));
 const Portfolio = lazy(() => import("@/pages/Portfolio").then((m) => ({ default: m.Portfolio })));
-const Ovlab = lazy(() => import("@/pages/Ovlab").then((m) => ({ default: m.Ovlab })));
+const Ovlab = lazy(() => import("@/pages/DerivCockpit").then((m) => ({ default: m.DerivCockpit })));
 const UsMarket = lazy(() => import("@/pages/UsMarket").then((m) => ({ default: m.UsMarket })));
 const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
 const AiWatch = lazy(() => import("@/pages/AiWatch").then((m) => ({ default: m.AiWatch })));

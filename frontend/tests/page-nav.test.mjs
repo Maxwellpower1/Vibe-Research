@@ -37,8 +37,8 @@ test("/derivatives sits right after /a-share and is primary", () => {
   const layout = readFileSync(join(root, "src/components/layout/Layout.tsx"), "utf8");
   assert.doesNotMatch(layout, /OVL_TABS|期权期货页签/);
   assert.match(layout, /mainRef\.current\?\.scrollTo\(0, 0\)/, "切页把手机共用滚动条拉回顶");
-  const ovlab = readFileSync(join(root, "src/pages/Ovlab.tsx"), "utf8");
-  assert.match(ovlab, /DerivCockpit/);
+  const ovlab = readFileSync(join(root, "src/pages/DerivCockpit.tsx"), "utf8");
+  assert.match(ovlab, /export function DerivCockpit/);
   assert.doesNotMatch(ovlab, /DerivLightChart/);
   assert.doesNotMatch(ovlab, /CtpPortfolio/);
   assert.doesNotMatch(ovlab, /VolSurfacePanel|FlowAlertPanel/);

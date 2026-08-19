@@ -186,6 +186,13 @@ def warm_once(extra: Callable[..., tuple[int, int, list[dict]]] | None = None) -
         fail += 1
         errors.append({"name": "minutes", "error": str(e)[:160]})
 
+    if not busy:
+        try:
+            import review_context
+            review_context.archive_from_bundle()
+        except Exception:
+            log.warning("review archive skipped", exc_info=True)
+
     _STATE["last_ok"] = ok
     _STATE["last_fail"] = fail
     _STATE["last_errors"] = errors[-12:]

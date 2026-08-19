@@ -44,7 +44,11 @@ export function ReviewMoneySeg({
   useEffect(() => {
     const el = bondChartRef.current;
     const pts = bondY?.curve_points ?? [];
-    if (!el || pts.length < 2) return;
+    if (!el || pts.length < 2) {
+      bondEchartRef.current?.dispose();
+      bondEchartRef.current = null;
+      return;
+    }
 
     let chart = bondEchartRef.current;
     if (!chart || chart.getDom() !== el) {
@@ -105,6 +109,8 @@ export function ReviewMoneySeg({
     ro.observe(el);
     return () => {
       ro.disconnect();
+      chart?.dispose();
+      if (bondEchartRef.current === chart) bondEchartRef.current = null;
     };
   }, [bondY]);
 
@@ -327,7 +333,11 @@ function EtfShareBlock({ items, fallback }: { items: EtfShares[]; fallback: EtfS
 
   useEffect(() => {
     const el = chartRef.current;
-    if (!el || !ready) return;
+    if (!el || !ready) {
+      chartObj.current?.dispose();
+      chartObj.current = null;
+      return;
+    }
     let chart = chartObj.current;
     if (!chart || chart.getDom() !== el) {
       chart?.dispose();
@@ -393,7 +403,11 @@ function EtfShareBlock({ items, fallback }: { items: EtfShares[]; fallback: EtfS
     requestAnimationFrame(() => chart?.resize());
     const ro = new ResizeObserver(() => chart?.resize());
     ro.observe(el);
-    return () => { ro.disconnect(); };
+    return () => {
+      ro.disconnect();
+      chart?.dispose();
+      if (chartObj.current === chart) chartObj.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, chartKey]);
 

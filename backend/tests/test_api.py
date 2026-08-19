@@ -87,3 +87,20 @@ def test_gstock_quote_full_null_shape():
     q = gstock._quote_from({})
     assert set(q) == {"code", "name", "price", "open", "high", "low", "prev_close", "amount", "mcap", "change_pct"}
     assert all(v is None for v in q.values())
+
+
+def test_reports_old_bj_400(monkeypatch):
+    import astock
+
+    def boom(*a, **k):
+        raise ValueError("832982 属北交所老号段")
+
+    monkeypatch.setattr(astock, "eastmoney_reports", boom)
+    assert client.get("/api/reports?code=832982").status_code == 400
+
+
+def test_validate_accepts_prefixed():
+    from api_common import _validate
+
+    assert _validate("SH600519") == "600519"
+    assert _validate("600519.SH") == "600519"

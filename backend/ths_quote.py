@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -50,6 +51,21 @@ def _requests():
     except ImportError as e:
         raise DependencyMissing("同花顺行情需要 requests: pip install requests") from e
     return requests
+
+
+_SESSION = None
+_SESSION_LOCK = threading.Lock()
+
+
+def _http():
+    """One process-wide Session; Referer still set per request (path must include code)."""
+    global _SESSION
+    requests = _requests()
+    if _SESSION is None:
+        with _SESSION_LOCK:
+            if _SESSION is None:
+                _SESSION = requests.Session()
+    return _SESSION
 
 
 def detect_market(code: str) -> str | None:
@@ -89,7 +105,6 @@ def split_code(raw: str) -> tuple[str, str] | None:
 
 def _post(ep: str, body: dict[str, Any], code: str, timeout: float = 15.0) -> Any:
     """统一 POST, 校验 {status_code, data} 响应壳. Referer 必须带代码路径."""
-    requests = _requests()
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -97,7 +112,7 @@ def _post(ep: str, body: dict[str, Any], code: str, timeout: float = 15.0) -> An
         "Referer": f"{PAGE}/{code}/",
         "Origin": PAGE,
     }
-    resp = requests.post(f"{GW}/{ep}", json=body, headers=headers, timeout=timeout)
+    resp = _http().post(f"{GW}/{ep}", json=body, headers=headers, timeout=timeout)
     resp.raise_for_status()
     payload = resp.json()
     if payload.get("status_code") != 0:

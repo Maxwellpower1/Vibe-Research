@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -79,6 +80,23 @@ def _requests():
     return requests
 
 
+_SESSION = None
+_SESSION_LOCK = threading.Lock()
+
+
+def _http():
+    """One process-wide Session for OpenVlab (keep-alive)."""
+    global _SESSION
+    requests = _requests()
+    if _SESSION is None:
+        with _SESSION_LOCK:
+            if _SESSION is None:
+                sess = requests.Session()
+                sess.headers.update(DEFAULT_HEADERS)
+                _SESSION = sess
+    return _SESSION
+
+
 _TTL = 300  # 5 分钟, 全站共享
 _CACHE = TTLCache(maxsize=256, default_ttl=_TTL, negative_ttl=0, name="ovlab")
 
@@ -124,10 +142,9 @@ def _cached(key: str, fn, valid=is_nonempty, ttl: float | None = None):
 
 def _get(path: str, params: dict[str, Any] | None = None, timeout: float = 20.0) -> Any:
     """统一 GET, 校验 openvlab 的 {code, result, message} 响应壳."""
-    requests = _requests()
     url = f"{BASE_URL}{API_PREFIX}/{path.lstrip('/')}"
     logger.debug("GET %s params=%s", url, params)
-    resp = requests.get(url, params=params, headers=DEFAULT_HEADERS, timeout=timeout)
+    resp = _http().get(url, params=params, timeout=timeout)
     resp.raise_for_status()
     payload = resp.json()
     if payload.get("code") != 0:
@@ -140,11 +157,14 @@ def _get(path: str, params: dict[str, Any] | None = None, timeout: float = 20.0)
 
 def _post(path: str, body: dict[str, Any] | None = None, timeout: float = 25.0) -> Any:
     """统一 POST (JSON body), 校验响应壳. 用于 warehouse/last-bars/flow-data 等."""
-    requests = _requests()
     url = f"{BASE_URL}{API_PREFIX}/{path.lstrip('/')}"
     logger.debug("POST %s body=%s", url, body)
-    headers = {**DEFAULT_HEADERS, "Content-Type": "application/json"}
-    resp = requests.post(url, json=body or {}, headers=headers, timeout=timeout)
+    resp = _http().post(
+        url,
+        json=body or {},
+        headers={"Content-Type": "application/json"},
+        timeout=timeout,
+    )
     resp.raise_for_status()
     payload = resp.json()
     if payload.get("code") != 0:

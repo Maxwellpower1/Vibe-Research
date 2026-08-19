@@ -9,9 +9,10 @@ pypinyin  # 本机标的联想: 拼音首字母 (未装则只做代码/名称匹
 akshare>=1.10
 mootdx>=0.10
 pandas
+numpy  # 回测因子/撮合直接 import; pandas 也会带上, 显式声明避免隐式依赖
 openpyxl  # SZSE ETF share xlsx
 polars
-pyarrow
+pyarrow  # parquet 读写 (回测库存 / DuckDB / Polars 传递依赖)
 duckdb  # 回测行情: 分区 parquet, 内存查, 不建 .db
 
 # 期货 CTP 持仓只读查询（可选）——「我的持仓 → 期货账户」

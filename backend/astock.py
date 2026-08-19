@@ -53,15 +53,92 @@ def is_ashare_stock(symbol: str) -> bool:
 def get_prefix(code: str) -> str:
     """6 位代码 → 交易所前缀。5 开头是沪市基金/ETF（51/56/58 等），深市基金 15/16 开头走默认 sz。
 
-    920 是北交所新代码; 900 仍是沪 B。000001 走 sz（平安银行）。上证须显式传 sh000001。
+    920 是北交所新代码; 900 仍是沪 B。4x/8x 是北交所老号段（多数已迁 920）。
+    000001 走 sz（平安银行）。上证须显式传 sh000001。
     """
     if code.startswith("920"):
         return "bj"
     if code.startswith(("6", "9", "5")):
         return "sh"
-    if code.startswith("8"):
+    if code.startswith(("4", "8")):
         return "bj"
     return "sz"
+
+
+# Whole-string match; prefix and suffix are mutually exclusive (SKILL v3.6.0).
+_TICKER_RE = re.compile(
+    r"^(?:(sh|sz|bj)(\d{6})|(\d{6})(?:\.(sh|sz|bj))?)$", re.IGNORECASE,
+)
+
+
+def _natural_market(digits: str) -> str:
+    """Natural market for a 6-digit code. 000xxx is ambiguous; caller handles it."""
+    if digits.startswith("92") or digits[:2] in ("43", "83", "87"):
+        return "bj"
+    if digits[0] in ("5", "6", "9"):
+        return "sh"
+    return "sz"
+
+
+def norm_ticker(code: str, stock_only: bool = False) -> str:
+    """Any supported spelling -> 6-digit code. Raises ValueError; never returns ''.
+
+    Accepts 600519 / SH600519 / sh600519 / 600519.SH / BJ920982.
+    stock_only=True rejects explicit SH 000xxx indices (reports / 一致预期).
+    """
+    raw = str(code).strip()
+    m = _TICKER_RE.match(raw)
+    if not m:
+        raise ValueError(
+            f"无法把 {code!r} 解析为 6 位股票代码; "
+            f"支持格式: 600519 / SH600519 / sh600519 / 600519.SH"
+            f"(前缀与后缀二选一, 不能同时写)"
+        )
+    digits = m.group(2) or m.group(3)
+    market = (m.group(1) or m.group(4) or "").lower()
+    if market:
+        if digits.startswith("000"):
+            if market == "bj":
+                raise ValueError(f"{code!r} 市场标识与号段矛盾: 000xxx 不属北交所.")
+            if stock_only and market == "sh":
+                raise ValueError(
+                    f"{code!r} 指向沪市指数而非个股 (沪市无 000xxx 个股), 本接口只服务个股."
+                    f"要查同号段的深市个股请显式传 sz{digits}."
+                )
+        else:
+            nat = _natural_market(digits)
+            if market != nat:
+                raise ValueError(
+                    f"{code!r} 的市场标识与号段矛盾: {digits} 属 {nat} 市, 而不是 {market} 市."
+                    f"(改用 {nat}{digits} 或去掉市场标识)"
+                )
+    return digits
+
+
+def _quote_stale_fields(symbol: str, amount_wan: float, price: float, last_close: float) -> tuple[bool, str]:
+    """Tencent still 200s frozen quotes for migrated BJ old codes / halted names."""
+    m = re.fullmatch(r"(sh|sz|bj)(\d{6})", symbol or "", re.I)
+    if not m:
+        return False, ""
+    stale = amount_wan == 0 and price == last_close and price > 0
+    if not stale:
+        return False, ""
+    digits = m.group(2)
+    if digits[:2] in ("43", "83", "87"):
+        return True, "北交所老号段, 多数已迁至 920xxx, 请按名称反查现行代码"
+    return True, "成交量为 0 (停牌 / 未开盘 / 废码), 报价非当日真实成交"
+
+
+def _apply_quote_stale(q: dict) -> dict:
+    stale, reason = _quote_stale_fields(
+        str(q.get("symbol") or ""),
+        float(q.get("amount_wan") or 0),
+        float(q.get("price") or 0),
+        float(q.get("last_close") or q.get("prev") or 0),
+    )
+    q["is_stale"] = stale
+    q["stale_reason"] = reason
+    return q
 
 
 # Tencent HK / US index symbols are case-sensitive on the wire.
@@ -168,7 +245,7 @@ def parse_gtimg_line(line: str) -> dict | None:
         chg = _gtimg_num(vals, 12)
         prev = price - chg if price else 0.0
         pct = _gtimg_num(vals, 13)
-        return {
+        return _apply_quote_stale({
             "symbol": symbol,
             "name": vals[1] or symbol,
             "price": price,
@@ -198,13 +275,13 @@ def parse_gtimg_line(line: str) -> dict | None:
             "limit_down": 0.0,
             "vol_ratio": 0.0,
             "pe_static": 0.0,
-        }
+        })
     if len(vals) < 33:
         return None
     n = _gtimg_num
     amt = n(vals, 37) if len(vals) > 37 else 0.0
     turn = n(vals, 38) if len(vals) > 38 else 0.0
-    return {
+    return _apply_quote_stale({
         "symbol": symbol,
         "name": vals[1],
         "price": n(vals, 3),
@@ -235,7 +312,7 @@ def parse_gtimg_line(line: str) -> dict | None:
         "limit_down": n(vals, 48) if len(vals) > 48 else 0.0,
         "vol_ratio": n(vals, 49) if len(vals) > 49 else 0.0,
         "pe_static": n(vals, 52) if len(vals) > 52 else 0.0,
-    }
+    })
 
 
 def parse_gtimg_quotes(data: str) -> dict[str, dict]:
@@ -454,18 +531,27 @@ def index_quote() -> list[dict]:
 
 _REPORT_API = "https://reportapi.eastmoney.com/report/list"
 _PDF_TPL = "https://pdf.dfcfw.com/pdf/H3_{info_code}_1.pdf"
+_REPORT_SESS = None
+_REPORT_LOCK = threading.Lock()
 
 
 def _report_session():
-    import requests  # 轻依赖，随后端一起装
+    """Reuse one Session for reportapi (TCP + headers)."""
+    global _REPORT_SESS
+    import requests  # 轻依赖, 随后端一起装
 
-    s = requests.Session()
-    s.headers.update({"User-Agent": UA, "Referer": "https://data.eastmoney.com/"})
-    return s
+    if _REPORT_SESS is None:
+        with _REPORT_LOCK:
+            if _REPORT_SESS is None:
+                s = requests.Session()
+                s.headers.update({"User-Agent": UA, "Referer": "https://data.eastmoney.com/"})
+                _REPORT_SESS = s
+    return _REPORT_SESS
 
 
 def eastmoney_reports(code: str, max_pages: int = 3) -> list[dict]:
-    """按个股代码拉研报列表（qType=0）。"""
+    """按个股代码拉研报列表 (qType=0). 代码先过 norm_ticker; 老北交空结果抛错, 不当成没研报."""
+    code = norm_ticker(code, stock_only=True)
     session = _report_session()
     out: list[dict] = []
     for page in range(1, max_pages + 1):
@@ -486,6 +572,12 @@ def eastmoney_reports(code: str, max_pages: int = 3) -> list[dict]:
         if page >= (d.get("TotalPage", 1) or 1):
             break
         time.sleep(0.3)
+    if not out and code[:2] in ("43", "83", "87"):
+        raise ValueError(
+            f"{code} 属北交所老号段 (43/83/87), 东财研报库已不再按老码索引."
+            f"北交所存量标的已基本迁至 920xxx (如 832982->920982); "
+            f"请按股票名称反查现行 920 代码后重试."
+        )
     return out
 
 
@@ -506,7 +598,8 @@ def _akshare():
 
 
 def profit_forecast(code: str) -> list[dict]:
-    """机构一致预期 EPS（同花顺）。"""
+    """机构一致预期 EPS (同花顺)."""
+    code = norm_ticker(code, stock_only=True)
     ak = _akshare()
     df = ak.stock_profit_forecast_ths(symbol=code, indicator="预测年报每股收益")
     return df.to_dict("records") if df is not None and not df.empty else []

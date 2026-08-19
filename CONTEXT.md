@@ -6,6 +6,11 @@
 
 加格子、加指数、加给模型看的字段、页面上要显示实时价：先读下面的词，再改对应入口。完成标准：没有第二份名单、第二把缓存钥匙、第二条 `/api/quote` 轮询。README 只写人能点到的页面。
 
+**A 股运行时**:
+真正跑服务的是 `backend/astock.py`。根目录 `a-stock-data/` 是给 agent 看的参考快照（SKILL 可能超前运行时）。修行情 / 研报 / 报价先改 `backend/astock.py`，不要只改 SKILL.md。
+v3.6.0 的 `norm_ticker` / 报价 `is_stale` / 北交所老号段已进运行时（个股 HTTP `_validate` 走同一份 `norm_ticker`）。
+_Avoid_: 把 SKILL 当线上实现、两套 ticker 归一化
+
 ## Language
 
 **复盘快照**:
@@ -21,7 +26,7 @@ _Avoid_: job list, warmup steps, panel catalog
 **复盘上下文**:
 把复盘数字打成一段给模型看的中文快照。网页问 AI 和定时邮件用同一段，缺的格写「未取到」。
 入口: `backend/review_context.py`；HTTP `POST /api/market/review-context`。网页只调 `api.reviewContext`。
-加一段给模型看的内容：改这个打包口和 `EXPECTED`。
+加一段给模型看的内容：改这个打包口和 `EXPECTED`。按日落 `VR_DATA_DIR/review-archive/`（预热 / 问 AI / 邮件共用；`VR_REVIEW_ARCHIVE=0` 关）。
 _Avoid_: prompt packer, reviewContext.ts, system prompt
 
 **指数目录**:

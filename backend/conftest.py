@@ -12,6 +12,8 @@ _TEST_DATA_DIR = tempfile.mkdtemp(prefix="vr-test-data-")
 os.environ["VR_DATA_DIR"] = _TEST_DATA_DIR
 # MQTT sidecar talks to emqx.openvlab.cn; keep unit tests offline.
 os.environ["VR_OVLAB_MQTT"] = "0"
+# Warmup daemon must not collect review-context / hit Eastmoney during unit tests.
+os.environ["VR_REVIEW_ARCHIVE"] = "0"
 
 
 def pytest_configure(config):

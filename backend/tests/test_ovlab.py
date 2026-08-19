@@ -19,8 +19,10 @@ import ovlab
 @pytest.fixture(autouse=True)
 def _clear_cache():
     ovlab._CACHE.clear()
+    ovlab._SESSION = None
     yield
     ovlab._CACHE.clear()
+    ovlab._SESSION = None
 
 
 # ---------- _cached ----------
@@ -28,10 +30,14 @@ def _clear_cache():
 def test_cached_hit_avoids_upstream(monkeypatch):
     """命中缓存时不再调上游."""
     calls = []
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: True)
     monkeypatch.setattr(ovlab, "_get", lambda *a, **k: calls.append(a) or [{"x": 1}])
-    ovlab.get_market_overview()
-    ovlab.get_market_overview()  # 第二次应走缓存
-    assert len(calls) == 1
+    ovlab._CACHE.pop("ovlab_market", None)
+    first = ovlab.get_market_overview()
+    n = sum(1 for c in calls if c and c[0] == "ctamap-all")
+    second = ovlab.get_market_overview()
+    assert second == first
+    assert sum(1 for c in calls if c and c[0] == "ctamap-all") == n
 
 
 def test_cached_empty_not_cached(monkeypatch):
@@ -263,8 +269,10 @@ def test_get_raises_on_nonzero_code(monkeypatch):
     class FakeResp:
         def raise_for_status(self): pass
         def json(self): return {"code": 1, "message": "boom"}
-    monkeypatch.setattr(ovlab, "_requests",
-                        lambda: type("R", (), {"get": lambda *a, **k: FakeResp()}))
+    class FakeSess:
+        def get(self, *a, **k):
+            return FakeResp()
+    monkeypatch.setattr(ovlab, "_http", lambda: FakeSess())
     with pytest.raises(RuntimeError, match="openvlab API error"):
         ovlab._get("ctamap-all")
 
@@ -643,3 +651,44 @@ def test_warehouse_receipt_empty_history(monkeypatch):
     monkeypatch.setattr(ovlab, "get_warehouse_history", lambda p: {})
     out = ovlab.get_warehouse_receipt("AU")
     assert out["product"] == "AU" and out["last"] is None and out["spark"] == []
+
+
+def test_http_reuses_session(monkeypatch):
+    ovlab._SESSION = None
+    hits: list[str] = []
+
+    class FakeResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"code": 0, "result": [1]}
+
+    class FakeSess:
+        headers: dict = {}
+
+        def get(self, *a, **k):
+            hits.append("g")
+            return FakeResp()
+
+        def post(self, *a, **k):
+            hits.append("p")
+            return FakeResp()
+
+    sess = FakeSess()
+
+    class ReqMod:
+        class Session:
+            def __new__(cls):
+                hits.append("new")
+                return sess
+
+    monkeypatch.setattr(ovlab, "_requests", lambda: ReqMod)
+    try:
+        ovlab._get("ctamap-all")
+        ovlab._post("warehouse/history", {})
+        assert hits.count("new") == 1
+        assert hits.count("g") == 1
+        assert hits.count("p") == 1
+    finally:
+        ovlab._SESSION = None

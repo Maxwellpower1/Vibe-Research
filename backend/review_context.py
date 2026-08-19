@@ -4,9 +4,15 @@ Missing panels are listed; do not invent numbers.
 """
 from __future__ import annotations
 
+import logging
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 REVIEW_CONTEXT_MAX_CHARS = 24_000
+_BJ = timezone(timedelta(hours=8))
+log = logging.getLogger("review_context")
 
 REVIEW_PROMPT_TASK = (
     "请用中文做当天大盘复盘, 按下面顺序写, 有数据才写、没数据就跳过:\n"
@@ -435,3 +441,51 @@ def pack_review_context(data: dict[str, Any]) -> str:
     if len(text) <= REVIEW_CONTEXT_MAX_CHARS:
         return text
     return text[:REVIEW_CONTEXT_MAX_CHARS] + "\n…(快照已截断)"
+
+
+def _archive_enabled() -> bool:
+    raw = (os.environ.get("VR_REVIEW_ARCHIVE") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in ("0", "false", "no", "off")
+
+
+def archive_dir() -> Path:
+    root = Path(os.environ.get("VR_DATA_DIR") or (Path.home() / ".vibe-research"))
+    d = root / "review-archive"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def save_archive(text: str, day: str | None = None) -> Path | None:
+    """Write packed review-context for one calendar day. Overwrites same-day file."""
+    if not _archive_enabled():
+        return None
+    body = (text or "").strip()
+    if not body:
+        return None
+    day = day or datetime.now(_BJ).strftime("%Y-%m-%d")
+    p = archive_dir() / f"{day}.txt"
+    tmp = p.with_suffix(".txt.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(p)
+    except OSError:
+        log.warning("review archive write failed", exc_info=True)
+        return None
+    log.info("review archive %s (%s chars)", p.name, len(text))
+    return p
+
+
+def archive_from_bundle() -> Path | None:
+    """Once per day: pack from current caches. Skip if today's file already exists."""
+    if not _archive_enabled():
+        return None
+    day = datetime.now(_BJ).strftime("%Y-%m-%d")
+    p = archive_dir() / f"{day}.txt"
+    if p.is_file():
+        return p
+    import review_snapshot
+
+    data, _ = review_snapshot.collect_review_bundle()
+    return save_archive(pack_review_context(data), day)

@@ -11,6 +11,7 @@ def test_get_prefix():
     assert astock.get_prefix("000001") == "sz"
     assert astock.get_prefix("300750") == "sz"
     assert astock.get_prefix("832000") == "bj"   # 8 开头北交所
+    assert astock.get_prefix("430047") == "bj"   # 4 开头北交所老号段
     assert astock.get_prefix("510300") == "sh"   # 沪 ETF（issue #10：曾误判 sz → 行情为 0）
     assert astock.get_prefix("588000") == "sh"   # 科创 50 ETF
     assert astock.get_prefix("159915") == "sz"   # 深 ETF 15 开头走默认 sz
@@ -33,6 +34,42 @@ def test_resolve_symbol():
     assert astock.resolve_symbol("ksKOSPI") == "ksKOSPI"
     assert astock.resolve_symbol("kskospi") == "ksKOSPI"
     assert astock.resolve_symbol("bad") == ""
+
+
+def test_norm_ticker():
+    assert astock.norm_ticker("600519") == "600519"
+    assert astock.norm_ticker("SH600519") == "600519"
+    assert astock.norm_ticker("600519.SH") == "600519"
+    assert astock.norm_ticker("bj920982") == "920982"
+    assert astock.norm_ticker("sz000016") == "000016"
+    try:
+        astock.norm_ticker("6005190")
+        raise AssertionError("7-digit must fail")
+    except ValueError:
+        pass
+    try:
+        astock.norm_ticker("SZ600519")
+        raise AssertionError("contradicting market must fail")
+    except ValueError:
+        pass
+    try:
+        astock.norm_ticker("SH000001", stock_only=True)
+        raise AssertionError("SH index must fail stock_only")
+    except ValueError:
+        pass
+    try:
+        astock.norm_ticker("000001.SH", stock_only=True)
+        raise AssertionError("suffix SH index must fail stock_only")
+    except ValueError:
+        pass
+
+
+def test_profit_forecast_rejects_sh_index():
+    try:
+        astock.profit_forecast("SH000001")
+        raise AssertionError("SH index must fail before akshare")
+    except ValueError:
+        pass
 
 
 def test_tencent_minute_url():
@@ -186,6 +223,55 @@ def test_parse_gtimg():
     assert q["pb"] == 6.41
     assert q["mcap_yi"] == 15000
     assert q["float_mcap_yi"] == 15000
+    assert q["is_stale"] is False
+
+
+def test_parse_gtimg_stale_old_bj():
+    parts = ["0"] * 55
+    parts[1] = "锦波生物"
+    parts[3] = "112.60"
+    parts[4] = "112.60"
+    parts[37] = "0"
+    line = 'v_bj832982="' + "~".join(parts) + '";'
+    q = astock.parse_gtimg_line(line)
+    assert q is not None
+    assert q["is_stale"] is True
+    assert "920xxx" in q["stale_reason"]
+
+
+def test_eastmoney_reports_old_bj_empty_raises(monkeypatch):
+    class _Resp:
+        def json(self):
+            return {"data": [], "TotalPage": 0}
+
+    class _Sess:
+        def get(self, *a, **k):
+            return _Resp()
+
+    monkeypatch.setattr(astock, "_report_session", lambda: _Sess())
+    try:
+        astock.eastmoney_reports("832982", max_pages=1)
+        raise AssertionError("old BJ empty reports must raise")
+    except ValueError as e:
+        assert "老号段" in str(e)
+
+
+def test_eastmoney_reports_normalizes_prefix(monkeypatch):
+    seen: list[str] = []
+
+    class _Resp:
+        def json(self):
+            return {"data": [{"title": "x"}], "TotalPage": 1}
+
+    class _Sess:
+        def get(self, *a, **k):
+            seen.append((k.get("params") or {}).get("code"))
+            return _Resp()
+
+    monkeypatch.setattr(astock, "_report_session", lambda: _Sess())
+    rows = astock.eastmoney_reports("SH600519", max_pages=1)
+    assert seen == ["600519"]
+    assert rows[0]["title"] == "x"
 
 
 def test_parse_gtimg_star_total_mcap():
@@ -287,6 +373,7 @@ def test_quote_cache_shared_with_cockpit(monkeypatch):
     assert out["sh600519"]["pe_ttm"] == 18.05
     assert out["sh600519"]["pb"] == 6.41
     assert out["sh600519"]["mcap_yi"] == 15000
+    assert out["sh600519"]["is_stale"] is False
 
 
 def test_quote_cache_index_not_aliased_to_bare(monkeypatch):

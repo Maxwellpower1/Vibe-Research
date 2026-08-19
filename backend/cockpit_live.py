@@ -90,6 +90,8 @@ def parse_tencent_quote_line(line: str) -> dict | None:
         "pct": q.get("change_pct") or q.get("pct") or 0.0,
         "amount": q.get("amount_wan") or q.get("amount") or 0.0,
         "turnover": q.get("turnover_pct") or q.get("turnover") or 0.0,
+        "is_stale": bool(q.get("is_stale")),
+        "stale_reason": q.get("stale_reason") or "",
     }
 
 
@@ -199,6 +201,8 @@ def _tencent_quotes(codes: list[str]) -> dict[str, dict]:
             "pe_ttm": q.get("pe_ttm") or 0.0,
             "pb": q.get("pb") or 0.0,
             "mcap_yi": q.get("mcap_yi") or 0.0,
+            "is_stale": bool(q.get("is_stale")),
+            "stale_reason": q.get("stale_reason") or "",
         }
         out[key] = item
         sym = item["symbol"]

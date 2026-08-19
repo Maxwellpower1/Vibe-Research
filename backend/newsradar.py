@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import sys
 import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -20,8 +22,28 @@ from email.utils import parsedate_to_datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCES_FILE = os.path.join(HERE, "news_sources.json")
-CACHE_DIR = os.path.join(HERE, ".cache")
+_OLD_CACHE_FILE = os.path.join(HERE, ".cache", "radar.json")  # <=v0.3.2 repo-local
+# CACHE_DIR name kept (tests monkeypatch this); actual user data dir
+CACHE_DIR = os.environ.get("VR_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".vibe-research")
 CACHE_FILE = os.path.join(CACHE_DIR, "radar.json")
+
+
+def _migrate_legacy() -> None:
+    """Old radar.json lived in backend/.cache/; re-clone drops it. Copy to user dir."""
+    try:
+        if not os.path.exists(CACHE_FILE) and os.path.exists(_OLD_CACHE_FILE):
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            tmp = CACHE_FILE + ".migrate.tmp"
+            shutil.copy2(_OLD_CACHE_FILE, tmp)
+            os.replace(tmp, CACHE_FILE)
+    except OSError as e:
+        print(
+            f"[vibe-research] news radar cache migrate failed (old file still at {_OLD_CACHE_FILE}): {e}",
+            file=sys.stderr,
+        )
+
+
+_migrate_legacy()
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
