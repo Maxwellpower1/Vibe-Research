@@ -7,6 +7,7 @@ import {
   Database,
   FlaskConical,
   FileSpreadsheet,
+  GitCompare,
   Globe2,
   LineChart,
   MoreHorizontal,
@@ -30,6 +31,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/data": Database,
   "/ai-watch": Cpu,
   "/derivatives": LineChart,
+  "/arb": GitCompare,
   "/portfolio": Wallet,
   "/settings": Plug,
 };
@@ -40,6 +42,7 @@ const MORE_NAV = PAGE_NAV.filter((l) => !l.primary);
 function isCockpitPath(pathname: string, tab: string | null) {
   if (pathname.startsWith("/ai-watch") || pathname.startsWith("/fin")) return true;
   if (pathname.startsWith("/derivatives")) return true;
+  if (pathname.startsWith("/arb")) return true;
   if (!pathname.startsWith("/a-share")) return false;
   if (!tab || tab === "review") return true;
   return false;

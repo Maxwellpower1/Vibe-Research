@@ -1130,6 +1130,52 @@ export interface OvlabFutureTsMonth {
 }
 export type OvlabFutureTs = Record<string, OvlabFutureTsMonth>;
 export type OvlabFutureTsAll = Record<string, unknown>;
+export interface ArbLeg {
+  code: string;
+  exp: string;
+  px: number;
+  pxYd?: number | null;
+  oi?: number | null;
+  dte: number;
+}
+export interface ArbCalendarRow {
+  und: string;
+  label: string;
+  near: ArbLeg;
+  next: ArbLeg;
+  spread: number | null;
+  spreadYd: number | null;
+  spreadChg: number | null;
+}
+export interface ArbCrossRow {
+  id: string;
+  label: string;
+  sector: string;
+  aUnd: string;
+  bUnd: string;
+  aLabel: string;
+  bLabel: string;
+  a: ArbLeg;
+  b: ArbLeg;
+  spread: number | null;
+  spreadYd: number | null;
+  spreadChg: number | null;
+}
+export interface ArbIndexRow {
+  id: string;
+  und: string;
+  label: string;
+  cashCode: string;
+  cashKind: "index" | "etf";
+  cashLabel: string;
+  cashMult: number;
+  near: ArbLeg;
+}
+export interface ArbBoard {
+  calendar: ArbCalendarRow[];
+  cross: ArbCrossRow[];
+  index: ArbIndexRow[];
+}
 export interface OvlabFlowAlert {
   time?: string; instrument?: string; contract_code?: string;
   rule_id?: string; side?: string; price?: number | string;
@@ -1680,6 +1726,7 @@ export const api = {
   ovlabVolatilityTs: () => get<OvlabVolatilityTs>("/ovlab/volatility-ts"),
   ovlabFutureTsAll: () => get<OvlabFutureTsAll>("/ovlab/future-ts-all"),
   ovlabFutureTs: (prodUnd: string) => get<OvlabFutureTs>(`/ovlab/future-ts?prod_und=${encodeURIComponent(prodUnd)}`),
+  ovlabArbBoard: () => get<ArbBoard>("/ovlab/arb-board"),
   ovlabFlowAlert: () => get<OvlabFlowAlert[]>("/ovlab/flow-alert"),
   ovlabMqtt: () => get<OvlabMqttStatus>("/ovlab/mqtt"),
   ovlabFlowData: (product?: string, page = 1, pageSize = 50) =>

@@ -82,6 +82,12 @@ def ovlab_future_ts(
     )
 
 
+@router.get("/api/ovlab/arb-board")
+def ovlab_arb_board():
+    """跨期/跨品种/股指近月. 复用 future-ts 钥匙, 60s 冻结. 不打 market / future-ts-all."""
+    return _ovlab_call(ovlab.get_arb_board, "套利看板")
+
+
 # —— 异动 / 资金流 ——
 
 

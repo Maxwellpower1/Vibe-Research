@@ -145,6 +145,8 @@ TOOLS: list[dict] = [
        "查期货期限结构(OpenVlab future-ts): scope=all 全品种汇总 / single 单品种(prod_und 如 MA)。期货版波动率期限结构。",
        {"scope": {"type": "string", "enum": ["all", "single"], "description": "all=全品种汇总, single=单品种"},
         "prod_und": {"type": "string", "description": "scope=single 时必填, 标的代码如 MA"}}),
+    _t("query_ovlab_arb_board",
+       "查套利看板(跨期近-次价差 / 跨品种近月价差 / 股指近月). 与网页 /arb 同源, 复用 future-ts. 只陈述价差事实, 不构成交易建议."),
     _t("query_ovlab_flow_alert",
        "查期权异动榜(OpenVlab flow-alert): 近期异动合约清单. 规则 r001_single_trade=成交异动(3秒单笔; side=ask 主动买上 / bid 主动卖下) / r002_1m_pct_move=走势异动(1分钟涨幅) / r003_repeated_aggressive_burst=连续成交(2秒同向单调). 含合约/到期日/区间涨幅/窗口成交量/权利金."),
     _t("query_ovlab_warehouse_history",

@@ -39,6 +39,7 @@ It does not make decisions for you. It pulls together quotes, analyst reports, v
 | ⭐&nbsp;**Watchlist** | **Paste a whole batch of tickers at once** (commas, spaces or newlines) · one-screen table (price, change, PE, PB, turnover) · **live quotes toggle** (top right, off by default; refreshes every 3s during trading hours, auto-pauses outside them and when the tab is hidden) · hand the whole list to your AI. Stored locally |
 | 💼&nbsp;**Portfolio** | Enter cost and size, see live P&L · closed-position log (local only, never uploaded). **Futures account**: CTP read-only |
 | 🌊&nbsp;**Options/Futures** | Header `/derivatives` (next to A-share; old `/ovlab` bookmarks redirect): one-screen cockpit — market watch, near-expiry calendar, term structure + warehouse receipts, flow alerts, T-quote with option/underlying charts. OpenVlab public REST; MQTT overlays REST in memory (`VR_OVLAB_MQTT=0` off). CTP stays on Portfolio |
+| ⚖️&nbsp;**Arb** | Header `/arb` (next to Options/Futures): one-screen cockpit — calendar spreads, inter-commodity spreads, index/ETF basis + Sunsirs spot/basis, click a pair for spread chart + warehouse receipts. OpenVlab `future-ts` board; cash legs use the quote hub. Facts only, no scores |
 | 🔬&nbsp;**Research desk** | Header `/research`: correlation heatmap · ETF look-through (Eastmoney full book / SEC N-PORT) · 13F QoQ · Stooq/Baostock/pykrx candles. Public filings only; holdings are stale by construction |
 | 🧪&nbsp;**Backtest** | Header `/backtest`: account + factor + model. Weekly/monthly factor rebalance uses the last session of the trading week/month. Default ST / new-list screen. `top_k` target weights, name cap, industry-neutral, Sortino. Optional LightGBM scores feed the same matcher. Grid fits on the IS cut |
 | 🗄️&nbsp;**Data** | More menu `/data`: local calendar, daily-bar coverage, experiments. Can fill the last 3y of closed bars for the A-share universe |
@@ -96,10 +97,10 @@ Vibe-Research/
 │   ├── newsradar.py     News radar
 │   ├── market.py        Market breadth + sector fund flows + global indices
 │   ├── portfolio.py     Portfolio (stored in your local user directory)
-│   ├── tools.py         AI tool layer (48 data tools, shared by chat / MCP)
+│   ├── tools.py         AI tool layer (49 data tools, shared by chat / MCP)
 │   ├── chat.py          In-app AI (OpenAI-compatible function calling)
 │   └── mcp_server.py    MCP server (for Claude Code and other agents)
-└── frontend/          Vite + React 19 + TS + Tailwind :5899
+└── frontend/          Vite + React 19 + TS + Tailwind :5899; K/minute on lightweight-charts, heatmaps/term-structure on ECharts
 ```
 
 **Tiered dependencies**: quotes (Tencent) and reports/filings (Eastmoney) work with a minimal install. `akshare` / `mootdx` are imported lazily — if missing, only those endpoints return 501 with an install hint; the service still runs.

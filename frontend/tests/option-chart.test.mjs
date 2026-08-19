@@ -87,11 +87,14 @@ test("overlayAxis 窄幅隐波只占约三成高度, 空值忽略", () => {
   assert.equal(overlayAxis([null, 0, -1]), null);
 });
 
-test("OptionChartCard 用 hoverIdxOf, 下跌面积不再反转渐变", async () => {
+test("OptionChartCard 用 hoverIdxOf, 分时 Baseline 上红下绿", async () => {
   const src = await readFile(new URL("../src/components/deriv/OptionChartCard.tsx", import.meta.url), "utf8");
+  const lc = await readFile(new URL("../src/lib/lcChart.ts", import.meta.url), "utf8");
   assert.ok(src.includes("export function hoverIdxOf"), "十字光标走 hoverIdxOf");
   assert.ok(src.includes("seriesDataIndices"), "类目轴读 dataIndex");
-  assert.ok(src.includes("rgba(${fade},0.35)"), "涨跌面积都是顶浓底淡");
+  assert.ok(src.includes("BaselineSeries"), "分时用 Baseline 零轴");
+  assert.ok(lc.includes("topFillColor1"), "涨区顶浓");
+  assert.ok(lc.includes("bottomFillColor1"), "跌区不反转渐变");
   assert.ok(src.includes("export function overlayAxis"), "隐波右轴走 overlayAxis");
   assert.ok(src.includes("overlayAxis(minData?.iv"), "分时隐波不拉满");
   assert.ok(src.includes("overlayAxis(dailyIv)"), "日K隐波同一比例");
@@ -152,14 +155,15 @@ test("volUp 当根收>=开为红, 缺开盘用上一根收", () => {
 
 test("分时量窗叠持仓黄线, 独立轴不压成交量", async () => {
   const src = await readFile(new URL("../src/components/deriv/OptionChartCard.tsx", import.meta.url), "utf8");
+  const lc = await readFile(new URL("../src/lib/lcChart.ts", import.meta.url), "utf8");
   assert.ok(src.includes("[time, close, pct, oi, open, high, low, vol]"), "分钟 bar 第4列仓第8列量");
-  assert.ok(src.includes('name: "持仓量"'), "分时画持仓线");
-  assert.ok(src.includes("yAxisIndex: 3"), "仓走量窗独立轴");
+  assert.ok(src.includes('overlayLineOpts(OI_COLOR, "oi")'), "分时画持仓线");
+  assert.ok(src.includes('"oi"'), "仓走独立轴");
   assert.ok(src.includes("overlayAxis(minData?.oi"), "仓不跟成交量抢同一标尺");
   assert.ok(src.includes("仓 ${fmtOi(oi)}"), "十字光标读仓");
   assert.ok(src.includes("量 ${fmtOi(vol)}"), "十字光标读量");
   assert.ok(src.includes("volUp(px, minData?.opens[i]"), "量柱按当根开收");
-  assert.ok(src.includes("UP_VOL"), "量柱半透明红绿, 不挡持仓黄线");
+  assert.ok(lc.includes("UP_VOL"), "量柱半透明红绿, 不挡持仓黄线");
   assert.ok(!src.includes("px >= baseline"), "量柱不按相对昨结整日同色");
 });
 

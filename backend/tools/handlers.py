@@ -359,6 +359,18 @@ def _ovlab_detail(args: dict) -> dict:
     return out
 
 
+def _ovlab_arb_board(_args: dict) -> dict:
+    """套利看板瘦身: 跨期按 |spreadChg| 前 20, 跨品种/股指全量(不含现货报价)."""
+    data = ovlab.get_arb_board() or {}
+    cal = [r for r in (data.get("calendar") or []) if isinstance(r, dict)]
+    cal.sort(key=lambda r: abs(r.get("spreadChg") or 0), reverse=True)
+    return {
+        "calendar": cal[:20],
+        "cross": data.get("cross") or [],
+        "index": data.get("index") or [],
+    }
+
+
 def _ovlab_future_ts(args: dict) -> dict:
     """期货期限结构: all=全品种(按品种分组的字典, 只回非空品种) / single=单品种."""
     scope = str(args.get("scope") or "all")
@@ -683,6 +695,7 @@ _HANDLERS = {
     "query_ovlab_detail": lambda a: _ovlab_detail(a),
     "query_ovlab_volatility_ts": lambda a: ovlab.get_volatility_term_structures() or {"error": "波动率期限结构暂无数据"},
     "query_ovlab_future_ts": lambda a: _ovlab_future_ts(a),
+    "query_ovlab_arb_board": lambda a: _ovlab_arb_board(a),
     "query_ovlab_flow_alert": lambda a: _ovlab_flow_alert(a),
     "query_ovlab_warehouse_history": lambda a: _ovlab_warehouse_history(a),
     "query_ovlab_seasonal_history": lambda a: _ovlab_seasonal(a),

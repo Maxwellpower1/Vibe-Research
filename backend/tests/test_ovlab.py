@@ -622,6 +622,70 @@ def test_term_structure_cached(monkeypatch):
     assert r1 == r2 and len(calls) == 2
 
 
+# ---------- arb board ----------
+
+_ARB_RB = {
+    "202609": {"future_tday": "3100", "future_yday": "3080",
+               "oi_tday": "100000", "days_to_expiry": "20"},
+    "202610": {"future_tday": 3120, "future_yday": 3090,
+               "oi_tday": 80000, "days_to_expiry": 50},
+    "202608": {"future_tday": 3000, "future_yday": 2990,
+               "oi_tday": 10, "days_to_expiry": 0.4},  # dte<1 skip
+}
+_ARB_HC = {
+    "202609": {"future_tday": 3200, "future_yday": 3190, "oi_tday": 90, "days_to_expiry": 20},
+    "202610": {"future_tday": 3210, "future_yday": 3200, "oi_tday": 70, "days_to_expiry": 50},
+}
+_ARB_IF = {
+    "202609": {"future_tday": 3800, "future_yday": 3790, "oi_tday": 1, "days_to_expiry": 10},
+    "202610": {"future_tday": 3810, "future_yday": 3800, "oi_tday": 1, "days_to_expiry": 40},
+}
+
+
+def test_arb_board_spreads_and_index(monkeypatch):
+    """近-次价差 / 跨品种近月差 / 股指近月; dte<1 跳过; 不打 market."""
+    frames = {"RB": _ARB_RB, "HC": _ARB_HC, "IF": _ARB_IF, "IH": _ARB_IF, "IM": _ARB_IF}
+    calls: list[str] = []
+
+    def fake_ts(und: str):
+        calls.append(und)
+        return frames.get(und, {})
+
+    monkeypatch.setattr(ovlab, "get_future_term_structure", fake_ts)
+    monkeypatch.setattr(ovlab, "get_market_overview", lambda: (_ for _ in ()).throw(AssertionError("no market")))
+    out = ovlab._build_arb_board()
+    rb = next(r for r in out["calendar"] if r["und"] == "RB")
+    assert rb["near"]["code"] == "RB2609" and rb["next"]["code"] == "RB2610"
+    assert rb["spread"] == -20 and rb["spreadYd"] == -10 and rb["spreadChg"] == -10
+    pair = next(r for r in out["cross"] if r["id"] == "RB-HC")
+    assert pair["spread"] == -100
+    idx = next(r for r in out["index"] if r["id"] == "IF-sh000300")
+    assert idx["near"]["px"] == 3800 and idx["cashMult"] == 1
+    ih = next(r for r in out["index"] if r["id"] == "IH-sh000016")
+    assert ih["cashKind"] == "index"
+    assert all("ctamap" not in c and "market" not in c.lower() for c in calls)
+
+
+def test_arb_board_reuses_future_ts_key(monkeypatch):
+    """整板钥匙 ovlab_arb_board; 内部仍走 get_future_term_structure (同一把 future-ts 钥匙)."""
+    n = {"ts": 0}
+
+    def fake_ts(und: str):
+        n["ts"] += 1
+        return _ARB_IF if und in {"IF", "IH", "IM"} else {}
+
+    monkeypatch.setattr(ovlab, "deriv_market_open", lambda: True)
+    monkeypatch.setattr(ovlab, "get_future_term_structure", fake_ts)
+    ovlab._CACHE.pop("ovlab_arb_board", None)
+    r1 = ovlab.get_arb_board()
+    r2 = ovlab.get_arb_board()
+    assert r1 == r2
+    assert n["ts"] > 0
+    first = n["ts"]
+    ovlab.get_arb_board()
+    assert n["ts"] == first  # board 60s 热槽, 不再打 future-ts
+
+
 # ---------- warehouse receipt ----------
 
 _WH = {

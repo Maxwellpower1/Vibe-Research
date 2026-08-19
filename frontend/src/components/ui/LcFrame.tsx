@@ -1,0 +1,96 @@
+import { type ReactNode } from "react";
+import { cn } from "@/lib/utils";
+
+export type LcTone = "up" | "down" | "flat" | "muted" | "iv" | "oi" | "px";
+
+export type LcLegendItem = { k: string; v: string; tone?: LcTone };
+
+export function lcTone(n: number | null | undefined): LcTone {
+  if (n == null || !Number.isFinite(n) || Math.abs(n) < 1e-12) return "flat";
+  return n > 0 ? "up" : "down";
+}
+
+const TONE: Record<LcTone, string> = {
+  up: "text-[#f6465d]",
+  down: "text-[#0ecb81]",
+  flat: "text-slate-300",
+  muted: "text-slate-500",
+  iv: "text-[#8b7cff]",
+  oi: "text-[#f0b90b]",
+  px: "text-cyan-200",
+};
+
+/** Inset well so the canvas reads like a TV pane, not a flat card. */
+export function LcWell({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-lg bg-[#0b0f17] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Floating OHLCV strip, TV legend. */
+export function LcLegend({
+  items,
+  className,
+}: {
+  items: LcLegendItem[];
+  className?: string;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute left-2 top-1.5 z-10 flex max-w-[calc(100%-96px)] flex-wrap gap-x-2.5 gap-y-0.5 font-mono text-[11px] tabular-nums tracking-tight",
+        className,
+      )}
+    >
+      {items.map((it) => (
+        <span key={it.k} className="text-slate-500">
+          {it.k}{" "}
+          <span className={cn("font-medium", TONE[it.tone ?? "flat"])}>{it.v}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Interval / mode pills, TV toolbar. */
+export function LcSeg<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: ReadonlyArray<{ v: T; label: string }>;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex items-center gap-0.5 rounded-md bg-white/[0.03] p-0.5 ring-1 ring-white/[0.06]">
+      {options.map((r) => (
+        <button
+          key={r.v}
+          type="button"
+          onClick={() => onChange(r.v)}
+          className={cn(
+            "rounded px-2.5 py-1 font-mono text-[11px] tracking-wide",
+            value === r.v ? "bg-cyan-500/15 text-cyan-200" : "text-slate-500 hover:text-slate-300",
+          )}
+        >
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
+}

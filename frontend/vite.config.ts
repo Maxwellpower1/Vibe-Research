@@ -37,7 +37,7 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks: {
             "vendor-react": ["react", "react-dom", "react-router-dom"],
-            "vendor-charts": ["echarts"],
+            "vendor-charts": ["echarts", "lightweight-charts"],
           },
         },
       },

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as echarts from "echarts";
 import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { num } from "@/components/ovlab/shared";
@@ -10,19 +9,14 @@ import {
 } from "@/lib/derivMinuteAxis";
 import type { OptionPick } from "./TQuotePanel";
 import type { OvlabDataviewTick } from "@/lib/api";
-
-const UP = "#ef4444";
-const DN = "#22c55e";
-const UP_VOL = "rgba(239,68,68,0.55)";
-const DN_VOL = "rgba(34,197,94,0.55)";
-const IV_COLOR = "#a78bfa";
-const OI_COLOR = "#eab308";
-
-/** Narrow glance card: hide Y ticks, keep the shape. */
-const GLANCE_GRID = [
-  { left: 6, right: 6, top: 4, height: "66%" },
-  { left: 6, right: 6, top: "78%", height: "14%" },
-];
+import {
+  BaselineSeries, CandlestickSeries, HistogramSeries, LineSeries, applyTimeLabels,
+  baselineOpts, candleOpts, candleValues, finiteLine, hoverIdxFromParam,
+  overlayLineOpts, seriesAlive, showLatest, sparseLine, styleIvOverlay, styleLastTag,
+  styleOiOverlay, styleVolOverlay, useLcChart, volOpts, volValues, wipeLc, IV_COLOR, OI_COLOR,
+  type ISeriesApi,
+} from "@/lib/lcChart";
+import { LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
 
 interface MinBar { t: string; close: number; open: number | null; vol: number; oi: number | null }
 
@@ -207,8 +201,10 @@ export function overlayAxis(
   return { min: mid - half - pad, max: mid + half + pad };
 }
 
-/** echarts updateAxisPointer -> 类目下标. 类目轴 value 是字符串, 不能当 number 用. */
+/** Crosshair -> category index. LC uses logical/time; leftover echarts axis-pointer keeps unit tests. */
 export function hoverIdxOf(raw: unknown, cats: string[]): number | null {
+  const fromLc = hoverIdxFromParam(raw, cats.length);
+  if (fromLc != null) return fromLc;
   const p = raw as {
     currTrigger?: string;
     axesInfo?: Array<{ axisDim?: string; value?: unknown; seriesDataIndices?: Array<{ dataIndex?: number }> }>;
@@ -227,32 +223,6 @@ export function hoverIdxOf(raw: unknown, cats: string[]): number | null {
   return null;
 }
 
-function useChart() {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const inst = useRef<echarts.ECharts | null>(null);
-  useEffect(() => {
-    if (!ref.current) return;
-    const chart = echarts.init(ref.current, undefined, { renderer: "canvas" });
-    inst.current = chart;
-    const ro = new ResizeObserver(() => chart.resize());
-    ro.observe(ref.current);
-    return () => { ro.disconnect(); chart.dispose(); inst.current = null; };
-  }, []);
-  return { ref, inst };
-}
-
-function axisColors() {
-  const cssHsl = (name: string, fallback: string) => {
-    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return raw ? `hsl(${raw})` : fallback;
-  };
-  return {
-    cText: cssHsl("--chart-text", "#94a3b8"),
-    cAxis: cssHsl("--chart-axis", "#475569"),
-    cGrid: cssHsl("--chart-grid", "#334155"),
-  };
-}
-
 function fmtPx(v: number): string {
   return Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2);
 }
@@ -265,15 +235,21 @@ export function OptionChartCard({ pick, mode, tick }: {
   mode: "daily" | "minute";
   tick?: OvlabDataviewTick | null;
 }) {
-  const { ref, inst } = useChart();
+  const { ref, chartRef, labelsRef, onHoverRef } = useLcChart("glance");
   const [hover, setHover] = useState<number | null>(null);
   const [days, setDays] = useState<MinuteDays>(loadDays);
-  const catsRef = useRef<string[]>([]);
+  const bag = useRef<{
+    kind: "daily" | "minute" | null;
+    px: ISeriesApi<"Candlestick"> | ISeriesApi<"Baseline"> | null;
+    iv: ISeriesApi<"Line"> | null;
+    vol: ISeriesApi<"Histogram"> | null;
+    oi: ISeriesApi<"Line"> | null;
+  }>({ kind: null, px: null, iv: null, vol: null, oi: null });
+  onHoverRef.current = setHover;
   const setAndSaveDays = (n: MinuteDays) => {
     setDays(n);
     storageSet(DAYS_KEY, String(n));
   };
-
   const daily = usePolling(
     () => (pick && mode === "daily" ? api.ovlabOptionDaily(pick.code, pick.und) : Promise.resolve(null)),
     300_000,
@@ -328,222 +304,98 @@ export function OptionChartCard({ pick, mode, tick }: {
 
   useEffect(() => { setHover(null); }, [pick?.code, mode, days]);
 
-  catsRef.current = mode === "daily" ? dailyBars.map((b) => b.t) : (minData?.cats ?? []);
+  labelsRef.current = mode === "daily" ? dailyBars.map((b) => b.t) : (minData?.cats ?? []);
 
   useEffect(() => {
-    const chart = inst.current;
+    const chart = chartRef.current;
     if (!chart) return;
-    if (!pick) { chart.clear(); return; }
-    const { cText, cAxis, cGrid } = axisColors();
+    const reset = () => {
+      wipeLc(chart);
+      bag.current = { kind: null, px: null, iv: null, vol: null, oi: null };
+    };
+    if (!pick) { reset(); return; }
 
     if (mode === "daily") {
-      if (dailyBars.length === 0) { chart.clear(); return; }
-      const cats = dailyBars.map((b) => b.t);
-      const volData = dailyBars.map((b) => ({
-        value: b.vol,
-        itemStyle: { color: b.close >= b.open ? UP_VOL : DN_VOL },
-      }));
-      chart.setOption({
-        backgroundColor: "transparent",
-        animation: false,
-        tooltip: {
-          trigger: "axis",
-          showContent: false,
-          axisPointer: { type: "cross", crossStyle: { color: cAxis, width: 1, type: "dashed" }, label: { show: false } },
+      if (dailyBars.length === 0) { reset(); labelsRef.current = []; return; }
+      labelsRef.current = dailyBars.map((b) => b.t);
+      applyTimeLabels(chart, labelsRef, "md");
+      if (bag.current.kind !== "daily" || !seriesAlive(chart, bag.current.px)) {
+        reset();
+        bag.current.px = chart.addSeries(CandlestickSeries, candleOpts(true));
+        bag.current.iv = chart.addSeries(LineSeries, overlayLineOpts(IV_COLOR, "iv"));
+        bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
+        bag.current.kind = "daily";
+        styleVolOverlay(chart, 0.22);
+        styleIvOverlay(chart);
+      }
+      (bag.current.px as ISeriesApi<"Candlestick">).setData(candleValues(dailyBars));
+      const last = dailyBars[dailyBars.length - 1];
+      styleLastTag(bag.current.px, last?.close, last?.open);
+      bag.current.iv?.applyOptions({
+        autoscaleInfoProvider: () => {
+          const r = overlayAxis(dailyIv);
+          return r ? { priceRange: { minValue: r.min, maxValue: r.max } } : null;
         },
-        axisPointer: { link: [{ xAxisIndex: "all" }] },
-        grid: GLANCE_GRID,
-        xAxis: [
-          {
-            type: "category", data: cats, boundaryGap: true, scale: true,
-            axisLine: { lineStyle: { color: cAxis } },
-            axisLabel: { color: cText, fontSize: 8, hideOverlap: true, formatter: (v: string) => v.slice(5) },
-            splitLine: { show: false },
-            axisPointer: { label: { show: false } },
-          },
-          {
-            type: "category", gridIndex: 1, data: cats, boundaryGap: true, scale: true,
-            axisLabel: { show: false }, axisLine: { lineStyle: { color: cAxis } },
-            splitLine: { show: false }, axisPointer: { label: { show: false } },
-          },
-        ],
-        yAxis: [
-          {
-            scale: true,
-            splitLine: { lineStyle: { color: cGrid, opacity: 0.25, width: 1 } },
-            axisLabel: { show: false },
-            axisPointer: { label: { show: false } },
-          },
-          {
-            ...(overlayAxis(dailyIv) ?? { min: 0, max: 1 }),
-            scale: false, position: "right" as const,
-            splitLine: { show: false },
-            axisLabel: { show: false },
-            axisPointer: { label: { show: false } },
-          },
-          {
-            scale: true, gridIndex: 1,
-            min: (v: { min?: number }) => { const mn = v.min ?? 0; return mn > 0 ? Math.floor(mn * 0.9) : 0; },
-            splitNumber: 1,
-            axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { label: { show: false } },
-          },
-        ],
-        series: [
-          {
-            name: "K线", type: "candlestick" as const,
-            data: dailyBars.map((b) => [b.open, b.close, b.low, b.high]),
-            itemStyle: { color: UP, color0: DN, borderColor: UP, borderColor0: DN },
-            emphasis: { focus: "none" as const },
-          },
-          {
-            name: "平值隐波", type: "line" as const, yAxisIndex: 1, z: 5,
-            data: dailyIv, connectNulls: true, showSymbol: false,
-            lineStyle: { width: 1.2, color: IV_COLOR },
-            emphasis: { focus: "none" as const },
-          },
-          {
-            name: "成交量", type: "bar" as const, xAxisIndex: 1, yAxisIndex: 2, z: 1,
-            data: volData, emphasis: { focus: "none" as const },
-          },
-        ],
-      }, { notMerge: true });
+      });
+      bag.current.iv?.setData(finiteLine(dailyIv));
+      // UP_VOL / DN_VOL: translucent so overlay stays readable
+      bag.current.vol?.setData(volValues(dailyBars.map((b) => ({
+        value: b.vol,
+        up: b.close >= b.open,
+      })), true));
+      showLatest(chart, dailyBars.length, 80);
       return;
     }
 
     const cats = minData?.cats ?? [];
     const prices = minData?.prices ?? [];
     const finite = prices.filter((p): p is number => p != null && Number.isFinite(p));
-    if (cats.length === 0 || finite.length === 0) { chart.clear(); return; }
+    if (cats.length === 0 || finite.length === 0) { reset(); labelsRef.current = []; return; }
+    labelsRef.current = cats;
+    applyTimeLabels(chart, labelsRef, "hm");
     const pre = minData?.pre ?? null;
-    const lastPx = finite[finite.length - 1];
     const baseline = pre !== null && pre > 0 ? pre : finite[0];
-    const pMin = Math.min(...finite, baseline);
-    const pMax = Math.max(...finite, baseline);
-    const pPad = (pMax - pMin) * 0.06 || Math.abs(baseline) * 0.002 || 1;
-    const up = lastPx >= baseline;
-    const tone = up ? UP : DN;
-    const fade = up ? "239,68,68" : "34,197,94";
-    const grad = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-      { offset: 0, color: `rgba(${fade},0.35)` },
-      { offset: 1, color: `rgba(${fade},0.02)` },
-    ]);
+    if (bag.current.kind !== "minute" || !seriesAlive(chart, bag.current.px)) {
+      reset();
+      bag.current.px = chart.addSeries(BaselineSeries, baselineOpts(baseline, true));
+      bag.current.iv = chart.addSeries(LineSeries, overlayLineOpts(IV_COLOR, "iv"));
+      bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
+      bag.current.oi = chart.addSeries(LineSeries, overlayLineOpts(OI_COLOR, "oi"));
+      bag.current.kind = "minute";
+      styleVolOverlay(chart, 0.22);
+      styleIvOverlay(chart);
+      styleOiOverlay(chart);
+    } else {
+      (bag.current.px as ISeriesApi<"Baseline">).applyOptions(baselineOpts(baseline, true));
+    }
+    (bag.current.px as ISeriesApi<"Baseline">).setData(sparseLine(prices));
+    styleLastTag(bag.current.px, finite[finite.length - 1], baseline);
+    bag.current.iv?.applyOptions({
+      autoscaleInfoProvider: () => {
+        const r = overlayAxis(minData?.iv ?? []);
+        return r ? { priceRange: { minValue: r.min, maxValue: r.max } } : null;
+      },
+    });
+    bag.current.iv?.setData(finiteLine(minData?.iv ?? []));
     let prevPx: number | null = null;
-    const volData = (minData?.vols ?? []).map((v, i) => {
+    bag.current.vol?.setData(volValues((minData?.vols ?? []).map((v, i) => {
       const px = prices[i];
       const up = volUp(px, minData?.opens[i] ?? null, prevPx);
       if (px != null) prevPx = px;
-      return { value: v, itemStyle: { color: up ? UP_VOL : DN_VOL } };
-    });
-
-    chart.setOption({
-      backgroundColor: "transparent",
-      animation: false,
-      tooltip: {
-        trigger: "axis",
-        showContent: false,
-        axisPointer: { type: "cross", crossStyle: { color: cAxis, width: 1, type: "dashed" }, label: { show: false } },
+      return { value: v, up };
+    }), true));
+    bag.current.oi?.applyOptions({
+      autoscaleInfoProvider: () => {
+        const r = overlayAxis(minData?.oi ?? [], 0.72);
+        return r ? { priceRange: { minValue: r.min, maxValue: r.max } } : null;
       },
-      axisPointer: { link: [{ xAxisIndex: "all" }] },
-      grid: GLANCE_GRID,
-      xAxis: [
-        {
-          type: "category", data: cats, boundaryGap: false, scale: true,
-          axisLine: { lineStyle: { color: cAxis } },
-          axisLabel: {
-            color: cText, fontSize: 8, hideOverlap: true,
-            formatter: (v: string) => (v ? v.slice(11, 16) : ""),
-          },
-          splitLine: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-        {
-          type: "category", gridIndex: 1, data: cats, boundaryGap: true, scale: true,
-          axisLabel: { show: false }, axisLine: { lineStyle: { color: cAxis } },
-          splitLine: { show: false }, axisPointer: { label: { show: false } },
-        },
-      ],
-        yAxis: [
-        {
-          min: pMin - pPad, max: pMax + pPad, scale: false,
-          splitLine: { lineStyle: { color: cGrid, opacity: 0.25, width: 1 } },
-          axisLabel: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-        {
-          ...(overlayAxis(minData?.iv ?? []) ?? { min: 0, max: 1 }),
-          scale: false, position: "right" as const,
-          splitLine: { show: false },
-          axisLabel: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-        {
-          scale: true, gridIndex: 1,
-          min: 0,
-          splitNumber: 1,
-          axisLabel: { show: false }, splitLine: { show: false }, axisPointer: { label: { show: false } },
-        },
-        {
-          ...(overlayAxis(minData?.oi ?? [], 0.72) ?? { min: 0, max: 1 }),
-          scale: false, gridIndex: 1, position: "right" as const,
-          splitLine: { show: false },
-          axisLabel: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-      ],
-      series: [
-        {
-          name: "价格", type: "line" as const, z: 3,
-          data: prices, showSymbol: false, connectNulls: false,
-          lineStyle: { width: 1.4, color: tone },
-          areaStyle: { color: grad },
-          markLine: {
-            silent: true, symbol: "none", animation: false,
-            lineStyle: { color: "rgba(148,163,184,0.45)", width: 1, type: "dashed" },
-            label: { show: false },
-            data: [
-              { yAxis: baseline },
-              ...(minData?.splitAt != null
-                ? [{ xAxis: minData.splitAt, lineStyle: { color: "rgba(148,163,184,0.35)", width: 1, type: "solid" as const } }]
-                : []),
-            ],
-          },
-          emphasis: { focus: "none" as const },
-        },
-        {
-          name: "隐波", type: "line" as const, yAxisIndex: 1, z: 5,
-          data: minData?.iv ?? [], connectNulls: true, showSymbol: false,
-          lineStyle: { width: 1.2, color: IV_COLOR },
-          emphasis: { focus: "none" as const },
-        },
-        {
-          name: "成交量", type: "bar" as const, xAxisIndex: 1, yAxisIndex: 2, z: 1,
-          data: volData, emphasis: { focus: "none" as const },
-        },
-        {
-          name: "持仓量", type: "line" as const, xAxisIndex: 1, yAxisIndex: 3, z: 5,
-          data: minData?.oi ?? [], connectNulls: true, showSymbol: false,
-          lineStyle: { width: 1.2, color: OI_COLOR },
-          emphasis: { focus: "none" as const },
-        },
-      ],
-    }, { notMerge: true });
-  }, [pick, mode, dailyBars, dailyIv, minData, inst]);
-
-  useEffect(() => {
-    const chart = inst.current;
-    if (!chart) return;
-    const onPtr = (raw: unknown) => {
-      const idx = hoverIdxOf(raw, catsRef.current);
-      setHover(idx);
-    };
-    chart.on("updateAxisPointer", onPtr);
-    const zr = chart.getZr();
-    const onOut = () => setHover(null);
-    zr.on("globalout", onOut);
-    return () => { chart.off("updateAxisPointer", onPtr); zr.off("globalout", onOut); };
-  }, [inst]);
+    });
+    bag.current.oi?.setData(finiteLine(minData?.oi ?? []));
+    chart.timeScale().fitContent();
+  }, [pick, mode, dailyBars, dailyIv, minData, chartRef, labelsRef]);
 
   let head: { label: string; toneCls: string } | null = null;
+  const glanceLegend: LcLegendItem[] = [];
   if (pick) {
     if (mode === "daily" && dailyBars.length > 0) {
       const i = hover != null && dailyBars[hover] ? hover : dailyBars.length - 1;
@@ -556,8 +408,16 @@ export function OptionChartCard({ pick, mode, tick }: {
           pct !== null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` : "",
           iv != null ? `IV ${iv.toFixed(0)}` : "",
         ].filter(Boolean).join("  "),
-        toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-red-400" : "text-emerald-400",
+        toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-[#f6465d]" : "text-[#0ecb81]",
       };
+      glanceLegend.push(
+        { k: "O", v: fmtPx(b.open) },
+        { k: "H", v: fmtPx(b.high) },
+        { k: "L", v: fmtPx(b.low) },
+        { k: "C", v: fmtPx(b.close), tone: lcTone(pct) },
+        { k: "V", v: fmtOi(b.vol), tone: "muted" },
+      );
+      if (iv != null) glanceLegend.push({ k: "IV", v: iv.toFixed(0), tone: "iv" });
     } else if (mode === "minute" && (minData?.bars.length ?? 0) > 0) {
       const prices = minData!.prices;
       const i = lastFiniteIdx(prices, hover);
@@ -582,8 +442,14 @@ export function OptionChartCard({ pick, mode, tick }: {
               vol != null ? `量 ${fmtOi(vol)}` : "",
               oi != null ? `仓 ${fmtOi(oi)}` : "",
             ].filter(Boolean).join("  "),
-            toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-red-400" : "text-emerald-400",
+            toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-[#f6465d]" : "text-[#0ecb81]",
           };
+          glanceLegend.push(
+            { k: "P", v: fmtPx(px), tone: lcTone(pct) },
+            { k: "V", v: vol != null ? fmtOi(vol) : "—", tone: "muted" },
+          );
+          if (iv != null) glanceLegend.push({ k: "IV", v: iv.toFixed(0), tone: "iv" });
+          if (oi != null) glanceLegend.push({ k: "OI", v: fmtOi(oi), tone: "oi" });
         }
       }
     }
@@ -591,19 +457,19 @@ export function OptionChartCard({ pick, mode, tick }: {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-6 shrink-0 items-center gap-2 px-2 text-[11px]">
+      <div className="flex h-6 shrink-0 items-center gap-2 px-2 font-mono text-[11px]">
         {mode === "daily" ? (
-          <span className="shrink-0 font-medium text-slate-300">日K</span>
+          <span className="shrink-0 font-medium text-slate-400">日K</span>
         ) : (
-          <span className="flex shrink-0 gap-0.5">
+          <span className="flex shrink-0 gap-0.5 rounded bg-white/[0.03] p-0.5 ring-1 ring-white/[0.06]">
             {([[1, "分时"], [2, "两日"]] as const).map(([n, lab]) => (
               <button
                 key={n}
                 type="button"
                 onClick={() => setAndSaveDays(n)}
                 className={cn(
-                  "rounded px-1 py-0.5",
-                  days === n ? "text-cyan-300" : "text-slate-600 hover:text-slate-400",
+                  "rounded px-1.5 py-0.5",
+                  days === n ? "bg-cyan-500/15 text-cyan-200" : "text-slate-600 hover:text-slate-400",
                 )}
               >
                 {lab}
@@ -618,15 +484,16 @@ export function OptionChartCard({ pick, mode, tick }: {
           <span className="text-slate-600">点行情观察或 T 表</span>
         )}
       </div>
-      <div className="relative min-h-0 flex-1">
+      <LcWell className="min-h-0 flex-1 rounded-none">
         {pick && loading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center text-[11px] text-slate-500">更新中…</div>
         )}
         {pick && !loading && (err || empty) && (
           <div className="absolute inset-0 z-10 flex items-center justify-center text-[11px] text-slate-500">未取到</div>
         )}
+        <LcLegend items={glanceLegend} className="left-1 top-0.5 text-[10px]" />
         <div ref={ref} className="h-full w-full" />
-      </div>
+      </LcWell>
     </div>
   );
 }

@@ -5,6 +5,26 @@
 
 ## Unreleased
 
+### 改进：K/分时改 TradingView 读图风格
+
+量柱叠在主图底部，不再拆第二窗。十字光标带价签，图内 HUD 读 OHLCV。涨跌色用 TV 饱和度，井底更深。期权仓线仍走独立轴 `oi`，骑在量带上。右侧价格轴常开（刻度 + 分隔线 + 红绿最新价标签）。
+
+### 改进：K/分时四张卡换 lightweight-charts
+
+A 股轻量图、美股日K、期权日K/分时、套利价差改用 TradingView Lightweight Charts。分时用逻辑时间轴，午休/夜盘不拉出空白。ECharts 只留给期限结构、相关热力图、回测/资金等非时间序列。图上不画 TradingView logo。
+
+### 新增：套利驾驶舱 `/arb`
+
+顶栏紧挨期权期货的独立驾驶舱（跨期 / 跨品种 / 股指期现 + 生意社现期 / 点对出价差图）。看板 `GET /api/ovlab/arb-board` 复用 `future-ts` 钥匙，不打 market、不进复盘预热。上证50 只订报价中心，不进指数目录。只呈现价差，不评分。
+
+### 修复：套利价差日K空白
+
+OpenVlab `history` 日K 的 `trade_date` 是 `20260819`。原先按 `YYYY-MM-DD` 长度丢掉全部点。归一成 `2026-08-19` 再跟现货日K对齐。分时现货腿不能走同一套 `dayKey`，否则时分被裁掉只剩日期，期现对不齐显示「无重叠点」。
+
+### 修复：套利价差图空白
+
+默认配对在看板回来后才设。原先 `pick` 空就整卡 return，echarts 绑不上。图容器首屏挂着，空态 overlay，不再 `hidden`。
+
 ### 修复：运行时同步 SKILL v3.6.0 ticker / 僵尸报价
 
 `backend/astock.py` 补上 `norm_ticker`、腾讯报价 `is_stale`、北交所 4/43/83/87 老号段。个股 HTTP `_validate` 走同一份归一化；东财研报遇老码空结果改 400，不再假装没研报。ovlab / 同花顺复用 `requests.Session`。复盘上下文按日落 `VR_DATA_DIR/review-archive/`（预热 / 问 AI / 邮件挂同一打包口；`VR_REVIEW_ARCHIVE=0` 关）。

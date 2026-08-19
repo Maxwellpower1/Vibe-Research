@@ -245,6 +245,154 @@ def get_future_term_structure(prod_und: str) -> dict[str, Any]:
     )
 
 
+def _arb_exp_ym(exp: str) -> str:
+    """Expiry key -> YYMM tail used in contract codes (RB2609)."""
+    s = str(exp or "").strip().replace("-", "")
+    if len(s) >= 6:
+        return s[-4:]
+    return s[-4:] if len(s) >= 4 else s
+
+
+def _arb_leg(und: str, blk: dict[str, Any], exp_key: str) -> dict[str, Any] | None:
+    """One future-ts month -> board leg. Skip dte<1 (same as term-structure)."""
+    px = _sfloat(blk.get("future_tday"))
+    dte = _sfloat(blk.get("days_to_expiry"))
+    if px is None or dte is None or dte < 1:
+        return None
+    exp = str(blk.get("exp") or exp_key).replace("-", "")
+    if len(exp) == 4:
+        exp = f"20{exp}"
+    ym = _arb_exp_ym(exp)
+    if not ym:
+        return None
+    return {
+        "code": f"{und}{ym}",
+        "exp": exp if len(exp) >= 6 else f"20{ym}",
+        "px": px,
+        "pxYd": _sfloat(blk.get("future_yday")),
+        "oi": _sfloat(blk.get("oi_tday")),
+        "dte": dte,
+    }
+
+
+def _arb_curve(und: str, raw: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if not isinstance(raw, dict):
+        return out
+    for k, blk in raw.items():
+        if not isinstance(blk, dict):
+            continue
+        leg = _arb_leg(und, blk, str(k))
+        if leg:
+            out.append(leg)
+    out.sort(key=lambda x: x["dte"])
+    return out
+
+
+def _arb_spread(a: dict[str, Any], b: dict[str, Any]) -> tuple[float | None, float | None, float | None]:
+    """spread = a.px - b.px; yesterday same formula; chg = today - yesterday."""
+    pa, pb = _sfloat(a.get("px")), _sfloat(b.get("px"))
+    spread = None if pa is None or pb is None else pa - pb
+    ya, yb = _sfloat(a.get("pxYd")), _sfloat(b.get("pxYd"))
+    spread_yd = None if ya is None or yb is None else ya - yb
+    chg = None if spread is None or spread_yd is None else spread - spread_yd
+    return spread, spread_yd, chg
+
+
+def _arb_ts(und: str) -> dict[str, Any]:
+    try:
+        raw = get_future_term_structure(und)
+        return raw if isinstance(raw, dict) else {}
+    except Exception:
+        logger.info("arb-board future-ts %s failed", und)
+        return {}
+
+
+def _build_arb_board() -> dict[str, Any]:
+    from arb_catalog import (  # noqa: PLC0415
+        CALENDAR_UNDS, CROSS_PAIRS, INDEX_BASIS, catalog_unds, calendar_label,
+    )
+
+    unds = catalog_unds()
+    curves: dict[str, list[dict[str, Any]]] = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = list(pool.map(_arb_ts, unds))
+    for und, raw in zip(unds, futs, strict=True):
+        cur = _arb_curve(und, raw)
+        if cur:
+            curves[und] = cur
+
+    calendar: list[dict[str, Any]] = []
+    for und, label in CALENDAR_UNDS:
+        months = curves.get(und) or []
+        if len(months) < 2:
+            continue
+        near, nxt = months[0], months[1]
+        spread, spread_yd, chg = _arb_spread(near, nxt)
+        calendar.append({
+            "und": und,
+            "label": label,
+            "near": near,
+            "next": nxt,
+            "spread": spread,
+            "spreadYd": spread_yd,
+            "spreadChg": chg,
+        })
+
+    cross: list[dict[str, Any]] = []
+    for a, b, label, sector in CROSS_PAIRS:
+        ca, cb = curves.get(a) or [], curves.get(b) or []
+        if not ca or not cb:
+            continue
+        la, lb = ca[0], cb[0]
+        spread, spread_yd, chg = _arb_spread(la, lb)
+        cross.append({
+            "id": f"{a}-{b}",
+            "label": label,
+            "sector": sector,
+            "aUnd": a,
+            "bUnd": b,
+            "aLabel": calendar_label(a),
+            "bLabel": calendar_label(b),
+            "a": la,
+            "b": lb,
+            "spread": spread,
+            "spreadYd": spread_yd,
+            "spreadChg": chg,
+        })
+
+    index: list[dict[str, Any]] = []
+    for und, cash_code, cash_kind, cash_label, cash_mult in INDEX_BASIS:
+        months = curves.get(und) or []
+        if not months:
+            continue
+        index.append({
+            "id": f"{und}-{cash_code}",
+            "und": und,
+            "label": f"{und} vs {cash_label}",
+            "cashCode": cash_code,
+            "cashKind": cash_kind,
+            "cashLabel": cash_label,
+            "cashMult": cash_mult,
+            "near": months[0],
+        })
+
+    return {"calendar": calendar, "cross": cross, "index": index}
+
+
+def get_arb_board() -> dict[str, Any]:
+    """跨期/跨品种/股指近月看板. 复用 ovlab_future_ts::{und}, 整板 60s 随时段冻结.
+
+    不打 ctamap-all / future-ts-all. 空板仍缓存结构, 避免前端一直转圈.
+    """
+    return _cached(
+        "ovlab_arb_board",
+        _build_arb_board,
+        valid=lambda v: isinstance(v, dict) and "calendar" in v,
+        ttl=60,
+    )
+
+
 # ---------------------------------------------------------------------------
 # 异动 / 资金流
 # ---------------------------------------------------------------------------

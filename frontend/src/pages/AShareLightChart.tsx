@@ -1,8 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import * as echarts from "echarts";
 import { AlertCircle, FileText, Loader2, Newspaper, Plus, RefreshCw, Search, X } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { LcLegend, LcSeg, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { PageFallback } from "@/components/ui/PageFallback";
 import { WatchlistFeed } from "@/components/WatchlistFeed";
@@ -12,6 +12,11 @@ import { loadLightKline } from "@/lib/lightKline";
 import { getAShareSession } from "@/lib/ashareSession";
 import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
+import {
+  BaselineSeries, CandlestickSeries, HistogramSeries, applyTimeLabels, baselineOpts,
+  candleOpts, candleValues, resizeLc, seriesAlive, showLatest, sparseLine, styleLastTag,
+  styleVolOverlay, useLcChart, volOpts, volValues, wipeLc, type ISeriesApi,
+} from "@/lib/lcChart";
 
 const StockData = lazy(() =>
   import("@/pages/StockData").then((m) => ({ default: m.StockData })),
@@ -20,8 +25,6 @@ const StockData = lazy(() =>
 export type AShareChartSeg = "kline" | "detail" | "feed";
 const CHART_SEGS: AShareChartSeg[] = ["kline", "detail", "feed"];
 
-const UP = "#ef4444";
-const DN = "#22c55e";
 const KLINE_NUM = 365;
 const VIEW_DAYS = 120;
 
@@ -87,11 +90,14 @@ export function AShareLightChart({
     setSeg("kline");
   };
 
-  const chartRef = useRef<HTMLDivElement>(null);
-  const echartRef = useRef<echarts.ECharts | null>(null);
+  const { ref: chartRef, chartRef: lcRef, labelsRef, onHoverRef } = useLcChart();
+  const bag = useRef<{
+    kind: "candle" | "baseline" | null;
+    main: ISeriesApi<"Candlestick"> | ISeriesApi<"Baseline"> | null;
+    vol: ISeriesApi<"Histogram"> | null;
+  }>({ kind: null, main: null, vol: null });
   const listRef = useRef<HTMLDivElement>(null);
-  const barsRef = useRef(bars);
-  barsRef.current = bars;
+  onHoverRef.current = setHoverIdx;
 
   useEffect(() => {
     const tick = () => setSession(getAShareSession());
@@ -179,308 +185,48 @@ export function AShareLightChart({
   }, [selected, seg]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!chartRef.current) return;
-    const chart = echarts.init(chartRef.current, undefined, { renderer: "canvas" });
-    echartRef.current = chart;
-    chart.on("updateAxisPointer", (raw) => {
-      const params = raw as {
-        currTrigger?: string;
-        axesInfo?: Array<{ axisDim?: string; value?: unknown; seriesDataIndices?: Array<{ dataIndex?: number }> }>;
-      };
-      if (params?.currTrigger === "leave") { setHoverIdx(null); return; }
-      const xAxis = (params.axesInfo ?? []).find((a) => a.axisDim === "x") ?? params.axesInfo?.[0];
-      const fromSeries = xAxis?.seriesDataIndices?.find((s) => Number.isInteger(s?.dataIndex));
-      if (fromSeries && Number.isInteger(fromSeries.dataIndex)) {
-        setHoverIdx(fromSeries.dataIndex as number);
-        return;
-      }
-      const val = xAxis?.value;
-      const list = barsRef.current;
-      if (typeof val === "number" && val >= 0 && val < list.length) {
-        setHoverIdx(Math.round(val));
-        return;
-      }
-      if (val != null) {
-        const i = list.findIndex((b) => b.datetime === String(val));
-        if (i >= 0) setHoverIdx(i);
-      }
-    });
-    const zr = chart.getZr();
-    const onOut = () => setHoverIdx(null);
-    zr.on("globalout", onOut);
-    const ro = new ResizeObserver(() => chart.resize());
-    ro.observe(chartRef.current);
-    return () => {
-      zr.off("globalout", onOut);
-      ro.disconnect();
-      chart.dispose();
-      echartRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!echartRef.current) return;
+    const chart = lcRef.current;
+    if (!chart) return;
     if (bars.length === 0) {
-      echartRef.current.clear();
+      wipeLc(chart);
+      bag.current = { kind: null, main: null, vol: null };
+      labelsRef.current = [];
       return;
     }
-    const cssHsl = (name: string, fallback: string) => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      return raw ? `hsl(${raw})` : fallback;
-    };
-    const cText = cssHsl("--chart-text", "#94a3b8");
-    const cAxis = cssHsl("--chart-axis", "#475569");
-    const cGrid = cssHsl("--chart-grid", "#334155");
-    const cPtr = cssHsl("--primary", "#22d3ee");
-    const dates = bars.map((b) => b.datetime);
     const isDaily = resolution === "1D";
-    // 分时: 昨收为零轴; 5日: 首笔为零轴 (对齐期货轻量图)
-    const priceVals = bars.map((b) => b.close);
-    const finitePx = priceVals.filter((v) => Number.isFinite(v));
+    const kind = isDaily ? "candle" as const : "baseline" as const;
+    const finitePx = bars.map((b) => b.close).filter((v) => Number.isFinite(v));
     const baseline = (resolution === "1" && meta?.prev_close != null && Number.isFinite(meta.prev_close))
       ? Number(meta.prev_close)
       : (finitePx[0] ?? 0);
-    const pMin = finitePx.length ? Math.min(...finitePx, baseline) : baseline;
-    const pMax = finitePx.length ? Math.max(...finitePx, baseline) : baseline;
-    const pPad = (pMax - pMin) * 0.06 || Math.abs(baseline) * 0.002 || 1;
+    labelsRef.current = bars.map((b) => b.datetime);
+    applyTimeLabels(chart, labelsRef, isDaily ? "md" : resolution === "5" ? "mdhm" : "hm");
+    if (bag.current.kind !== kind || !seriesAlive(chart, bag.current.main) || !seriesAlive(chart, bag.current.vol)) {
+      wipeLc(chart);
+      bag.current.main = kind === "candle"
+        ? chart.addSeries(CandlestickSeries, candleOpts())
+        : chart.addSeries(BaselineSeries, baselineOpts(baseline));
+      bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
+      bag.current.kind = kind;
+      styleVolOverlay(chart);
+    }
+    if (kind === "candle") {
+      (bag.current.main as ISeriesApi<"Candlestick">).setData(candleValues(bars));
+    } else {
+      const bl = bag.current.main as ISeriesApi<"Baseline">;
+      bl.applyOptions(baselineOpts(baseline));
+      bl.setData(sparseLine(bars.map((b) => b.close)));
+    }
+    const last = bars[bars.length - 1];
+    styleLastTag(bag.current.main, last?.close, kind === "candle" ? last?.open : baseline);
+    bag.current.vol!.setData(volValues(bars.map((b) => ({
+      value: b.volume,
+      up: isDaily ? b.close >= b.open : b.close >= baseline,
+    }))));
+    if (isDaily) showLatest(chart, bars.length, VIEW_DAYS);
+    else chart.timeScale().fitContent();
+  }, [bars, resolution, meta?.prev_close, lcRef, labelsRef]);
 
-    const volData = bars.map((b) => {
-      const up = isDaily ? b.close >= b.open : b.close >= baseline;
-      return { value: b.volume, itemStyle: { color: up ? UP : DN } };
-    });
-
-    const zoomStart = isDaily && bars.length > VIEW_DAYS
-      ? (1 - VIEW_DAYS / bars.length) * 100
-      : 0;
-
-    // Custom trend paint: red above / green below zero axis
-    const trendPaintSeries = {
-      name: "_trendPaint",
-      type: "custom" as const,
-      yAxisIndex: 0,
-      z: 2,
-      silent: true,
-      clip: true,
-      data: priceVals,
-      renderItem: (params: {
-        dataIndex: number;
-        dataIndexInside: number;
-        dataInsideLength: number;
-        coordSys?: { x: number; y: number; width: number; height: number };
-      }, api: { coord: (v: [number, number]) => number[] }) => {
-        if (params.dataIndexInside !== 0) return undefined;
-        const cs = params.coordSys;
-        if (!cs) return undefined;
-        const visCount = params.dataInsideLength ?? 0;
-        if (visCount < 2) return undefined;
-        const i0 = params.dataIndex;
-        const i1 = Math.min(priceVals.length - 1, i0 + visCount - 1);
-
-        const segs: number[][][] = [];
-        let cur: number[][] = [];
-        for (let i = i0; i <= i1; i++) {
-          const v = priceVals[i];
-          if (!Number.isFinite(v)) {
-            if (cur.length >= 2) segs.push(cur);
-            cur = [];
-            continue;
-          }
-          const p = api.coord([i, v]);
-          if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) {
-            if (cur.length >= 2) segs.push(cur);
-            cur = [];
-            continue;
-          }
-          cur.push(p);
-        }
-        if (cur.length >= 2) segs.push(cur);
-        if (segs.length === 0) return undefined;
-
-        const zRef = api.coord([i0, baseline]);
-        if (!zRef || !Number.isFinite(zRef[1])) return undefined;
-        const zeroY = zRef[1];
-        const upH = Math.max(0, zeroY - cs.y);
-        const dnH = Math.max(0, cs.y + cs.height - zeroY);
-
-        const gradUp = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: "rgba(239, 68, 68, 0.42)" },
-          { offset: 1, color: "rgba(239, 68, 68, 0.02)" },
-        ]);
-        const gradDn = new echarts.graphic.LinearGradient(0, 1, 0, 0, [
-          { offset: 0, color: "rgba(34, 197, 94, 0.42)" },
-          { offset: 1, color: "rgba(34, 197, 94, 0.02)" },
-        ]);
-
-        const paintChildren: Record<string, unknown>[] = [];
-        for (const linePts of segs) {
-          const zL = [linePts[0][0], zeroY];
-          const zR = [linePts[linePts.length - 1][0], zeroY];
-          const areaPts = [...linePts, zR, zL];
-          paintChildren.push(
-            {
-              type: "group",
-              clipPath: { type: "rect", shape: { x: cs.x, y: cs.y, width: cs.width, height: upH } },
-              children: [
-                { type: "polygon", shape: { points: areaPts }, style: { fill: gradUp } },
-                { type: "polyline", shape: { points: linePts }, style: { stroke: UP, lineWidth: 1.5, fill: "none", lineJoin: "round", lineCap: "round" } },
-              ],
-            },
-            {
-              type: "group",
-              clipPath: { type: "rect", shape: { x: cs.x, y: zeroY, width: cs.width, height: dnH } },
-              children: [
-                { type: "polygon", shape: { points: areaPts }, style: { fill: gradDn } },
-                { type: "polyline", shape: { points: linePts }, style: { stroke: DN, lineWidth: 1.5, fill: "none", lineJoin: "round", lineCap: "round" } },
-              ],
-            },
-          );
-        }
-        paintChildren.push({
-          type: "line",
-          shape: { x1: cs.x, y1: zeroY, x2: cs.x + cs.width, y2: zeroY },
-          style: { stroke: "rgba(148,163,184,0.45)", lineWidth: 1, lineDash: [4, 3] },
-        });
-        return { type: "group", children: paintChildren };
-      },
-      tooltip: { show: false },
-      legendHoverLink: false,
-    };
-
-    const mainSeries = isDaily
-      ? [{
-          name: "K线",
-          type: "candlestick" as const,
-          data: bars.map((b) => [b.open, b.close, b.low, b.high]),
-          itemStyle: { color: UP, color0: DN, borderColor: UP, borderColor0: DN },
-          emphasis: { focus: "none" as const },
-          blur: { itemStyle: { opacity: 1 } },
-        }]
-      : [
-          trendPaintSeries,
-          {
-            name: "价格",
-            type: "line" as const,
-            yAxisIndex: 0,
-            z: 1,
-            data: priceVals,
-            showSymbol: false,
-            lineStyle: { width: 0, opacity: 0 },
-            emphasis: { focus: "none" as const },
-            blur: { lineStyle: { opacity: 0 } },
-          },
-        ];
-
-    echartRef.current.setOption({
-      backgroundColor: "transparent",
-      animation: false,
-      legend: { show: false },
-      tooltip: {
-        trigger: "axis",
-        showContent: false,
-        axisPointer: {
-          type: "cross",
-          crossStyle: { color: cAxis, width: 1, type: "dashed" },
-          label: { show: false },
-        },
-      },
-      axisPointer: { link: [{ xAxisIndex: "all" }] },
-      grid: [
-        { left: 56, right: 24, top: 16, height: "58%" },
-        { left: 56, right: 24, top: "72%", height: "16%" },
-      ],
-      xAxis: [
-        {
-          type: "category", data: dates, boundaryGap: isDaily, scale: true,
-          axisLine: { lineStyle: { color: cAxis } },
-          axisLabel: {
-            color: cText, fontSize: 10,
-            formatter: (v: string) => {
-              if (resolution === "1") return v.slice(11, 16) || v;
-              if (resolution === "5") {
-                const m = v.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})/);
-                return m ? `${m[2]}-${m[3]} ${m[4]}` : v;
-              }
-              return v.length >= 10 ? v.slice(5) : v;
-            },
-          },
-          splitLine: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-        {
-          type: "category", gridIndex: 1, data: dates, boundaryGap: isDaily, scale: true,
-          axisLabel: { show: false },
-          axisLine: { lineStyle: { color: cAxis } },
-          splitLine: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-      ],
-      yAxis: [
-        isDaily
-          ? {
-              scale: true,
-              splitLine: { lineStyle: { color: cGrid, opacity: 0.25, width: 1 } },
-              axisLabel: { color: cText, fontSize: 10, formatter: (v: number) => Number(v.toFixed(2)).toString() },
-              axisPointer: {
-                label: {
-                  show: true, backgroundColor: cPtr, color: "#fff",
-                  formatter: (p: { value: number | string }) => Number(Number(p.value).toFixed(2)).toLocaleString("zh-CN"),
-                },
-              },
-            }
-          : {
-              min: pMin - pPad,
-              max: pMax + pPad,
-              scale: false,
-              splitLine: { lineStyle: { color: cGrid, opacity: 0.25, width: 1 } },
-              axisLabel: { color: cText, fontSize: 10, formatter: (v: number) => Number(v.toFixed(2)).toString() },
-              axisPointer: {
-                label: {
-                  show: true, backgroundColor: cPtr, color: "#fff",
-                  formatter: (p: { value: number | string }) => Number(Number(p.value).toFixed(2)).toLocaleString("zh-CN"),
-                },
-              },
-            },
-        {
-          scale: true,
-          gridIndex: 1,
-          min: (v: { min?: number }) => { const mn = v.min ?? 0; return mn > 0 ? Math.floor(mn * 0.9) : 0; },
-          splitNumber: 2,
-          axisLabel: { show: false },
-          splitLine: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-      ],
-      dataZoom: [
-        {
-          type: "inside", xAxisIndex: [0, 1],
-          start: zoomStart, end: 100,
-          zoomOnMouseWheel: true,
-          moveOnMouseMove: true,
-          moveOnMouseWheel: false,
-        },
-        {
-          type: "slider", xAxisIndex: [0, 1], bottom: 4, height: 16,
-          start: zoomStart, end: 100,
-          textStyle: { fontSize: 9, color: cText },
-          borderColor: cAxis,
-          fillerColor: "rgba(34,211,238,0.15)",
-          handleStyle: { color: cPtr },
-          moveHandleStyle: { color: cPtr },
-          dataBackground: { lineStyle: { color: cAxis }, areaStyle: { color: "rgba(148,163,184,0.15)" } },
-          selectedDataBackground: { lineStyle: { color: cPtr }, areaStyle: { color: "rgba(34,211,238,0.12)" } },
-        },
-      ],
-      series: [
-        ...mainSeries,
-        {
-          name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, z: 1,
-          data: volData,
-          emphasis: { focus: "none" },
-          blur: { itemStyle: { opacity: 1 } },
-        },
-      ],
-    }, { notMerge: true });
-  }, [bars, resolution, meta?.prev_close]);
 
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : (bars.length ? bars.length - 1 : -1);
   const bar = activeIdx >= 0 ? bars[activeIdx] : null;
@@ -499,13 +245,35 @@ export function AShareLightChart({
       ? selQuote.price - selQuote.prev
       : null;
 
-  // Keep chart DOM mounted so ECharts survives tab switches (hide when not on kline)
+  const ashareLegend: LcLegendItem[] = [];
+  if (bar) {
+    if (resolution === "1D") {
+      ashareLegend.push(
+        { k: "O", v: fmtPrice(bar.open) },
+        { k: "H", v: fmtPrice(bar.high) },
+        { k: "L", v: fmtPrice(bar.low) },
+        { k: "C", v: fmtPrice(bar.close), tone: lcTone(chg) },
+        { k: "V", v: fmtVol(bar.volume), tone: "muted" },
+      );
+    } else {
+      ashareLegend.push(
+        { k: "T", v: resolution === "5" ? (bar.datetime.slice(5, 16) || bar.datetime) : (bar.datetime.slice(11, 16) || bar.datetime), tone: "muted" },
+        { k: "P", v: fmtPrice(bar.close), tone: lcTone(chg) },
+        { k: "V", v: fmtVol(bar.volume), tone: "muted" },
+      );
+    }
+  }
+
+  // Keep chart DOM mounted so LC survives tab switches (hide when not on kline)
   const showKline = seg === "kline";
   useEffect(() => {
     if (!showKline) return;
-    const t = window.setTimeout(() => echartRef.current?.resize(), 50);
+    const t = window.setTimeout(() => {
+      const chart = lcRef.current;
+      if (chart) resizeLc(chart, chartRef.current);
+    }, 50);
     return () => window.clearTimeout(t);
-  }, [showKline, selected]);
+  }, [showKline, selected, lcRef, chartRef]);
 
   // Scroll watchlist so deep-linked / selected code stays in view
   useEffect(() => {
@@ -586,7 +354,9 @@ export function AShareLightChart({
                     onClick={() => pickStock(c)}
                     className={cn(
                       "group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-                      active ? "bg-primary/15 text-foreground ring-1 ring-primary/20" : "hover:bg-muted/40",
+                      active
+                        ? "bg-white/[0.04] text-foreground shadow-[inset_2px_0_0_#22d3ee]"
+                        : "hover:bg-white/[0.03]",
                     )}
                   >
                     <div className="min-w-0 flex-1">
@@ -597,7 +367,7 @@ export function AShareLightChart({
                       <div className="mt-0.5 flex items-baseline gap-2 tabular-nums text-xs">
                         <span>{fmtPrice(q?.price)}</span>
                         <span className={cn(
-                          pct != null && pct > 0 ? "text-danger" : pct != null && pct < 0 ? "text-success" : "text-muted-foreground",
+                          pct != null && pct > 0 ? "text-[#f6465d]" : pct != null && pct < 0 ? "text-[#0ecb81]" : "text-muted-foreground",
                         )}>
                           {fmtPct(pct)}
                         </span>
@@ -622,71 +392,74 @@ export function AShareLightChart({
           <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_260px]">
             {/* K线 */}
             <GlassCard className="min-w-0 p-3 sm:p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="text-base font-bold tracking-tight">
-                    {meta?.name || selQuote?.name || selected || "—"}{" "}
-                    <span className="text-sm font-medium text-muted-foreground">{selected || ""}</span>
-                  </span>
-                  <span className="rounded bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {resolution === "1D" ? (meta?.adjust === "qfq" ? "前复权" : "日K") : resolution === "5" ? "5日" : "分时"}
-                  </span>
-                  <span className={cn(
-                    "rounded px-1.5 py-0.5 text-[10px]",
-                    hovering ? "bg-primary/15 text-primary" : "bg-muted/40 text-muted-foreground",
-                  )}>
-                    {hovering ? "十字光标" : "最新"}
-                  </span>
+              <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="font-mono text-lg font-semibold tracking-tight">{selected || "—"}</span>
+                    <span className="truncate text-xs text-slate-500">
+                      {meta?.name || selQuote?.name || ""}
+                    </span>
+                    <span className="rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                      {resolution === "1D" ? (meta?.adjust === "qfq" ? "qfq" : "D") : resolution === "5" ? "5D" : "1"}
+                    </span>
+                    {hovering ? (
+                      <span className="font-mono text-[10px] tracking-wide text-cyan-400/80">CROSSHAIR</span>
+                    ) : null}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-baseline gap-3">
+                    <span className={cn(
+                      "font-mono text-2xl font-semibold tabular-nums",
+                      quoteChgPct != null && quoteChgPct > 0 ? "text-[#f6465d]"
+                        : quoteChgPct != null && quoteChgPct < 0 ? "text-[#0ecb81]"
+                          : "text-slate-200",
+                    )}>
+                      {fmtPrice(bar?.close ?? selQuote?.price)}
+                    </span>
+                    <span className={cn(
+                      "font-mono text-sm tabular-nums",
+                      quoteChgPct != null && quoteChgPct > 0 ? "text-[#f6465d]"
+                        : quoteChgPct != null && quoteChgPct < 0 ? "text-[#0ecb81]"
+                          : "text-slate-500",
+                    )}>
+                      {quoteChgAmt != null ? `${quoteChgAmt > 0 ? "+" : ""}${quoteChgAmt.toFixed(2)}` : "—"}
+                      <span className="ml-1.5">({fmtPct(quoteChgPct)})</span>
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
-                    {RES_OPTS.map((r) => (
-                      <button
-                        key={r.v}
-                        type="button"
-                        onClick={() => setResolution(r.v)}
-                        className={cn(
-                          "rounded-md px-2.5 py-1 text-xs",
-                          resolution === r.v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
+                  <LcSeg value={resolution} options={RES_OPTS} onChange={setResolution} />
                   <button
                     type="button"
                     onClick={() => { if (selected) void loadChart(selected, resolution); }}
-                    className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-slate-500 ring-1 ring-white/[0.06] hover:text-slate-200"
                   >
                     <RefreshCw className={cn("h-3.5 w-3.5", chartLoading && "animate-spin")} />
-                    刷新
                   </button>
                 </div>
               </div>
 
-              {chartErr && selected ? (
-                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-                  <AlertCircle className="h-4 w-4 shrink-0" /> {chartErr}
-                </div>
-              ) : (
-                <div className="relative">
-                  {!selected && (
-                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background/85 px-6 text-center backdrop-blur-[1px]">
-                      <p className="text-sm text-muted-foreground">先选一只股票看 K 线</p>
-                      <p className="max-w-xs text-[11px] text-muted-foreground/60">
-                        从左侧自选点选，或在上方加 6 位代码。复盘榜单点代码也会落到这里。
-                      </p>
-                    </div>
-                  )}
-                  {chartLoading && selected && (
-                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/40">
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    </div>
-                  )}
-                  <div ref={chartRef} className="h-[480px] w-full" />
-                </div>
-              )}
+              <LcWell className="h-[480px]">
+                {!selected && (
+                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-[#0b0f17]/88 px-6 text-center">
+                    <p className="text-sm text-slate-400">先选一只股票看 K 线</p>
+                    <p className="max-w-xs text-[11px] text-slate-600">
+                      从左侧自选点选，或在上方加 6 位代码。复盘榜单点代码也会落到这里。
+                    </p>
+                  </div>
+                )}
+                {chartErr && selected && (
+                  <div className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-[#0b0f17]/88 px-4 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" /> {chartErr}
+                  </div>
+                )}
+                {chartLoading && selected && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0b0f17]/40">
+                    <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+                  </div>
+                )}
+                <LcLegend items={ashareLegend} />
+                <div ref={chartRef} className="h-full w-full" />
+              </LcWell>
             </GlassCard>
 
             {/* 行情：与 K 线左右并排 */}
@@ -729,13 +502,17 @@ export function AShareLightChart({
                     ) : null}
                     <p className={cn(
                       "mt-2 font-mono text-2xl font-bold tabular-nums",
-                      quoteChgPct != null && quoteChgPct > 0 ? "text-danger" : quoteChgPct != null && quoteChgPct < 0 ? "text-success" : "text-foreground",
+                      quoteChgPct != null && quoteChgPct > 0 ? "text-[#f6465d]"
+                        : quoteChgPct != null && quoteChgPct < 0 ? "text-[#0ecb81]"
+                          : "text-foreground",
                     )}>
                       {fmtPrice(bar?.close ?? selQuote?.price)}
                     </p>
                     <p className={cn(
                       "mt-0.5 text-sm tabular-nums",
-                      quoteChgPct != null && quoteChgPct > 0 ? "text-danger" : quoteChgPct != null && quoteChgPct < 0 ? "text-success" : "text-muted-foreground",
+                      quoteChgPct != null && quoteChgPct > 0 ? "text-[#f6465d]"
+                        : quoteChgPct != null && quoteChgPct < 0 ? "text-[#0ecb81]"
+                          : "text-muted-foreground",
                     )}>
                       {quoteChgAmt != null ? `${quoteChgAmt > 0 ? "+" : ""}${quoteChgAmt.toFixed(2)}` : "—"}
                       <span className="ml-1.5">({fmtPct(quoteChgPct)})</span>

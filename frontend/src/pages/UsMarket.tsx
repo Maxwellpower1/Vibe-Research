@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
-import * as echarts from "echarts";
 import { AlertCircle, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
@@ -15,10 +15,13 @@ import {
 import { addUsTickers, loadUsWatch, saveUsWatch } from "@/lib/usWatchlist";
 import { useExpandAll } from "@/hooks/useExpandAll";
 import { cn } from "@/lib/utils";
+import {
+  CandlestickSeries, HistogramSeries, applyTimeLabels, candleOpts, candleValues,
+  seriesAlive, showLatest, styleLastTag, styleVolOverlay, useLcChart, volOpts, volValues, wipeLc,
+  type ISeriesApi,
+} from "@/lib/lcChart";
 
-const UP = "#ef4444";
-const DN = "#22c55e";
-/** Pull 365 bars; default viewport shows latest ~120; wheel/slider zooms out to full. */
+/** Pull 365 bars; default viewport shows latest ~120; wheel zooms out to full. */
 const KLINE_NUM = 365;
 const VIEW_DAYS = 120;
 
@@ -91,10 +94,12 @@ export function UsMarket() {
 
   const { allOpen, toggleAll } = useExpandAll(US_SECTION_KEYS);
 
-  const chartRef = useRef<HTMLDivElement>(null);
-  const echartRef = useRef<echarts.ECharts | null>(null);
-  const barsRef = useRef(bars);
-  barsRef.current = bars;
+  const { ref: chartRef, chartRef: lcRef, labelsRef, onHoverRef } = useLcChart();
+  const bag = useRef<{
+    candle: ISeriesApi<"Candlestick"> | null;
+    vol: ISeriesApi<"Histogram"> | null;
+  }>({ candle: null, vol: null });
+  onHoverRef.current = setHoverIdx;
 
   const persist = (next: string[]) => {
     setCodes(next);
@@ -241,156 +246,31 @@ export function UsMarket() {
   useEffect(() => { void loadOptFlow(selected); }, [selected, loadOptFlow]);
 
   useEffect(() => {
-    if (!chartRef.current) return;
-    const chart = echarts.init(chartRef.current, undefined, { renderer: "canvas" });
-    echartRef.current = chart;
-
-    chart.on("updateAxisPointer", (raw: unknown) => {
-      const params = raw as {
-        currTrigger?: string;
-        axesInfo?: Array<{ axisDim?: string; value?: unknown; seriesDataIndices?: Array<{ dataIndex?: number }> }>;
-      };
-      if (params?.currTrigger === "leave") {
-        setHoverIdx(null);
-        return;
-      }
-      const xAxis = (params.axesInfo ?? []).find((a) => a.axisDim === "x") ?? params.axesInfo?.[0];
-      const fromSeries = xAxis?.seriesDataIndices?.find((s) => Number.isInteger(s?.dataIndex));
-      if (fromSeries && Number.isInteger(fromSeries.dataIndex)) {
-        setHoverIdx(fromSeries.dataIndex as number);
-        return;
-      }
-      const val = xAxis?.value;
-      const list = barsRef.current;
-      if (typeof val === "number" && val >= 0 && val < list.length) {
-        setHoverIdx(Math.round(val));
-        return;
-      }
-      if (val != null) {
-        const i = list.findIndex((b) => b.date === String(val));
-        if (i >= 0) setHoverIdx(i);
-      }
-    });
-
-    const zr = chart.getZr();
-    const onOut = () => setHoverIdx(null);
-    zr.on("globalout", onOut);
-
-    const ro = new ResizeObserver(() => chart.resize());
-    ro.observe(chartRef.current);
-    return () => {
-      zr.off("globalout", onOut);
-      ro.disconnect();
-      chart.dispose();
-      echartRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!echartRef.current) return;
+    const chart = lcRef.current;
+    if (!chart) return;
     if (bars.length === 0) {
-      echartRef.current.clear();
+      wipeLc(chart);
+      bag.current = { candle: null, vol: null };
+      labelsRef.current = [];
       return;
     }
-    const cssHsl = (name: string, fallback: string) => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      return raw ? `hsl(${raw})` : fallback;
-    };
-    const cText = cssHsl("--chart-text", "#94a3b8");
-    const cAxis = cssHsl("--chart-axis", "#475569");
-    const cGrid = cssHsl("--chart-grid", "#334155");
-    const dates = bars.map((b) => b.date);
-    const ohlc = bars.map((b) => [b.open, b.close, b.low, b.high]);
-    const vols = bars.map((b) => ({
+    labelsRef.current = bars.map((b) => b.date);
+    applyTimeLabels(chart, labelsRef, "md");
+    if (!seriesAlive(chart, bag.current.candle) || !seriesAlive(chart, bag.current.vol)) {
+      wipeLc(chart);
+      bag.current.candle = chart.addSeries(CandlestickSeries, candleOpts());
+      bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
+      styleVolOverlay(chart);
+    }
+    bag.current.candle!.setData(candleValues(bars));
+    const last = bars[bars.length - 1];
+    styleLastTag(bag.current.candle, last?.close, last?.open);
+    bag.current.vol!.setData(volValues(bars.map((b) => ({
       value: b.volume,
-      itemStyle: { color: b.close >= b.open ? UP : DN },
-    }));
-
-    const cPtr = cssHsl("--primary", "#22d3ee");
-    echartRef.current.setOption({
-      animation: false,
-      legend: { show: false },
-      tooltip: {
-        trigger: "axis",
-        showContent: false,
-        axisPointer: {
-          type: "cross",
-          crossStyle: { color: cAxis, width: 1, type: "dashed" },
-          label: { show: false },
-        },
-      },
-      axisPointer: { link: [{ xAxisIndex: "all" }] },
-      grid: [
-        { left: 56, right: 24, top: 16, height: "62%" },
-        { left: 56, right: 24, top: "76%", height: "14%" },
-      ],
-      xAxis: [
-        {
-          type: "category", data: dates, boundaryGap: true, scale: true,
-          axisLine: { lineStyle: { color: cAxis } },
-          axisLabel: { color: cText, fontSize: 10 },
-          splitLine: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-        {
-          type: "category", gridIndex: 1, data: dates, boundaryGap: true, scale: true,
-          axisLabel: { show: false },
-          axisLine: { lineStyle: { color: cAxis } },
-          splitLine: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-      ],
-      yAxis: [
-        {
-          scale: true,
-          splitLine: { lineStyle: { color: cGrid, opacity: 0.25 } },
-          axisLabel: { color: cText, fontSize: 10, formatter: (v: number) => Number(v.toFixed(2)).toString() },
-          axisPointer: {
-            label: {
-              show: true, backgroundColor: cPtr, color: "#fff",
-              formatter: (p: { value: number | string }) => Number(Number(p.value).toFixed(2)).toLocaleString("en-US"),
-            },
-          },
-        },
-        {
-          scale: true, gridIndex: 1,
-          splitNumber: 2,
-          axisLabel: { show: false },
-          splitLine: { show: false },
-          axisPointer: { label: { show: false } },
-        },
-      ],
-      dataZoom: [
-        {
-          type: "inside", xAxisIndex: [0, 1],
-          // Default show latest ~120 of 365; wheel zoom out to full 365
-          start: bars.length > VIEW_DAYS ? (1 - VIEW_DAYS / bars.length) * 100 : 0,
-          end: 100,
-          zoomOnMouseWheel: true,
-          moveOnMouseMove: true,
-          moveOnMouseWheel: false,
-        },
-        {
-          type: "slider", xAxisIndex: [0, 1], bottom: 4, height: 16,
-          start: bars.length > VIEW_DAYS ? (1 - VIEW_DAYS / bars.length) * 100 : 0,
-          end: 100,
-          textStyle: { fontSize: 9, color: cText },
-          borderColor: cAxis,
-          fillerColor: "rgba(34,211,238,0.15)",
-          handleStyle: { color: cssHsl("--primary", "#22d3ee") },
-        },
-      ],
-      series: [
-        {
-          name: "K线", type: "candlestick", data: ohlc,
-          itemStyle: { color: UP, color0: DN, borderColor: UP, borderColor0: DN },
-        },
-        {
-          name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: vols,
-        },
-      ],
-    }, { notMerge: true });
-  }, [bars]);
+      up: b.close >= b.open,
+    }))));
+    showLatest(chart, bars.length, VIEW_DAYS);
+  }, [bars, lcRef, labelsRef]);
 
   const selQuote = selected ? quotes[selected] : null;
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : (bars.length ? bars.length - 1 : -1);
@@ -407,6 +287,14 @@ export function UsMarket() {
     if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
     return String(Math.round(v));
   };
+
+  const usLegend: LcLegendItem[] = bar ? [
+    { k: "O", v: fmtPrice(bar.open) },
+    { k: "H", v: fmtPrice(bar.high) },
+    { k: "L", v: fmtPrice(bar.low) },
+    { k: "C", v: fmtPrice(bar.close), tone: lcTone(chg) },
+    { k: "V", v: fmtVol(bar.volume), tone: "muted" },
+  ] : [];
 
   const glanceMetrics: GlanceMetric[] = [];
   if (selQuote?.quote) {
@@ -504,9 +392,11 @@ export function UsMarket() {
                   key={c}
                   type="button"
                   onClick={() => setSelected(c)}
-                  className={cn(
+                    className={cn(
                     "group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-                    active ? "bg-primary/12 text-foreground" : "hover:bg-muted/40",
+                    active
+                      ? "bg-white/[0.04] text-foreground shadow-[inset_2px_0_0_#22d3ee]"
+                      : "hover:bg-white/[0.03]",
                   )}
                 >
                   <div className="min-w-0 flex-1">
@@ -517,7 +407,7 @@ export function UsMarket() {
                     <div className="mt-0.5 flex items-baseline gap-2 tabular-nums text-xs">
                       <span>{fmtPrice(q?.quote?.price)}</span>
                       <span className={cn(
-                        pct != null && pct > 0 ? "text-danger" : pct != null && pct < 0 ? "text-success" : "text-muted-foreground",
+                        pct != null && pct > 0 ? "text-[#f6465d]" : pct != null && pct < 0 ? "text-[#0ecb81]" : "text-muted-foreground",
                       )}>
                         {fmtPct(pct)}
                       </span>
@@ -541,61 +431,59 @@ export function UsMarket() {
 
         {/* Chart */}
         <GlassCard className="p-3 sm:p-4">
-          <div className="mb-3">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <div className="text-lg font-bold tracking-tight">
-                {chartMeta?.name || selQuote?.name || selected || "—"}{" "}
-                <span className="text-sm font-medium text-muted-foreground">{selected || ""}</span>
+          <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="font-mono text-lg font-semibold tracking-tight">{selected || "—"}</span>
+                <span className="truncate text-xs text-slate-500">
+                  {chartMeta?.name || selQuote?.name || ""}
+                </span>
+                <span className="rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                  {chartMeta?.adjust === "qfq" ? "qfq" : "D"}
+                </span>
+                {hovering ? (
+                  <span className="font-mono text-[10px] tracking-wide text-cyan-400/80">CROSSHAIR</span>
+                ) : null}
               </div>
-              <span className="flex items-center gap-1.5">
-                <span className="rounded px-1.5 py-0.5 text-[10px] bg-muted/40 text-muted-foreground">
-                  {chartMeta?.adjust === "qfq" ? "前复权" : chartMeta?.adjust === "none" ? "不复权" : "日K"}
+              <div className="mt-1 flex flex-wrap items-baseline gap-3">
+                <span className={cn(
+                  "font-mono text-2xl font-semibold tabular-nums",
+                  chgPct != null && chgPct > 0 ? "text-[#f6465d]"
+                    : chgPct != null && chgPct < 0 ? "text-[#0ecb81]"
+                      : "text-slate-200",
+                )}>
+                  {fmtPrice(bar?.close ?? selQuote?.quote?.price)}
                 </span>
                 <span className={cn(
-                  "rounded px-1.5 py-0.5 text-[10px]",
-                  hovering ? "bg-primary/15 text-primary" : "bg-muted/40 text-muted-foreground",
+                  "font-mono text-sm tabular-nums",
+                  chgPct != null && chgPct > 0 ? "text-[#f6465d]"
+                    : chgPct != null && chgPct < 0 ? "text-[#0ecb81]"
+                      : "text-slate-500",
                 )}>
-                  {hovering ? "十字光标" : "最新"}
+                  {chg != null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}
+                  <span className="ml-1">({fmtPct(chgPct)})</span>
                 </span>
-              </span>
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm tabular-nums">
-              {bar?.date ? (
-                <span className="text-xs text-muted-foreground">{bar.date}</span>
-              ) : null}
-              <span>
-                <span className="text-[11px] text-muted-foreground">收</span>{" "}
-                <b className="text-lg text-primary">{fmtPrice(bar?.close ?? selQuote?.quote?.price)}</b>
-              </span>
-              <span className={cn(
-                chgPct != null && chgPct > 0 ? "text-red-500" : chgPct != null && chgPct < 0 ? "text-emerald-500" : "text-muted-foreground",
-              )}>
-                {chg != null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}
-                <span className="ml-1 text-xs">({fmtPct(chgPct)})</span>
-              </span>
-              <span className="text-xs text-muted-foreground">
-                开 <b className="text-foreground">{fmtPrice(bar?.open)}</b>
-                {" · "}高 <b className="text-foreground">{fmtPrice(bar?.high)}</b>
-                {" · "}低 <b className="text-foreground">{fmtPrice(bar?.low)}</b>
-                {" · "}量 <b className="text-foreground">{fmtVol(bar?.volume)}</b>
-              </span>
+                {bar?.date ? (
+                  <span className="font-mono text-[11px] text-slate-600">{bar.date}</span>
+                ) : null}
+              </div>
             </div>
           </div>
 
-          {chartErr ? (
-            <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4 shrink-0" /> {chartErr}
-            </div>
-          ) : (
-            <div className="relative">
-              {chartLoading && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/40">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              )}
-              <div ref={chartRef} className="h-[480px] w-full" />
-            </div>
-          )}
+          <LcWell className="h-[480px]">
+            {chartErr ? (
+              <div className="absolute inset-0 z-20 flex items-center gap-2 bg-[#0b0f17]/88 px-4 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" /> {chartErr}
+              </div>
+            ) : null}
+            {chartLoading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0b0f17]/40">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+              </div>
+            )}
+            <LcLegend items={usLegend} />
+            <div ref={chartRef} className="h-full w-full" />
+          </LcWell>
         </GlassCard>
       </div>
 
