@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { PageFallback } from "@/components/ui/PageFallback";
 import { A_SHARE_TABS, CockpitHeader, NAV_RAIL_CLASS, PAGE_NAV, navChipClass, parseAShareTab } from "@/components/cockpit/CockpitHeader";
+import { NewsToastHost } from "@/components/cockpit/NewsToastHost";
 import { TickerTape } from "@/components/cockpit/TickerTape";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useTapeQuotes } from "@/hooks/useTapeQuotes";
@@ -80,6 +81,7 @@ export function Layout() {
       </a>
       <CockpitHeader isFullscreen={isFullscreen} onToggleFullscreen={toggle} />
       <TickerTape items={tapeItems} />
+      <NewsToastHost />
       {pathname.startsWith("/a-share") && (
         <nav
           className={cn(NAV_RAIL_CLASS, "mx-2 mt-1 shrink-0")}

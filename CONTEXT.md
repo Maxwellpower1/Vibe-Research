@@ -121,7 +121,7 @@ _Avoid_: 第二条日历, 第二条报价轮询, 重叠持有期×252/horizon �
 
 K/分时（A 股轻量图、美股日K、期权日K/分时、套利价差）和复盘资金页 ETF 份额日线走 `lightweight-charts`，入口 `frontend/src/lib/lcChart.ts`。ECharts 只留给非时间序列（期限结构、国债曲线、相关热力图、回测）。格子小走势仍是手写 SVG。
 
-报价中心、分时、快讯三个 hub 各自保留。`CockpitLayout` / `QuoteStockRow` 继续用。
+报价中心、分时、快讯三个 hub 各自保留。`CockpitLayout` / `QuoteStockRow` 继续用。快讯新条全站右上角弹 3 分钟（Layout 订 `telegraphHub`，首屏不弹，最多 4 条叠，悬停先不撤，不另开轮询）。
 
 东财 `push2` / `push2delay` 主机轮询只在东财挂了、有的格子活有的死时再动。
 
