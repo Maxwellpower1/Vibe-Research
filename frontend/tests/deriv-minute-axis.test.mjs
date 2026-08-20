@@ -59,6 +59,14 @@ function derivMinuteSlots(td, kind) {
       ...expandIncl(td, 13 * 60, 15 * 60),
     ];
   }
+  if (kind === "cmd23") {
+    return [
+      ...expandIncl(night, 21 * 60, 23 * 60),
+      ...expandIncl(td, 9 * 60, 10 * 60 + 15),
+      ...expandIncl(td, 10 * 60 + 30, 11 * 60 + 30),
+      ...expandIncl(td, 13 * 60 + 30, 15 * 60),
+    ];
+  }
   return [
     ...expandIncl(night, 21 * 60, 23 * 60 + 59),
     ...expandIncl(td, 0, 2 * 60 + 30),
@@ -78,13 +86,22 @@ function padToSlots(items, slots, timeOf) {
   }
   return slots.map((s) => byKey.get(minuteKey(s)) ?? byHm.get(hmOf(s)) ?? null);
 }
+function hasOvernightPrint(times) {
+  return times.some((t) => {
+    const m = toClockMin(t);
+    return Number.isFinite(m) && m < 6 * 60;
+  });
+}
+function cmdNightKind(times) {
+  return hasOvernightPrint(times) ? "cmd" : "cmd23";
+}
 function kindOfUnd(und, times) {
   const u = String(und || "").trim().toUpperCase();
   const root = /^\d{6}/.test(u) ? u.slice(0, 6) : (u.match(/^([A-Z]+)/) || ["", ""])[1];
-  if (/^85[01]\d{3}$/.test(root)) return times.some(isNightTime) ? "cmd" : "cmdDay";
+  if (/^85[01]\d{3}$/.test(root)) return times.some(isNightTime) ? cmdNightKind(times) : "cmdDay";
   if (/^\d{6}$/.test(root)) return "etf";
   if (["IF", "IH", "IM", "IO", "HO", "MO"].includes(root)) return times.some(isNightTime) ? "index" : "etf";
-  return times.some(isNightTime) ? "cmd" : "cmdDay";
+  return times.some(isNightTime) ? cmdNightKind(times) : "cmdDay";
 }
 function derivSessionIdx(t, kind) {
   const m = toClockMin(t);
@@ -138,9 +155,11 @@ test("kindOfUnd: ETF / 股指日盘 / 商品夜盘", () => {
   assert.equal(kindOfUnd("IF", ["09:31"]), "etf");
   assert.equal(kindOfUnd("IF", ["21:05", "09:31"]), "index");
   assert.equal(kindOfUnd("AU", ["09:01"]), "cmdDay");
-  assert.equal(kindOfUnd("AU2609C952", ["21:05"]), "cmd");
+  assert.equal(kindOfUnd("AU2609C952", ["21:05"]), "cmd23");
+  assert.equal(kindOfUnd("AU2609", ["21:05", "01:10"]), "cmd");
+  assert.equal(kindOfUnd("EG2610", ["21:05", "22:59", "09:01"]), "cmd23");
   assert.equal(kindOfUnd("850001", ["09:01"]), "cmdDay");
-  assert.equal(kindOfUnd("850001", ["21:05"]), "cmd");
+  assert.equal(kindOfUnd("850001", ["21:05"]), "cmd23");
 });
 
 test("spark idx: 早盘远小于收盘", () => {
@@ -234,12 +253,15 @@ function undRootOf(sym) {
 function liveAxisKind(und, times, now) {
   const base = kindOfUnd(und, times);
   const stamp = `${ymdOf(now)} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:00`;
-  if (!isNightTime(stamp)) return base;
+  if (!isNightTime(stamp)) {
+    if (base === "index") return "etf";
+    return base;
+  }
   const u = undRootOf(und);
-  if (/^85[01]\d{3}$/.test(u)) return "cmd";
+  if (/^85[01]\d{3}$/.test(u)) return cmdNightKind(times);
   if (/^\d{6}$/.test(u)) return "etf";
   if (["IF", "IH", "IM", "IO", "HO", "MO"].includes(u)) return "index";
-  return "cmd";
+  return cmdNightKind(times);
 }
 function derivLiveNow(now) {
   const day = now.getDay();
@@ -258,9 +280,31 @@ function frameTradingDays(times, days, now) {
   return tds;
 }
 
+test("日盘股指从 09:30 贴左, 商品有夜盘从 21:00 贴左", () => {
+  const now = new Date(2026, 7, 20, 11, 10, 0);
+  assert.equal(liveAxisKind("IF2608", ["2026-08-19 21:05:00", "2026-08-20 09:31:00"], now), "etf");
+  assert.equal(liveAxisKind("AG2609", ["2026-08-19 21:05:00", "2026-08-20 01:10:00"], now), "cmd");
+  assert.equal(liveAxisKind("EG2610", ["2026-08-19 21:05:00", "2026-08-20 09:01:00"], now), "cmd23");
+  const ifSlots = derivMinuteSlots("2026-08-20", "etf");
+  assert.equal(ifSlots[0].slice(11, 16), "09:30");
+  const agSlots = derivMinuteSlots("2026-08-20", "cmd");
+  assert.equal(agSlots[0].slice(11, 16), "21:00");
+});
+
+test("EG 23:00 收盘接到 09:00, 不铺 23:00-02:30 真空", () => {
+  const slots = derivMinuteSlots("2026-08-20", "cmd23");
+  const hms = slots.map((s) => s.slice(11, 16));
+  assert.equal(hms[0], "21:00");
+  const i23 = hms.lastIndexOf("23:00");
+  assert.ok(i23 >= 0);
+  assert.equal(hms[i23 + 1], "09:00");
+  assert.ok(!hms.includes("00:00"));
+  assert.ok(!hms.includes("02:30"));
+});
+
 test("夜盘无分钟点也切到当夜交易日轴", () => {
   const now = new Date(2026, 7, 19, 23, 58, 0);
-  assert.equal(liveAxisKind("AG2609", ["2026-08-19 09:01:00"], now), "cmd");
+  assert.equal(liveAxisKind("AG2609", ["2026-08-19 09:01:00"], now), "cmd23");
   assert.equal(liveAxisKind("IF2609", ["2026-08-19 09:31:00"], now), "index");
   assert.equal(liveAxisKind("510050", ["2026-08-19 09:31:00"], now), "etf");
   assert.deepEqual(

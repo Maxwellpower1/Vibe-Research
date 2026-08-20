@@ -13,7 +13,7 @@ import { derivSession } from "./derivShared";
 import {
   BaselineSeries, CandlestickSeries, HistogramSeries, LineSeries, applyTimeLabels,
   baselineOpts, candleOpts, candleValues, finiteLine, hoverIdxFromParam,
-  overlayLineOpts, seriesAlive, showLatest, sparseLine, styleIvOverlay, styleLastTag,
+  overlayLineOpts, seriesAlive, showLatest, showSession, sparseLine, styleIvOverlay, styleLastTag,
   styleOiOverlay, styleVolOverlay, useLcChart, volOpts, volValues, wipeLc, IV_COLOR, OI_COLOR,
   type ISeriesApi,
 } from "@/lib/lcChart";
@@ -110,7 +110,7 @@ export function minuteFrame(
   if (tds.length === 0) return { ...EMPTY_MIN, days };
   const want = new Set(tds);
   const bars = all.filter((b) => want.has(tradingDayOf(b.t)));
-  const kind = liveAxisKind(und, [...bars.map((b) => b.t), stamp], now);
+  const kind = liveAxisKind(und, [...all.map((b) => b.t), stamp], now);
   const { cats, splitAt } = concatDaySlots(tds, kind);
   const padded = padToSlots(bars, cats, (b) => b.t);
   const prices = padded.map((b) => b?.close ?? null);
@@ -450,7 +450,7 @@ export function OptionChartCard({ pick, mode, tick }: {
       },
     });
     bag.current.oi?.setData(finiteLine(minData?.oi ?? []));
-    chart.timeScale().fitContent();
+    showSession(chart, cats.length);
   }, [pick, mode, dailyBars, dailyIv, minData, chartRef, labelsRef]);
 
   let head: { label: string; toneCls: string } | null = null;

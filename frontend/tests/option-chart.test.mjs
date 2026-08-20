@@ -171,9 +171,9 @@ test("驾驶舱日K分时叠在同一张卡", async () => {
   const src = await readFile(new URL("../src/pages/DerivCockpit.tsx", import.meta.url), "utf8");
   assert.ok(src.includes('id: "opt-charts"'), "一张图卡");
   assert.ok(!src.includes('id: "opt-daily"') && !src.includes('id: "opt-minute"'), "不再并排两卡");
-  assert.ok(src.includes('mode="daily"') && src.includes('mode="minute"'), "上日K下分时");
+  assert.ok(/mode="minute"[\s\S]*mode="daily"/.test(src), "上分时下日K");
   assert.ok(src.includes("defaultW: 0.36") && src.includes("defaultW: 0.20"), "行情观察/日历宽度");
-  assert.ok(src.includes("defaultW: 0.78") && src.includes("defaultW: 0.22"), "T 表主宽, 图卡一小条");
+  assert.ok(src.includes("defaultW: 0.68") && src.includes("defaultW: 0.32"), "T 表主宽, 图卡约占三分之一");
   assert.ok(src.includes("defaultH: 0.29") && src.includes("defaultH: 0.71"), "首行回原高, T 区加高");
   assert.ok(src.includes('kind: "und"'), "点行情观察出标的日K/分时");
   assert.ok(src.includes("undChart"), "行情观察行带标的码给图卡");
@@ -212,6 +212,7 @@ test("驾驶舱日K分时吃 dataview tick", async () => {
   assert.ok(card.includes("Math.abs(v) >= 10_000"), "金价两位小数, 银价一位");
   assert.ok(card.includes('pick?.kind === "und"') && card.includes("ovlabLastBar"), "期货标的 last-bar 做底");
   assert.ok(card.includes("liveAxisKind"), "夜盘无分钟点也铺当夜轴");
+  assert.ok(card.includes("showSession"), "分时开盘贴左, 不 fitContent 挤到右侧");
 });
 
 test("自选最新叠 dataview", async () => {

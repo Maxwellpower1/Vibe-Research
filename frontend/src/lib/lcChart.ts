@@ -359,10 +359,37 @@ export function applyTimeLabels(
     timeScale: {
       tickMarkFormatter: (t: Time) => formatLabel(labelAt(t, labelsRef.current), mode) || null,
       fixLeftEdge: lock,
-      fixRightEdge: lock,
+      // hm: leftover space stays on the right so 09:30 sits on the left.
+      fixRightEdge: mode === "mdhm",
       lockVisibleTimeRangeOnResize: lock,
     },
   });
+}
+
+/** Session axis: open flush left. Do not pin the right edge (that parks slack on the left). */
+export function showSession(chart: IChartApi, n: number): void {
+  if (n <= 0) return;
+  const last = Math.max(-0.5, n - 0.5);
+  const apply = () => {
+    try {
+      chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: last });
+    } catch {
+      /* chart already removed */
+    }
+  };
+  chart.applyOptions({
+    timeScale: {
+      rightOffset: 0,
+      minBarSpacing: 0.2,
+      barSpacing: 1,
+      fixLeftEdge: true,
+      fixRightEdge: false,
+      shiftVisibleRangeOnNewBar: false,
+      lockVisibleTimeRangeOnResize: true,
+    },
+  });
+  apply();
+  requestAnimationFrame(apply);
 }
 
 export function showLatest(chart: IChartApi, n: number, view: number): void {

@@ -25,6 +25,9 @@ test("lcChart 是 K/分时共用封装, 不画 TradingView logo", () => {
   assert.match(src, /lastValueVisible: true/);
   assert.match(src, /styleLastTag/);
   assert.doesNotMatch(src, /visible: !glance/);
+  assert.match(src, /export function showSession/);
+  assert.match(src, /fixRightEdge: mode === "mdhm"/);
+  assert.match(src, /shiftVisibleRangeOnNewBar: false/);
 });
 
 test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {

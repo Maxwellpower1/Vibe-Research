@@ -243,8 +243,8 @@ export function DerivCockpit() {
           hint: "理论价=Black-76 · 默认 ATM 购出图",
           icon: <Table size={14} />,
           accent: "#e879f9",
-          defaultW: 0.78,
-          maxZoomW: 0.92,
+          defaultW: 0.68,
+          maxZoomW: 0.88,
           mobileH: "h-[56vh]",
           body: (
             <TQuotePanel
@@ -262,7 +262,7 @@ export function DerivCockpit() {
           hint: optPick ? optPick.name : "点行情观察或 T 表",
           icon: <CandlestickChart size={14} />,
           accent: "#f472b6",
-          defaultW: 0.22,
+          defaultW: 0.32,
           mobileH: "h-[40vh]",
           bodyClassName: "overflow-hidden",
           body: (
@@ -270,14 +270,14 @@ export function DerivCockpit() {
               <div className="min-h-0 flex-1 border-b border-slate-800/80">
                 <OptionChartCard
                   pick={optPick}
-                  mode="daily"
+                  mode="minute"
                   tick={chartTick}
                 />
               </div>
               <div className="min-h-0 flex-1">
                 <OptionChartCard
                   pick={optPick}
-                  mode="minute"
+                  mode="daily"
                   tick={chartTick}
                 />
               </div>

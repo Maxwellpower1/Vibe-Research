@@ -1,6 +1,6 @@
 /** Futures/option minute axis: X spans the full session, prints stay left at open. */
 
-export type DerivAxisKind = "etf" | "index" | "cmd" | "cmdDay";
+export type DerivAxisKind = "etf" | "index" | "cmd" | "cmd23" | "cmdDay";
 
 const INDEX_ROOTS = new Set(["IF", "IH", "IM", "IO", "HO", "MO"]);
 
@@ -72,13 +72,25 @@ export function undRootOf(sym: string): string {
   return m ? m[1] : s;
 }
 
+/** 00:00-05:59 prints mean the night session runs past 23:00 (AU), not EG-style 23:00 close. */
+export function hasOvernightPrint(times: string[]): boolean {
+  return times.some((t) => {
+    const m = toClockMin(t);
+    return Number.isFinite(m) && m < 6 * 60;
+  });
+}
+
+function cmdNightKind(times: string[]): DerivAxisKind {
+  return hasOvernightPrint(times) ? "cmd" : "cmd23";
+}
+
 export function kindOfUnd(und: string | undefined, times: string[]): DerivAxisKind {
   const u = undRootOf(und || "");
   // 同花顺商品指数 850xxx/851xxx: 6 位数字但走商品时段, 不是 ETF
-  if (/^85[01]\d{3}$/.test(u)) return times.some(isNightTime) ? "cmd" : "cmdDay";
+  if (/^85[01]\d{3}$/.test(u)) return times.some(isNightTime) ? cmdNightKind(times) : "cmdDay";
   if (/^\d{6}$/.test(u)) return "etf";
   if (INDEX_ROOTS.has(u)) return times.some(isNightTime) ? "index" : "etf";
-  return times.some(isNightTime) ? "cmd" : "cmdDay";
+  return times.some(isNightTime) ? cmdNightKind(times) : "cmdDay";
 }
 
 /** Same clock windows as derivShared.derivSession (local, no holiday). */
@@ -101,12 +113,16 @@ export function liveAxisKind(
   now = new Date(),
 ): DerivAxisKind {
   const base = kindOfUnd(und, times);
-  if (!isNightTime(clockStamp(now))) return base;
+  // Index day session starts 09:30. Commodity with night keeps last night 21:00 on the left.
+  if (!isNightTime(clockStamp(now))) {
+    if (base === "index") return "etf";
+    return base;
+  }
   const u = undRootOf(und || "");
-  if (/^85[01]\d{3}$/.test(u)) return "cmd";
+  if (/^85[01]\d{3}$/.test(u)) return cmdNightKind(times);
   if (/^\d{6}$/.test(u)) return "etf";
   if (INDEX_ROOTS.has(u)) return "index";
-  return "cmd";
+  return cmdNightKind(times);
 }
 
 /** History days plus the live trading day, so tonight is on the axis before the first print. */
@@ -157,6 +173,15 @@ export function derivMinuteSlots(td: string, kind: DerivAxisKind): string[] {
       ...expandIncl(night, 21 * 60, 23 * 60),
       ...expandIncl(td, 9 * 60 + 30, 11 * 60 + 30),
       ...expandIncl(td, 13 * 60, 15 * 60),
+    ];
+  }
+  // EG / plastics: 21:00-23:00 then 09:00, no 23:00-02:30 vacuum.
+  if (kind === "cmd23") {
+    return [
+      ...expandIncl(night, 21 * 60, 23 * 60),
+      ...expandIncl(td, 9 * 60, 10 * 60 + 15),
+      ...expandIncl(td, 10 * 60 + 30, 11 * 60 + 30),
+      ...expandIncl(td, 13 * 60 + 30, 15 * 60),
     ];
   }
   return [
@@ -218,6 +243,7 @@ export function derivSessionSpan(kind: DerivAxisKind): number {
   if (kind === "etf") return 240;
   if (kind === "cmdDay") return 225;
   if (kind === "index") return 360;
+  if (kind === "cmd23") return 346;
   return 555;
 }
 
@@ -245,6 +271,11 @@ export function derivSessionIdx(t: string, kind: DerivAxisKind): number {
     return 225;
   };
   if (kind === "cmdDay") return Math.max(0, Math.min(day(m), 225));
+  if (kind === "cmd23") {
+    if (m >= 21 * 60) return Math.max(0, Math.min(m - 21 * 60, 120));
+    if (m < 6 * 60) return 120;
+    return 121 + day(m);
+  }
   if (m >= 21 * 60) return Math.min(m - 21 * 60, 180);
   if (m < 6 * 60) return Math.min(180 + m, 330);
   return 330 + day(m);
