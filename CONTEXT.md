@@ -47,9 +47,14 @@ ovlab 缓存随交易时段：盘中过期重取、上游失败回落上一笔�
 _Avoid_: 第二条 /api/ovlab/market 轮询, 同一屏两条分时源（新浪 commodity-minutes 不进这页）, CTP 接口, MQTT 写入 ovlab_flow_alert, MQTT 当第二条行情轮询
 
 **套利驾驶舱**:
-`/arb` 顶栏紧挨期权期货的独立驾驶舱（不是期权页签）。格子：跨期价差（近月-次月）| 跨品种价差（近月对近月 1:1）| 期现（默认股指；商品走生意社现期）| 点对出价差图（分时/日K）+ 两腿仓单。名单 `backend/arb_catalog.py`，前端 `frontend/src/config/arb.ts` 必须同序同码。跨期/跨品种/股指近月走 `GET /api/ovlab/arb-board`（钥匙 `ovlab_arb_board` 60s 随时段冻结），内部复用 `ovlab_future_ts::{und}`，不打 `/api/ovlab/market`，不用 `future-ts-all`。股指期现：IF/IH/IM 近月对指数/ETF，现货腿走报价中心（上证50 `sh000016` 只订报价、不进指数目录；ETF 价×1000 与期货同量纲）。商品期现读 `spot_table`。价差图：期货腿 ovlab `history`，指数/ETF 腿 `loadLightKline`，前端相减，图走 `lightweight-charts` Baseline 零轴（封装 `frontend/src/lib/lcChart.ts`，主图 HUD 读价差, 右侧价签同 `LcHoverTag`）；仓单复用 `ovlab_wh_history`。MQTT dataview 叠两腿最新（同口网页直连，不带 pin），不写 REST 钥匙。不进复盘清单/预热。CTP 不进这一页。只客观呈现价差，不评分、不标可做。
+`/arb` 顶栏紧挨期权期货的独立驾驶舱（不是期权页签）。格子：跨期价差（近月-次月）| 跨品种价差（近月对近月 1:1）| 期现（股指走报价中心；现期 tab 生意社现期表 + 化工现货，A 股宏观观察不再画）| 点对出价差图（分时/日K）+ 两腿仓单。名单 `backend/arb_catalog.py`，前端 `frontend/src/config/arb.ts` 必须同序同码。跨期/跨品种/股指近月走 `GET /api/ovlab/arb-board`（钥匙 `ovlab_arb_board` 60s 随时段冻结），内部复用 `ovlab_future_ts::{und}`，不打 `/api/ovlab/market`，不用 `future-ts-all`。股指期现：IF/IH/IM 近月对指数/ETF，现货腿走报价中心（上证50 `sh000016` 只订报价、不进指数目录；ETF 价×1000 与期货同量纲）。商品期现读 `spot_table`。价差图：期货腿 ovlab `history`，指数/ETF 腿 `loadLightKline`，前端相减，图走 `lightweight-charts` Baseline 零轴（封装 `frontend/src/lib/lcChart.ts`，主图 HUD 读价差, 右侧价签同 `LcHoverTag`）；仓单复用 `ovlab_wh_history`。MQTT dataview 叠两腿最新（同口网页直连，不带 pin），不写 REST 钥匙。不进复盘清单/预热。CTP 不进这一页。只客观呈现价差，不评分、不标可做。
 入口: `frontend/src/pages/ArbCockpit.tsx` + `frontend/src/hooks/useArbData.ts` + `frontend/src/components/arb/`。
 _Avoid_: 第二条 /api/ovlab/market 轮询, future-ts-all, 第二份配对 JSON, 把套利塞进 /derivatives, 上证50 塞进指数目录, 新浪 commodity-minutes, CTP, 持有成本/套利评分
+
+**全球情绪**:
+加密 Alternative.me、美股 CNN Fear & Greed、日/港/金/油波动率反转分（0–100）。名单只在后端一份。复盘「涨跌分布 / 广度」格下部和美股页同一块。问 AI 叠进【宏观观察】，不另开 EXPECTED。
+入口: `backend/fear_greed.py`；HTTP `GET /api/market/fear-greed`（钥匙 `fear_greed`，300s 过期再取）。不进指数目录、不进报价中心、不进预热钟。模拟分丢掉。
+_Avoid_: 第二份情绪名单, 第二条报价轮询, 把大盘股 52 周位置塞进来
 
 **同花顺行情**:
 fuyao 网关（`quota-h.10jqka.com.cn`）的快照 / 日 K / 分钟线：股票（沪 17 深 33）、指数（沪 16 深 32）、同花顺指数（64，含商品 850xxx）、板块（48）。免鉴权，Referer 必须带 stockpage 代码路径，裸域名 403。字段是数字 ID；涨跌幅不取上游 199112（语义随市场漂移），由 最新/昨收 现算。不进报价中心、不进复盘清单，是独立数据源。
@@ -136,6 +141,7 @@ K/分时（A 股轻量图、美股日K、期权日K/分时、套利价差）和�
 - 套利目录 / 套利驾驶舱：`backend/tests/test_arb_catalog.py`（前后端同序同码；`sh000016` 不进指数目录）+ `test_ovlab.py` arb-board（复用 future-ts，不打 market）+ `frontend/tests/page-nav.test.mjs`（`/arb` 紧挨 `/derivatives`，无 CTP）+ `frontend/tests/arb-chart.test.mjs` + `frontend/tests/lc-chart.test.mjs`
 - OpenVlab MQTT：`backend/tests/test_ovlab_mqtt.py`（sidecar 三条 topic / 解析 / 不写 `ovlab_flow_alert`；SSE `/mqtt/stream` 兜底）+ `frontend/tests/ovlab-mqtt.test.mjs`（网页 `mqtt.connect` / `wss://emqx.openvlab.cn/mqtt`）+ `frontend/tests/alert-panel.test.mjs`；live 连 broker 在 `test_live.py`
 - 同花顺行情：`backend/tests/test_ths_quote.py`（市场码归位、pct 现算、缓存上一笔）+ `frontend/tests/ths-cmd-index.test.mjs`（驾驶舱指数 tab 走 `/api/ths`，不进指数目录/报价中心）
+- 全球情绪：`backend/tests/test_fear_greed.py`（一份名单、模拟分丢掉、HTTP/问 AI 同一把 `fear_greed` 钥匙、不进预热钟）+ `frontend/tests/spark-axis.test.mjs`（涨跌分布格下部 / 美股页走 `api.fearGreed`，不进报价中心）
 - 报价中心：`frontend/tests/quote-hub.test.mjs`（K 线页 / 自选公告走 `useQuotes`）
 - 缓存键：预热填过 `world_indices` 后，`get_global_indices` 不再打上游；热槽过期仍读上一笔（`backend/tests/test_clock_serve.py`、`backend/tests/test_cache.py`）
 - 标的池 / 横截面：`backend/tests/test_cross_section.py`（只有 `a-share-codes.json`；快照不写报价 5 秒缓存）

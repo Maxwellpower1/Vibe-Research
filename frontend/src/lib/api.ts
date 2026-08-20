@@ -337,6 +337,21 @@ export interface FutureDaily {
   code: string; source?: string;
   points: Array<{ t: string; o: number; h: number; l: number; c: number; v: number }>;
 }
+export interface FearGreedItem {
+  key: string;
+  title: string;
+  subtitle?: string;
+  score: number | null;
+  label?: string | null;
+  raw?: number | null;
+  detail?: string | null;
+  timestamp?: string | null;
+  source?: string | null;
+}
+export interface FearGreedBoard {
+  items: FearGreedItem[];
+  updated?: string;
+}
 export interface StockBoards {
   code: string; name: string; industry: string; area: string;
   concepts: string[]; source?: string;
@@ -1576,6 +1591,7 @@ export const api = {
     get<BoardFlowIntraday[]>(`/market/board-flow-intraday?n=${n}${curves ? "" : "&curves=0"}`),
   commodities: (codes?: string) =>
     get<Record<string, CommodityQuote>>(`/market/commodities${codes ? `?codes=${encodeURIComponent(codes)}` : ""}`),
+  fearGreed: () => get<FearGreedBoard>("/market/fear-greed"),
   commodityMinutes: (codes: string) =>
     get<Record<string, CommodityMinute | null>>(`/market/commodity-minutes?codes=${encodeURIComponent(codes)}`),
   spotTable: () => get<SpotTable>("/market/spot-table"),

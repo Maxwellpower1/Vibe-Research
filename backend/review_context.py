@@ -308,6 +308,30 @@ def _commodities(quotes: Any) -> str | None:
     return "；".join(lines) if lines else None
 
 
+def _fear_greed(raw: Any) -> str | None:
+    items = raw.get("items") if isinstance(raw, dict) else raw
+    if not isinstance(items, list):
+        return None
+    lines = []
+    for it in items:
+        if not isinstance(it, dict) or it.get("score") is None:
+            continue
+        title = str(it.get("title") or it.get("key") or "").strip()
+        if not title:
+            continue
+        label = str(it.get("label") or "").strip()
+        extra = str(it.get("detail") or "").strip()
+        bit = f"{title} {int(it['score'])} {label}".strip()
+        if extra:
+            bit = f"{bit} {extra}"
+        lines.append(bit)
+    return "全球情绪 " + "；".join(lines) if lines else None
+
+
+def _macro(data: dict) -> str | None:
+    return _join([_commodities(data.get("commodities")), _fear_greed(data.get("fear_greed"))]) or None
+
+
 def _news(items: Any) -> str | None:
     rows = take(items, 12)
     if not rows:
@@ -429,7 +453,7 @@ def pack_review_context(data: dict[str, Any]) -> str:
         _section("板块资金", _flow(data.get("board_flow"))),
         _section("主力净流入", _money(data.get("money_rows"))),
         _section("个股榜单", _rank(data)),
-        _section("宏观观察", _commodities(data.get("commodities"))),
+        _section("宏观观察", _macro(data)),
         _section("实时热点", _news(data.get("news"))),
         _section("自选", _watch(data.get("watch"))),
         _section("龙虎榜", _lhb(data.get("lhb"))),

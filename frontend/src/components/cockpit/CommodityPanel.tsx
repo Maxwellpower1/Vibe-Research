@@ -9,7 +9,6 @@ import { sparkSessionForRegion } from "@/lib/sparkAxis";
 import { cn } from "@/lib/utils";
 
 const MINUTE_MS = 60_000;
-const SPOT_MS = 8 * 3600_000;
 const DAILY_MS = 3600_000;
 const FUT_CODES = COMMODITIES.map((c) => c.code);
 const MACRO_CODES = MACRO_INDEX_DEFS.map((d) => d.code);
@@ -20,17 +19,10 @@ const FUT_TAIL = [
 ];
 
 export function CommodityPanel() {
-  const [tab, setTab] = useState<"fut" | "spot" | "daily">("fut");
+  const [tab, setTab] = useState<"fut" | "daily">("fut");
   const hub = useQuotes([...FUT_CODES, ...MACRO_CODES]);
   const indexMinutes = useMinutes(MACRO_CODES);
   const { data: minutes, error } = usePolling(() => api.commodityMinutes(COMMODITY_CODES), MINUTE_MS, []);
-  const { data: spot, error: spotErr } = usePolling(() => api.spotTable(), SPOT_MS, [], tab === "spot");
-  const { data: chem } = usePolling(
-    () => api.chemSpot("7250", "碳酸亚乙烯酯"),
-    SPOT_MS,
-    [],
-    tab === "spot",
-  );
   const { data: daily } = usePolling(async () => {
     const out: Record<string, FutureDaily | null> = {};
     await Promise.all(
@@ -71,7 +63,6 @@ export function CommodityPanel() {
       <div className="flex shrink-0 gap-1 px-2 py-1">
         {([
           ["fut", "标的"],
-          ["spot", "现期"],
           ["daily", "日K"],
         ] as const).map(([k, label]) => (
           <button
@@ -153,56 +144,6 @@ export function CommodityPanel() {
                 />
               );
             })}
-          </>
-        )}
-        {tab === "spot" && (
-          <>
-            {chem && (
-              <div className="mb-1 flex flex-wrap items-baseline gap-x-2 px-1 py-0.5 text-[11px]">
-                <span className="text-slate-200">{chem.name}</span>
-                <span className="font-mono tabular-nums text-slate-300">{chem.price}</span>
-                <span className="text-[9px] text-slate-600">{chem.date}</span>
-                <span className="text-[9px] text-slate-600">{chem.quotes} 报价</span>
-                {chem.history?.length > 0 && (
-                  <span className="text-[9px] text-slate-600">
-                    {chem.history.slice(-5).map((h) => h.p).join(" / ")}
-                  </span>
-                )}
-              </div>
-            )}
-            {!spot && (
-              <p className="py-6 text-center text-[11px] text-slate-600">
-                {spotErr ? "生意社现期表未接通, 自动重试中" : "加载中…"}
-              </p>
-            )}
-            {spot && (
-              <>
-                <p className="px-1 pb-1 text-[9px] text-slate-600">
-                  生意社 {spot.date} · 现货/期货/基差 · 只客观呈现
-                </p>
-                <div className="grid grid-cols-[1fr_52px_52px_48px] gap-1 px-1 text-[9px] text-slate-600">
-                  <span>品种</span>
-                  <span className="text-right">现货</span>
-                  <span className="text-right">期货</span>
-                  <span className="text-right">基差</span>
-                </div>
-              </>
-            )}
-            {(spot?.rows ?? []).slice(0, 40).map((r) => (
-              <div
-                key={`${r.exchange}-${r.name}-${r.contract}`}
-                className="grid grid-cols-[1fr_52px_52px_48px] items-center gap-1 px-1 py-0.5 text-[11px] tabular-nums"
-              >
-                <span className="truncate text-slate-200" title={`${r.exchange} ${r.contract}`}>
-                  {r.name}
-                </span>
-                <span className="text-right text-slate-300">{r.spot || "—"}</span>
-                <span className="text-right text-slate-400">{r.futures || "—"}</span>
-                <span className={cn("text-right", r.basis > 0 ? "text-rose-400" : r.basis < 0 ? "text-emerald-400" : "text-slate-500")}>
-                  {r.basis ? r.basis.toFixed(1) : "—"}
-                </span>
-              </div>
-            ))}
           </>
         )}
       </div>

@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FearGreedPanel } from "@/components/cockpit/FearGreedPanel";
 import { pctColor } from "@/components/review/format";
 import type { MarketBreadth, MarketSentiment } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -7,6 +8,26 @@ import { cn } from "@/lib/utils";
 function fmtPct(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
+
+function CountChip({
+  label,
+  n,
+  tone,
+}: {
+  label: string;
+  n: number;
+  tone: "up" | "flat" | "down";
+}) {
+  const dot = tone === "up" ? "bg-danger" : tone === "down" ? "bg-success" : "bg-slate-400";
+  const num = tone === "up" ? "text-danger" : tone === "down" ? "text-success" : "text-slate-400";
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <span className={cn("inline-block h-1.5 w-1.5 shrink-0 rounded-full", dot)} />
+      <span className="text-slate-100">{label}</span>
+      <span className={cn("font-mono tabular-nums", num)}>{n}</span>
+    </span>
+  );
 }
 
 interface Props {
@@ -35,7 +56,7 @@ export function ReviewSentimentPanel({
   const ready = hasCounts || hasHist;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-auto px-2 py-1.5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden px-2 py-1">
       {!ready && !ovDone ? (
         pending
       ) : !ready ? (
@@ -44,9 +65,40 @@ export function ReviewSentimentPanel({
           description="可点刷新重试；非交易时段或数据源限流时属正常。"
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <div className="flex min-h-0 flex-1 flex-col gap-1">
+          <div className="flex shrink-0 items-start justify-between gap-2 text-[11px]">
+            {hasCounts && (
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                <CountChip label="涨" n={up} tone="up" />
+                <CountChip label="平" n={flat} tone="flat" />
+                <CountChip label="跌" n={down} tone="down" />
+              </div>
+            )}
+            {hasHist && (
+              <div className="flex shrink-0 flex-col items-end gap-0.5 text-right">
+                <span className="text-[10px] text-slate-500">
+                  平均 <span className={cn("font-mono tabular-nums", pctColor(breadth!.avg ?? 0))}>{fmtPct(breadth!.avg)}</span>
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  中位 <span className={cn("font-mono tabular-nums", pctColor(breadth!.p50 ?? 0))}>{fmtPct(breadth!.p50)}</span>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {hasCounts && (
+            <div
+              className="flex h-2 shrink-0 overflow-hidden rounded-full bg-slate-800"
+              title={`上涨 ${up} · 平盘 ${flat} · 下跌 ${down}`}
+            >
+              <div className="bg-danger/85 transition-[width] duration-500 ease-out" style={{ width: `${upShare * 100}%` }} />
+              <div className="bg-slate-500/45 transition-[width] duration-500 ease-out" style={{ width: `${flatShare * 100}%` }} />
+              <div className="bg-success/85 transition-[width] duration-500 ease-out" style={{ width: `${downShare * 100}%` }} />
+            </div>
+          )}
+
           {hasHist && (
-            <div className="grid min-h-[7rem] flex-1 grid-cols-8 items-end gap-1 pt-1">
+            <div className="grid min-h-0 flex-1 grid-cols-8 items-end gap-1">
               {breadth!.histogram!.map((h, i) => {
                 const max = Math.max(...breadth!.histogram!.map((x) => x.count), 1);
                 const upSide = i >= 4;
@@ -72,54 +124,7 @@ export function ReviewSentimentPanel({
             </div>
           )}
 
-          {hasCounts && (
-            <div className="shrink-0 space-y-1.5">
-              <div
-                className="flex h-2.5 overflow-hidden rounded-full bg-slate-800"
-                title={`上涨 ${up} · 平盘 ${flat} · 下跌 ${down}`}
-              >
-                <div className="bg-danger/85 transition-[width] duration-500 ease-out" style={{ width: `${upShare * 100}%` }} />
-                <div className="bg-slate-500/45 transition-[width] duration-500 ease-out" style={{ width: `${flatShare * 100}%` }} />
-                <div className="bg-success/85 transition-[width] duration-500 ease-out" style={{ width: `${downShare * 100}%` }} />
-              </div>
-              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
-                <div className="rounded bg-danger/10 px-2 py-1 text-danger">
-                  涨 <span className="font-mono tabular-nums">{up}</span>
-                  <span className="ml-1 text-[10px] text-danger/70">{(upShare * 100).toFixed(1)}%</span>
-                </div>
-                <div className="rounded bg-slate-800/70 px-2 py-1 text-slate-400">
-                  平 <span className="font-mono tabular-nums">{flat}</span>
-                </div>
-                <div className="rounded bg-success/10 px-2 py-1 text-success">
-                  跌 <span className="font-mono tabular-nums">{down}</span>
-                  <span className="ml-1 text-[10px] text-success/70">{(downShare * 100).toFixed(1)}%</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {hasHist && (
-            <div className="grid shrink-0 grid-cols-3 gap-1.5">
-              <div className="rounded-md border border-slate-700/40 bg-slate-900/40 px-2 py-1.5">
-                <p className="text-[10px] text-slate-500">平均涨跌</p>
-                <p className={cn("mt-0.5 font-mono text-sm font-semibold tabular-nums", pctColor(breadth!.avg ?? 0))}>
-                  {fmtPct(breadth!.avg)}
-                </p>
-              </div>
-              <div className="rounded-md border border-slate-700/40 bg-slate-900/40 px-2 py-1.5">
-                <p className="text-[10px] text-slate-500">中位涨跌</p>
-                <p className={cn("mt-0.5 font-mono text-sm font-semibold tabular-nums", pctColor(breadth!.p50 ?? 0))}>
-                  {fmtPct(breadth!.p50)}
-                </p>
-              </div>
-              <div className="rounded-md border border-slate-700/40 bg-slate-900/40 px-2 py-1.5">
-                <p className="text-[10px] text-slate-500">家数</p>
-                <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-slate-200">
-                  {breadth!.n}
-                </p>
-              </div>
-            </div>
-          )}
+          <FearGreedPanel compact className="shrink-0" />
         </div>
       )}
     </div>

@@ -131,7 +131,7 @@ export function ArbCockpit() {
         {
           id: "arb-basis",
           title: "期现基差",
-          hint: "股指走报价中心 · 商品走生意社",
+          hint: "股指走报价中心 · 现期走生意社",
           icon: <Table2 size={14} />,
           accent: "#f59e0b",
           defaultW: 0.32,

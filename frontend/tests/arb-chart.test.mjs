@@ -75,6 +75,17 @@ test("ovlab 日K trade_date=YYYYMMDD, 不能用 length>=10 丢掉", () => {
   assert.equal(dayKey("2026-08-19 15:00:00"), "2026-08-19");
 });
 
+test("现期只挂套利期现卡, A股宏观观察不再画", () => {
+  const basis = readFileSync(join(root, "src/components/arb/BasisPanel.tsx"), "utf8");
+  const goods = readFileSync(join(root, "src/components/cockpit/CommodityPanel.tsx"), "utf8");
+  assert.match(basis, /\["spot", "现期"\]/);
+  assert.match(basis, /api\.spotTable/);
+  assert.match(basis, /api\.chemSpot\("7250"/);
+  assert.doesNotMatch(goods, /spotTable/);
+  assert.doesNotMatch(goods, /chemSpot/);
+  assert.doesNotMatch(goods, /\["spot", "现期"\]/);
+});
+
 test("parseLight 分时保留时分, 日K才收成日期", () => {
   // dayKey("2026-08-19 09:31") -> "2026-08-19". Minute join then has no overlapping slots.
   assert.match(src, /parseLight\(kl\?\.bars,\s*mode === "daily"\)/);

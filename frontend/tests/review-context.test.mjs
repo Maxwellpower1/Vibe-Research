@@ -84,8 +84,19 @@ test("limit-up card polls review snapshot top while A-share is open", () => {
 
 test("breadth panel clock is last fetch, not legu session close", () => {
   assert.match(reviewSrc, /breadthLabel/);
+  assert.match(reviewSrc, /家数 \{d\.breadth\.n\}/);
   assert.doesNotMatch(reviewSrc, /sentiment\?\.date/);
   assert.match(hookSrc, /breadth\?\.updated/);
+});
+
+test("breadth strip is not three cells", async () => {
+  const src = await readFile(new URL("../src/components/review/ReviewSentimentPanel.tsx", import.meta.url), "utf8");
+  assert.match(src, /平 <span className="font-mono tabular-nums">\{flat\}<\/span>/);
+  assert.match(src, /sharePct\(flat, total\)/);
+  assert.match(src, /平均 /);
+  assert.match(src, /中位 /);
+  assert.doesNotMatch(src, /家数/);
+  assert.doesNotMatch(src, /grid-cols-3 gap-1.5/);
 });
 
 test("Daily Review and Ask AI send the packed snapshot", () => {

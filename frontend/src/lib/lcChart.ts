@@ -630,7 +630,7 @@ export function setRefPriceLine(
   series: ISeriesApi<SeriesType> | null,
   lineRef: { current: IPriceLine | null },
   price: number | null | undefined,
-  title = "昨",
+  title = "",
   color = "rgba(200,205,214,0.55)",
 ): void {
   if (!series || price == null || !Number.isFinite(price)) {

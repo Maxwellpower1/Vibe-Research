@@ -92,6 +92,7 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
     import astock_boards
     import cockpit_live
     import cross_section
+    import fear_greed
     import lives_feed
 
     kind = "02" if str(sector_kind) == "02" else "01"
@@ -174,6 +175,10 @@ def live_jobs(*, sector_kind: str = "01", news_source: str = "cls") -> list[Job]
                 commodity_quote_ttl(),
                 lambda: cockpit_live.futures_quotes(cockpit_live.DEFAULT_FUTURES),
             ),
+        ),
+        (
+            "fear_greed",
+            lambda: _cached("fear_greed", "board", 300, fear_greed.board, valid=fear_greed.board_ok),
         ),
         ("news", _news),
         ("breadth", cross_section.market_breadth),

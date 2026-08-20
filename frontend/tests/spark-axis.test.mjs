@@ -140,6 +140,26 @@ test("toMinute reads datetime and compact hhmm", () => {
   assert.equal(toMinute("0931"), 9 * 60 + 31);
 });
 
+test("fear-greed hangs on breadth panel and US page, not quote hub", async () => {
+  const goods = await readFile(new URL("../src/components/cockpit/CommodityPanel.tsx", import.meta.url), "utf8");
+  const breadth = await readFile(new URL("../src/components/review/ReviewSentimentPanel.tsx", import.meta.url), "utf8");
+  const panel = await readFile(new URL("../src/components/cockpit/FearGreedPanel.tsx", import.meta.url), "utf8");
+  const us = await readFile(new URL("../src/pages/UsMarket.tsx", import.meta.url), "utf8");
+  const api = await readFile(new URL("../src/lib/api.ts", import.meta.url), "utf8");
+  assert.match(breadth, /<FearGreedPanel compact/);
+  assert.match(panel, /compact \? "grid-cols-6/);
+  assert.doesNotMatch(goods, /FearGreedPanel/);
+  assert.doesNotMatch(goods, /\["fg", "情绪"\]/);
+  assert.match(us, /<FearGreedPanel/);
+  assert.match(panel, /api\.fearGreed/);
+  assert.match(panel, /usePolling/);
+  assert.match(panel, /viewBox="0 0 200 124"/);
+  assert.match(panel, /role="img"/);
+  assert.doesNotMatch(panel, /useQuotes/);
+  assert.match(api, /\/market\/fear-greed/);
+  assert.doesNotMatch(api, /greedyfear\.com/);
+});
+
 test("macro 标的 draws HK JP KR under NQ", async () => {
   const goods = await readFile(new URL("../src/components/cockpit/CommodityPanel.tsx", import.meta.url), "utf8");
   const world = await readFile(new URL("../src/components/cockpit/WorldIndexPanel.tsx", import.meta.url), "utf8");

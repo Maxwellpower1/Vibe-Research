@@ -124,8 +124,9 @@ export function DailyReview() {
           defaultW: 0.24,
           mobileH: "h-[380px]",
           right: (
-            <span className="text-[10px] tabular-nums text-slate-500">
-              {d.breadthLabel}
+            <span className="flex items-center gap-1.5 text-[10px] tabular-nums text-slate-500">
+              {d.breadth?.n ? <span>家数 {d.breadth.n}</span> : null}
+              <span>{d.breadthLabel}</span>
             </span>
           ),
           body: (

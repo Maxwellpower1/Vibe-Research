@@ -5,6 +5,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { LcHoverTag, LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
+import { FearGreedPanel } from "@/components/cockpit/FearGreedPanel";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
 import {
   api, ApiError, fundamentalsSourceLabel, type GlobalStock, type UsKlineBar,
@@ -350,6 +351,8 @@ export function UsMarket() {
           </button>
         }
       />
+
+      <FearGreedPanel className="rounded-xl bg-slate-950/40 ring-1 ring-slate-800/70" />
 
       <GlanceStrip
         title="美股一眼"

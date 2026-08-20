@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ArbIndexRow, SpotTable } from "@/lib/api";
+import type { ArbIndexRow, ChemSpot, SpotTable } from "@/lib/api";
 import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { useQuotes } from "@/lib/quoteHub";
@@ -21,11 +21,12 @@ export function BasisPanel({
   const [tab, setTab] = useState<"idx" | "spot">("idx");
   const quotes = useQuotes(INDEX_CASH_CODES);
   const spot = usePolling(() => api.spotTable(), SPOT_MS, [], tab === "spot");
+  const chem = usePolling(() => api.chemSpot("7250", "碳酸亚乙烯酯"), SPOT_MS, [], tab === "spot");
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 gap-0.5 border-b border-slate-800/60 px-2 py-1">
-        {([["idx", "股指"], ["spot", "商品"]] as const).map(([id, label]) => (
+        {([["idx", "股指"], ["spot", "现期"]] as const).map(([id, label]) => (
           <button
             key={id}
             type="button"
@@ -43,7 +44,7 @@ export function BasisPanel({
         {tab === "idx" ? (
           <IndexBasisTable rows={rows} error={error} quotes={quotes} pick={pick} onPick={onPick} />
         ) : (
-          <SpotTableView data={spot.data} error={spot.error} />
+          <SpotTableView data={spot.data} error={spot.error} chem={chem.data} />
         )}
       </div>
     </div>
@@ -117,10 +118,29 @@ function IndexBasisTable({
   );
 }
 
-function SpotTableView({ data, error }: { data: SpotTable | null; error: string | null }) {
+function SpotTableView({
+  data, error, chem,
+}: {
+  data: SpotTable | null;
+  error: string | null;
+  chem: ChemSpot | null;
+}) {
   if (!data) return <CellEmpty text={error ? "未取到" : "更新中…"} />;
   return (
     <div className="p-1">
+      {chem && (
+        <div className="mb-1 flex flex-wrap items-baseline gap-x-2 px-1 py-0.5 text-[11px]">
+          <span className="text-slate-200">{chem.name}</span>
+          <span className="font-mono tabular-nums text-slate-300">{chem.price}</span>
+          <span className="text-[9px] text-slate-600">{chem.date}</span>
+          <span className="text-[9px] text-slate-600">{chem.quotes} 报价</span>
+          {chem.history?.length > 0 && (
+            <span className="text-[9px] text-slate-600">
+              {chem.history.slice(-5).map((h) => h.p).join(" / ")}
+            </span>
+          )}
+        </div>
+      )}
       <p className="px-1 pb-1 text-[9px] text-slate-600">
         生意社 {data.date} · 现货/期货/基差 · 只客观呈现
       </p>

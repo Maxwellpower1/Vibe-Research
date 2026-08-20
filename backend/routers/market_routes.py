@@ -522,6 +522,18 @@ def market_bond_yield(
         raise HTTPException(502, f"国债收益率异常：{e}") from e
 
 
+@router.get("/api/market/fear-greed")
+def market_fear_greed():
+    """加密 + 美股 CNN + 欧/印/日/港/金/油波动率反转分. 钥匙 fear_greed, 300s."""
+    import fear_greed
+
+    try:
+        data = _cached("fear_greed", "board", 300, fear_greed.board, valid=fear_greed.board_ok)
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(502, f"全球情绪异常：{e}") from e
+
+
 @router.get("/api/market/spot-table")
 def market_spot_table():
     """生意社现货/期货基差对照表. 缓存 8 小时."""
