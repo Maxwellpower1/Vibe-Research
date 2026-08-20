@@ -9,18 +9,34 @@ export default defineConfig(({ mode }) => {
   // 默认用 127.0.0.1 而非 localhost：部分 macOS/Node 会把 localhost 优先解析到 IPv6 ::1，
   // 而后端常只监听 127.0.0.1:8900（IPv4），导致 /api 代理 ECONNREFUSED（issue #8）。
   const apiTarget = env.VITE_API_URL || "http://127.0.0.1:8900";
+  const apiProxy = {
+    target: apiTarget,
+    changeOrigin: true,
+    timeout: 180_000,
+    proxyTimeout: 180_000,
+  };
+  // SSE: the catch-all /api 180s timeout would kill the MQTT stream.
+  const mqttStreamProxy = {
+    target: apiTarget,
+    changeOrigin: true,
+    timeout: 0,
+    proxyTimeout: 0,
+  };
 
   return {
     plugins: [react()],
     resolve: {
       alias: { "@": path.resolve(__dirname, "./src") },
     },
+    optimizeDeps: {
+      include: ["mqtt"],
+    },
     server: {
       host: true,
       port: 5899,
       proxy: {
-        // Settlement range can take ~1s/day against CTP
-        "/api": { target: apiTarget, changeOrigin: true, timeout: 180_000, proxyTimeout: 180_000 },
+        "/api/ovlab/mqtt/stream": mqttStreamProxy,
+        "/api": apiProxy,
       },
     },
     // Same proxy for `npm run preview` (production build without nginx)
@@ -28,7 +44,8 @@ export default defineConfig(({ mode }) => {
       host: true,
       port: 5899,
       proxy: {
-        "/api": { target: apiTarget, changeOrigin: true, timeout: 180_000, proxyTimeout: 180_000 },
+        "/api/ovlab/mqtt/stream": mqttStreamProxy,
+        "/api": apiProxy,
       },
     },
     build: {
@@ -38,6 +55,7 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             "vendor-react": ["react", "react-dom", "react-router-dom"],
             "vendor-charts": ["echarts", "lightweight-charts"],
+            "vendor-mqtt": ["mqtt"],
           },
         },
       },

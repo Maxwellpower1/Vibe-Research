@@ -9,9 +9,12 @@ optionflow is overlaid on the cockpit 异动 card (REST flow-alert is the
 seed; MQTT does not write ovlab_flow_alert). ctamap overlays 行情观察
 (REST ovlab_market is the seed; MQTT does not write that key). dataview
 overlays watch last / T-quote und / minute last print (does not write
-last-bar, does not replace T-quote theo prices). Cockpit GET /ovlab/mqtt?pin=
-keeps the chart contract in the 800-slot LRU and extra-subscribes
-instr/{alias} (OpenVlab page case mix: ag2609C16000).
+last-bar, does not replace T-quote theo prices). The webpage talks to
+EMQX itself (mqtt.js); this process is the SSE fallback
+GET /ovlab/mqtt/stream (GET /ovlab/mqtt remains a snapshot). pin= keeps
+the chart contract in the 800-slot LRU and extra-subscribes instr/{alias}
+(OpenVlab page case mix: ag2609C16000).
+dataview last is often `value`; FUT_CFFEX_IF:202608 aliases to IF2608.
 
 Default sources: optionflow, ctamap, dataview (dataview uses MQTT '+'
 wildcard because their JS only subscribes with an instrument code).
@@ -28,6 +31,7 @@ import json
 import logging
 import math
 import os
+import queue
 import re
 import secrets
 import threading
@@ -56,7 +60,10 @@ _KEEP = 8
 _FLOW_MAX = 200
 _DV_MAX = 800
 _PIN_MAX = 12
+_WATCH_MAXQ = 64
 _OPT_RE = re.compile(r"^([A-Za-z]+)(\d{4})([CPcp])(\d+(?:\.\d+)?)$")
+_FUT_LONG_RE = re.compile(r"^FUT_[A-Z]+_([A-Z0-9]+):(\d{6})$", re.I)
+_SPOT_LONG_RE = re.compile(r"^(?:SHSE|SZSE)_(\d+)$", re.I)
 _lock = threading.Lock()
 _started = False
 _client: Any = None
@@ -72,6 +79,7 @@ _flow: OrderedDict[str, dict[str, Any]] = OrderedDict()
 _cta: OrderedDict[str, dict[str, Any]] = OrderedDict()
 _dv: OrderedDict[str, dict[str, Any]] = OrderedDict()
 _pinned: set[str] = set()
+_watchers: list[queue.Queue] = []
 
 # Live fields from the market table tick. Identity keys stay so the UI can join.
 _CTA_PASS = frozenset(
@@ -339,7 +347,8 @@ def _cta_key(row: dict[str, Any]) -> str:
     return str(row.get("prodUnd") or row.get("product_und") or "").strip().upper()
 
 
-def _ingest_cta(data: Any) -> None:
+def _ingest_cta(data: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     for row in as_cta_rows(data):
         slim = _slim_cta(row)
         key = _cta_key(slim)
@@ -350,6 +359,8 @@ def _ingest_cta(data: Any) -> None:
             prev.update(slim)
             slim = prev
         _cta[key] = slim
+        out.append(slim)
+    return out
 
 
 def _dv_last(row: dict[str, Any]) -> float | None:
@@ -361,6 +372,7 @@ def _dv_last(row: dict[str, Any]) -> float | None:
         "last",
         "close",
         "price",
+        "value",
     ):
         v = _finite(row.get(k))
         if v is not None and v > 0:
@@ -376,12 +388,39 @@ def _dv_oi(row: dict[str, Any]) -> float | None:
     return None
 
 
-def _ingest_dv(topic: str, data: Any) -> None:
+def dv_short_code(code: str) -> str | None:
+    """FUT_CFFEX_IF:202608 -> IF2608; SHSE_510300 -> 510300."""
+    c = (code or "").strip()
+    m = _FUT_LONG_RE.match(c)
+    if m:
+        return f"{m.group(1).upper()}{m.group(2)[-4:]}"
+    m = _SPOT_LONG_RE.match(c)
+    if m:
+        return m.group(1)
+    return None
+
+
+def _dv_put(tick: dict[str, Any]) -> None:
+    key = str(tick.get("instr") or "").strip().upper()
+    if not key:
+        return
+    if key in _dv:
+        del _dv[key]
+    _dv[key] = tick
+    while len(_dv) > _DV_MAX:
+        victim = next((k for k in _dv if k not in _pinned), None)
+        if victim is None:
+            break
+        del _dv[victim]
+
+
+def _ingest_dv(topic: str, data: Any) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if isinstance(data, dict):
         rows = [data]
     elif isinstance(data, list):
         rows = [x for x in data if isinstance(x, dict)]
+    out: list[dict[str, Any]] = []
     for row in rows:
         code = str(
             row.get("instr") or row.get("symbol") or _instr_from_topic(topic) or ""
@@ -397,15 +436,15 @@ def _ingest_dv(topic: str, data: Any) -> None:
             tick["last"] = last
         if oi is not None:
             tick["oi"] = oi
-        key = code.upper()
-        if key in _dv:
-            del _dv[key]
-        _dv[key] = tick
-        while len(_dv) > _DV_MAX:
-            victim = next((k for k in _dv if k not in _pinned), None)
-            if victim is None:
-                break
-            del _dv[victim]
+        _dv_put(tick)
+        out.append(tick)
+        short = dv_short_code(code)
+        if short and short.upper() != code.upper():
+            alias = dict(tick)
+            alias["instr"] = short
+            _dv_put(alias)
+            out.append(alias)
+    return out
 
 
 def _trim_flow() -> None:
@@ -420,8 +459,9 @@ def _trim_flow() -> None:
     _flow.update(keep)
 
 
-def _ingest_flow(data: Any) -> None:
+def _ingest_flow(data: Any) -> list[dict[str, Any]]:
     rows = as_flow_rows(data)
+    out: list[dict[str, Any]] = []
     for row in rows:
         key = _flow_key(row)
         if key.strip("|") == "":
@@ -429,7 +469,9 @@ def _ingest_flow(data: Any) -> None:
         if key in _flow:
             del _flow[key]
         _flow[key] = row
+        out.append(row)
     _trim_flow()
+    return out
 
 
 def dv_aliases(code: str) -> list[str]:
@@ -534,21 +576,80 @@ def _summarize(data: Any) -> dict[str, Any]:
     return {"kind": type(data).__name__}
 
 
+def _live_meta() -> dict[str, Any]:
+    return {
+        "enabled": enabled(),
+        "connected": _connected,
+        "recv": _recv,
+        "last_at": _last_at,
+        "error": _error,
+        "ctamap_n": len(_cta),
+        "dataview_n": len(_dv),
+        "optionflow_n": len(_flow),
+    }
+
+
+def watch() -> queue.Queue:
+    """Queue of live patches for one SSE client. Caller must unwatch()."""
+    q: queue.Queue = queue.Queue(maxsize=_WATCH_MAXQ)
+    with _lock:
+        _watchers.append(q)
+    return q
+
+
+def unwatch(q: queue.Queue) -> None:
+    with _lock:
+        if q in _watchers:
+            _watchers.remove(q)
+
+
+def _fanout(evt: dict[str, Any]) -> None:
+    with _lock:
+        watchers = list(_watchers)
+    for q in watchers:
+        try:
+            q.put_nowait(evt)
+        except queue.Full:
+            try:
+                q.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                q.put_nowait(evt)
+            except queue.Full:
+                pass
+
+
+def format_sse(event: str, payload: Any) -> str:
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    lines = [f"event: {event}"]
+    for line in body.split("\n"):
+        lines.append(f"data: {line}")
+    return "\n".join(lines) + "\n\n"
+
+
 def remember(msg: dict[str, Any]) -> None:
     """Keep last payloads in RAM only. Never writes ovlab TTLCache."""
     global _recv, _last_at
     src = str(msg.get("source") or "")
     data = msg.get("data")
+    patch: dict[str, Any] | None = None
     with _lock:
         _recv += 1
         _last_at = time.time()
         n = _recv
         if src == "optionflow":
-            _ingest_flow(data)
+            rows = _ingest_flow(data)
+            if rows:
+                patch = {"source": src, "optionflow": rows, **_live_meta()}
         elif src == "ctamap":
-            _ingest_cta(data)
+            rows = _ingest_cta(data)
+            if rows:
+                patch = {"source": src, "ctamap": rows, **_live_meta()}
         elif src == "dataview":
-            _ingest_dv(str(msg.get("topic") or ""), data)
+            rows = _ingest_dv(str(msg.get("topic") or ""), data)
+            if rows:
+                patch = {"source": src, "dataview": rows, **_live_meta()}
         _recent.append(
             {
                 "topic": msg.get("topic"),
@@ -557,6 +658,8 @@ def remember(msg: dict[str, Any]) -> None:
                 **_summarize(data),
             }
         )
+    if patch:
+        _fanout(patch)
     if n == 1 or n % 100 == 0:
         logger.info("ovlab mqtt recv=%s source=%s", n, src)
 
@@ -615,6 +718,7 @@ def reset_for_tests() -> None:
         _cta.clear()
         _dv.clear()
         _pinned.clear()
+        _watchers.clear()
 
 
 def _paho_mod():

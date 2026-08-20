@@ -106,7 +106,7 @@ Vibe-Research 把三套公开数据源**直接集成进仓库**——`git clone`
   - **期货期限结构** `GET /api/ovlab/future-ts-all` · `GET /api/ovlab/future-ts?prod_und=MA`
   - **套利看板** `GET /api/ovlab/arb-board` — 跨期近-次 / 跨品种近月 / 股指近月；复用 `future-ts` 钥匙，60s 冻结；不打 market / future-ts-all
   - **异动榜** `GET /api/ovlab/flow-alert` — 成交异动 / 走势异动 / 连续成交；合约 / 到期日 / 区间涨幅 / 窗口成交量 / 权利金。盘中缓存 60 秒（对齐驾驶舱轮询），休市冻结
-  - **MQTT** `GET /api/ovlab/mqtt` — 启动订网页 optionflow / ctamap / dataview；2 秒读本机内存：异动卡叠 REST 异动、行情观察叠 REST 品种（不另开 `/api/ovlab/market`）、自选/T 表标的价/分时最后一笔叠 dataview（不写 `ovlab_flow_alert` / `ovlab_market`）；`VR_OVLAB_MQTT=0` 关；`paho-mqtt` + `websocket-client`
+  - **MQTT** 网页直连 `wss://emqx.openvlab.cn/mqtt`（mqtt.js，optionflow / ctamap / dataview）。本机 sidecar 仍订同一批：`GET /api/ovlab/mqtt` 快照、`GET /api/ovlab/mqtt/stream` SSE 兜底；异动/行情观察/分时叠在 REST 底上，不写 `ovlab_flow_alert` / `ovlab_market`；`VR_OVLAB_MQTT=0` 关；`paho-mqtt` + `websocket-client`
   - **资金流** `POST /api/ovlab/flow-data` — 分页资金流
   - **持仓历史** `POST /api/ovlab/warehouse-history` — 单品种多年仓单序列（year2013~2026 + ratioData）
   - **仓单瘦身** `GET /api/ovlab/warehouse-receipt?product=AU` — 最新/日变/近90日，复用上条缓存；驾驶舱期限结构卡用

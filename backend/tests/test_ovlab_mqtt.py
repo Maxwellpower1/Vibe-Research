@@ -213,6 +213,28 @@ def test_start_noop_when_disabled(monkeypatch):
     assert snap["recv"] == 0
 
 
+def test_dv_short_code_fut_and_etf():
+    assert ovlab_mqtt.dv_short_code("FUT_CFFEX_IF:202608") == "IF2608"
+    assert ovlab_mqtt.dv_short_code("FUT_SHFE_AG:202609") == "AG2609"
+    assert ovlab_mqtt.dv_short_code("SHSE_510300") == "510300"
+    assert ovlab_mqtt.dv_short_code("SZSE_159919") == "159919"
+    assert ovlab_mqtt.dv_short_code("IF2608") is None
+
+
+def test_dataview_value_aliases_if2608():
+    ovlab_mqtt.remember(
+        {
+            "topic": "vlab/stream/dataview/guest/instr/FUT_CFFEX_IF:202608",
+            "source": "dataview",
+            "data": {"instr": "FUT_CFFEX_IF:202608", "value": 4592.6, "oi": 20110},
+        }
+    )
+    by = {str(t.get("instr") or "").upper(): t for t in ovlab_mqtt.snapshot()["dataview"]}
+    assert by["IF2608"]["last"] == 4592.6
+    assert by["FUT_CFFEX_IF:202608"]["last"] == 4592.6
+    assert by["IF2608"]["oi"] == 20110
+
+
 def test_dv_aliases_option_mixed_case():
     aliases = ovlab_mqtt.dv_aliases("AG2609C16000")
     assert "AG2609C16000" in aliases
@@ -283,3 +305,141 @@ def test_pin_queues_dataview_topics_offline():
     topics = ovlab_mqtt.snapshot()["topics"]
     assert "vlab/stream/dataview/guest/instr/AG2609" in topics
     assert "vlab/stream/dataview/guest/instr/ag2609" in topics
+
+
+def test_format_sse_event_and_data():
+    body = ovlab_mqtt.format_sse("tick", {"a": 1})
+    assert body.startswith("event: tick\n")
+    assert "data: {\"a\":1}" in body
+    assert body.endswith("\n\n")
+
+
+def test_watch_fanout_on_remember():
+    q = ovlab_mqtt.watch()
+    try:
+        ovlab_mqtt.remember(
+            {
+                "topic": "vlab/stream/dataview/guest/instr/al2609",
+                "source": "dataview",
+                "data": {"instr": "al2609", "last_trade_price": 18510, "oi": 12},
+            }
+        )
+        evt = q.get(timeout=1)
+        assert evt["source"] == "dataview"
+        assert evt["dataview"][0]["last"] == 18510
+        assert evt["dataview_n"] == 1
+    finally:
+        ovlab_mqtt.unwatch(q)
+
+
+def _first_sse_event(buf: str) -> tuple[str, dict]:
+    block = buf.split("\n\n", 1)[0]
+    event = "message"
+    data_lines: list[str] = []
+    for line in block.split("\n"):
+        if line.startswith("event:"):
+            event = line.split(":", 1)[1].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line.split(":", 1)[1].strip())
+    return event, json.loads("\n".join(data_lines))
+
+
+def _as_text(chunk: str | bytes) -> str:
+    return chunk if isinstance(chunk, str) else chunk.decode()
+
+
+def test_mqtt_stream_snapshot():
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from routers.ovlab_routes import ovlab_mqtt_stream
+
+    _dv_tick("al2609", 18510)
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=True)
+
+    async def run():
+        resp = await ovlab_mqtt_stream(request, pin=None)
+        assert resp.media_type == "text/event-stream"
+        chunks: list[str] = []
+        async for c in resp.body_iterator:
+            chunks.append(_as_text(c))
+        return "".join(chunks)
+
+    buf = asyncio.run(run())
+    event, payload = _first_sse_event(buf)
+    assert event == "snapshot"
+    assert payload["feeds_ui"] is True
+    assert payload["dataview_n"] == 1
+    assert payload["dataview"][0]["last"] == 18510
+    assert ovlab_mqtt._watchers == []
+
+
+def test_mqtt_stream_tick_after_snapshot():
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from routers.ovlab_routes import ovlab_mqtt_stream
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(side_effect=[False, True, True])
+
+    async def run():
+        resp = await ovlab_mqtt_stream(request, pin=None)
+        ovlab_mqtt.remember(
+            {
+                "topic": "vlab/stream/dataview/guest/instr/cu2609",
+                "source": "dataview",
+                "data": {"instr": "cu2609", "last_trade_price": 70001, "oi": 3},
+            }
+        )
+        chunks: list[str] = []
+        async for c in resp.body_iterator:
+            chunks.append(_as_text(c))
+        return "".join(chunks)
+
+    buf = asyncio.run(run())
+    events = []
+    rest = buf
+    while "\n\n" in rest:
+        block, rest = rest.split("\n\n", 1)
+        if not block or block.startswith(":"):
+            continue
+        events.append(_first_sse_event(block + "\n\n"))
+    kinds = [e[0] for e in events]
+    assert "snapshot" in kinds
+    assert "tick" in kinds
+    tick = next(p for e, p in events if e == "tick")
+    assert tick["source"] == "dataview"
+    assert tick["dataview"][0]["last"] == 70001
+    assert ovlab_mqtt._watchers == []
+
+
+def test_mqtt_stream_pin_query():
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from routers.ovlab_routes import ovlab_mqtt_stream
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=True)
+
+    async def run():
+        resp = await ovlab_mqtt_stream(request, pin="AG2609C16000,AG2609")
+        async for _c in resp.body_iterator:
+            break
+
+    asyncio.run(run())
+    assert "AG2609C16000" in ovlab_mqtt._pinned
+    assert "AG2609" in ovlab_mqtt._pinned
+    assert ovlab_mqtt._watchers == []
+
+
+def test_mqtt_stream_route_registered():
+    from fastapi.testclient import TestClient
+
+    import app as app_module
+
+    spec = TestClient(app_module.app).get("/openapi.json").json()
+    assert "/api/ovlab/mqtt/stream" in spec["paths"]
+    assert "/api/ovlab/mqtt" in spec["paths"]

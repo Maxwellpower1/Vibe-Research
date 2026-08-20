@@ -3,8 +3,11 @@ import {
   api, type OvlabDataviewTick, type OvlabFlowAlert, type OvlabMarketRow, type OvlabProductExp,
 } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
+import { useOvlabMqtt } from "@/hooks/useOvlabMqtt";
 import { DERIV_DEFS, type DerivDef } from "@/config/deriv";
 import { previewCode, toSparkMap, type PreviewSeries } from "@/components/ovlab/shared";
+
+export { MQTT_POLL_MS } from "@/hooks/useOvlabMqtt";
 
 export interface CatalogRow {
   def: DerivDef;
@@ -20,7 +23,7 @@ export interface DerivData {
   catalogRows: CatalogRow[];
   alerts: OvlabFlowAlert[] | null;
   alertUpdated: number;
-  /** MQTT sidecar: enabled/connected/error from GET /ovlab/mqtt. null until first poll. */
+  /** MQTT: enabled/connected/error from browser EMQX socket (SSE fallback). */
   alertMqtt: { enabled: boolean; connected: boolean; error: string | null } | null;
   /** dataview last print, keyed upper(instr). */
   ticks: Record<string, OvlabDataviewTick>;
@@ -102,15 +105,10 @@ export function ticksByInstr(list: OvlabDataviewTick[] | null | undefined): Reco
 export function useDerivData(pinInstr: string[] = []): DerivData {
   const [nonce, setNonce] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const pinKey = pinInstr.map((c) => c.trim().toUpperCase()).filter(Boolean).join(",");
 
   const market = usePolling(() => api.ovlabMarket(), 60_000, [nonce]);
   const alertPoll = usePolling(() => api.ovlabFlowAlert(), 60_000, [nonce]);
-  const mqttPoll = usePolling(
-    () => api.ovlabMqtt(pinKey ? pinKey.split(",") : undefined),
-    2_000,
-    [nonce, pinKey],
-  );
+  const mqttPoll = useOvlabMqtt(pinInstr);
   const expPoll = usePolling(() => api.ovlabProductExps(), 300_000, [nonce]);
 
   const rows = useMemo(

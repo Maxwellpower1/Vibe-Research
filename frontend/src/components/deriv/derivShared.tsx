@@ -58,7 +58,7 @@ export function tickFresh(
   return nowSec - at <= TICK_FRESH_S;
 }
 
-/** Main-contract last from 行情观察, else a fresh dataview print. */
+/** Fresh dataview last, else 行情观察 main-contract price. */
 export function undSpotLast(
   code: string,
   ticks: Record<string, OvlabDataviewTick>,
@@ -68,13 +68,13 @@ export function undSpotLast(
 ): number | null {
   const want = code.trim().toUpperCase();
   if (!want) return null;
+  const tick = ticks[want];
+  if (tickFresh(tick, nowSec, live)) return num(tick.last);
   for (const r of rows ?? []) {
     if (contractCode(r).toUpperCase() !== want) continue;
     const px = num(r.price);
     if (px != null) return px;
   }
-  const tick = ticks[want];
-  if (tickFresh(tick, nowSec, live)) return num(tick.last);
   return null;
 }
 

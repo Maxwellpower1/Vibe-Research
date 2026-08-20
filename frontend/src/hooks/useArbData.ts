@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { api, type ArbBoard, type ArbCalendarRow, type ArbCrossRow, type ArbIndexRow } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { ticksByInstr } from "@/hooks/useDerivData";
+import { useOvlabMqtt } from "@/hooks/useOvlabMqtt";
 import { overlayLeg, spreadTriple } from "@/components/arb/arbShared";
 
 export interface ArbData {
@@ -20,7 +21,7 @@ export function useArbData(): ArbData {
   const [nonce, setNonce] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const boardPoll = usePolling(() => api.ovlabArbBoard(), 60_000, [nonce]);
-  const mqttPoll = usePolling(() => api.ovlabMqtt(), 2_000, [nonce]);
+  const mqttPoll = useOvlabMqtt();
   const ticks = useMemo(() => ticksByInstr(mqttPoll.data?.dataview), [mqttPoll.data]);
 
   const calendar = useMemo(() => {

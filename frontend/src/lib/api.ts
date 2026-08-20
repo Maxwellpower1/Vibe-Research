@@ -1735,6 +1735,12 @@ export const api = {
     const s = q.length ? `?pin=${encodeURIComponent(q.join(","))}` : "";
     return get<OvlabMqttStatus>(`/ovlab/mqtt${s}`);
   },
+  /** SSE of the in-process MQTT sidecar. Prefix /api in the hook (needs Bearer). */
+  ovlabMqttStreamPath: (pin?: string[]) => {
+    const q = (pin ?? []).map((c) => c.trim()).filter(Boolean).slice(0, 12);
+    const s = q.length ? `?pin=${encodeURIComponent(q.join(","))}` : "";
+    return `/ovlab/mqtt/stream${s}`;
+  },
   ovlabFlowData: (product?: string, page = 1, pageSize = 50) =>
     request<OvlabFlowData>("/ovlab/flow-data", "POST", { product: product?.trim() || null, page, page_size: pageSize }),
   ovlabWarehouseHistory: (product: string) =>

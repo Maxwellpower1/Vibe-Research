@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Response
+import asyncio
+import queue
+
+from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import ovlab
@@ -97,20 +101,73 @@ def ovlab_flow_alert():
     return _ovlab_call(ovlab.get_flow_alerts, "异动榜")
 
 
+def _mqtt_pin(pin: str | None) -> None:
+    import ovlab_mqtt
+    if not pin:
+        return
+    codes = [p.strip() for p in pin.split(",") if p.strip()][:12]
+    if codes:
+        ovlab_mqtt.pin_dataview(codes)
+
+
 @router.get("/api/ovlab/mqtt")
 def ovlab_mqtt_status(pin: str | None = Query(default=None, max_length=400)):
     """OpenVlab MQTT snapshot: optionflow / ctamap / dataview. Does not write REST cache.
 
+    SSE GET /mqtt/stream is the live path; this poll is the fallback.
     Optional pin=CODE,UND keeps those instr in the 800-slot dataview LRU
     and extra-subscribes instr/{alias}. Omit pin to leave pins as-is
-    (arb cockpit shares this poller).
+    (arb cockpit shares this feed).
     """
     import ovlab_mqtt
-    if pin:
-        codes = [p.strip() for p in pin.split(",") if p.strip()][:12]
-        if codes:
-            ovlab_mqtt.pin_dataview(codes)
+    _mqtt_pin(pin)
     return {"data": ovlab_mqtt.snapshot()}
+
+
+@router.get("/api/ovlab/mqtt/stream")
+async def ovlab_mqtt_stream(
+    request: Request,
+    pin: str | None = Query(default=None, max_length=400),
+):
+    """SSE of the in-process MQTT sidecar. Same memory as GET /mqtt; push, not poll.
+
+    First event is a full snapshot; later events are per-message patches.
+    Webpage does not connect to OpenVlab EMQX. Does not write REST cache.
+    """
+    import ovlab_mqtt
+
+    _mqtt_pin(pin)
+    q = ovlab_mqtt.watch()
+
+    async def gen():
+        try:
+            yield ovlab_mqtt.format_sse("snapshot", ovlab_mqtt.snapshot())
+            idle = 0
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    evt = await asyncio.to_thread(q.get, True, 1.0)
+                except queue.Empty:
+                    idle += 1
+                    if idle >= 15:
+                        idle = 0
+                        yield ": ping\n\n"
+                    continue
+                idle = 0
+                yield ovlab_mqtt.format_sse("tick", evt)
+        finally:
+            ovlab_mqtt.unwatch(q)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/api/ovlab/flow-data")

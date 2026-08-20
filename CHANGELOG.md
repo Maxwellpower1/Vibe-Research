@@ -7,7 +7,7 @@
 
 ### 改进：期权日K/分时跟 MQTT 行情走
 
-日K 叠 dataview 最新价到当日最后一根（高低跟着扩）。分时本来就叠最后一笔；盘中 history 15 秒拉一次，休市仍 60 秒。点图合约走 `GET /api/ovlab/mqtt?pin=` 钉住 LRU（全市场通配只有 800 槽，期权容易被挤掉）并订大小写 topic 别名。夜盘分时在 history 还没今夜点时切到当夜轴。期货主力价跟行情观察同一份 ctamap（2s）。商品期权 `AG_O`/`AU_O` 常空 `prodUnd`，用目录 `und`+到期月拼 `AG2609`/`AU2609` 才能叠到右下角。叠价只认主力码 (`contractCode`)，换品种/T 表对行共用 `findRowByUnd`。T 表换品种下拉出主力期货图，不再先清成没成交的 ATM 购。金价 HUD 两位小数。陈旧 dataview 不再盖住。last-bar 仍做底。点 T 表顶栏期货价出标的图。期权图仍不走 last-bar。不打第二条行情。
+日K 叠 dataview 最新价到当日最后一根（高低跟着扩）。分时本来就叠最后一笔；盘中 history 15 秒拉一次，休市仍 60 秒。点图合约额外订 `instr/{别名}`（网页同款 `ag2609C16000`）。夜盘分时在 history 还没今夜点时切到当夜轴。期货主力价跟行情观察同一份 ctamap。网页按 OpenVlab 直连 `wss://emqx.openvlab.cn/mqtt`（mqtt.js，optionflow/ctamap/dataview）；broker 挂了才 SSE / 0.5s 读本机 sidecar。商品期权 `AG_O`/`AU_O` 常空 `prodUnd`，用目录 `und`+到期月拼 `AG2609`/`AU2609` 才能叠到右下角。叠价新鲜 dataview 优先，没有再认主力码 (`contractCode`)，换品种/T 表对行共用 `findRowByUnd`。股指期货 dataview 是 `FUT_CFFEX_IF:202608`（价在 `value`），收成 `IF2608` 叠分时；没有再走 ctamap。T 表换品种下拉出主力期货图，不再先清成没成交的 ATM 购。金价 HUD 两位小数。陈旧 dataview 不再盖住。last-bar 仍做底。点 T 表顶栏期货价出标的图。期权图仍不走 last-bar。不打第二条行情。
 
 ### 改进：K/分时改 TradingView 读图风格
 
