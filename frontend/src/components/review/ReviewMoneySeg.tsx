@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import { KlineLink } from "@/components/cockpit/QuoteLine";
 import { Activity, ShieldAlert, TrendingUp } from "lucide-react";
@@ -8,6 +8,11 @@ import { fmt, pctColor } from "@/components/review/format";
 import { reviewPending } from "@/components/review/reviewPending";
 import { ETF_SHARE_WATCH, type CnBondYield, type EtfFlow, type EtfShares, type LprData, type ShareholderChanges } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { LcWell } from "@/components/ui/LcFrame";
+import {
+  LineSeries, applyTimeLabels, lcTime, seriesAlive, setPaneWatermark, useLcChart, wipeLc,
+  type ISeriesApi, type ITextWatermarkPluginApi, type Time,
+} from "@/lib/lcChart";
 
 const box = "overflow-hidden rounded-md border border-border/60 bg-card/80";
 
@@ -313,103 +318,156 @@ export function ReviewMoneySeg({
 
 const ETF_SHARE_COLORS = ["#38bdf8", "#22d3ee", "#f59e0b", "#a78bfa", "#34d399", "#f472b6"] as const;
 
+const ETF_LINE = {
+  lineWidth: 2 as const,
+  lastValueVisible: false,
+  priceLineVisible: false,
+  crosshairMarkerVisible: true,
+  priceFormat: { type: "price" as const, precision: 2, minMove: 0.01 },
+};
+
+/** Union dates, keep gaps (no connectNulls). */
+export function alignEtfShareDays(
+  dates: string[],
+  daily: Array<{ date: string; shares_yi?: number | null }>,
+): Array<number | null> {
+  const byDate = new Map(daily.map((d) => [d.date, d.shares_yi]));
+  return dates.map((d) => {
+    const v = byDate.get(d);
+    return v != null && Number.isFinite(v) ? v : null;
+  });
+}
+
+function EtfShareChart({
+  dates,
+  series,
+}: {
+  dates: string[];
+  series: Array<{ label: string; color: string; values: Array<number | null> }>;
+}) {
+  const { ref, chartRef, labelsRef, onHoverRef } = useLcChart("glance");
+  const bag = useRef<ISeriesApi<"Line">[]>([]);
+  const wmRef = useRef<ITextWatermarkPluginApi<Time> | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number; w: number } | null>(null);
+  onHoverRef.current = (idx) => {
+    setHover(idx);
+    if (idx == null) setPos(null);
+  };
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    labelsRef.current = dates;
+    applyTimeLabels(chart, labelsRef, "md");
+    chart.applyOptions({
+      timeScale: { minBarSpacing: 0.4, barSpacing: 2, rightOffset: 2, rightOffsetPixels: 8 },
+    });
+    if (bag.current.length !== series.length || bag.current.some((s) => !seriesAlive(chart, s))) {
+      wipeLc(chart);
+      bag.current = series.map((s) => chart.addSeries(LineSeries, { ...ETF_LINE, color: s.color }));
+    }
+    series.forEach((s, i) => {
+      bag.current[i].applyOptions({ color: s.color });
+      bag.current[i].setData(s.values.map((v, j) => {
+        const time = lcTime(j);
+        return v != null ? { time, value: v } : { time };
+      }));
+    });
+    setPaneWatermark(chart, wmRef, "份额", 80);
+    chart.timeScale().fitContent();
+  }, [dates, series, chartRef, labelsRef]);
+
+  const i = hover != null && dates[hover] ? hover : -1;
+  const tipRows = i < 0 ? [] : series.map((s) => ({
+    label: s.label,
+    color: s.color,
+    value: s.values[i] != null ? s.values[i]!.toFixed(2) : "—",
+  }));
+
+  return (
+    <div
+      className="relative h-[200px]"
+      onMouseMove={(e) => {
+        const box = e.currentTarget.getBoundingClientRect();
+        setPos({ x: e.clientX - box.left, y: e.clientY - box.top, w: box.width });
+      }}
+      onMouseLeave={() => { setHover(null); setPos(null); }}
+    >
+      <LcWell className="h-full rounded-md">
+        <div ref={ref} className="h-full w-full" />
+      </LcWell>
+      {i >= 0 && pos && (
+        <EtfShareTip date={dates[i]} rows={tipRows} x={pos.x} y={pos.y} boxW={pos.w} />
+      )}
+    </div>
+  );
+}
+
+function EtfShareTip({
+  date,
+  rows,
+  x,
+  y,
+  boxW,
+}: {
+  date: string;
+  rows: Array<{ label: string; color: string; value: string }>;
+  x: number;
+  y: number;
+  boxW: number;
+}) {
+  const w = 148;
+  const h = 22 + rows.length * 18;
+  const left = x + 14 + w > boxW ? Math.max(8, x - w - 10) : x + 12;
+  const top = Math.max(8, Math.min(y - 10, 200 - h - 8));
+  return (
+    <div
+      className="pointer-events-none absolute z-20 rounded-md border border-white/10 bg-[#0b0f17]/94 px-2 py-1.5 font-mono text-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.45)] backdrop-blur-sm"
+      style={{ left, top, width: w }}
+    >
+      <div className="mb-1 text-[10px] text-slate-400">{date}</div>
+      {rows.map((r) => (
+        <div key={r.label} className="flex items-center justify-between gap-2 leading-[18px]">
+          <span className="flex min-w-0 items-center gap-1.5 text-slate-300">
+            <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: r.color }} />
+            <span className="truncate">{r.label}</span>
+          </span>
+          <span className="tabular-nums text-slate-100">{r.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function EtfShareBlock({ items, fallback }: { items: EtfShares[]; fallback: EtfShares | null }) {
-  const chartRef = useRef<HTMLDivElement>(null);
-  const chartObj = useRef<echarts.ECharts | null>(null);
   const list = items.length ? items : (fallback ? [fallback] : []);
   const rows = ETF_SHARE_WATCH.map((w, i) => ({
     ...w,
     color: ETF_SHARE_COLORS[i] ?? ETF_SHARE_COLORS[0],
     item: list.find((x) => x.code === w.code) ?? null,
   }));
-  const dates = [...new Set(rows.flatMap((r) => (r.item?.daily ?? []).map((d) => d.date)))].sort();
-  const ready = dates.length >= 2 && rows.some((r) => (r.item?.daily?.length ?? 0) >= 2);
-  const asOf = rows.map((r) => r.item?.latest?.date).find(Boolean);
-  const chartKey = rows.map((r) => {
+  const dailyKey = rows.map((r) => {
     const d = r.item?.daily ?? [];
     const last = d[d.length - 1];
     return `${r.code}:${d.length}:${last?.date ?? ""}:${last?.shares_yi ?? ""}`;
   }).join("|");
-
-  useEffect(() => {
-    const el = chartRef.current;
-    if (!el || !ready) {
-      chartObj.current?.dispose();
-      chartObj.current = null;
-      return;
-    }
-    let chart = chartObj.current;
-    if (!chart || chart.getDom() !== el) {
-      chart?.dispose();
-      chart = echarts.init(el, undefined, { renderer: "canvas" });
-      chartObj.current = chart;
-    }
-    const cssHsl = (name: string, fallbackColor: string) => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      return raw ? `hsl(${raw})` : fallbackColor;
-    };
-    const cText = cssHsl("--chart-text", "#94a3b8");
-    const cAxis = cssHsl("--chart-axis", "#475569");
-    const cGrid = cssHsl("--chart-grid", "#334155");
-    chart.setOption({
-      animation: false,
-      legend: {
-        top: 0,
-        right: 0,
-        itemWidth: 10,
-        itemHeight: 6,
-        textStyle: { color: cText, fontSize: 10 },
-        data: rows.filter((r) => r.item).map((r) => r.label),
-      },
-      grid: { left: 44, right: 8, top: 22, bottom: 22 },
-      tooltip: {
-        trigger: "axis",
-        formatter: (params: unknown) => {
-          const arr = (Array.isArray(params) ? params : [params]) as Array<{
-            axisValue?: string; seriesName?: string; data?: number | null; marker?: string;
-          }>;
-          if (!arr.length) return "";
-          const lines = arr
-            .filter((p) => p.data != null && Number.isFinite(Number(p.data)))
-            .map((p) => `${p.marker || ""}${p.seriesName} ${Number(p.data).toFixed(2)} 亿份`);
-          return [`${arr[0]?.axisValue || ""}`, ...lines].join("<br/>");
-        },
-      },
-      xAxis: {
-        type: "category",
-        data: dates.map((d) => d.slice(5)),
-        axisLabel: { color: cText, fontSize: 9 },
-        axisLine: { lineStyle: { color: cAxis } },
-      },
-      yAxis: {
-        type: "value",
-        scale: true,
-        axisLabel: { color: cText, fontSize: 9, formatter: (v: number) => `${v}` },
-        splitLine: { lineStyle: { color: cGrid, opacity: 0.25 } },
-      },
-      series: rows.filter((r) => r.item).map((r) => {
-        const byDate = new Map((r.item?.daily ?? []).map((d) => [d.date, d.shares_yi]));
-        return {
-          name: r.label,
-          type: "line" as const,
-          data: dates.map((d) => byDate.get(d) ?? null),
-          showSymbol: false,
-          smooth: 0.15,
-          connectNulls: false,
-          lineStyle: { color: r.color, width: 2 },
-        };
-      }),
-    }, { notMerge: true });
-    requestAnimationFrame(() => chart?.resize());
-    const ro = new ResizeObserver(() => chart?.resize());
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      chart?.dispose();
-      if (chartObj.current === chart) chartObj.current = null;
-    };
+  const dates = useMemo(
+    () => [...new Set(rows.flatMap((r) => (r.item?.daily ?? []).map((d) => d.date)))].sort(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, chartKey]);
+    [dailyKey],
+  );
+  const ready = dates.length >= 2 && rows.some((r) => (r.item?.daily?.length ?? 0) >= 2);
+  const asOf = rows.map((r) => r.item?.latest?.date).find(Boolean);
+  const series = useMemo(
+    () => rows.filter((r) => r.item).map((r) => ({
+      label: r.label,
+      color: r.color,
+      values: alignEtfShareDays(dates, r.item?.daily ?? []),
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dailyKey, dates],
+  );
 
   return (
     <div>
@@ -423,7 +481,7 @@ function EtfShareBlock({ items, fallback }: { items: EtfShares[]; fallback: EtfS
         {!ready ? (
           <p className="flex items-center justify-center py-6 text-center text-[11px] text-slate-600">份额日线加载中, 首次会回补交易所缓存</p>
         ) : (
-          <div ref={chartRef} className="h-[200px] w-full min-w-0" />
+          <EtfShareChart dates={dates} series={series} />
         )}
         <div className="overflow-auto">
           <table className="data-table">

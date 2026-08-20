@@ -28,6 +28,39 @@ test("reviewContext is a thin client of the backend packer", () => {
   assert.match(apiSrc, /\/market\/review-context/);
 });
 
+test("ETF 份额日线走 LC, 国债曲线仍 ECharts", async () => {
+  const money = await readFile(new URL("../src/components/review/ReviewMoneySeg.tsx", import.meta.url), "utf8");
+  assert.match(money, /function EtfShareChart/);
+  assert.match(money, /useLcChart\("glance"\)/);
+  assert.match(money, /LineSeries/);
+  assert.match(money, /alignEtfShareDays/);
+  assert.match(money, /setPaneWatermark/);
+  assert.match(money, /function EtfShareTip/);
+  assert.doesNotMatch(money, /LcLegend/);
+  assert.match(money, /<EtfShareChart /);
+  const etfBlock = money.slice(money.indexOf("function EtfShareChart"));
+  assert.doesNotMatch(etfBlock, /echarts\.init/);
+  assert.match(money, /bondEchartRef/);
+  assert.match(money.slice(0, money.indexOf("function EtfShareChart")), /echarts\.init/);
+});
+
+function alignEtfShareDays(dates, daily) {
+  const byDate = new Map(daily.map((d) => [d.date, d.shares_yi]));
+  return dates.map((d) => {
+    const v = byDate.get(d);
+    return v != null && Number.isFinite(v) ? v : null;
+  });
+}
+
+test("alignEtfShareDays 对齐日期, 缺口留空", () => {
+  const dates = ["2026-01-01", "2026-01-02", "2026-01-03"];
+  assert.deepEqual(
+    alignEtfShareDays(dates, [{ date: "2026-01-01", shares_yi: 10 }, { date: "2026-01-03", shares_yi: 12 }]),
+    [10, null, 12],
+  );
+  assert.deepEqual(alignEtfShareDays(dates, []), [null, null, null]);
+});
+
 test("phone review stock names do not jump to kline", async () => {
   const ql = await readFile(new URL("../src/components/cockpit/QuoteLine.tsx", import.meta.url), "utf8");
   const ladder = await readFile(new URL("../src/components/review/LimitLadderView.tsx", import.meta.url), "utf8");

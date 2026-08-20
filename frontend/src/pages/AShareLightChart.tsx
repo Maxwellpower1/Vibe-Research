@@ -14,8 +14,11 @@ import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 import {
   BaselineSeries, CandlestickSeries, HistogramSeries, applyTimeLabels, baselineOpts,
-  candleOpts, candleValues, resizeLc, seriesAlive, setRefPriceLine, showLatest, sparseLine, styleLastTag,
-  styleVolOverlay, useLcChart, volOpts, volValues, wipeLc, type IPriceLine, type ISeriesApi,
+  candleOpts, candleValues, ensureUpDown, lineValues, paintUpDown, resizeLc, seriesAlive,
+  setLogScale, setPaneWatermark, setRefPriceLine, showLatest, sparseLine, styleLastTag,
+  styleVolOverlay, useLcChart, volOpts, volValues, wipeLc,
+  type IPriceLine, type ISeriesApi, type ISeriesUpDownMarkerPluginApi, type ITextWatermarkPluginApi,
+  type LineData, type Time,
 } from "@/lib/lcChart";
 
 const StockData = lazy(() =>
@@ -95,8 +98,12 @@ export function AShareLightChart({
     kind: "candle" | "baseline" | null;
     main: ISeriesApi<"Candlestick"> | ISeriesApi<"Baseline"> | null;
     vol: ISeriesApi<"Histogram"> | null;
-  }>({ kind: null, main: null, vol: null });
+    paintedTick: LineData[] | null;
+  }>({ kind: null, main: null, vol: null, paintedTick: null });
   const refLine = useRef<IPriceLine | null>(null);
+  const wmRef = useRef<ITextWatermarkPluginApi<Time> | null>(null);
+  const tickRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const udRef = useRef<ISeriesUpDownMarkerPluginApi<Time> | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   onHoverRef.current = setHoverIdx;
 
@@ -189,9 +196,12 @@ export function AShareLightChart({
     const chart = lcRef.current;
     if (!chart) return;
     if (bars.length === 0) {
+      setPaneWatermark(chart, wmRef, "");
       wipeLc(chart);
-      bag.current = { kind: null, main: null, vol: null };
+      bag.current = { kind: null, main: null, vol: null, paintedTick: null };
       refLine.current = null;
+      tickRef.current = null;
+      udRef.current = null;
       labelsRef.current = [];
       return;
     }
@@ -206,6 +216,9 @@ export function AShareLightChart({
     if (bag.current.kind !== kind || !seriesAlive(chart, bag.current.main) || !seriesAlive(chart, bag.current.vol)) {
       wipeLc(chart);
       refLine.current = null;
+      tickRef.current = null;
+      udRef.current = null;
+      bag.current.paintedTick = null;
       bag.current.main = kind === "candle"
         ? chart.addSeries(CandlestickSeries, candleOpts())
         : chart.addSeries(BaselineSeries, baselineOpts(baseline));
@@ -226,13 +239,20 @@ export function AShareLightChart({
       ? (bars.length > 1 ? bars[bars.length - 2].close : null)
       : baseline;
     setRefPriceLine(bag.current.main, refLine, prev);
+    setPaneWatermark(chart, wmRef, selected, 110);
+    setLogScale(chart, isDaily && finitePx.every((v) => v > 0));
+    if (!isDaily) {
+      const tickPts = lineValues(sparseLine(bars.map((b) => b.close)));
+      paintUpDown(ensureUpDown(chart, tickRef, udRef), tickPts, bag.current.paintedTick);
+      bag.current.paintedTick = tickPts;
+    }
     bag.current.vol!.setData(volValues(bars.map((b) => ({
       value: b.volume,
       up: isDaily ? b.close >= b.open : b.close >= baseline,
     }))));
     if (isDaily) showLatest(chart, bars.length, VIEW_DAYS);
     else chart.timeScale().fitContent();
-  }, [bars, resolution, meta?.prev_close, lcRef, labelsRef]);
+  }, [bars, resolution, meta?.prev_close, selected, lcRef, labelsRef]);
 
 
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : (bars.length ? bars.length - 1 : -1);

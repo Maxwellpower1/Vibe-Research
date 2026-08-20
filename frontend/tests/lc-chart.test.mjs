@@ -40,6 +40,17 @@ test("lcChart 是 K/分时共用封装, 不画 TradingView logo", () => {
   assert.match(src, /LC update rejects/);
   assert.match(src, /createOptionsChart/);
   assert.match(src, /export function createLcPriceChart/);
+  assert.match(src, /export function resizeLcHost/);
+  assert.match(src, /export function useLcPriceChart/);
+  assert.match(src, /ResizeObserver/);
+  assert.match(src, /localization: \{ locale: "zh-CN", precision: 0 \}/);
+  assert.match(src, /createTextWatermark/);
+  assert.match(src, /export function setPaneWatermark/);
+  assert.match(src, /createUpDownMarkers/);
+  assert.match(src, /export function ensureUpDown/);
+  assert.match(src, /export function paintUpDown/);
+  assert.match(src, /PriceScaleMode/);
+  assert.match(src, /export function setLogScale/);
 });
 
 test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {
@@ -53,10 +64,18 @@ test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {
     assert.match(body, /useLcChart/, rel);
     assert.match(body, /LcWell/, rel);
     assert.match(body, /setRefPriceLine/, rel);
+    assert.match(body, /setPaneWatermark/, rel);
     assert.doesNotMatch(body, /echarts\.init/, rel);
     assert.doesNotMatch(body, /from "echarts"/, rel);
     assert.doesNotMatch(body, /sizeVolPane/, rel);
   }
+  const ashare = readFileSync(join(root, "src/pages/AShareLightChart.tsx"), "utf8");
+  const us = readFileSync(join(root, "src/pages/UsMarket.tsx"), "utf8");
+  const arb = readFileSync(join(root, "src/components/arb/SpreadChart.tsx"), "utf8");
+  assert.match(ashare, /setLogScale/);
+  assert.match(us, /setLogScale/);
+  assert.match(ashare, /ensureUpDown/);
+  assert.match(arb, /ensureUpDown/);
 });
 
 const LC_ORIGIN = 1_700_000_000;

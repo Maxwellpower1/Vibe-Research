@@ -150,6 +150,46 @@ test("TQuotePanel 默认全部档位 / 自动 ATM 购", async () => {
   assert.ok(src.includes("expiry: cur?.expiryDate") || src.includes("expiry: cur.expiryDate"), "点合约带到期日给 markers");
 });
 
+test("IvSmileChart 是带标题的井, 图表重建丢掉旧 series", async () => {
+  const smile = await readFile(new URL("../src/components/deriv/IvSmileChart.tsx", import.meta.url), "utf8");
+  assert.ok(smile.includes("LcWell"), "跟日K同一套井, 不是 72px 裸 div");
+  assert.ok(smile.includes(">IV微笑<"), "标题写在图上, 不靠 title 属性");
+  assert.ok(smile.includes("h-[128px]"), "井有明确高度");
+  assert.ok(smile.includes("useLcPriceChart"), "横轴行权价走 createOptionsChart");
+  assert.ok(smile.includes("bag.current.rev !== rev"), "StrictMode / 重建后不把线画在已销毁的图上");
+  assert.ok(smile.includes("resizeLcHost"), "flex 格里先踢尺寸再 fitContent");
+  assert.ok(smile.includes("smileSpotPts"), "现价竖线");
+  assert.ok(smile.includes('text: "ATM"'), "ATM 档钉在微笑上");
+  assert.ok(smile.includes("#38bdf8"), "竖线和 ATM 跟 T 表蓝线同色");
+  assert.ok(!smile.includes("wipeLc"), "options chart 不走时间图 wipeLc");
+  const tq = await readFile(new URL("../src/components/deriv/TQuotePanel.tsx", import.meta.url), "utf8");
+  assert.ok(tq.includes("spot={undPx ?? fwd}"), "微笑竖线跟顶栏现价同一口");
+  assert.ok(tq.includes("atm={atm}"), "ATM 档用 tquote atm");
+});
+
+function smileSpotPts(spot, ivs) {
+  if (spot == null || !Number.isFinite(spot) || ivs.length === 0) return [];
+  const lo = Math.min(...ivs);
+  const hi = Math.max(...ivs);
+  const pad = Math.max((hi - lo) * 0.08, 0.3);
+  const eps = Math.max(Math.abs(spot) * 1e-8, 1e-6);
+  return [
+    { time: spot, value: lo - pad },
+    { time: spot + eps, value: hi + pad },
+  ];
+}
+
+test("smileSpotPts 现价处画竖茎, 空 IV 不画", () => {
+  assert.deepEqual(smileSpotPts(null, [20, 22]), []);
+  assert.deepEqual(smileSpotPts(100, []), []);
+  const pts = smileSpotPts(100, [18, 22]);
+  assert.equal(pts.length, 2);
+  assert.equal(pts[0].time, 100);
+  assert.ok(pts[1].time > 100);
+  assert.ok(pts[0].value < 18);
+  assert.ok(pts[1].value > 22);
+});
+
 test("undBracket 现价夹在相邻两档, 贴档用本档与更高档", () => {
   assert.deepEqual(undBracket([90, 100, 110], 105), { lo: 100, hi: 110 });
   assert.deepEqual(undBracket([90, 100, 110], 100), { lo: 100, hi: 110 });

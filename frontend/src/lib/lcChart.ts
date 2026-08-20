@@ -12,10 +12,15 @@ import {
   LineSeries,
   BaselineSeries,
   createSeriesMarkers,
+  createTextWatermark,
+  createUpDownMarkers,
+  PriceScaleMode,
   type IChartApi,
   type ISeriesApi,
   type IPriceLine,
   type ISeriesMarkersPluginApi,
+  type ISeriesUpDownMarkerPluginApi,
+  type ITextWatermarkPluginApi,
   type MouseEventParams,
   type UTCTimestamp,
   type LineData,
@@ -34,9 +39,11 @@ export {
   BaselineSeries,
   createSeriesMarkers,
   LineStyle,
+  PriceScaleMode,
 };
 export type {
-  IChartApi, ISeriesApi, IPriceLine, ISeriesMarkersPluginApi, MouseEventParams,
+  IChartApi, ISeriesApi, IPriceLine, ISeriesMarkersPluginApi,
+  ISeriesUpDownMarkerPluginApi, ITextWatermarkPluginApi, MouseEventParams,
   SeriesMarker, SeriesType, Time, LineData, WhitespaceData, HistogramData, CandlestickData,
 };
 
@@ -545,6 +552,100 @@ export function paintHist(
   return paintLast((p) => series.update(p), (p) => series.setData(p), next, prev);
 }
 
+const WM_INK = "rgba(200,205,214,0.22)";
+
+/** Pane watermark. Keep faint so the HUD / crosshair stay readable. */
+export function setPaneWatermark(
+  chart: IChartApi,
+  apiRef: { current: ITextWatermarkPluginApi<Time> | null },
+  text: string,
+  fontSize = 80,
+): void {
+  const pane = chart.panes()[0];
+  if (!pane) return;
+  const opts = {
+    visible: Boolean(text),
+    horzAlign: "center" as const,
+    vertAlign: "center" as const,
+    lines: text
+      ? [{ text, color: WM_INK, fontSize, fontFamily: FONT, fontStyle: "bold" }]
+      : [],
+  };
+  if (apiRef.current) {
+    apiRef.current.applyOptions(opts);
+    return;
+  }
+  if (!text) return;
+  apiRef.current = createTextWatermark(pane, opts);
+}
+
+export function setLogScale(chart: IChartApi, on: boolean): void {
+  try {
+    chart.priceScale("right").applyOptions({
+      mode: on ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+    });
+  } catch {
+    /* scale not ready */
+  }
+}
+
+export function ghostLineOpts() {
+  return {
+    color: "rgba(0,0,0,0)",
+    lineVisible: false,
+    lastValueVisible: false,
+    priceLineVisible: false,
+    crosshairMarkerVisible: false,
+    pointMarkersVisible: false,
+  };
+}
+
+export function lineValues(pts: Array<LineData | WhitespaceData>): LineData[] {
+  return pts.filter((p): p is LineData => "value" in p && Number.isFinite((p as LineData).value));
+}
+
+/** UpDownMarkers only attach to Line / Area. Baseline cards host a ghost Line. */
+export function ensureUpDown(
+  chart: IChartApi,
+  lineRef: { current: ISeriesApi<"Line"> | null },
+  apiRef: { current: ISeriesUpDownMarkerPluginApi<Time> | null },
+): ISeriesUpDownMarkerPluginApi<Time> {
+  if (!lineRef.current || !seriesAlive(chart, lineRef.current)) {
+    lineRef.current = chart.addSeries(LineSeries, ghostLineOpts());
+    apiRef.current = null;
+  }
+  if (!apiRef.current) {
+    apiRef.current = createUpDownMarkers(lineRef.current, {
+      positiveColor: UP,
+      negativeColor: DN,
+      updateVisibilityDuration: 1600,
+    });
+  }
+  return apiRef.current;
+}
+
+export function paintUpDown(
+  api: ISeriesUpDownMarkerPluginApi<Time> | null,
+  next: LineData[],
+  prev: LineData[] | null | undefined,
+): boolean {
+  if (!api) return false;
+  if (next.length === 0) {
+    api.setData([]);
+    return false;
+  }
+  if (canUpdateLast(prev, next)) {
+    try {
+      api.update(next[next.length - 1]);
+      return true;
+    } catch {
+      /* same as paintLast */
+    }
+  }
+  api.setData(next);
+  return false;
+}
+
 /** Strike / IV smile: X is price, not time. Do not reuse createLcChart. */
 export function createLcPriceChart(el: HTMLElement) {
   return createOptionsChart(el, {
@@ -586,8 +687,24 @@ export function createLcPriceChart(el: HTMLElement) {
       vertLine: { color: HAIR, style: LineStyle.Dashed, width: 1, labelVisible: true, labelBackgroundColor: TAG },
       horzLine: { color: HAIR, style: LineStyle.Dashed, width: 1, labelVisible: true, labelBackgroundColor: TAG },
     },
-    localization: { locale: "zh-CN" },
+    localization: { locale: "zh-CN", precision: 0 },
   });
+}
+
+type LcSizable = {
+  resize: (w: number, h: number, force?: boolean) => void;
+  applyOptions: (o: { autoSize?: boolean }) => void;
+};
+
+/** autoSize can boot at 0x0 in a flex pane; kick an explicit size then restore autoSize. */
+export function resizeLcHost(chart: LcSizable, el: HTMLElement | null): void {
+  if (!el) return;
+  const w = el.clientWidth;
+  const h = el.clientHeight;
+  if (w < 2 || h < 2) return;
+  chart.applyOptions({ autoSize: false });
+  chart.resize(w, h, true);
+  chart.applyOptions({ autoSize: true });
 }
 
 export function useLcPriceChart() {
@@ -598,11 +715,23 @@ export function useLcPriceChart() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const chart = createLcPriceChart(el);
-    chartRef.current = chart;
-    setRev((n) => n + 1);
+    let chart: ReturnType<typeof createLcPriceChart> | null = null;
+    const boot = () => {
+      if (chart) {
+        resizeLcHost(chart, el);
+        return;
+      }
+      if (el.clientWidth < 2 || el.clientHeight < 2) return;
+      chart = createLcPriceChart(el);
+      chartRef.current = chart;
+      setRev((n) => n + 1);
+    };
+    boot();
+    const ro = new ResizeObserver(boot);
+    ro.observe(el);
     return () => {
-      chart.remove();
+      ro.disconnect();
+      chart?.remove();
       chartRef.current = null;
     };
   }, []);
@@ -611,13 +740,7 @@ export function useLcPriceChart() {
 }
 
 export function resizeLc(chart: IChartApi, el: HTMLElement | null): void {
-  if (!el) return;
-  const w = el.clientWidth;
-  const h = el.clientHeight;
-  if (w < 2 || h < 2) return;
-  chart.applyOptions({ autoSize: false });
-  chart.resize(w, h, true);
-  chart.applyOptions({ autoSize: true });
+  resizeLcHost(chart, el);
 }
 
 export function seriesAlive(chart: IChartApi, s: ISeriesApi<SeriesType> | null): boolean {

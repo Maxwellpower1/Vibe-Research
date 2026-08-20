@@ -214,6 +214,9 @@ test("驾驶舱日K分时吃 dataview tick", async () => {
   assert.ok(card.includes("paintLine"), "分时最后一根优先 update");
   assert.ok(card.includes("setRefPriceLine"), "昨收/昨结价线");
   assert.ok(card.includes("setSeriesMarks"), "到期/夜盘/异动 markers");
+  assert.ok(card.includes("setPaneWatermark"), "合约淡字水印");
+  assert.ok(card.includes("ensureUpDown"), "分时最新一跳红绿闪");
+  assert.ok(card.includes("paintUpDown"), "MQTT 最后一根才闪");
   assert.ok(card.includes("sessionMarkIdxs"), "夜盘开盘钉点");
   assert.ok(src.includes("alerts={d.alerts ?? undefined}"), "异动分钟叠当前合约, 空列表不每帧新建");
   assert.ok(card.includes("export function expiryYmd"), "到期日兼容 20260825");

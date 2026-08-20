@@ -17,8 +17,9 @@ import { useExpandAll } from "@/hooks/useExpandAll";
 import { cn } from "@/lib/utils";
 import {
   CandlestickSeries, HistogramSeries, applyTimeLabels, candleOpts, candleValues,
-  seriesAlive, setRefPriceLine, showLatest, styleLastTag, styleVolOverlay, useLcChart, volOpts, volValues, wipeLc,
-  type IPriceLine, type ISeriesApi,
+  seriesAlive, setLogScale, setPaneWatermark, setRefPriceLine, showLatest, styleLastTag,
+  styleVolOverlay, useLcChart, volOpts, volValues, wipeLc,
+  type IPriceLine, type ISeriesApi, type ITextWatermarkPluginApi, type Time,
 } from "@/lib/lcChart";
 
 /** Pull 365 bars; default viewport shows latest ~120; wheel zooms out to full. */
@@ -100,6 +101,7 @@ export function UsMarket() {
     vol: ISeriesApi<"Histogram"> | null;
   }>({ candle: null, vol: null });
   const refLine = useRef<IPriceLine | null>(null);
+  const wmRef = useRef<ITextWatermarkPluginApi<Time> | null>(null);
   onHoverRef.current = setHoverIdx;
 
   const persist = (next: string[]) => {
@@ -250,6 +252,7 @@ export function UsMarket() {
     const chart = lcRef.current;
     if (!chart) return;
     if (bars.length === 0) {
+      setPaneWatermark(chart, wmRef, "");
       wipeLc(chart);
       bag.current = { candle: null, vol: null };
       refLine.current = null;
@@ -269,12 +272,14 @@ export function UsMarket() {
     const last = bars[bars.length - 1];
     styleLastTag(bag.current.candle, last?.close, last?.open);
     setRefPriceLine(bag.current.candle, refLine, bars.length > 1 ? bars[bars.length - 2].close : null);
+    setPaneWatermark(chart, wmRef, selected, 110);
+    setLogScale(chart, bars.every((b) => !Number.isFinite(b.close) || b.close > 0));
     bag.current.vol!.setData(volValues(bars.map((b) => ({
       value: b.volume,
       up: b.close >= b.open,
     }))));
     showLatest(chart, bars.length, VIEW_DAYS);
-  }, [bars, lcRef, labelsRef]);
+  }, [bars, selected, lcRef, labelsRef]);
 
   const selQuote = selected ? quotes[selected] : null;
   const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : (bars.length ? bars.length - 1 : -1);

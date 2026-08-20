@@ -8,8 +8,11 @@ import {
   concatDaySlots, hmOf, kindOfUnd, lastFiniteIdx, minuteKey, padToSlots, tradingDaysOf,
 } from "@/lib/derivMinuteAxis";
 import {
-  BaselineSeries, applyTimeLabels, baselineOpts, seriesAlive, setRefPriceLine, sparseLine, styleLastTag,
-  useLcChart, wipeLc, type IPriceLine, type ISeriesApi,
+  BaselineSeries, applyTimeLabels, baselineOpts, ensureUpDown, lineValues, paintUpDown,
+  seriesAlive, setPaneWatermark, setRefPriceLine, sparseLine, styleLastTag,
+  useLcChart, wipeLc,
+  type IPriceLine, type ISeriesApi, type ISeriesUpDownMarkerPluginApi, type ITextWatermarkPluginApi,
+  type LineData, type Time,
 } from "@/lib/lcChart";
 import { LcLegend, LcSeg, LcWell, lcTone } from "@/components/ui/LcFrame";
 import { chgClass, signed, type ArbPick } from "./arbShared";
@@ -92,6 +95,10 @@ export function SpreadChart({ pick }: { pick: ArbPick | null }) {
   const { ref, chartRef, labelsRef, onHoverRef } = useLcChart();
   const seriesRef = useRef<ISeriesApi<"Baseline"> | null>(null);
   const refLine = useRef<IPriceLine | null>(null);
+  const wmRef = useRef<ITextWatermarkPluginApi<Time> | null>(null);
+  const tickRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const udRef = useRef<ISeriesUpDownMarkerPluginApi<Time> | null>(null);
+  const paintedTick = useRef<LineData[] | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   onHoverRef.current = setHover;
 
@@ -163,9 +170,13 @@ export function SpreadChart({ pick }: { pick: ArbPick | null }) {
     const chart = chartRef.current;
     if (!chart) return;
     if (!frame || frame.cats.length === 0) {
+      setPaneWatermark(chart, wmRef, "");
       wipeLc(chart);
       seriesRef.current = null;
       refLine.current = null;
+      tickRef.current = null;
+      udRef.current = null;
+      paintedTick.current = null;
       labelsRef.current = [];
       return;
     }
@@ -173,15 +184,22 @@ export function SpreadChart({ pick }: { pick: ArbPick | null }) {
     applyTimeLabels(chart, labelsRef, mode === "daily" ? "md" : "hm");
     if (!seriesAlive(chart, seriesRef.current)) {
       seriesRef.current = chart.addSeries(BaselineSeries, baselineOpts(0));
+      tickRef.current = null;
+      udRef.current = null;
     } else {
       seriesRef.current!.applyOptions(baselineOpts(0));
     }
-    seriesRef.current!.setData(sparseLine(frame.vals));
+    const pxPts = sparseLine(frame.vals);
+    seriesRef.current!.setData(pxPts);
+    const tickPts = lineValues(pxPts);
+    paintUpDown(ensureUpDown(chart, tickRef, udRef), tickPts, paintedTick.current);
+    paintedTick.current = tickPts;
     const i = lastFiniteIdx(frame.vals, null);
     styleLastTag(seriesRef.current, i == null ? null : frame.vals[i], 0);
     setRefPriceLine(seriesRef.current, refLine, 0, "0");
+    setPaneWatermark(chart, wmRef, pick?.label ?? "", 72);
     chart.timeScale().fitContent();
-  }, [frame, mode, chartRef, labelsRef]);
+  }, [frame, mode, pick?.label, chartRef, labelsRef]);
 
   const loading = Boolean(pick) && !frame && !poll.error;
   const empty = Boolean(pick && frame && frame.vals.every((v) => v == null));

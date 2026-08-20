@@ -556,12 +556,14 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
         </div>
       )}
 
-      {cur && (cur.strikes?.length ?? 0) > 1 && (
+      {cur && (
         <IvSmileChart
-          strikes={cur.strikes}
+          strikes={cur.strikes ?? []}
           fwd={fwd}
           keep={keepStrikes}
           hideItm={hideItm}
+          spot={undPx ?? fwd}
+          atm={atm}
         />
       )}
 

@@ -13,10 +13,12 @@ import { derivSession } from "./derivShared";
 import {
   BaselineSeries, CandlestickSeries, HistogramSeries, LineSeries, UP, DN, applyTimeLabels,
   baselineOpts, candleOpts, candleValues, finiteLine, fmtPx, hoverIdxFromParam, lcTime,
-  overlayLineOpts, paintCandles, paintHist, paintLine, priceFormatOf, seriesAlive,
-  setRefPriceLine, setSeriesMarks, showLatest, showSession, sparseLine, styleIvOverlay, styleLastTag,
-  styleOiOverlay, styleVolOverlay, useLcChart, volOpts, volValues, wipeLc, IV_COLOR, OI_COLOR,
-  type IPriceLine, type ISeriesApi, type ISeriesMarkersPluginApi, type SeriesMarker, type Time,
+  ensureUpDown, lineValues, overlayLineOpts, paintCandles, paintHist, paintLine, paintUpDown,
+  priceFormatOf, seriesAlive, setPaneWatermark, setRefPriceLine, setSeriesMarks, showLatest,
+  showSession, sparseLine, styleIvOverlay, styleLastTag, styleOiOverlay, styleVolOverlay,
+  useLcChart, volOpts, volValues, wipeLc, IV_COLOR, OI_COLOR,
+  type IPriceLine, type ISeriesApi, type ISeriesMarkersPluginApi, type ISeriesUpDownMarkerPluginApi,
+  type ITextWatermarkPluginApi, type SeriesMarker, type Time,
   type CandlestickData, type HistogramData, type LineData, type WhitespaceData,
 } from "@/lib/lcChart";
 import { LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
@@ -411,12 +413,16 @@ export function OptionChartCard({ pick, mode, tick, alerts = NO_ALERTS }: {
     paintedIv: Array<LineData | WhitespaceData> | null;
     paintedVol: Array<HistogramData | WhitespaceData> | null;
     paintedOi: Array<LineData | WhitespaceData> | null;
+    paintedTick: LineData[] | null;
   }>({
     kind: null, px: null, iv: null, vol: null, oi: null,
-    paintedPx: null, paintedIv: null, paintedVol: null, paintedOi: null,
+    paintedPx: null, paintedIv: null, paintedVol: null, paintedOi: null, paintedTick: null,
   });
   const refLine = useRef<IPriceLine | null>(null);
   const marksRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const wmRef = useRef<ITextWatermarkPluginApi<Time> | null>(null);
+  const tickRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const udRef = useRef<ISeriesUpDownMarkerPluginApi<Time> | null>(null);
   onHoverRef.current = setHover;
   const setAndSaveDays = (n: MinuteDays) => {
     setDays(n);
@@ -504,15 +510,22 @@ export function OptionChartCard({ pick, mode, tick, alerts = NO_ALERTS }: {
     const emptyBag = () => ({
       kind: null as "daily" | "minute" | null,
       px: null, iv: null, vol: null, oi: null,
-      paintedPx: null, paintedIv: null, paintedVol: null, paintedOi: null,
+      paintedPx: null, paintedIv: null, paintedVol: null, paintedOi: null, paintedTick: null,
     });
     const reset = () => {
       wipeLc(chart);
       bag.current = emptyBag();
       refLine.current = null;
       marksRef.current = null;
+      tickRef.current = null;
+      udRef.current = null;
     };
-    if (!pick) { reset(); return; }
+    if (!pick) {
+      setPaneWatermark(chart, wmRef, "");
+      reset();
+      return;
+    }
+    setPaneWatermark(chart, wmRef, pick.name || pick.code, 56);
     const lastMinI = lastFiniteIdx(minData?.prices ?? [], null);
     const lastPx = mode === "daily"
       ? dailyBars[dailyBars.length - 1]?.close
@@ -600,6 +613,9 @@ export function OptionChartCard({ pick, mode, tick, alerts = NO_ALERTS }: {
       bag.current.paintedPx as Array<LineData | WhitespaceData> | null,
     );
     bag.current.paintedPx = pxPts;
+    const tickPts = lineValues(pxPts);
+    paintUpDown(ensureUpDown(chart, tickRef, udRef), tickPts, bag.current.paintedTick);
+    bag.current.paintedTick = tickPts;
     styleLastTag(bag.current.px, finite[finite.length - 1], baseline);
     setRefPriceLine(bag.current.px, refLine, pre !== null && pre > 0 ? pre : null);
     bag.current.iv?.applyOptions({
