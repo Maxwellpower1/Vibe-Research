@@ -8,14 +8,16 @@ import {
   concatDaySlots, frameTradingDays, hmOf, lastFiniteIdx, liveAxisKind, minuteKey, padToSlots, tradingDayOf, ymdOf,
 } from "@/lib/derivMinuteAxis";
 import type { OptionPick } from "./TQuotePanel";
-import type { OvlabDataviewTick, OvlabOptionDailyBar } from "@/lib/api";
+import type { OvlabDataviewTick, OvlabFlowAlert, OvlabOptionDailyBar } from "@/lib/api";
 import { derivSession } from "./derivShared";
 import {
-  BaselineSeries, CandlestickSeries, HistogramSeries, LineSeries, applyTimeLabels,
-  baselineOpts, candleOpts, candleValues, finiteLine, hoverIdxFromParam,
-  overlayLineOpts, seriesAlive, showLatest, showSession, sparseLine, styleIvOverlay, styleLastTag,
+  BaselineSeries, CandlestickSeries, HistogramSeries, LineSeries, UP, DN, applyTimeLabels,
+  baselineOpts, candleOpts, candleValues, finiteLine, fmtPx, hoverIdxFromParam, lcTime,
+  overlayLineOpts, paintCandles, paintHist, paintLine, priceFormatOf, seriesAlive,
+  setRefPriceLine, setSeriesMarks, showLatest, showSession, sparseLine, styleIvOverlay, styleLastTag,
   styleOiOverlay, styleVolOverlay, useLcChart, volOpts, volValues, wipeLc, IV_COLOR, OI_COLOR,
-  type ISeriesApi,
+  type IPriceLine, type ISeriesApi, type ISeriesMarkersPluginApi, type SeriesMarker, type Time,
+  type CandlestickData, type HistogramData, type LineData, type WhitespaceData,
 } from "@/lib/lcChart";
 import { LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
 
@@ -256,17 +258,139 @@ export function hoverIdxOf(raw: unknown, cats: string[]): number | null {
   return null;
 }
 
-function fmtPx(v: number): string {
-  return Math.abs(v) >= 10_000 ? v.toFixed(1) : v.toFixed(2);
+/** Night open + day open on a session axis. */
+export function sessionMarkIdxs(cats: string[]): Array<{ i: number; text: string }> {
+  const out: Array<{ i: number; text: string }> = [];
+  let prevTd = "";
+  let seenNight = false;
+  let seenDay = false;
+  for (let i = 0; i < cats.length; i++) {
+    const c = cats[i];
+    if (!c) continue;
+    const td = tradingDayOf(c);
+    if (td !== prevTd) {
+      seenNight = false;
+      seenDay = false;
+      prevTd = td;
+    }
+    const hm = hmOf(c);
+    if (!seenNight && (hm === "21:00" || hm === "21:01")) {
+      out.push({ i, text: "夜" });
+      seenNight = true;
+    }
+    if (!seenDay && (hm === "09:00" || hm === "09:30")) {
+      out.push({ i, text: hm === "09:30" ? "开" : "日" });
+      seenDay = true;
+    }
+  }
+  return out;
+}
+
+/** 20260825 / 2026-08-25 -> 2026-08-25. OpenVlab expiry_date is often compact. */
+export function expiryYmd(raw?: string | null): string {
+  const s = String(raw ?? "").trim();
+  const compact = s.match(/^(\d{4})(\d{2})(\d{2})(?:\D|$)/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return "";
+}
+
+export function expiryMarkIdx(days: string[], expiry?: string | null): number | null {
+  const ymd = expiryYmd(expiry);
+  if (!ymd) return null;
+  const i = days.findIndex((d) => d.slice(0, 10) === ymd);
+  return i >= 0 ? i : null;
+}
+
+/** T-table code is {prod}{exp[2:]}{C/P}{strike}. Flow may send that, an exchange id, or OPT_ long form. */
+export function alertMatchesCode(
+  a: Pick<OvlabFlowAlert, "instrument" | "contract_code">,
+  code: string,
+): boolean {
+  const want = code.toUpperCase();
+  if (!want) return false;
+  const cc = String(a.contract_code ?? "").toUpperCase();
+  const inst = String(a.instrument ?? "").toUpperCase();
+  if (cc && cc === want) return true;
+  if (inst && inst === want) return true;
+  const m = inst.match(/^OPT_[A-Z]+_([A-Z0-9]+):(\d{6}):([CP]):(.+)$/);
+  if (!m) return false;
+  return `${m[1]}${m[2].slice(2)}${m[3]}${m[4]}` === want;
+}
+
+export function alertMarkIdxs(
+  cats: string[],
+  alerts: Array<Pick<OvlabFlowAlert, "time" | "instrument" | "contract_code" | "side">>,
+  code: string,
+): Array<{ i: number; up: boolean }> {
+  const out: Array<{ i: number; up: boolean }> = [];
+  const seen = new Set<number>();
+  const dated = cats.some((c) => c && c.length > 10);
+  for (const a of alerts) {
+    if (!alertMatchesCode(a, code)) continue;
+    const t = String(a.time ?? "");
+    if (!t) continue;
+    let i = -1;
+    if (dated) {
+      i = cats.findIndex((c) => c && c.slice(0, 16) === t.slice(0, 16));
+      if (i < 0) {
+        const hm = hmOf(t);
+        const td = tradingDayOf(t);
+        i = cats.findIndex((c) => c && tradingDayOf(c) === td && hmOf(c) === hm);
+      }
+    } else {
+      const td = tradingDayOf(t);
+      i = cats.findIndex((c) => c && c.slice(0, 10) === td);
+    }
+    if (i < 0 || seen.has(i)) continue;
+    seen.add(i);
+    const side = String(a.side ?? "").toLowerCase();
+    out.push({ i, up: side !== "bid" && side !== "sell" });
+  }
+  return out;
+}
+
+function toMarks(
+  parts: Array<{ i: number; text?: string; up?: boolean; kind: "session" | "expiry" | "alert" }>,
+): SeriesMarker<Time>[] {
+  return parts.map((p) => {
+    if (p.kind === "alert") {
+      return {
+        time: lcTime(p.i),
+        position: "belowBar" as const,
+        shape: (p.up ? "arrowUp" : "arrowDown") as "arrowUp" | "arrowDown",
+        color: p.up ? UP : DN,
+      };
+    }
+    if (p.kind === "expiry") {
+      return {
+        time: lcTime(p.i),
+        position: "aboveBar" as const,
+        shape: "square" as const,
+        color: "#f0b90b",
+        text: p.text ?? "到",
+      };
+    }
+    return {
+      time: lcTime(p.i),
+      position: "aboveBar" as const,
+      shape: "circle" as const,
+      color: "#67e8f9",
+      text: p.text,
+    };
+  });
 }
 
 export { tradingDayOf } from "@/lib/derivMinuteAxis";
 
 /** 期权联动图卡: mode=daily 日K(分钟聚合+量+标的IV日线) / minute 分时(价线+量+仓+合约IV分钟). */
-export function OptionChartCard({ pick, mode, tick }: {
+const NO_ALERTS: OvlabFlowAlert[] = [];
+
+export function OptionChartCard({ pick, mode, tick, alerts = NO_ALERTS }: {
   pick: OptionPick | null;
   mode: "daily" | "minute";
   tick?: OvlabDataviewTick | null;
+  alerts?: OvlabFlowAlert[];
 }) {
   const { ref, chartRef, labelsRef, onHoverRef } = useLcChart("glance");
   const [hover, setHover] = useState<number | null>(null);
@@ -283,7 +407,16 @@ export function OptionChartCard({ pick, mode, tick }: {
     iv: ISeriesApi<"Line"> | null;
     vol: ISeriesApi<"Histogram"> | null;
     oi: ISeriesApi<"Line"> | null;
-  }>({ kind: null, px: null, iv: null, vol: null, oi: null });
+    paintedPx: CandlestickData[] | Array<LineData | WhitespaceData> | null;
+    paintedIv: Array<LineData | WhitespaceData> | null;
+    paintedVol: Array<HistogramData | WhitespaceData> | null;
+    paintedOi: Array<LineData | WhitespaceData> | null;
+  }>({
+    kind: null, px: null, iv: null, vol: null, oi: null,
+    paintedPx: null, paintedIv: null, paintedVol: null, paintedOi: null,
+  });
+  const refLine = useRef<IPriceLine | null>(null);
+  const marksRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   onHoverRef.current = setHover;
   const setAndSaveDays = (n: MinuteDays) => {
     setDays(n);
@@ -368,11 +501,23 @@ export function OptionChartCard({ pick, mode, tick }: {
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    const emptyBag = () => ({
+      kind: null as "daily" | "minute" | null,
+      px: null, iv: null, vol: null, oi: null,
+      paintedPx: null, paintedIv: null, paintedVol: null, paintedOi: null,
+    });
     const reset = () => {
       wipeLc(chart);
-      bag.current = { kind: null, px: null, iv: null, vol: null, oi: null };
+      bag.current = emptyBag();
+      refLine.current = null;
+      marksRef.current = null;
     };
     if (!pick) { reset(); return; }
+    const lastMinI = lastFiniteIdx(minData?.prices ?? [], null);
+    const lastPx = mode === "daily"
+      ? dailyBars[dailyBars.length - 1]?.close
+      : (lastMinI != null ? minData?.prices[lastMinI] : undefined);
+    const fmt = priceFormatOf(pick.und || pick.code, lastPx);
 
     if (mode === "daily") {
       if (dailyBars.length === 0) { reset(); labelsRef.current = []; return; }
@@ -380,29 +525,50 @@ export function OptionChartCard({ pick, mode, tick }: {
       applyTimeLabels(chart, labelsRef, "md");
       if (bag.current.kind !== "daily" || !seriesAlive(chart, bag.current.px)) {
         reset();
-        bag.current.px = chart.addSeries(CandlestickSeries, candleOpts(true));
+        bag.current.px = chart.addSeries(CandlestickSeries, candleOpts(true, fmt));
         bag.current.iv = chart.addSeries(LineSeries, overlayLineOpts(IV_COLOR, "iv"));
         bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
         bag.current.kind = "daily";
         styleVolOverlay(chart, 0.22);
         styleIvOverlay(chart);
+      } else {
+        bag.current.px?.applyOptions({ priceFormat: fmt });
       }
-      (bag.current.px as ISeriesApi<"Candlestick">).setData(candleValues(dailyBars));
+      const candles = candleValues(dailyBars);
+      const dailyPx = bag.current.px as ISeriesApi<"Candlestick"> | null;
+      if (!dailyPx) return;
+      const lastOnly = paintCandles(dailyPx, candles, bag.current.paintedPx as CandlestickData[] | null);
+      bag.current.paintedPx = candles;
       const last = dailyBars[dailyBars.length - 1];
       styleLastTag(bag.current.px, last?.close, last?.open);
+      const prevClose = dailyBars.length > 1 ? dailyBars[dailyBars.length - 2].close : null;
+      setRefPriceLine(bag.current.px, refLine, prevClose);
       bag.current.iv?.applyOptions({
         autoscaleInfoProvider: () => {
           const r = overlayAxis(dailyIv);
           return r ? { priceRange: { minValue: r.min, maxValue: r.max } } : null;
         },
       });
-      bag.current.iv?.setData(finiteLine(dailyIv));
-      // UP_VOL / DN_VOL: translucent so overlay stays readable
-      bag.current.vol?.setData(volValues(dailyBars.map((b) => ({
+      const ivPts = finiteLine(dailyIv);
+      if (bag.current.iv) {
+        paintLine(bag.current.iv, ivPts, bag.current.paintedIv);
+        bag.current.paintedIv = ivPts;
+      }
+      const volPts = volValues(dailyBars.map((b) => ({
         value: b.vol,
         up: b.close >= b.open,
-      })), true));
-      showLatest(chart, dailyBars.length, 80);
+      })), true);
+      if (bag.current.vol) {
+        paintHist(bag.current.vol, volPts, bag.current.paintedVol);
+        bag.current.paintedVol = volPts;
+      }
+      const days = dailyBars.map((b) => b.t);
+      const markParts: Array<{ i: number; text?: string; up?: boolean; kind: "session" | "expiry" | "alert" }> = [];
+      const expI = expiryMarkIdx(days, pick.expiry);
+      if (expI != null) markParts.push({ i: expI, kind: "expiry", text: "到" });
+      for (const a of alertMarkIdxs(days, alerts, pick.code)) markParts.push({ ...a, kind: "alert" });
+      setSeriesMarks(bag.current.px, marksRef, toMarks(markParts));
+      if (!lastOnly) showLatest(chart, dailyBars.length, 80);
       return;
     }
 
@@ -416,7 +582,7 @@ export function OptionChartCard({ pick, mode, tick }: {
     const baseline = pre !== null && pre > 0 ? pre : finite[0];
     if (bag.current.kind !== "minute" || !seriesAlive(chart, bag.current.px)) {
       reset();
-      bag.current.px = chart.addSeries(BaselineSeries, baselineOpts(baseline, true));
+      bag.current.px = chart.addSeries(BaselineSeries, baselineOpts(baseline, true, fmt));
       bag.current.iv = chart.addSeries(LineSeries, overlayLineOpts(IV_COLOR, "iv"));
       bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
       bag.current.oi = chart.addSeries(LineSeries, overlayLineOpts(OI_COLOR, "oi"));
@@ -425,33 +591,57 @@ export function OptionChartCard({ pick, mode, tick }: {
       styleIvOverlay(chart);
       styleOiOverlay(chart);
     } else {
-      (bag.current.px as ISeriesApi<"Baseline">).applyOptions(baselineOpts(baseline, true));
+      (bag.current.px as ISeriesApi<"Baseline">).applyOptions({ ...baselineOpts(baseline, true, fmt) });
     }
-    (bag.current.px as ISeriesApi<"Baseline">).setData(sparseLine(prices));
+    const pxPts = sparseLine(prices);
+    const lastOnly = paintLine(
+      bag.current.px as ISeriesApi<"Baseline">,
+      pxPts,
+      bag.current.paintedPx as Array<LineData | WhitespaceData> | null,
+    );
+    bag.current.paintedPx = pxPts;
     styleLastTag(bag.current.px, finite[finite.length - 1], baseline);
+    setRefPriceLine(bag.current.px, refLine, pre !== null && pre > 0 ? pre : null);
     bag.current.iv?.applyOptions({
       autoscaleInfoProvider: () => {
         const r = overlayAxis(minData?.iv ?? []);
         return r ? { priceRange: { minValue: r.min, maxValue: r.max } } : null;
       },
     });
-    bag.current.iv?.setData(finiteLine(minData?.iv ?? []));
+    const ivPts = finiteLine(minData?.iv ?? []);
+    if (bag.current.iv) {
+      paintLine(bag.current.iv, ivPts, bag.current.paintedIv);
+      bag.current.paintedIv = ivPts;
+    }
     let prevPx: number | null = null;
-    bag.current.vol?.setData(volValues((minData?.vols ?? []).map((v, i) => {
+    const volPts = volValues((minData?.vols ?? []).map((v, i) => {
       const px = prices[i];
       const up = volUp(px, minData?.opens[i] ?? null, prevPx);
       if (px != null) prevPx = px;
       return { value: v, up };
-    }), true));
+    }), true);
+    if (bag.current.vol) {
+      paintHist(bag.current.vol, volPts, bag.current.paintedVol);
+      bag.current.paintedVol = volPts;
+    }
     bag.current.oi?.applyOptions({
       autoscaleInfoProvider: () => {
         const r = overlayAxis(minData?.oi ?? [], 0.72);
         return r ? { priceRange: { minValue: r.min, maxValue: r.max } } : null;
       },
     });
-    bag.current.oi?.setData(finiteLine(minData?.oi ?? []));
-    showSession(chart, cats.length);
-  }, [pick, mode, dailyBars, dailyIv, minData, chartRef, labelsRef]);
+    const oiPts = finiteLine(minData?.oi ?? []);
+    if (bag.current.oi) {
+      paintLine(bag.current.oi, oiPts, bag.current.paintedOi);
+      bag.current.paintedOi = oiPts;
+    }
+    const markParts: Array<{ i: number; text?: string; up?: boolean; kind: "session" | "expiry" | "alert" }> = [
+      ...sessionMarkIdxs(cats).map((m) => ({ ...m, kind: "session" as const })),
+      ...alertMarkIdxs(cats, alerts, pick.code).map((a) => ({ ...a, kind: "alert" as const })),
+    ];
+    setSeriesMarks(bag.current.px, marksRef, toMarks(markParts));
+    if (!lastOnly) showSession(chart, cats.length);
+  }, [pick, mode, dailyBars, dailyIv, minData, alerts, chartRef, labelsRef]);
 
   let head: { label: string; toneCls: string } | null = null;
   const glanceLegend: LcLegendItem[] = [];
@@ -463,17 +653,17 @@ export function OptionChartCard({ pick, mode, tick }: {
       const iv = dailyIv[i];
       head = {
         label: [
-          `${b.t.slice(5)} ${fmtPx(b.close)}`,
+          `${b.t.slice(5)} ${fmtPx(b.close, pick.und)}`,
           pct !== null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` : "",
           iv != null ? `IV ${iv.toFixed(0)}` : "",
         ].filter(Boolean).join("  "),
         toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-[#f6465d]" : "text-[#0ecb81]",
       };
       glanceLegend.push(
-        { k: "O", v: fmtPx(b.open) },
-        { k: "H", v: fmtPx(b.high) },
-        { k: "L", v: fmtPx(b.low) },
-        { k: "C", v: fmtPx(b.close), tone: lcTone(pct) },
+        { k: "O", v: fmtPx(b.open, pick.und) },
+        { k: "H", v: fmtPx(b.high, pick.und) },
+        { k: "L", v: fmtPx(b.low, pick.und) },
+        { k: "C", v: fmtPx(b.close, pick.und), tone: lcTone(pct) },
         { k: "V", v: fmtOi(b.vol), tone: "muted" },
       );
       if (iv != null) glanceLegend.push({ k: "IV", v: iv.toFixed(0), tone: "iv" });
@@ -495,7 +685,7 @@ export function OptionChartCard({ pick, mode, tick }: {
           const oi = minData!.oi[i];
           head = {
             label: [
-              `${minData!.days === 2 ? (t.slice(5, 16) || t) : (t.slice(11, 16) || t)} ${fmtPx(px)}`,
+              `${minData!.days === 2 ? (t.slice(5, 16) || t) : (t.slice(11, 16) || t)} ${fmtPx(px, pick.und)}`,
               pct !== null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` : "",
               iv != null ? `IV ${iv.toFixed(0)}` : "",
               vol != null ? `量 ${fmtOi(vol)}` : "",
@@ -504,7 +694,7 @@ export function OptionChartCard({ pick, mode, tick }: {
             toneCls: pct === null ? "text-slate-400" : pct >= 0 ? "text-[#f6465d]" : "text-[#0ecb81]",
           };
           glanceLegend.push(
-            { k: "P", v: fmtPx(px), tone: lcTone(pct) },
+            { k: "P", v: fmtPx(px, pick.und), tone: lcTone(pct) },
             { k: "V", v: vol != null ? fmtOi(vol) : "—", tone: "muted" },
           );
           if (iv != null) glanceLegend.push({ k: "IV", v: iv.toFixed(0), tone: "iv" });

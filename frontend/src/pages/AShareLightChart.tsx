@@ -14,8 +14,8 @@ import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
 import { cn } from "@/lib/utils";
 import {
   BaselineSeries, CandlestickSeries, HistogramSeries, applyTimeLabels, baselineOpts,
-  candleOpts, candleValues, resizeLc, seriesAlive, showLatest, sparseLine, styleLastTag,
-  styleVolOverlay, useLcChart, volOpts, volValues, wipeLc, type ISeriesApi,
+  candleOpts, candleValues, resizeLc, seriesAlive, setRefPriceLine, showLatest, sparseLine, styleLastTag,
+  styleVolOverlay, useLcChart, volOpts, volValues, wipeLc, type IPriceLine, type ISeriesApi,
 } from "@/lib/lcChart";
 
 const StockData = lazy(() =>
@@ -96,6 +96,7 @@ export function AShareLightChart({
     main: ISeriesApi<"Candlestick"> | ISeriesApi<"Baseline"> | null;
     vol: ISeriesApi<"Histogram"> | null;
   }>({ kind: null, main: null, vol: null });
+  const refLine = useRef<IPriceLine | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   onHoverRef.current = setHoverIdx;
 
@@ -190,6 +191,7 @@ export function AShareLightChart({
     if (bars.length === 0) {
       wipeLc(chart);
       bag.current = { kind: null, main: null, vol: null };
+      refLine.current = null;
       labelsRef.current = [];
       return;
     }
@@ -203,6 +205,7 @@ export function AShareLightChart({
     applyTimeLabels(chart, labelsRef, isDaily ? "md" : resolution === "5" ? "mdhm" : "hm");
     if (bag.current.kind !== kind || !seriesAlive(chart, bag.current.main) || !seriesAlive(chart, bag.current.vol)) {
       wipeLc(chart);
+      refLine.current = null;
       bag.current.main = kind === "candle"
         ? chart.addSeries(CandlestickSeries, candleOpts())
         : chart.addSeries(BaselineSeries, baselineOpts(baseline));
@@ -219,6 +222,10 @@ export function AShareLightChart({
     }
     const last = bars[bars.length - 1];
     styleLastTag(bag.current.main, last?.close, kind === "candle" ? last?.open : baseline);
+    const prev = kind === "candle"
+      ? (bars.length > 1 ? bars[bars.length - 2].close : null)
+      : baseline;
+    setRefPriceLine(bag.current.main, refLine, prev);
     bag.current.vol!.setData(volValues(bars.map((b) => ({
       value: b.volume,
       up: isDaily ? b.close >= b.open : b.close >= baseline,

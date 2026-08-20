@@ -5,6 +5,7 @@ import { usePolling } from "@/hooks/usePolling";
 import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
 import { CellEmpty, CtnText, ProdSearchSelect, SortableHd, contractCode, findRowByUnd, tickFresh, undOfRow } from "./derivShared";
+import { IvSmileChart } from "./IvSmileChart";
 import { storageGet, storageSet } from "@/lib/storage";
 
 /** 右下日K/分时: 点行情观察出标的, 点 T 表出期权合约. */
@@ -13,6 +14,7 @@ export interface OptionPick {
   code: string; // option: AU2609C952; und: IF2608 / 510300
   und: string;  // 标的码 (日K IV 叠加 / 分时轴)
   name: string;
+  expiry?: string;
 }
 
 /** 代码转展示名: AU2609C952 -> AU2609购952. 锚定末尾 C/P+行权价, 防品种码本身含 C/P (玉米 C / PP / ZC). */
@@ -45,6 +47,30 @@ export function ivOf(s: OvlabTQuoteSide): number | null {
   const a = num(s.ivAsk);
   if (b !== null && a !== null) return (b + a) / 2;
   return num(s.theoIv);
+}
+
+/** Call/Put IV vs strike for createOptionsChart. Same hide-ITM rule as the table. */
+export function smilePoints(
+  strikes: OvlabTQuoteStrike[],
+  fwd: number | null,
+  keep: number | readonly number[] | null,
+  hide: boolean,
+): { call: Array<{ time: number; value: number }>; put: Array<{ time: number; value: number }> } {
+  const call: Array<{ time: number; value: number }> = [];
+  const put: Array<{ time: number; value: number }> = [];
+  for (const s of strikes) {
+    if (!hideItmSide("call", s.strike, fwd, keep, hide)) {
+      const v = ivOf(s.call);
+      if (v != null) call.push({ time: s.strike, value: v });
+    }
+    if (!hideItmSide("put", s.strike, fwd, keep, hide)) {
+      const v = ivOf(s.put);
+      if (v != null) put.push({ time: s.strike, value: v });
+    }
+  }
+  call.sort((a, b) => a.time - b.time);
+  put.sort((a, b) => a.time - b.time);
+  return { call, put };
 }
 
 /** 沽虚值 IV - 购虚值 IV; 正=沽更贵 (下行保护需求). */
@@ -394,7 +420,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
 
   const emitPick = (code: string | undefined) => {
     if (!code || !onPickContract) return;
-    onPickContract({ kind: "option", code, und: cur?.und ?? "", name: optionName(code) });
+    onPickContract({ kind: "option", code, und: cur?.und ?? "", name: optionName(code), expiry: cur?.expiryDate });
   };
 
   useEffect(() => {
@@ -404,7 +430,7 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
     if (inChain) return;
     const atm = cur.strikes.find((s) => s.strike === cur.atm) ?? cur.strikes[cur.strikes.length >> 1];
     if (!atm?.callCode) return;
-    onPickContract({ kind: "option", code: atm.callCode, und: cur.und ?? "", name: optionName(atm.callCode) });
+    onPickContract({ kind: "option", code: atm.callCode, und: cur.und ?? "", name: optionName(atm.callCode), expiry: cur.expiryDate });
   }, [prod, cur?.exp, cur?.und, pick?.code, pick?.kind, onPickContract]);
 
   const spotRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -528,6 +554,15 @@ export function TQuotePanel({ d, product, onProduct, pick, onPickContract }: {
           )}
           {move && <span>预期 <span className="text-slate-300">{move}</span></span>}
         </div>
+      )}
+
+      {cur && (cur.strikes?.length ?? 0) > 1 && (
+        <IvSmileChart
+          strikes={cur.strikes}
+          fwd={fwd}
+          keep={keepStrikes}
+          hideItm={hideItm}
+        />
       )}
 
       <div className="min-h-0 flex-1 overflow-auto">

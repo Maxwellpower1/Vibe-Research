@@ -74,6 +74,34 @@ test("ivSkew 沽虚值更贵为正", () => {
   assert.equal(skew, 3);
 });
 
+function smilePoints(strikes, fwd, keep, hide) {
+  const call = [];
+  const put = [];
+  for (const s of strikes) {
+    if (!hideItmSide("call", s.strike, fwd, keep, hide)) {
+      const v = ivOf(s.call);
+      if (v != null) call.push({ time: s.strike, value: v });
+    }
+    if (!hideItmSide("put", s.strike, fwd, keep, hide)) {
+      const v = ivOf(s.put);
+      if (v != null) put.push({ time: s.strike, value: v });
+    }
+  }
+  call.sort((a, b) => a.time - b.time);
+  put.sort((a, b) => a.time - b.time);
+  return { call, put };
+}
+
+test("smilePoints 跟隐藏实值同一套档, 横轴是行权价", () => {
+  const strikes = [mk(90, 0, 0, 22, 24), mk(100, 0, 0, 20, 20), mk(110, 0, 0, 21, 18)];
+  const all = smilePoints(strikes, 100, 100, false);
+  assert.deepEqual(all.call.map((p) => p.time), [90, 100, 110]);
+  assert.equal(all.call[0].value, 22);
+  const otm = smilePoints(strikes, 100, 100, true);
+  assert.deepEqual(otm.call.map((p) => p.time), [100, 110]);
+  assert.deepEqual(otm.put.map((p) => p.time), [90, 100]);
+});
+
 test("TQuotePanel 默认全部档位 / 自动 ATM 购", async () => {
   const src = await readFile(new URL("../src/components/deriv/TQuotePanel.tsx", import.meta.url), "utf8");
   assert.ok(!src.includes("sliceChain"), "不再切 ATM 附近窗");
@@ -118,6 +146,8 @@ test("TQuotePanel 默认全部档位 / 自动 ATM 购", async () => {
   assert.ok(!src.includes("isAtm"), "不再把某一档标成 ATM");
   assert.ok(!src.includes(">ATM</span>"), "行权价旁不写 ATM 字母");
   assert.ok(!src.includes("lastTime.slice(5, 16)"), "不再截成月日暗字");
+  assert.ok(src.includes("IvSmileChart"), "T 表上挂 IV 微笑");
+  assert.ok(src.includes("expiry: cur?.expiryDate") || src.includes("expiry: cur.expiryDate"), "点合约带到期日给 markers");
 });
 
 test("undBracket 现价夹在相邻两档, 贴档用本档与更高档", () => {

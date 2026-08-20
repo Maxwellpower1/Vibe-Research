@@ -17,8 +17,8 @@ import { useExpandAll } from "@/hooks/useExpandAll";
 import { cn } from "@/lib/utils";
 import {
   CandlestickSeries, HistogramSeries, applyTimeLabels, candleOpts, candleValues,
-  seriesAlive, showLatest, styleLastTag, styleVolOverlay, useLcChart, volOpts, volValues, wipeLc,
-  type ISeriesApi,
+  seriesAlive, setRefPriceLine, showLatest, styleLastTag, styleVolOverlay, useLcChart, volOpts, volValues, wipeLc,
+  type IPriceLine, type ISeriesApi,
 } from "@/lib/lcChart";
 
 /** Pull 365 bars; default viewport shows latest ~120; wheel zooms out to full. */
@@ -99,6 +99,7 @@ export function UsMarket() {
     candle: ISeriesApi<"Candlestick"> | null;
     vol: ISeriesApi<"Histogram"> | null;
   }>({ candle: null, vol: null });
+  const refLine = useRef<IPriceLine | null>(null);
   onHoverRef.current = setHoverIdx;
 
   const persist = (next: string[]) => {
@@ -251,6 +252,7 @@ export function UsMarket() {
     if (bars.length === 0) {
       wipeLc(chart);
       bag.current = { candle: null, vol: null };
+      refLine.current = null;
       labelsRef.current = [];
       return;
     }
@@ -258,6 +260,7 @@ export function UsMarket() {
     applyTimeLabels(chart, labelsRef, "md");
     if (!seriesAlive(chart, bag.current.candle) || !seriesAlive(chart, bag.current.vol)) {
       wipeLc(chart);
+      refLine.current = null;
       bag.current.candle = chart.addSeries(CandlestickSeries, candleOpts());
       bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
       styleVolOverlay(chart);
@@ -265,6 +268,7 @@ export function UsMarket() {
     bag.current.candle!.setData(candleValues(bars));
     const last = bars[bars.length - 1];
     styleLastTag(bag.current.candle, last?.close, last?.open);
+    setRefPriceLine(bag.current.candle, refLine, bars.length > 1 ? bars[bars.length - 2].close : null);
     bag.current.vol!.setData(volValues(bars.map((b) => ({
       value: b.volume,
       up: b.close >= b.open,

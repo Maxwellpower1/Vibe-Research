@@ -8,8 +8,8 @@ import {
   concatDaySlots, hmOf, kindOfUnd, lastFiniteIdx, minuteKey, padToSlots, tradingDaysOf,
 } from "@/lib/derivMinuteAxis";
 import {
-  BaselineSeries, applyTimeLabels, baselineOpts, seriesAlive, sparseLine, styleLastTag,
-  useLcChart, wipeLc, type ISeriesApi,
+  BaselineSeries, applyTimeLabels, baselineOpts, seriesAlive, setRefPriceLine, sparseLine, styleLastTag,
+  useLcChart, wipeLc, type IPriceLine, type ISeriesApi,
 } from "@/lib/lcChart";
 import { LcLegend, LcSeg, LcWell, lcTone } from "@/components/ui/LcFrame";
 import { chgClass, signed, type ArbPick } from "./arbShared";
@@ -91,6 +91,7 @@ export function SpreadChart({ pick }: { pick: ArbPick | null }) {
   const [mode, setMode] = useState<Mode>("minute");
   const { ref, chartRef, labelsRef, onHoverRef } = useLcChart();
   const seriesRef = useRef<ISeriesApi<"Baseline"> | null>(null);
+  const refLine = useRef<IPriceLine | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   onHoverRef.current = setHover;
 
@@ -164,6 +165,7 @@ export function SpreadChart({ pick }: { pick: ArbPick | null }) {
     if (!frame || frame.cats.length === 0) {
       wipeLc(chart);
       seriesRef.current = null;
+      refLine.current = null;
       labelsRef.current = [];
       return;
     }
@@ -177,6 +179,7 @@ export function SpreadChart({ pick }: { pick: ArbPick | null }) {
     seriesRef.current!.setData(sparseLine(frame.vals));
     const i = lastFiniteIdx(frame.vals, null);
     styleLastTag(seriesRef.current, i == null ? null : frame.vals[i], 0);
+    setRefPriceLine(seriesRef.current, refLine, 0, "0");
     chart.timeScale().fitContent();
   }, [frame, mode, chartRef, labelsRef]);
 

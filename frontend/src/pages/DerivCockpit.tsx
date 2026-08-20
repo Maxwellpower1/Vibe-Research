@@ -272,6 +272,7 @@ export function DerivCockpit() {
                   pick={optPick}
                   mode="minute"
                   tick={chartTick}
+                  alerts={d.alerts ?? undefined}
                 />
               </div>
               <div className="min-h-0 flex-1">
@@ -279,6 +280,7 @@ export function DerivCockpit() {
                   pick={optPick}
                   mode="daily"
                   tick={chartTick}
+                  alerts={d.alerts ?? undefined}
                 />
               </div>
             </div>

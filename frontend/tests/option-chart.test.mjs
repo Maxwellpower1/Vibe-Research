@@ -209,7 +209,15 @@ test("驾驶舱日K分时吃 dataview tick", async () => {
   assert.ok(card.includes("export function applyDailyTick"), "日K叠当日最后一根");
   assert.ok(card.includes("live ? 15_000 : 60_000"), "盘中分时加快拉 history");
   assert.ok(card.includes("num(tick?.last)"), "驾驶舱已拼好的主力价直接叠");
-  assert.ok(card.includes("Math.abs(v) >= 10_000"), "金价两位小数, 银价一位");
+  assert.ok(card.includes("fmtPx(b.close, pick.und)"), "轴/HUD 精度跟品种走");
+  assert.ok(card.includes("paintCandles"), "日K 最后一根优先 update");
+  assert.ok(card.includes("paintLine"), "分时最后一根优先 update");
+  assert.ok(card.includes("setRefPriceLine"), "昨收/昨结价线");
+  assert.ok(card.includes("setSeriesMarks"), "到期/夜盘/异动 markers");
+  assert.ok(card.includes("sessionMarkIdxs"), "夜盘开盘钉点");
+  assert.ok(src.includes("alerts={d.alerts ?? undefined}"), "异动分钟叠当前合约, 空列表不每帧新建");
+  assert.ok(card.includes("export function expiryYmd"), "到期日兼容 20260825");
+  assert.ok(card.includes("export function alertMatchesCode"), "异动对 T 表短码 / OPT_ 长码");
   assert.ok(card.includes('pick?.kind === "und"') && card.includes("ovlabLastBar"), "期货标的 last-bar 做底");
   assert.ok(card.includes("liveAxisKind"), "夜盘无分钟点也铺当夜轴");
   assert.ok(card.includes("showSession"), "分时开盘贴左, 不 fitContent 挤到右侧");
@@ -398,6 +406,111 @@ test("两日分时隐波仍落在各自交易日", () => {
   assert.equal(iv[1], null);
   assert.equal(iv[2], 18);
   assert.equal(iv[3], null);
+});
+
+function sessionMarkIdxs(cats) {
+  const out = [];
+  let prevTd = "";
+  let seenNight = false;
+  let seenDay = false;
+  for (let i = 0; i < cats.length; i++) {
+    const c = cats[i];
+    if (!c) continue;
+    const td = tradingDayOf(c);
+    if (td !== prevTd) {
+      seenNight = false;
+      seenDay = false;
+      prevTd = td;
+    }
+    const hm = c.slice(11, 16);
+    if (!seenNight && (hm === "21:00" || hm === "21:01")) {
+      out.push({ i, text: "夜" });
+      seenNight = true;
+    }
+    if (!seenDay && (hm === "09:00" || hm === "09:30")) {
+      out.push({ i, text: hm === "09:30" ? "开" : "日" });
+      seenDay = true;
+    }
+  }
+  return out;
+}
+
+function expiryYmd(raw) {
+  const s = String(raw ?? "").trim();
+  const compact = s.match(/^(\d{4})(\d{2})(\d{2})(?:\D|$)/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return "";
+}
+
+function expiryMarkIdx(days, expiry) {
+  const ymd = expiryYmd(expiry);
+  if (!ymd) return null;
+  const i = days.findIndex((d) => d.slice(0, 10) === ymd);
+  return i >= 0 ? i : null;
+}
+
+function alertMatchesCode(a, code) {
+  const want = code.toUpperCase();
+  if (!want) return false;
+  const cc = String(a.contract_code ?? "").toUpperCase();
+  const inst = String(a.instrument ?? "").toUpperCase();
+  if (cc && cc === want) return true;
+  if (inst && inst === want) return true;
+  const m = inst.match(/^OPT_[A-Z]+_([A-Z0-9]+):(\d{6}):([CP]):(.+)$/);
+  if (!m) return false;
+  return `${m[1]}${m[2].slice(2)}${m[3]}${m[4]}` === want;
+}
+
+function alertMarkIdxs(cats, alerts, code) {
+  const out = [];
+  const seen = new Set();
+  const dated = cats.some((c) => c && c.length > 10);
+  for (const a of alerts) {
+    if (!alertMatchesCode(a, code)) continue;
+    const t = String(a.time ?? "");
+    if (!t) continue;
+    let i = -1;
+    if (dated) {
+      i = cats.findIndex((c) => c && c.slice(0, 16) === t.slice(0, 16));
+    } else {
+      i = cats.findIndex((c) => c && c.slice(0, 10) === tradingDayOf(t));
+    }
+    if (i < 0 || seen.has(i)) continue;
+    seen.add(i);
+    const side = String(a.side ?? "").toLowerCase();
+    out.push({ i, up: side !== "bid" && side !== "sell" });
+  }
+  return out;
+}
+
+test("sessionMarkIdxs 夜盘 21:00 和日盘开盘各钉一次", () => {
+  const cats = [
+    "2026-08-17 21:00:00",
+    "2026-08-17 21:01:00",
+    "2026-08-18 09:00:00",
+    "2026-08-18 09:01:00",
+  ];
+  const m = sessionMarkIdxs(cats);
+  assert.deepEqual(m.map((x) => x.text), ["夜", "日"]);
+  assert.equal(m[0].i, 0);
+  assert.equal(m[1].i, 2);
+});
+
+test("expiryMarkIdx / alertMarkIdxs 对上当前合约", () => {
+  assert.equal(expiryMarkIdx(["2026-08-18", "2026-09-16"], "2026-09-16"), 1);
+  assert.equal(expiryMarkIdx(["2026-08-18", "2026-08-25"], "20260825"), 1);
+  assert.equal(expiryMarkIdx(["2026-08-18"], "2026-09-16"), null);
+  const cats = ["2026-08-18 09:30:00", "2026-08-18 10:00:00"];
+  const hits = alertMarkIdxs(cats, [
+    { contract_code: "AG2609C16000", time: "2026-08-18 10:00:12", side: "ask" },
+    { contract_code: "AU2609C800", time: "2026-08-18 10:00:00", side: "bid" },
+  ], "ag2609C16000");
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].i, 1);
+  assert.equal(hits[0].up, true);
+  assert.equal(alertMatchesCode({ instrument: "OPT_SHSE_588000:202608:P:1.8", contract_code: "10012124" }, "5880002608P1.8"), true);
+  assert.equal(alertMatchesCode({ instrument: "OPT_SHSE_588000:202608:P:1.8", contract_code: "10012124" }, "AG2609C16000"), false);
 });
 
 test("minuteFrame 隐波按交易日过滤, 不用跨日钟面匹配", async () => {

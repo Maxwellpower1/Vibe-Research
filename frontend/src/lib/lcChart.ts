@@ -1,8 +1,9 @@
 /** TradingView-style Lightweight Charts for K/minute cards. ECharts stays on non-time-series. */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
+  createOptionsChart,
   ColorType,
   CrosshairMode,
   LineStyle,
@@ -13,12 +14,15 @@ import {
   createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type IPriceLine,
+  type ISeriesMarkersPluginApi,
   type MouseEventParams,
   type UTCTimestamp,
   type LineData,
   type WhitespaceData,
   type HistogramData,
   type CandlestickData,
+  type SeriesMarker,
   type SeriesType,
   type Time,
 } from "lightweight-charts";
@@ -29,8 +33,12 @@ export {
   LineSeries,
   BaselineSeries,
   createSeriesMarkers,
+  LineStyle,
 };
-export type { IChartApi, ISeriesApi, MouseEventParams, SeriesType, Time };
+export type {
+  IChartApi, ISeriesApi, IPriceLine, ISeriesMarkersPluginApi, MouseEventParams,
+  SeriesMarker, SeriesType, Time, LineData, WhitespaceData, HistogramData, CandlestickData,
+};
 
 /** CN convention, TV saturation. */
 export const UP = "#f6465d";
@@ -138,7 +146,31 @@ export function volValues(
 
 const AXIS_BORDER = "rgba(255,255,255,0.14)";
 
-export function candleOpts(_glance = false) {
+export type PxPrec = { precision: number; minMove: number };
+
+/** AG 1dp, AU 2dp; else sample (>=10000 -> 1, <1 -> 4, else 2). */
+export function pxPrec(codeOrUnd?: string | null, sample?: number | null): PxPrec {
+  const s = (codeOrUnd ?? "").toUpperCase();
+  if (s === "AG" || s.startsWith("AG_") || /^AG\d/.test(s)) return { precision: 1, minMove: 0.1 };
+  if (s === "AU" || s.startsWith("AU_") || /^AU\d/.test(s)) return { precision: 2, minMove: 0.01 };
+  if (sample != null && Number.isFinite(sample)) {
+    const a = Math.abs(sample);
+    if (a >= 10_000) return { precision: 1, minMove: 0.1 };
+    if (a > 0 && a < 1) return { precision: 4, minMove: 0.0001 };
+  }
+  return { precision: 2, minMove: 0.01 };
+}
+
+export function priceFormatOf(codeOrUnd?: string | null, sample?: number | null) {
+  const { precision, minMove } = pxPrec(codeOrUnd, sample);
+  return { type: "price" as const, precision, minMove };
+}
+
+export function fmtPx(v: number, codeOrUnd?: string | null): string {
+  return v.toFixed(pxPrec(codeOrUnd, v).precision);
+}
+
+export function candleOpts(_glance = false, fmt?: ReturnType<typeof priceFormatOf>) {
   return {
     upColor: UP,
     downColor: DN,
@@ -151,7 +183,7 @@ export function candleOpts(_glance = false) {
     priceLineWidth: 1 as const,
     priceLineStyle: LineStyle.SparseDotted,
     priceLineColor: UP,
-    priceFormat: { type: "price" as const, precision: 2, minMove: 0.01 },
+    priceFormat: fmt ?? { type: "price" as const, precision: 2, minMove: 0.01 },
   };
 }
 
@@ -164,7 +196,7 @@ export function volOpts() {
   };
 }
 
-export function baselineOpts(base: number, glance = false) {
+export function baselineOpts(base: number, glance = false, fmt?: ReturnType<typeof priceFormatOf>) {
   return {
     priceScaleId: "right",
     lastValueVisible: true,
@@ -172,7 +204,7 @@ export function baselineOpts(base: number, glance = false) {
     priceLineWidth: 1 as const,
     priceLineStyle: LineStyle.SparseDotted,
     priceLineColor: UP,
-    priceFormat: { type: "price" as const, precision: 2, minMove: 0.01 },
+    priceFormat: fmt ?? { type: "price" as const, precision: 2, minMove: 0.01 },
     baseValue: { type: "price" as const, price: base },
     relativeGradient: true,
     topLineColor: UP,
@@ -234,12 +266,14 @@ export function createLcChart(el: HTMLElement, preset: LcPreset = "desk"): IChar
       timeVisible: true,
       secondsVisible: false,
       rightOffset: glance ? 2 : 6,
+      rightOffsetPixels: glance ? 8 : 24,
       ticksVisible: true,
       barSpacing: glance ? 5 : 7,
       minBarSpacing: 3,
     },
     crosshair: {
       mode: glance ? CrosshairMode.Magnet : CrosshairMode.MagnetOHLC,
+      doNotSnapToHiddenSeriesIndices: true,
       vertLine: {
         color: HAIR,
         style: LineStyle.Dashed,
@@ -380,6 +414,7 @@ export function showSession(chart: IChartApi, n: number): void {
   chart.applyOptions({
     timeScale: {
       rightOffset: 0,
+      rightOffsetPixels: 0,
       minBarSpacing: 0.2,
       barSpacing: 1,
       fixLeftEdge: true,
@@ -400,6 +435,179 @@ export function showLatest(chart: IChartApi, n: number, view: number): void {
     return;
   }
   ts.setVisibleLogicalRange({ from: n - view, to: n - 1 + 3 });
+}
+
+/** Horizontal ref line (昨收 / 零轴). Recreate only when missing. */
+export function setRefPriceLine(
+  series: ISeriesApi<SeriesType> | null,
+  lineRef: { current: IPriceLine | null },
+  price: number | null | undefined,
+  title = "昨",
+  color = "rgba(200,205,214,0.55)",
+): void {
+  if (!series || price == null || !Number.isFinite(price)) {
+    if (lineRef.current && series) {
+      try { series.removePriceLine(lineRef.current); } catch { /* already gone */ }
+    }
+    lineRef.current = null;
+    return;
+  }
+  const next = {
+    price,
+    color,
+    lineWidth: 1 as const,
+    lineStyle: LineStyle.Dashed,
+    axisLabelVisible: true,
+    title,
+  };
+  if (lineRef.current) {
+    lineRef.current.applyOptions(next);
+    return;
+  }
+  lineRef.current = series.createPriceLine(next);
+}
+
+export function setSeriesMarks(
+  series: ISeriesApi<SeriesType> | null,
+  apiRef: { current: ISeriesMarkersPluginApi<Time> | null },
+  marks: SeriesMarker<Time>[],
+): void {
+  if (!series) return;
+  if (!apiRef.current) {
+    apiRef.current = createSeriesMarkers(series, marks);
+    return;
+  }
+  apiRef.current.setMarkers(marks);
+}
+
+function samePoint(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null || typeof a !== "object" || typeof b !== "object") return false;
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  if (x.time !== y.time) return false;
+  if ("value" in x || "value" in y) return x.value === y.value && x.color === y.color;
+  return x.open === y.open && x.high === y.high && x.low === y.low && x.close === y.close;
+}
+
+/** Last bar only: LC update() cannot rewrite a mid-session slot. */
+export function canUpdateLast<T>(prev: T[] | null | undefined, next: T[]): boolean {
+  if (!prev || prev.length === 0 || prev.length !== next.length) return false;
+  for (let i = 0; i < next.length - 1; i++) {
+    if (!samePoint(prev[i], next[i])) return false;
+  }
+  return true;
+}
+
+function paintLast<T extends CandlestickData | LineData | WhitespaceData | HistogramData>(
+  update: (pt: T) => void,
+  setAll: (pts: T[]) => void,
+  next: T[],
+  prev: T[] | null | undefined,
+): boolean {
+  if (next.length === 0) {
+    setAll(next);
+    return false;
+  }
+  if (canUpdateLast(prev, next)) {
+    try {
+      update(next[next.length - 1]);
+      return true;
+    } catch {
+      /* LC update rejects some whitespace / time jumps */
+    }
+  }
+  setAll(next);
+  return false;
+}
+
+export function paintCandles(
+  series: ISeriesApi<"Candlestick">,
+  next: CandlestickData[],
+  prev: CandlestickData[] | null | undefined,
+): boolean {
+  return paintLast((p) => series.update(p), (p) => series.setData(p), next, prev);
+}
+
+export function paintLine(
+  series: ISeriesApi<"Line"> | ISeriesApi<"Baseline">,
+  next: Array<LineData | WhitespaceData>,
+  prev: Array<LineData | WhitespaceData> | null | undefined,
+): boolean {
+  return paintLast((p) => series.update(p), (p) => series.setData(p), next, prev);
+}
+
+export function paintHist(
+  series: ISeriesApi<"Histogram">,
+  next: Array<HistogramData | WhitespaceData>,
+  prev: Array<HistogramData | WhitespaceData> | null | undefined,
+): boolean {
+  return paintLast((p) => series.update(p), (p) => series.setData(p), next, prev);
+}
+
+/** Strike / IV smile: X is price, not time. Do not reuse createLcChart. */
+export function createLcPriceChart(el: HTMLElement) {
+  return createOptionsChart(el, {
+    autoSize: true,
+    layout: {
+      background: { type: ColorType.Solid, color: "transparent" },
+      textColor: INK,
+      fontSize: 10,
+      fontFamily: FONT,
+      attributionLogo: false,
+    },
+    grid: {
+      vertLines: { visible: false },
+      horzLines: { color: GRID, style: LineStyle.Solid },
+    },
+    rightPriceScale: {
+      visible: true,
+      borderVisible: true,
+      borderColor: AXIS_BORDER,
+      ticksVisible: true,
+      textColor: INK,
+      minimumWidth: 40,
+      scaleMargins: { top: 0.14, bottom: 0.12 },
+    },
+    leftPriceScale: { visible: false },
+    timeScale: {
+      borderVisible: true,
+      borderColor: AXIS_BORDER,
+      ticksVisible: true,
+      fixLeftEdge: true,
+      fixRightEdge: true,
+      rightOffset: 0,
+      rightOffsetPixels: 0,
+    },
+    handleScroll: false,
+    handleScale: false,
+    crosshair: {
+      mode: CrosshairMode.Magnet,
+      vertLine: { color: HAIR, style: LineStyle.Dashed, width: 1, labelVisible: true, labelBackgroundColor: TAG },
+      horzLine: { color: HAIR, style: LineStyle.Dashed, width: 1, labelVisible: true, labelBackgroundColor: TAG },
+    },
+    localization: { locale: "zh-CN" },
+  });
+}
+
+export function useLcPriceChart() {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<ReturnType<typeof createLcPriceChart> | null>(null);
+  const [rev, setRev] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const chart = createLcPriceChart(el);
+    chartRef.current = chart;
+    setRev((n) => n + 1);
+    return () => {
+      chart.remove();
+      chartRef.current = null;
+    };
+  }, []);
+
+  return { ref, chartRef, rev };
 }
 
 export function resizeLc(chart: IChartApi, el: HTMLElement | null): void {
