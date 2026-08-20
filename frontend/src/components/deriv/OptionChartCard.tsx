@@ -5,7 +5,7 @@ import { num } from "@/components/ovlab/shared";
 import { cn } from "@/lib/utils";
 import { storageGet, storageSet } from "@/lib/storage";
 import {
-  concatDaySlots, frameTradingDays, hmOf, lastFiniteIdx, liveAxisKind, minuteKey, padToSlots, tradingDayOf, ymdOf,
+  concatDaySlots, frameTradingDays, hmOf, lastFiniteIdx, liveAxisKind, minuteKey, padToSlots, sessionMarkIdxs, tradingDayOf, ymdOf,
 } from "@/lib/derivMinuteAxis";
 import type { OptionPick } from "./TQuotePanel";
 import type { OvlabDataviewTick, OvlabFlowAlert, OvlabOptionDailyBar } from "@/lib/api";
@@ -15,8 +15,8 @@ import {
   baselineOpts, candleOpts, candleValues, finiteLine, fmtPx, hoverIdxFromParam, lcTime,
   ensureUpDown, lineValues, overlayLineOpts, paintCandles, paintHist, paintLine, paintUpDown,
   priceFormatOf, seriesAlive, setPaneWatermark, setRefPriceLine, setSeriesMarks, showLatest,
-  showSession, sparseLine, styleIvOverlay, styleLastTag, styleOiOverlay, styleVolOverlay,
-  useLcChart, volOpts, volValues, wipeLc, IV_COLOR, OI_COLOR,
+  showSession, sparseLine, styleIvOverlay, styleLastTag, styleOiPane,
+  styleVolPane, useLcChart, volPaneOpts, volUp, volValues, wipeLc, IV_COLOR, OI_COLOR,
   type IPriceLine, type ISeriesApi, type ISeriesMarkersPluginApi, type ISeriesUpDownMarkerPluginApi,
   type ITextWatermarkPluginApi, type SeriesMarker, type Time,
   type CandlestickData, type HistogramData, type LineData, type WhitespaceData,
@@ -30,17 +30,7 @@ function fmtOi(v: number): string {
   return v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(Math.round(v));
 }
 
-/** Volume bar: this bar close >= open (missing open -> prev close). OpenVlab light chart same rule. */
-export function volUp(
-  close: number | null,
-  open: number | null,
-  prev: number | null,
-): boolean {
-  if (close == null || !Number.isFinite(close)) return false;
-  const ref = open != null && Number.isFinite(open) ? open : prev;
-  if (ref == null || !Number.isFinite(ref)) return true;
-  return close >= ref;
-}
+export { volUp } from "@/lib/lcChart";
 
 /** 分钟 bar 数组 -> {t, close, open, vol, oi}; bar: [time, close, pct, oi, open, high, low, vol]. */
 export function parseMinute(raw: unknown): MinBar[] {
@@ -260,33 +250,7 @@ export function hoverIdxOf(raw: unknown, cats: string[]): number | null {
   return null;
 }
 
-/** Night open + day open on a session axis. */
-export function sessionMarkIdxs(cats: string[]): Array<{ i: number; text: string }> {
-  const out: Array<{ i: number; text: string }> = [];
-  let prevTd = "";
-  let seenNight = false;
-  let seenDay = false;
-  for (let i = 0; i < cats.length; i++) {
-    const c = cats[i];
-    if (!c) continue;
-    const td = tradingDayOf(c);
-    if (td !== prevTd) {
-      seenNight = false;
-      seenDay = false;
-      prevTd = td;
-    }
-    const hm = hmOf(c);
-    if (!seenNight && (hm === "21:00" || hm === "21:01")) {
-      out.push({ i, text: "夜" });
-      seenNight = true;
-    }
-    if (!seenDay && (hm === "09:00" || hm === "09:30")) {
-      out.push({ i, text: hm === "09:30" ? "开" : "日" });
-      seenDay = true;
-    }
-  }
-  return out;
-}
+export { sessionMarkIdxs } from "@/lib/derivMinuteAxis";
 
 /** 20260825 / 2026-08-25 -> 2026-08-25. OpenVlab expiry_date is often compact. */
 export function expiryYmd(raw?: string | null): string {
@@ -540,10 +504,10 @@ export function OptionChartCard({ pick, mode, tick, alerts = NO_ALERTS }: {
         reset();
         bag.current.px = chart.addSeries(CandlestickSeries, candleOpts(true, fmt));
         bag.current.iv = chart.addSeries(LineSeries, overlayLineOpts(IV_COLOR, "iv"));
-        bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
+        bag.current.vol = chart.addSeries(HistogramSeries, volPaneOpts(), 1);
         bag.current.kind = "daily";
-        styleVolOverlay(chart, 0.22);
-        styleIvOverlay(chart);
+        styleVolPane(chart, 0.22);
+        styleIvOverlay(chart, 0.08);
       } else {
         bag.current.px?.applyOptions({ priceFormat: fmt });
       }
@@ -597,12 +561,12 @@ export function OptionChartCard({ pick, mode, tick, alerts = NO_ALERTS }: {
       reset();
       bag.current.px = chart.addSeries(BaselineSeries, baselineOpts(baseline, true, fmt));
       bag.current.iv = chart.addSeries(LineSeries, overlayLineOpts(IV_COLOR, "iv"));
-      bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
-      bag.current.oi = chart.addSeries(LineSeries, overlayLineOpts(OI_COLOR, "oi"));
+      bag.current.vol = chart.addSeries(HistogramSeries, volPaneOpts(), 1);
+      bag.current.oi = chart.addSeries(LineSeries, overlayLineOpts(OI_COLOR, "oi"), 1);
       bag.current.kind = "minute";
-      styleVolOverlay(chart, 0.22);
-      styleIvOverlay(chart);
-      styleOiOverlay(chart);
+      styleVolPane(chart, 0.24);
+      styleOiPane(chart);
+      styleIvOverlay(chart, 0.08);
     } else {
       (bag.current.px as ISeriesApi<"Baseline">).applyOptions({ ...baselineOpts(baseline, true, fmt) });
     }

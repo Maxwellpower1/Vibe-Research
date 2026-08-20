@@ -76,6 +76,21 @@ def parse_jsonp(text: str):
     return json.loads(src[a + 1 : b])
 
 
+def _quote_board(q: dict) -> dict:
+    """OHLC / limit / valuation already on the gtimg line. Do not fetch again."""
+    return {
+        "open": q.get("open") or 0.0,
+        "high": q.get("high") or 0.0,
+        "low": q.get("low") or 0.0,
+        "amplitude": q.get("amplitude") or q.get("amplitude_pct") or 0.0,
+        "vol_ratio": q.get("vol_ratio") or 0.0,
+        "float_mcap_yi": q.get("float_mcap_yi") or 0.0,
+        "limit_up": q.get("limit_up") or 0.0,
+        "limit_down": q.get("limit_down") or 0.0,
+        "pe_static": q.get("pe_static") or 0.0,
+    }
+
+
 def parse_tencent_quote_line(line: str) -> dict | None:
     """Parse one `v_symbol="f0~f1~..."` gtimg line. Keeps full symbol as key."""
     q = astock.parse_gtimg_line(line)
@@ -90,8 +105,17 @@ def parse_tencent_quote_line(line: str) -> dict | None:
         "pct": q.get("change_pct") or q.get("pct") or 0.0,
         "amount": q.get("amount_wan") or q.get("amount") or 0.0,
         "turnover": q.get("turnover_pct") or q.get("turnover") or 0.0,
+        "volume": q.get("volume") or 0.0,
+        "bid": q.get("bid1") or q.get("bid") or 0.0,
+        "ask": q.get("ask1") or q.get("ask") or 0.0,
+        "bid_vol": q.get("bid1_vol") or q.get("bid_vol") or 0.0,
+        "ask_vol": q.get("ask1_vol") or q.get("ask_vol") or 0.0,
+        "pe_ttm": q.get("pe_ttm") or 0.0,
+        "pb": q.get("pb") or 0.0,
+        "mcap_yi": q.get("mcap_yi") or 0.0,
         "is_stale": bool(q.get("is_stale")),
         "stale_reason": q.get("stale_reason") or "",
+        **_quote_board(q),
     }
 
 
@@ -197,12 +221,18 @@ def _tencent_quotes(codes: list[str]) -> dict[str, dict]:
             "pct": q.get("change_pct") or q.get("pct") or 0.0,
             "amount": q.get("amount_wan") or q.get("amount") or 0.0,
             "turnover": q.get("turnover_pct") or q.get("turnover") or 0.0,
-            # K-line valuation snapshot reads these; do not strip.
+            "volume": q.get("volume") or 0.0,
+            "bid": q.get("bid1") or q.get("bid") or 0.0,
+            "ask": q.get("ask1") or q.get("ask") or 0.0,
+            "bid_vol": q.get("bid1_vol") or q.get("bid_vol") or 0.0,
+            "ask_vol": q.get("ask1_vol") or q.get("ask_vol") or 0.0,
+            # K-line table + valuation snapshot read these; do not strip.
             "pe_ttm": q.get("pe_ttm") or 0.0,
             "pb": q.get("pb") or 0.0,
             "mcap_yi": q.get("mcap_yi") or 0.0,
             "is_stale": bool(q.get("is_stale")),
             "stale_reason": q.get("stale_reason") or "",
+            **_quote_board(q),
         }
         out[key] = item
         sym = item["symbol"]
@@ -275,9 +305,15 @@ def _quote_item(q: dict, canon: str, *, amount: float = 0.0, turnover: float = 0
         "prev": prev,
         "amount": amount,
         "turnover": turn,
+        "volume": q.get("volume") or 0.0,
+        "bid": q.get("bid") or q.get("bid1") or 0.0,
+        "ask": q.get("ask") or q.get("ask1") or 0.0,
+        "bid_vol": q.get("bid_vol") or q.get("bid1_vol") or 0.0,
+        "ask_vol": q.get("ask_vol") or q.get("ask1_vol") or 0.0,
         "pe_ttm": q.get("pe_ttm") or 0.0,
         "pb": q.get("pb") or 0.0,
         "mcap_yi": q.get("mcap_yi") or 0.0,
+        **_quote_board(q),
     }
 
 

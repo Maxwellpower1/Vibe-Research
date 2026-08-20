@@ -11,6 +11,20 @@ export interface DirectQuote {
   prev: number;
   amount: number;
   turnover: number;
+  volume?: number;
+  bid?: number;
+  ask?: number;
+  bid_vol?: number;
+  ask_vol?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  amplitude?: number;
+  vol_ratio?: number;
+  float_mcap_yi?: number;
+  limit_up?: number;
+  limit_down?: number;
+  pe_static?: number;
   pe_ttm?: number;
   pb?: number;
   mcap_yi?: number;
@@ -82,6 +96,9 @@ export function parseTencentQuotes(text: string): Record<string, DirectQuote> {
       out[symbol] = {
         symbol, name: f[1] || symbol, price, change, pct: num(f[13]),
         prev: price - change, amount: 0, turnover: 0,
+        volume: 0, bid: 0, ask: 0, bid_vol: 0, ask_vol: 0,
+        open: 0, high: 0, low: 0, amplitude: 0, vol_ratio: 0,
+        float_mcap_yi: 0, limit_up: 0, limit_down: 0, pe_static: 0,
         pe_ttm: 0, pb: 0, mcap_yi: 0,
       };
       continue;
@@ -104,12 +121,26 @@ export function parseTencentQuotes(text: string): Record<string, DirectQuote> {
       prev,
       change: num(f[31]),
       pct: num(f[32]),
+      volume: num(f[6]),
+      bid: num(f[9]),
+      bid_vol: num(f[10]),
+      ask: f.length > 19 ? num(f[19]) : 0,
+      ask_vol: f.length > 20 ? num(f[20]) : 0,
       amount: hasTurnoverAmount(symbol) && rawAmt ? rawAmt * 10000 : 0,
       turnover: f.length > 38 ? num(f[38]) : 0,
+      open: num(f[5]),
+      high: f.length > 33 ? num(f[33]) : 0,
+      low: f.length > 34 ? num(f[34]) : 0,
       pe_ttm: f.length > 39 ? num(f[39]) : 0,
+      amplitude: f.length > 43 ? num(f[43]) : 0,
       pb: f.length > 46 ? num(f[46]) : 0,
       // 45=总市值(亿); 44 is float mcap and can be much smaller on STAR names.
       mcap_yi: f.length > 45 ? num(f[45]) : 0,
+      float_mcap_yi: f.length > 44 ? num(f[44]) : 0,
+      limit_up: f.length > 47 ? num(f[47]) : 0,
+      limit_down: f.length > 48 ? num(f[48]) : 0,
+      vol_ratio: f.length > 49 ? num(f[49]) : 0,
+      pe_static: f.length > 52 ? num(f[52]) : 0,
       is_stale: isStale,
       stale_reason: staleReason,
     };

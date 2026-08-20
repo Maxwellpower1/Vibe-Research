@@ -138,6 +138,28 @@ export function candleValues(
   }));
 }
 
+/** Volume bar: this bar close >= open (missing open -> prev close). OpenVlab light chart same rule. */
+export function volUp(
+  close: number | null | undefined,
+  open: number | null | undefined,
+  prev: number | null | undefined,
+): boolean {
+  if (close == null || !Number.isFinite(close)) return false;
+  const ref = open != null && Number.isFinite(open) ? open : prev;
+  if (ref == null || !Number.isFinite(ref)) return true;
+  return close >= ref;
+}
+
+/** Tencent minute prints the last price into O/H/L/C. Ignore that fake open. */
+export function barOpenForVol(
+  open: number | null | undefined,
+  close: number | null | undefined,
+): number | null {
+  if (open == null || close == null || !Number.isFinite(open) || !Number.isFinite(close)) return null;
+  if (open === close) return null;
+  return open;
+}
+
 export function volValues(
   pts: Array<{ value: number | null | undefined; up: boolean }>,
   translucent = true,
@@ -199,6 +221,16 @@ export function volOpts() {
     lastValueVisible: false,
     priceLineVisible: false,
     priceScaleId: "vol",
+    priceFormat: { type: "volume" as const },
+  };
+}
+
+/** Own pane: use the pane right scale, not the overlay `vol` id. */
+export function volPaneOpts() {
+  return {
+    lastValueVisible: false,
+    priceLineVisible: false,
+    priceScaleId: "right",
     priceFormat: { type: "volume" as const },
   };
 }
@@ -303,11 +335,15 @@ export function createLcChart(el: HTMLElement, preset: LcPreset = "desk"): IChar
 }
 
 export function wipeLc(chart: IChartApi): void {
-  for (const pane of chart.panes()) {
-    for (const s of [...pane.getSeries()]) chart.removeSeries(s);
-  }
-  while (chart.panes().length > 1) {
-    chart.removePane(chart.panes().length - 1);
+  try {
+    for (const pane of chart.panes()) {
+      for (const s of [...pane.getSeries()]) chart.removeSeries(s);
+    }
+    while (chart.panes().length > 1) {
+      chart.removePane(chart.panes().length - 1);
+    }
+  } catch {
+    /* mid-resize / already removed */
   }
 }
 
@@ -326,6 +362,48 @@ export function styleLastTag(
     priceLineVisible: true,
     priceLineColor: up ? UP : DN,
   });
+}
+
+/** Separate volume pane under price. share is vol height / total (0.16-0.36). */
+export function styleVolPane(chart: IChartApi, share = 0.22): void {
+  const s = Math.max(0.16, Math.min(0.36, share));
+  try {
+    chart.applyOptions({
+      layout: { panes: { enableResize: true, separatorColor: "rgba(255,255,255,0.08)" } },
+    });
+  } catch {
+    /* chart already gone */
+  }
+  try {
+    chart.priceScale("right").applyOptions({
+      visible: true,
+      borderVisible: true,
+      ticksVisible: true,
+      scaleMargins: { top: 0.06, bottom: 0.08 },
+    });
+  } catch {
+    /* right scale always exists */
+  }
+  const panes = chart.panes();
+  const main = panes[0];
+  const vol = panes[1];
+  if (!main || !vol) return;
+  try {
+    main.setStretchFactor(1 - s);
+    vol.setStretchFactor(s);
+  } catch {
+    /* pane API */
+  }
+  try {
+    vol.priceScale("right").applyOptions({
+      visible: true,
+      borderVisible: true,
+      ticksVisible: true,
+      scaleMargins: { top: 0.12, bottom: 0.04 },
+    });
+  } catch {
+    /* pane scale */
+  }
 }
 
 /** Volume sits in the bottom of the main pane, TV overlay, not a second chart. */
@@ -365,13 +443,26 @@ export function styleOiOverlay(chart: IChartApi, band = 0.18): void {
   }
 }
 
+/** OI on the volume pane: own scale, full pane height, does not share vol axis. */
+export function styleOiPane(chart: IChartApi, paneIndex = 1): void {
+  try {
+    chart.priceScale("oi", paneIndex).applyOptions({
+      visible: false,
+      borderVisible: false,
+      scaleMargins: { top: 0.1, bottom: 0.08 },
+    });
+  } catch {
+    /* scale created with the series */
+  }
+}
+
 /** IV wiggles in the price area, leaving the volume band alone. */
-export function styleIvOverlay(chart: IChartApi): void {
+export function styleIvOverlay(chart: IChartApi, bottom = 0.28): void {
   try {
     chart.priceScale("iv").applyOptions({
       visible: false,
       borderVisible: false,
-      scaleMargins: { top: 0.08, bottom: 0.28 },
+      scaleMargins: { top: 0.08, bottom },
     });
   } catch {
     /* scale created with the series */
@@ -468,10 +559,18 @@ export function setRefPriceLine(
     title,
   };
   if (lineRef.current) {
-    lineRef.current.applyOptions(next);
-    return;
+    try {
+      lineRef.current.applyOptions(next);
+      return;
+    } catch {
+      lineRef.current = null;
+    }
   }
-  lineRef.current = series.createPriceLine(next);
+  try {
+    lineRef.current = series.createPriceLine(next);
+  } catch {
+    lineRef.current = null;
+  }
 }
 
 export function setSeriesMarks(
@@ -558,25 +657,40 @@ const WM_INK = "rgba(200,205,214,0.22)";
 export function setPaneWatermark(
   chart: IChartApi,
   apiRef: { current: ITextWatermarkPluginApi<Time> | null },
-  text: string,
+  text: string | readonly string[],
   fontSize = 80,
 ): void {
   const pane = chart.panes()[0];
   if (!pane) return;
+  const parts = (typeof text === "string" ? [text] : [...text])
+    .map((t) => t.trim())
+    .filter(Boolean);
   const opts = {
-    visible: Boolean(text),
+    visible: parts.length > 0,
     horzAlign: "center" as const,
     vertAlign: "center" as const,
-    lines: text
-      ? [{ text, color: WM_INK, fontSize, fontFamily: FONT, fontStyle: "bold" }]
-      : [],
+    lines: parts.map((t, i) => ({
+      text: t,
+      color: WM_INK,
+      fontSize: i === 0 ? fontSize : Math.round(fontSize * 0.42),
+      fontFamily: FONT,
+      fontStyle: i === 0 ? "bold" : "",
+    })),
   };
   if (apiRef.current) {
-    apiRef.current.applyOptions(opts);
-    return;
+    try {
+      apiRef.current.applyOptions(opts);
+      return;
+    } catch {
+      apiRef.current = null;
+    }
   }
-  if (!text) return;
-  apiRef.current = createTextWatermark(pane, opts);
+  if (!parts.length) return;
+  try {
+    apiRef.current = createTextWatermark(pane, opts);
+  } catch {
+    apiRef.current = null;
+  }
 }
 
 export function setLogScale(chart: IChartApi, on: boolean): void {

@@ -86,7 +86,9 @@ export function Layout() {
           aria-label="A股页签"
         >
           {A_SHARE_TABS.map((t) => {
-            const active = t.tab === null ? aTab === "review" : aTab === t.tab;
+            const active = t.tab === null
+              ? aTab === "review"
+              : aTab === "kline" || aTab === "detail" || aTab === "feed";
             return (
               <Link key={t.label} to={t.to} aria-current={active ? "page" : undefined} className={navChipClass(active)}>
                 {t.label}

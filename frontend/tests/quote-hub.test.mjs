@@ -70,7 +70,13 @@ test("browser-direct Tencent fallback keeps PE/PB/total mcap", () => {
   assert.match(directSrc, /f\[45\]/);
   assert.match(directSrc, /f\[46\]/);
   assert.match(directSrc, /is_stale/);
-  assert.match(chartSrc, /selQuote\?\.mcap_yi/);
+  assert.match(directSrc, /bid_vol/);
+  assert.match(directSrc, /vol_ratio/);
+  assert.match(quoteSrc, /bid_vol/);
+  assert.match(quoteSrc, /float_mcap_yi/);
+  assert.match(chartSrc, /q\?\.bid/);
+  assert.match(chartSrc, /换手%/);
+  assert.match(chartSrc, /q\?\.pe_ttm/);
 });
 
 test("world index minutes subscribe to the minute hub", () => {

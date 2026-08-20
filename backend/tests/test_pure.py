@@ -94,6 +94,26 @@ def test_tencent_daily_falls_back_host(monkeypatch):
     assert any("web.ifzq" not in u and "fqkline/get" in u for u in calls)
 
 
+def test_parse_tencent_daily_rows_keeps_amount():
+    bars = astock._parse_tencent_daily_rows(
+        [["2026-08-20", "10", "11", "12", "9", "1000", "25000.5"]],
+        10,
+    )
+    assert bars[0]["amount"] == 25000.5
+    assert astock._parse_tencent_daily_rows([["2026-08-20", "10", "11", "12", "9", "1000"]], 10)[0]["amount"] == 0.0
+
+
+def test_delta_session_totals_splits_cum_vol_and_amount():
+    bars = [
+        {"datetime": "2026-08-20 09:30", "volume": 100, "amount": 5000.0},
+        {"datetime": "2026-08-20 09:31", "volume": 180, "amount": 8000.0},
+        {"datetime": "2026-08-21 09:30", "volume": 40, "amount": 900.0},
+    ]
+    astock._delta_session_totals(bars)
+    assert [b["volume"] for b in bars] == [100, 80, 40]
+    assert [b["amount"] for b in bars] == [5000.0, 3000.0, 900.0]
+
+
 def test_light_kline_us_minute(monkeypatch):
     payload = {
         "data": {

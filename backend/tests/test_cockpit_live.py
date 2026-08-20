@@ -48,7 +48,9 @@ def test_quote_item_keeps_valuation():
         {
             "name": "长鑫科技", "price": 60.15, "prev": 55.18,
             "pe_ttm": 142.68, "pb": 28.87, "mcap_yi": 40228.85,
-            "turnover": 8.48,
+            "turnover": 8.48, "open": 56.0, "high": 61.2, "low": 55.5,
+            "amplitude_pct": 10.3, "vol_ratio": 2.4, "float_mcap_yi": 2708.58,
+            "limit_up": 66.22, "limit_down": 44.14, "pe_static": 80.1,
         },
         "sh688825",
         turnover=8.48,
@@ -57,6 +59,10 @@ def test_quote_item_keeps_valuation():
     assert item["pb"] == 28.87
     assert item["mcap_yi"] == 40228.85
     assert item["turnover"] == 8.48
+    assert item["open"] == 56.0
+    assert item["vol_ratio"] == 2.4
+    assert item["float_mcap_yi"] == 2708.58
+    assert item["pe_static"] == 80.1
 
 
 def test_parse_tencent_forex():
@@ -314,6 +320,7 @@ def test_quotes_map_aliases_and_filters(monkeypatch):
         "sh600519": {
             "symbol": "sh600519", "name": "贵州茅台", "price": 1400.0,
             "pct": 1.2, "change": 16.0, "prev": 1384.0, "amount": 12.5, "turnover": 0.31,
+            "bid": 1399.0, "ask": 1401.0, "bid_vol": 200, "ask_vol": 80, "volume": 12345,
         },
         "usIXIC": {
             "symbol": "usIXIC", "name": "纳斯达克", "price": 21000.0,
@@ -324,6 +331,9 @@ def test_quotes_map_aliases_and_filters(monkeypatch):
     assert out["600519"]["price"] == 1400.0
     assert out["sh600519"]["price"] == 1400.0
     assert out["600519"]["amount"] == 12.5 * 10000
+    assert out["600519"]["bid"] == 1399.0
+    assert out["600519"]["ask"] == 1401.0
+    assert out["600519"]["volume"] == 12345
     assert out["usIXIC"]["name"] == "纳斯达克"
     assert out["usIXIC"]["amount"] == 0
     assert "bad!!" not in out

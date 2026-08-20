@@ -136,6 +136,7 @@ def test_parse_gtimg_bid_ask():
     vals[1] = "茅台"
     vals[3] = "1400"
     vals[4] = "1390"
+    vals[6] = "12345"
     vals[9] = "1399"
     vals[10] = "200"
     vals[19] = "0"
@@ -145,6 +146,7 @@ def test_parse_gtimg_bid_ask():
     line = 'v_sh600519="' + "~".join(vals) + '"'
     parsed = astock._parse_gtimg(line)
     q = parsed["600519"]
+    assert q["volume"] == 12345
     assert q["bid1"] == 1399
     assert q["bid1_vol"] == 200
     assert q["ask1_vol"] == 0

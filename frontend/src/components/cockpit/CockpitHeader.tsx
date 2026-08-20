@@ -29,8 +29,6 @@ export const PAGE_NAV: PageNavItem[] = [
 export const A_SHARE_TABS = [
   { to: "/a-share", label: "复盘", tab: null as string | null },
   { to: "/a-share?tab=kline", label: "K线", tab: "kline" },
-  { to: "/a-share?tab=detail", label: "详情", tab: "detail" },
-  { to: "/a-share?tab=feed", label: "公告", tab: "feed" },
 ];
 
 export function parseAShareTab(raw: string | null): string {

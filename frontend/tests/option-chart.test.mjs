@@ -158,11 +158,16 @@ test("分时量窗叠持仓黄线, 独立轴不压成交量", async () => {
   const lc = await readFile(new URL("../src/lib/lcChart.ts", import.meta.url), "utf8");
   assert.ok(src.includes("[time, close, pct, oi, open, high, low, vol]"), "分钟 bar 第4列仓第8列量");
   assert.ok(src.includes('overlayLineOpts(OI_COLOR, "oi")'), "分时画持仓线");
+  assert.ok(src.includes("volPaneOpts(), 1"), "分时量在独立窗");
+  assert.equal((src.match(/volPaneOpts\(\), 1/g) || []).length, 2, "日K和分时都拆量窗");
+  assert.ok(src.includes('overlayLineOpts(OI_COLOR, "oi"), 1'), "持仓线叠在量窗");
+  assert.ok(src.includes("styleOiPane"), "仓走量窗独立轴");
   assert.ok(src.includes('"oi"'), "仓走独立轴");
   assert.ok(src.includes("overlayAxis(minData?.oi"), "仓不跟成交量抢同一标尺");
   assert.ok(src.includes("仓 ${fmtOi(oi)}"), "十字光标读仓");
   assert.ok(src.includes("量 ${fmtOi(vol)}"), "十字光标读量");
   assert.ok(src.includes("volUp(px, minData?.opens[i]"), "量柱按当根开收");
+  assert.ok(lc.includes("export function styleOiPane"), "量窗持仓轴");
   assert.ok(lc.includes("UP_VOL"), "量柱半透明红绿, 不挡持仓黄线");
   assert.ok(!src.includes("px >= baseline"), "量柱不按相对昨结整日同色");
 });

@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = readFileSync(join(root, "src/lib/lcChart.ts"), "utf8");
+const gateSrc = readFileSync(join(root, "src/lib/seriesGate.ts"), "utf8");
 
 test("lcChart 是 K/分时共用封装, 不画 TradingView logo", () => {
   assert.match(src, /from "lightweight-charts"/);
@@ -17,6 +18,9 @@ test("lcChart 是 K/分时共用封装, 不画 TradingView logo", () => {
   assert.match(src, /export function useLcChart/);
   assert.match(src, /export function wipeLc/);
   assert.match(src, /styleVolOverlay/);
+  assert.match(src, /export function styleVolPane/);
+  assert.match(src, /export function styleOiPane/);
+  assert.match(src, /export function volPaneOpts/);
   assert.match(src, /MagnetOHLC/);
   assert.match(src, /"desk" \| "glance"/);
   assert.match(src, /rightPriceScale:/);
@@ -46,6 +50,9 @@ test("lcChart 是 K/分时共用封装, 不画 TradingView logo", () => {
   assert.match(src, /localization: \{ locale: "zh-CN", precision: 0 \}/);
   assert.match(src, /createTextWatermark/);
   assert.match(src, /export function setPaneWatermark/);
+  assert.match(src, /text: string \| readonly string\[\]/);
+  assert.match(src, /mid-resize \/ already removed/);
+  assert.match(src, /apiRef\.current = null/);
   assert.match(src, /createUpDownMarkers/);
   assert.match(src, /export function ensureUpDown/);
   assert.match(src, /export function paintUpDown/);
@@ -55,7 +62,7 @@ test("lcChart 是 K/分时共用封装, 不画 TradingView logo", () => {
 
 test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {
   for (const rel of [
-    "src/pages/AShareLightChart.tsx",
+    "src/components/ashare/AShareLcPane.tsx",
     "src/pages/UsMarket.tsx",
     "src/components/arb/SpreadChart.tsx",
     "src/components/deriv/OptionChartCard.tsx",
@@ -70,12 +77,48 @@ test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {
     assert.doesNotMatch(body, /sizeVolPane/, rel);
   }
   const ashare = readFileSync(join(root, "src/pages/AShareLightChart.tsx"), "utf8");
+  const pane = readFileSync(join(root, "src/components/ashare/AShareLcPane.tsx"), "utf8");
   const us = readFileSync(join(root, "src/pages/UsMarket.tsx"), "utf8");
   const arb = readFileSync(join(root, "src/components/arb/SpreadChart.tsx"), "utf8");
-  assert.match(ashare, /setLogScale/);
+  assert.match(pane, /setLogScale/);
   assert.match(us, /setLogScale/);
-  assert.match(ashare, /ensureUpDown/);
+  assert.match(pane, /ensureUpDown/);
+  assert.match(pane, /volUp/);
+  assert.match(pane, /barOpenForVol/);
+  assert.match(pane, /derivMinuteSlots/);
+  assert.match(pane, /showSession/);
+  assert.match(pane, /paintHist/);
+  assert.match(pane, /sessionMarkIdxs/);
+  assert.match(pane, /styleVolPane/);
+  assert.match(pane, /volPaneOpts\(\), 1/);
+  assert.match(pane, /成交额/);
+  assert.match(pane, /成交量/);
+  assert.match(pane, /b\?\.amount/);
+  assert.match(pane, /b\.volume/);
+  assert.match(pane, /\"额\"/);
+  assert.match(pane, /\"量\"/);
+  assert.doesNotMatch(pane, /styleVolOverlay/);
+  assert.match(src, /export function volUp/);
+  assert.match(src, /export function barOpenForVol/);
   assert.match(arb, /ensureUpDown/);
+  assert.match(pane, /\[wmName, code\]/);
+  assert.match(ashare, /AShareLcPane/);
+  assert.match(ashare, /createSeriesGate/);
+  assert.match(ashare, /if \(!snap\) return/);
+  assert.match(pane, /LC throws Value is null/);
+  assert.match(pane, /wmRef\.current = null/);
+  assert.match(ashare, /kind="minute"/);
+  assert.match(ashare, /kind="daily"/);
+  assert.match(ashare, /q\?\.name \|\| c/);
+  assert.match(ashare, /"买价"/);
+  assert.match(ashare, /sortWatchCodes/);
+  assert.match(ashare, /useSuggestSearch/);
+  assert.match(ashare, /SuggestHits/);
+  assert.match(ashare, /SortableHd/);
+  assert.match(ashare, /"换手%"/);
+  assert.match(ashare, /"量比"/);
+  assert.match(ashare, /"PE\(TTM\)"/);
+  assert.doesNotMatch(ashare, /echarts\.init/);
 });
 
 const LC_ORIGIN = 1_700_000_000;
@@ -134,6 +177,26 @@ test("pxPrec 银一位金两位, 小价四位", () => {
   assert.equal(pxPrec("RB", 11_200).precision, 1);
 });
 
+function createSeriesGate() {
+  let gen = 0;
+  return {
+    begin() { gen += 1; return gen; },
+    isCurrent(mine) { return mine === gen; },
+    take(mine, snap) { return mine === gen ? snap : null; },
+  };
+}
+
+test("seriesGate 丢掉点太快的上一只结果, 避免空 bars 把图 wipe 掉", () => {
+  assert.match(gateSrc, /export function createSeriesGate/);
+  const g = createSeriesGate();
+  const older = g.begin();
+  const newer = g.begin();
+  assert.equal(g.take(older, { bars: [] }), null);
+  assert.deepEqual(g.take(newer, { bars: [1] }), { bars: [1] });
+  assert.equal(g.isCurrent(older), false);
+  assert.equal(g.isCurrent(newer), true);
+});
+
 test("canUpdateLast 只认最后一根变", () => {
   const a = [{ time: 1, value: 1 }, { time: 2, value: 2 }];
   const b = [{ time: 1, value: 1 }, { time: 2, value: 3 }];
@@ -150,4 +213,25 @@ test("lcTime 逻辑时间可反推下标, 真时间轴不会把午休拉开", ()
   assert.equal(hoverIdxFromParam({ logical: 12, point: { x: 1, y: 1 } }, 100), 12);
   assert.equal(hoverIdxFromParam({ time: LC_ORIGIN + 5, point: { x: 1, y: 1 } }, 10), 5);
   assert.equal(hoverIdxFromParam({ point: null, logical: 3 }, 10), null);
+});
+
+function volUp(close, open, prev) {
+  if (close == null || !Number.isFinite(close)) return false;
+  const ref = open != null && Number.isFinite(open) ? open : prev;
+  if (ref == null || !Number.isFinite(ref)) return true;
+  return close >= ref;
+}
+function barOpenForVol(open, close) {
+  if (open == null || close == null || !Number.isFinite(open) || !Number.isFinite(close)) return null;
+  if (open === close) return null;
+  return open;
+}
+
+test("volUp 当根收>=开为红, 腾讯假开盘改比上一分钟", () => {
+  assert.equal(volUp(12.2, 12.0, 11.9), true);
+  assert.equal(volUp(11.8, 12.0, 12.1), false);
+  assert.equal(barOpenForVol(10.1, 10.1), null);
+  assert.equal(barOpenForVol(10.0, 10.2), 10.0);
+  assert.equal(volUp(10.2, barOpenForVol(10.2, 10.2), 10.0), true);
+  assert.equal(volUp(9.8, barOpenForVol(9.8, 9.8), 10.0), false);
 });

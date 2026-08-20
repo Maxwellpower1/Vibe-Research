@@ -281,6 +281,34 @@ export function derivSessionIdx(t: string, kind: DerivAxisKind): number {
   return 330 + day(m);
 }
 
+/** Night open + day open on a session axis. */
+export function sessionMarkIdxs(cats: string[]): Array<{ i: number; text: string }> {
+  const out: Array<{ i: number; text: string }> = [];
+  let prevTd = "";
+  let seenNight = false;
+  let seenDay = false;
+  for (let i = 0; i < cats.length; i++) {
+    const c = cats[i];
+    if (!c) continue;
+    const td = tradingDayOf(c);
+    if (td !== prevTd) {
+      seenNight = false;
+      seenDay = false;
+      prevTd = td;
+    }
+    const hm = hmOf(c);
+    if (!seenNight && (hm === "21:00" || hm === "21:01")) {
+      out.push({ i, text: "夜" });
+      seenNight = true;
+    }
+    if (!seenDay && (hm === "09:00" || hm === "09:30")) {
+      out.push({ i, text: hm === "09:30" ? "开" : "日" });
+      seenDay = true;
+    }
+  }
+  return out;
+}
+
 /** Hovered slot if it has a print; empty hover stays null (do not snap to last print). */
 export function lastFiniteIdx(vals: Array<number | null | undefined>, hover: number | null): number | null {
   if (hover != null && hover >= 0 && hover < vals.length) {

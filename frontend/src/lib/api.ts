@@ -273,6 +273,9 @@ export interface WorldIndex {
 export interface MarketQuote {
   symbol: string; name: string; price: number; pct: number;
   change?: number; prev?: number; amount?: number; turnover?: number;
+  volume?: number; bid?: number; ask?: number; bid_vol?: number; ask_vol?: number;
+  open?: number; high?: number; low?: number; amplitude?: number; vol_ratio?: number;
+  float_mcap_yi?: number; limit_up?: number; limit_down?: number; pe_static?: number;
   pe_ttm?: number; pb?: number; mcap_yi?: number;
   is_stale?: boolean; stale_reason?: string;
 }

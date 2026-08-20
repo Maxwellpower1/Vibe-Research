@@ -67,6 +67,21 @@ test("brand is fixed so PAGE_NAV chips do not shift", () => {
   assert.doesNotMatch(layout, /shrink-0 lg:hidden/);
 });
 
+test("A股顶栏只留复盘和K线, 详情公告在分时右上", () => {
+  const header = readFileSync(join(root, "src/components/cockpit/CockpitHeader.tsx"), "utf8");
+  const tabs = header.slice(header.indexOf("export const A_SHARE_TABS"), header.indexOf("export function parseAShareTab"));
+  assert.match(tabs, /label: "复盘"/);
+  assert.match(tabs, /label: "K线"/);
+  assert.doesNotMatch(tabs, /label: "详情"/);
+  assert.doesNotMatch(tabs, /label: "公告"/);
+  const chart = readFileSync(join(root, "src/pages/AShareLightChart.tsx"), "utf8");
+  assert.match(chart, /kind="minute"/);
+  assert.match(chart, /setSeg\("detail"\)/);
+  assert.match(chart, /setSeg\("feed"\)/);
+  const layout = readFileSync(join(root, "src/components/layout/Layout.tsx"), "utf8");
+  assert.match(layout, /aTab === "detail" \|\| aTab === "feed"/);
+});
+
 test("A-share portfolio jumps to backtest and autostarts", () => {
   const src = readFileSync(join(root, "src/components/portfolio/StockPortfolio.tsx"), "utf8");
   assert.match(src, /\/backtest\?codes=/);

@@ -12,8 +12,23 @@ export interface HubQuote {
   name?: string;
   price: number;
   pct: number;
+  change?: number;
   amount?: number;
   turnover?: number;
+  volume?: number;
+  bid?: number;
+  ask?: number;
+  bid_vol?: number;
+  ask_vol?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  amplitude?: number;
+  vol_ratio?: number;
+  float_mcap_yi?: number;
+  limit_up?: number;
+  limit_down?: number;
+  pe_static?: number;
   prev?: number;
   pe_ttm?: number;
   pb?: number;
@@ -122,7 +137,11 @@ function chunks(codes: string[]): string[][] {
 function applyQuote(
   code: string,
   q: {
-    name?: string; price: number; pct: number; amount?: number; turnover?: number;
+    name?: string; price: number; pct: number; change?: number;
+    amount?: number; turnover?: number; volume?: number;
+    bid?: number; ask?: number; bid_vol?: number; ask_vol?: number;
+    open?: number; high?: number; low?: number; amplitude?: number; vol_ratio?: number;
+    float_mcap_yi?: number; limit_up?: number; limit_down?: number; pe_static?: number;
     prev?: number; pe_ttm?: number; pb?: number; mcap_yi?: number;
     is_stale?: boolean; stale_reason?: string;
   },
@@ -133,8 +152,23 @@ function applyQuote(
     name: q.name,
     price: q.price,
     pct: q.pct,
+    change: q.change,
     amount: q.amount,
     turnover: q.turnover,
+    volume: q.volume,
+    bid: q.bid,
+    ask: q.ask,
+    bid_vol: q.bid_vol,
+    ask_vol: q.ask_vol,
+    open: q.open,
+    high: q.high,
+    low: q.low,
+    amplitude: q.amplitude,
+    vol_ratio: q.vol_ratio,
+    float_mcap_yi: q.float_mcap_yi,
+    limit_up: q.limit_up,
+    limit_down: q.limit_down,
+    pe_static: q.pe_static,
     prev: q.prev,
     pe_ttm: q.pe_ttm,
     pb: q.pb,
@@ -144,8 +178,15 @@ function applyQuote(
     updated: now,
   };
   const old = entries.get(code);
-  if (!old || old.price !== next.price || old.pct !== next.pct
-    || old.amount !== next.amount || old.turnover !== next.turnover
+  if (!old || old.price !== next.price || old.pct !== next.pct || old.change !== next.change
+    || old.amount !== next.amount || old.turnover !== next.turnover || old.volume !== next.volume
+    || old.bid !== next.bid || old.ask !== next.ask
+    || old.bid_vol !== next.bid_vol || old.ask_vol !== next.ask_vol
+    || old.open !== next.open || old.high !== next.high || old.low !== next.low
+    || old.amplitude !== next.amplitude || old.vol_ratio !== next.vol_ratio
+    || old.float_mcap_yi !== next.float_mcap_yi
+    || old.limit_up !== next.limit_up || old.limit_down !== next.limit_down
+    || old.pe_static !== next.pe_static
     || old.pe_ttm !== next.pe_ttm || old.pb !== next.pb || old.mcap_yi !== next.mcap_yi
     || old.is_stale !== next.is_stale) {
     entries.set(code, next);

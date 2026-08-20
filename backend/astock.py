@@ -252,6 +252,7 @@ def parse_gtimg_line(line: str) -> dict | None:
             "last_close": prev,
             "prev": prev,
             "open": 0.0,
+            "volume": 0.0,
             "bid1": 0.0,
             "bid1_vol": 0.0,
             "ask1": 0.0,
@@ -288,6 +289,7 @@ def parse_gtimg_line(line: str) -> dict | None:
         "last_close": n(vals, 4),
         "prev": n(vals, 4),
         "open": n(vals, 5) if len(vals) > 5 else 0.0,
+        "volume": n(vals, 6) if len(vals) > 6 else 0.0,
         "bid1": n(vals, 9) if len(vals) > 9 else 0.0,
         "bid1_vol": n(vals, 10) if len(vals) > 10 else 0.0,
         "ask1": n(vals, 19) if len(vals) > 19 else 0.0,
@@ -730,6 +732,7 @@ def _parse_tencent_daily_rows(rows: object, n: int) -> list[dict]:
                 "high": float(row[3]),
                 "low": float(row[4]),
                 "volume": int(float(row[5])),
+                "amount": float(row[6]) if len(row) > 6 else 0.0,
             })
         except (TypeError, ValueError):
             continue
@@ -767,6 +770,28 @@ def _tencent_daily(symbol: str, n: int, adjust: str = "qfq") -> dict:
     if isinstance(qt, list) and len(qt) > 1 and isinstance(qt[1], str):
         name = qt[1]
     return {"bars": bars, "name": name, "adjust": adj, "source": "tencent"}
+
+
+def _delta_session_totals(bars: list[dict]) -> None:
+    """Minute APIs give cumulative volume/amount per session. Convert to per-bar."""
+    prev_v = 0
+    prev_a = 0.0
+    prev_day = ""
+    for b in bars:
+        day = str(b.get("datetime") or "")[:10]
+        if day != prev_day:
+            prev_v = 0
+            prev_a = 0.0
+            prev_day = day
+        cum_v = int(b.get("volume") or 0)
+        b["volume"] = max(0, cum_v - prev_v)
+        prev_v = cum_v
+        try:
+            cum_a = float(b.get("amount") or 0)
+        except (TypeError, ValueError):
+            cum_a = 0.0
+        b["amount"] = max(0.0, cum_a - prev_a)
+        prev_a = cum_a
 
 
 def _parse_minute_line(line: str, day: str = "") -> dict | None:
@@ -1016,18 +1041,9 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
     if not bars:
         return {}
 
-    # Minute APIs return cumulative volume within each session — convert to per-bar delta
+    # Minute APIs return cumulative volume/amount within each session.
     if res in ("1", "5"):
-        prev_v = 0
-        prev_day = ""
-        for b in bars:
-            day = str(b.get("datetime") or "")[:10]
-            if day != prev_day:
-                prev_v = 0
-                prev_day = day
-            cum = int(b.get("volume") or 0)
-            b["volume"] = max(0, cum - prev_v)
-            prev_v = cum
+        _delta_session_totals(bars)
 
     # Fallback name from quote batch (use explicit symbol so indices stay correct)
     if not name:

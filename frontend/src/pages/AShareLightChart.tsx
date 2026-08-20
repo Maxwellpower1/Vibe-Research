@@ -1,42 +1,89 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { AlertCircle, FileText, Loader2, Newspaper, Plus, RefreshCw, Search, X } from "lucide-react";
+import { FileText, Newspaper, Plus, Search, X } from "lucide-react";
+import { AShareLcPane } from "@/components/ashare/AShareLcPane";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { LcLegend, LcSeg, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { PageFallback } from "@/components/ui/PageFallback";
 import { WatchlistFeed } from "@/components/WatchlistFeed";
 import { ApiError, type AShareLightBar } from "@/lib/api";
-import { useQuotes } from "@/lib/quoteHub";
+import { useQuotes, type HubQuote } from "@/lib/quoteHub";
 import { loadLightKline } from "@/lib/lightKline";
+import { createSeriesGate } from "@/lib/seriesGate";
 import { getAShareSession } from "@/lib/ashareSession";
-import { addCodes, loadWatch, saveWatch } from "@/lib/watchlist";
+import { SuggestHits, useSuggestSearch } from "@/hooks/useSuggestSearch";
+import { addCodes, loadWatch, saveWatch, watchDigits } from "@/lib/watchlist";
+import { nextSort, type SortState } from "@/components/ovlab/shared";
+import { cmpVal, SortableHd } from "@/components/deriv/derivShared";
 import { cn } from "@/lib/utils";
-import {
-  BaselineSeries, CandlestickSeries, HistogramSeries, applyTimeLabels, baselineOpts,
-  candleOpts, candleValues, ensureUpDown, lineValues, paintUpDown, resizeLc, seriesAlive,
-  setLogScale, setPaneWatermark, setRefPriceLine, showLatest, sparseLine, styleLastTag,
-  styleVolOverlay, useLcChart, volOpts, volValues, wipeLc,
-  type IPriceLine, type ISeriesApi, type ISeriesUpDownMarkerPluginApi, type ITextWatermarkPluginApi,
-  type LineData, type Time,
-} from "@/lib/lcChart";
 
 const StockData = lazy(() =>
   import("@/pages/StockData").then((m) => ({ default: m.StockData })),
-)
+);
 
 export type AShareChartSeg = "kline" | "detail" | "feed";
 const CHART_SEGS: AShareChartSeg[] = ["kline", "detail", "feed"];
 
 const KLINE_NUM = 365;
-const VIEW_DAYS = 120;
 
-type Res = "1" | "5" | "1D";
-const RES_OPTS: { v: Res; label: string }[] = [
-  { v: "1", label: "分时" },
-  { v: "5", label: "5日" },
-  { v: "1D", label: "日线" },
+function quoteChg(q: HubQuote | undefined) {
+  if (!q) return null;
+  if (q.change != null && Number.isFinite(q.change)) return q.change;
+  if (q.prev && Number.isFinite(q.prev)) return q.price - q.prev;
+  return null;
+}
+
+type ColKey =
+  | "code" | "name" | "price" | "pct" | "change"
+  | "bid" | "ask" | "bid_vol" | "ask_vol" | "volume" | "amount"
+  | "turnover" | "vol_ratio" | "amplitude"
+  | "open" | "high" | "low" | "prev" | "limit_up" | "limit_down"
+  | "mcap_yi" | "float_mcap_yi" | "pe_ttm" | "pe_static" | "pb";
+
+const COLS: { key: ColKey; label: string; num?: boolean }[] = [
+  { key: "code", label: "代码" },
+  { key: "name", label: "名称" },
+  { key: "price", label: "现价", num: true },
+  { key: "pct", label: "涨幅", num: true },
+  { key: "change", label: "涨跌", num: true },
+  { key: "bid", label: "买价", num: true },
+  { key: "ask", label: "卖价", num: true },
+  { key: "bid_vol", label: "买量", num: true },
+  { key: "ask_vol", label: "卖量", num: true },
+  { key: "volume", label: "成交量", num: true },
+  { key: "amount", label: "成交额", num: true },
+  { key: "turnover", label: "换手%", num: true },
+  { key: "vol_ratio", label: "量比", num: true },
+  { key: "amplitude", label: "振幅", num: true },
+  { key: "open", label: "开盘", num: true },
+  { key: "high", label: "最高", num: true },
+  { key: "low", label: "最低", num: true },
+  { key: "prev", label: "昨收", num: true },
+  { key: "limit_up", label: "涨停", num: true },
+  { key: "limit_down", label: "跌停", num: true },
+  { key: "mcap_yi", label: "市值(亿)", num: true },
+  { key: "float_mcap_yi", label: "流通(亿)", num: true },
+  { key: "pe_ttm", label: "PE(TTM)", num: true },
+  { key: "pe_static", label: "静PE", num: true },
+  { key: "pb", label: "PB", num: true },
 ];
+
+function colVal(key: ColKey, c: string, q: HubQuote | undefined): unknown {
+  if (key === "code") return c;
+  if (key === "name") return q?.name || c;
+  if (key === "change") return quoteChg(q);
+  return q?.[key];
+}
+
+export function sortWatchCodes(
+  codes: string[],
+  quotes: Record<string, HubQuote>,
+  sort: { key: ColKey | null; dir: "asc" | "desc" },
+): string[] {
+  if (!sort.key) return codes;
+  const key = sort.key;
+  return [...codes].sort((a, b) => cmpVal(colVal(key, a, quotes[a]), colVal(key, b, quotes[b]), sort.dir));
+}
 
 function fmtPct(v: number | null | undefined) {
   if (v == null || !Number.isFinite(v)) return "—";
@@ -44,15 +91,87 @@ function fmtPct(v: number | null | undefined) {
 }
 
 function fmtPrice(v: number | null | undefined, d = 2) {
-  if (v == null || !Number.isFinite(v)) return "—";
+  if (v == null || !Number.isFinite(v) || v === 0) return "—";
   return Number(v.toFixed(d)).toLocaleString("zh-CN", { maximumFractionDigits: d });
 }
 
-function fmtVol(v: number | null | undefined) {
+function fmtChg(v: number | null | undefined) {
   if (v == null || !Number.isFinite(v)) return "—";
+  return `${v > 0 ? "+" : ""}${v.toFixed(2)}`;
+}
+
+function fmtVol(v: number | null | undefined) {
+  if (v == null || !Number.isFinite(v) || v === 0) return "—";
   if (v >= 1e8) return (v / 1e8).toFixed(2) + "亿";
   if (v >= 1e4) return (v / 1e4).toFixed(1) + "万";
   return String(Math.round(v));
+}
+
+function fmtRate(v: number | null | undefined, d = 2) {
+  if (v == null || !Number.isFinite(v) || v === 0) return "—";
+  return v.toFixed(d);
+}
+
+function vsPrev(v: number | null | undefined, prev: number | null | undefined) {
+  if (v == null || prev == null || !Number.isFinite(v) || !Number.isFinite(prev) || prev === 0) {
+    return undefined;
+  }
+  return v - prev;
+}
+
+function chgTone(v: number | null | undefined) {
+  if (v == null || !Number.isFinite(v) || v === 0) return "text-muted-foreground";
+  return v > 0 ? "text-[#f6465d]" : "text-[#0ecb81]";
+}
+
+function useAShareSeries(code: string, res: "1" | "1D", num: number) {
+  const [bars, setBars] = useState<AShareLightBar[]>([]);
+  const [meta, setMeta] = useState<{
+    code: string; name?: string; adjust?: string; prev_close?: number | null;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const gate = useRef(createSeriesGate());
+
+  const load = useCallback(async () => {
+    const mine = gate.current.begin();
+    if (!code) {
+      if (!gate.current.take(mine, true)) return;
+      setBars([]);
+      setMeta(null);
+      setErr(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setErr(null);
+    try {
+      const data = await loadLightKline(code, res, num);
+      const snap = gate.current.take(mine, {
+        bars: data.bars ?? [],
+        meta: {
+          code: data.code,
+          name: data.name,
+          adjust: data.adjust,
+          prev_close: data.prev_close,
+        },
+      });
+      if (!snap) return;
+      setBars(snap.bars);
+      setMeta(snap.meta);
+      setErr(null);
+    } catch (e) {
+      if (!gate.current.take(mine, true)) return;
+      setBars([]);
+      setMeta(null);
+      setErr(e instanceof ApiError ? e.message : "K 线加载失败");
+    } finally {
+      if (gate.current.isCurrent(mine)) setLoading(false);
+    }
+  }, [code, res, num]);
+
+  useEffect(() => { void load(); }, [load]);
+  return { bars, meta, loading, err, reload: load };
 }
 
 export function AShareLightChart({
@@ -73,18 +192,11 @@ export function AShareLightChart({
     if (urlCode && /^\d{6}$/.test(urlCode)) return urlCode;
     return loadWatch()[0] ?? "";
   });
-  const [input, setInput] = useState("");
   const [hint, setHint] = useState<string | null>(null);
-  const [resolution, setResolution] = useState<Res>("1");
-  const [bars, setBars] = useState<AShareLightBar[]>([]);
-  const [meta, setMeta] = useState<{
-    code: string; name?: string; adjust?: string; prev_close?: number | null;
-  } | null>(null);
-  const [chartLoading, setChartLoading] = useState(false);
-  const [chartErr, setChartErr] = useState<string | null>(null);
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const search = useSuggestSearch({ skipCode: true });
   const [feedKind, setFeedKind] = useState<"filings" | "news">("filings");
   const [session, setSession] = useState(() => getAShareSession());
+  const listRef = useRef<HTMLDivElement>(null);
   const setSeg = (next: AShareChartSeg) => {
     onSegChange?.(next);
   };
@@ -92,20 +204,6 @@ export function AShareLightChart({
     setSelected(c);
     setSeg("kline");
   };
-
-  const { ref: chartRef, chartRef: lcRef, labelsRef, onHoverRef } = useLcChart();
-  const bag = useRef<{
-    kind: "candle" | "baseline" | null;
-    main: ISeriesApi<"Candlestick"> | ISeriesApi<"Baseline"> | null;
-    vol: ISeriesApi<"Histogram"> | null;
-    paintedTick: LineData[] | null;
-  }>({ kind: null, main: null, vol: null, paintedTick: null });
-  const refLine = useRef<IPriceLine | null>(null);
-  const wmRef = useRef<ITextWatermarkPluginApi<Time> | null>(null);
-  const tickRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const udRef = useRef<ISeriesUpDownMarkerPluginApi<Time> | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  onHoverRef.current = setHoverIdx;
 
   useEffect(() => {
     const tick = () => setSession(getAShareSession());
@@ -121,17 +219,37 @@ export function AShareLightChart({
     if (!selected && next[0]) setSelected(next[0]);
   };
 
-  const add = () => {
-    const { next, added } = addCodes(codes, input);
-    if (added === 0) {
-      setHint(input.trim() ? "没识别到新的 6 位代码（或已在列表里）" : null);
-      setInput("");
+  const addOne = (code: string) => {
+    const d = watchDigits(code);
+    if (!d) return;
+    if (codes.includes(d)) {
+      setHint("已在列表里");
+      search.clear();
+      setSelected(d);
       return;
     }
-    persist(next);
-    setInput("");
-    setHint(`已添加 ${added} 只`);
-    if (!selected) setSelected(next[next.length - added] ?? next[0]);
+    persist([...codes, d]);
+    search.clear();
+    setHint("已添加 1 只");
+    setSelected(d);
+  };
+
+  const add = () => {
+    const { next, added } = addCodes(codes, search.q);
+    if (added > 0) {
+      persist(next);
+      search.clear();
+      setHint(`已添加 ${added} 只`);
+      setSelected(next[next.length - added] ?? next[0]);
+      return;
+    }
+    const hit = search.hi >= 0 ? search.hits[search.hi] : search.hits[0];
+    if (hit) {
+      addOne(hit.code);
+      return;
+    }
+    setHint(search.q.trim() ? "没识别到新的 6 位代码（或已在列表里）" : null);
+    search.clear();
   };
 
   const remove = (c: string, e?: MouseEvent) => {
@@ -140,38 +258,12 @@ export function AShareLightChart({
   };
 
   const quotes = useQuotes(codes);
+  const [sort, setSort] = useState<SortState<Record<ColKey, unknown>>>({ key: null, dir: "desc" });
+  const rows = useMemo(() => sortWatchCodes(codes, quotes, sort), [codes, quotes, sort]);
+  const minute = useAShareSeries(selected, "1", 240);
+  const daily = useAShareSeries(selected, "1D", KLINE_NUM);
+  const wmName = minute.meta?.name || daily.meta?.name || (selected ? quotes[selected]?.name : "") || "";
 
-  const loadChart = useCallback(async (sym: string, res: Res) => {
-    if (!sym) {
-      setBars([]); setMeta(null); setChartErr(null); setHoverIdx(null);
-      return;
-    }
-    setChartLoading(true);
-    setChartErr(null);
-    try {
-      const num = res === "1" ? 240 : KLINE_NUM;
-      const data = await loadLightKline(sym, res, num);
-      setBars(data.bars ?? []);
-      setMeta({
-        code: data.code,
-        name: data.name,
-        adjust: data.adjust,
-        prev_close: data.prev_close,
-      });
-      setHoverIdx(null);
-    } catch (e) {
-      setBars([]);
-      setMeta(null);
-      setHoverIdx(null);
-      setChartErr(e instanceof ApiError ? e.message : "K 线加载失败");
-    } finally {
-      setChartLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void loadChart(selected, resolution); }, [selected, resolution, loadChart]);
-
-  // Sync selection <- URL deep link (?code=)
   useEffect(() => {
     if (!urlCode || !/^\d{6}$/.test(urlCode)) return;
     if (urlCode !== selected) {
@@ -180,7 +272,6 @@ export function AShareLightChart({
     }
   }, [urlCode]); // eslint-disable-line react-hooks/exhaustive-deps -- only react to URL
 
-  // Sync URL <- selection (keep current chart tab: kline|detail|feed)
   useEffect(() => {
     if (!selected) return;
     const cur = (params.get("code") || "").trim().toUpperCase();
@@ -192,117 +283,7 @@ export function AShareLightChart({
     setParams(p, { replace: true });
   }, [selected, seg]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const chart = lcRef.current;
-    if (!chart) return;
-    if (bars.length === 0) {
-      setPaneWatermark(chart, wmRef, "");
-      wipeLc(chart);
-      bag.current = { kind: null, main: null, vol: null, paintedTick: null };
-      refLine.current = null;
-      tickRef.current = null;
-      udRef.current = null;
-      labelsRef.current = [];
-      return;
-    }
-    const isDaily = resolution === "1D";
-    const kind = isDaily ? "candle" as const : "baseline" as const;
-    const finitePx = bars.map((b) => b.close).filter((v) => Number.isFinite(v));
-    const baseline = (resolution === "1" && meta?.prev_close != null && Number.isFinite(meta.prev_close))
-      ? Number(meta.prev_close)
-      : (finitePx[0] ?? 0);
-    labelsRef.current = bars.map((b) => b.datetime);
-    applyTimeLabels(chart, labelsRef, isDaily ? "md" : resolution === "5" ? "mdhm" : "hm");
-    if (bag.current.kind !== kind || !seriesAlive(chart, bag.current.main) || !seriesAlive(chart, bag.current.vol)) {
-      wipeLc(chart);
-      refLine.current = null;
-      tickRef.current = null;
-      udRef.current = null;
-      bag.current.paintedTick = null;
-      bag.current.main = kind === "candle"
-        ? chart.addSeries(CandlestickSeries, candleOpts())
-        : chart.addSeries(BaselineSeries, baselineOpts(baseline));
-      bag.current.vol = chart.addSeries(HistogramSeries, volOpts());
-      bag.current.kind = kind;
-      styleVolOverlay(chart);
-    }
-    if (kind === "candle") {
-      (bag.current.main as ISeriesApi<"Candlestick">).setData(candleValues(bars));
-    } else {
-      const bl = bag.current.main as ISeriesApi<"Baseline">;
-      bl.applyOptions(baselineOpts(baseline));
-      bl.setData(sparseLine(bars.map((b) => b.close)));
-    }
-    const last = bars[bars.length - 1];
-    styleLastTag(bag.current.main, last?.close, kind === "candle" ? last?.open : baseline);
-    const prev = kind === "candle"
-      ? (bars.length > 1 ? bars[bars.length - 2].close : null)
-      : baseline;
-    setRefPriceLine(bag.current.main, refLine, prev);
-    setPaneWatermark(chart, wmRef, selected, 110);
-    setLogScale(chart, isDaily && finitePx.every((v) => v > 0));
-    if (!isDaily) {
-      const tickPts = lineValues(sparseLine(bars.map((b) => b.close)));
-      paintUpDown(ensureUpDown(chart, tickRef, udRef), tickPts, bag.current.paintedTick);
-      bag.current.paintedTick = tickPts;
-    }
-    bag.current.vol!.setData(volValues(bars.map((b) => ({
-      value: b.volume,
-      up: isDaily ? b.close >= b.open : b.close >= baseline,
-    }))));
-    if (isDaily) showLatest(chart, bars.length, VIEW_DAYS);
-    else chart.timeScale().fitContent();
-  }, [bars, resolution, meta?.prev_close, selected, lcRef, labelsRef]);
-
-
-  const activeIdx = hoverIdx != null && bars[hoverIdx] ? hoverIdx : (bars.length ? bars.length - 1 : -1);
-  const bar = activeIdx >= 0 ? bars[activeIdx] : null;
-  const prevBar = activeIdx > 0 ? bars[activeIdx - 1] : null;
-  const base = resolution === "1D"
-    ? (prevBar?.close ?? null)
-    : (meta?.prev_close ?? null);
-  const chg = bar && base != null ? bar.close - base : null;
-  const chgPct = chg != null && base ? (chg / base) * 100 : null;
-  const hovering = hoverIdx != null && bars[hoverIdx] != null;
-  const selQuote = selected ? quotes[selected] : undefined;
-  const quoteChgPct = chgPct ?? selQuote?.pct ?? null;
-  const quoteChgAmt = chg != null
-    ? chg
-    : selQuote != null && selQuote.prev
-      ? selQuote.price - selQuote.prev
-      : null;
-
-  const ashareLegend: LcLegendItem[] = [];
-  if (bar) {
-    if (resolution === "1D") {
-      ashareLegend.push(
-        { k: "O", v: fmtPrice(bar.open) },
-        { k: "H", v: fmtPrice(bar.high) },
-        { k: "L", v: fmtPrice(bar.low) },
-        { k: "C", v: fmtPrice(bar.close), tone: lcTone(chg) },
-        { k: "V", v: fmtVol(bar.volume), tone: "muted" },
-      );
-    } else {
-      ashareLegend.push(
-        { k: "T", v: resolution === "5" ? (bar.datetime.slice(5, 16) || bar.datetime) : (bar.datetime.slice(11, 16) || bar.datetime), tone: "muted" },
-        { k: "P", v: fmtPrice(bar.close), tone: lcTone(chg) },
-        { k: "V", v: fmtVol(bar.volume), tone: "muted" },
-      );
-    }
-  }
-
-  // Keep chart DOM mounted so LC survives tab switches (hide when not on kline)
   const showKline = seg === "kline";
-  useEffect(() => {
-    if (!showKline) return;
-    const t = window.setTimeout(() => {
-      const chart = lcRef.current;
-      if (chart) resizeLc(chart, chartRef.current);
-    }, 50);
-    return () => window.clearTimeout(t);
-  }, [showKline, selected, lcRef, chartRef]);
-
-  // Scroll watchlist so deep-linked / selected code stays in view
   useEffect(() => {
     if (!selected || !listRef.current || !showKline) return;
     const el = listRef.current.querySelector(`[data-code="${selected}"]`) as HTMLElement | null;
@@ -336,22 +317,30 @@ export function AShareLightChart({
         )}
       </div>
 
-      {/* K线：自选 + 图表（keep mounted for chart resize） */}
       <div className={cn(!showKline && "hidden")}>
-        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <GlassCard className="flex flex-col !p-0 overflow-hidden">
-            <div className="market-toolbar !py-2.5">
-              <span className="text-xs font-medium text-foreground">自选列表</span>
-              <span className="text-[11px] text-muted-foreground/55">{codes.length} 只</span>
-            </div>
-            <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2.5">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") add(); }}
-                placeholder="加自选: 600519 000858"
-                className="min-w-0 flex-1 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-sm outline-none focus:border-primary/50"
-              />
+        <div className="grid gap-4 xl:grid-cols-2">
+          <GlassCard className="flex min-h-[520px] flex-col overflow-hidden !p-0">
+            <div className="market-toolbar !justify-start !gap-2 !py-2">
+              <span className="shrink-0 text-xs font-medium text-foreground">自选</span>
+              <span className="shrink-0 text-[11px] text-muted-foreground/55">{codes.length} 只</span>
+              <div ref={search.boxRef} className="relative shrink-0">
+                <input
+                  value={search.q}
+                  onChange={(e) => search.type(e.target.value)}
+                  onFocus={() => search.hits.length && search.setOpen(true)}
+                  onKeyDown={(e) => search.onKeyDown(e, (h) => addOne(h.code), addOne)}
+                  placeholder="搜名称 / 拼音"
+                  className="w-36 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-sm outline-none focus:border-primary/50"
+                />
+                {search.open && (
+                  <SuggestHits
+                    hits={search.hits}
+                    hi={search.hi}
+                    onPick={(h) => addOne(h.code)}
+                    className="absolute left-0 top-9 z-20 w-56 overflow-hidden rounded-lg border border-border bg-card shadow-lg"
+                  />
+                )}
+              </div>
               <button
                 type="button"
                 onClick={add}
@@ -361,240 +350,136 @@ export function AShareLightChart({
               </button>
             </div>
             {hint ? <p className="px-3 py-1.5 text-[11px] text-muted-foreground">{hint}</p> : null}
-            <div ref={listRef} className="min-h-[320px] flex-1 space-y-0.5 overflow-auto p-2">
+            <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
               {codes.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
                   <p className="text-xs text-muted-foreground">还没有自选</p>
                   <p className="text-[11px] text-muted-foreground/60">
-                    在上方输入 6 位代码添加，或从「每日复盘」榜单点代码跳转过来。
+                    上方搜名称 / 拼音 / 6 位代码添加, 或从「每日复盘」榜单点代码跳转过来。
                   </p>
                 </div>
-              ) : codes.map((c) => {
-                const q = quotes[c];
-                const pct = q?.pct;
-                const active = c === selected;
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    data-code={c}
-                    onClick={() => pickStock(c)}
-                    className={cn(
-                      "group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-                      active
-                        ? "bg-white/[0.04] text-foreground shadow-[inset_2px_0_0_#22d3ee]"
-                        : "hover:bg-white/[0.03]",
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="font-semibold tabular-nums">{c}</span>
-                        <span className="truncate text-[11px] text-muted-foreground">{q?.name ?? ""}</span>
-                      </div>
-                      <div className="mt-0.5 flex items-baseline gap-2 tabular-nums text-xs">
-                        <span>{fmtPrice(q?.price)}</span>
-                        <span className={cn(
-                          pct != null && pct > 0 ? "text-[#f6465d]" : pct != null && pct < 0 ? "text-[#0ecb81]" : "text-muted-foreground",
-                        )}>
-                          {fmtPct(pct)}
-                        </span>
-                      </div>
-                    </div>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => remove(c, e)}
-                      onKeyDown={(e) => { if (e.key === "Enter") remove(c); }}
-                      className="rounded p-1 text-muted-foreground opacity-0 hover:bg-muted/60 hover:text-foreground group-hover:opacity-100"
-                      title="移除"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </span>
-                  </button>
-                );
-              })}
+              ) : (
+                <table className="data-table dense min-w-[1480px]">
+                  <thead>
+                    <tr>
+                      {COLS.map((h) => (
+                        <th key={h.key} className={h.num ? "num" : undefined}>
+                          <SortableHd
+                            k={h.key}
+                            label={h.label}
+                            sort={sort}
+                            onSort={(k) => setSort((s) => nextSort(s, k))}
+                            className={h.num ? "justify-end" : "justify-start"}
+                          />
+                        </th>
+                      ))}
+                      <th className="act" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((c) => {
+                      const q = quotes[c];
+                      const pct = q?.pct;
+                      const chg = quoteChg(q);
+                      const active = c === selected;
+                      return (
+                        <tr
+                          key={c}
+                          data-code={c}
+                          onClick={() => pickStock(c)}
+                          className={cn("cursor-pointer", active && "!bg-primary/12")}
+                        >
+                          <td className="code">{c}</td>
+                          <td className="name font-semibold">{q?.name || c}</td>
+                          <td className={cn("num", chgTone(pct))}>{fmtPrice(q?.price)}</td>
+                          <td className={cn("num", chgTone(pct))}>{fmtPct(pct)}</td>
+                          <td className={cn("num", chgTone(chg))}>{fmtChg(chg)}</td>
+                          <td className="num">{fmtPrice(q?.bid)}</td>
+                          <td className="num">{fmtPrice(q?.ask)}</td>
+                          <td className="num">{fmtVol(q?.bid_vol)}</td>
+                          <td className="num">{fmtVol(q?.ask_vol)}</td>
+                          <td className="num">{fmtVol(q?.volume)}</td>
+                          <td className="num">{fmtVol(q?.amount)}</td>
+                          <td className="num">{fmtRate(q?.turnover)}</td>
+                          <td className="num">{fmtRate(q?.vol_ratio)}</td>
+                          <td className="num">{fmtRate(q?.amplitude)}</td>
+                          <td className={cn("num", chgTone(vsPrev(q?.open, q?.prev)))}>{fmtPrice(q?.open)}</td>
+                          <td className={cn("num", chgTone(vsPrev(q?.high, q?.prev)))}>{fmtPrice(q?.high)}</td>
+                          <td className={cn("num", chgTone(vsPrev(q?.low, q?.prev)))}>{fmtPrice(q?.low)}</td>
+                          <td className="num">{fmtPrice(q?.prev)}</td>
+                          <td className="num">{fmtPrice(q?.limit_up)}</td>
+                          <td className="num">{fmtPrice(q?.limit_down)}</td>
+                          <td className="num">{fmtPrice(q?.mcap_yi, 1)}</td>
+                          <td className="num">{fmtPrice(q?.float_mcap_yi, 1)}</td>
+                          <td className="num">{fmtPrice(q?.pe_ttm)}</td>
+                          <td className="num">{fmtPrice(q?.pe_static)}</td>
+                          <td className="num">{fmtPrice(q?.pb)}</td>
+                          <td className="act">
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => remove(c, e)}
+                              onKeyDown={(e) => { if (e.key === "Enter") remove(c); }}
+                              className="inline-flex rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                              title="移除"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </GlassCard>
 
-          <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_260px]">
-            {/* K线 */}
-            <GlassCard className="min-w-0 p-3 sm:p-4">
-              <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="font-mono text-lg font-semibold tracking-tight">{selected || "—"}</span>
-                    <span className="truncate text-xs text-slate-500">
-                      {meta?.name || selQuote?.name || ""}
-                    </span>
-                    <span className="rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
-                      {resolution === "1D" ? (meta?.adjust === "qfq" ? "qfq" : "D") : resolution === "5" ? "5D" : "1"}
-                    </span>
-                    {hovering ? (
-                      <span className="font-mono text-[10px] tracking-wide text-cyan-400/80">CROSSHAIR</span>
-                    ) : null}
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-baseline gap-3">
-                    <span className={cn(
-                      "font-mono text-2xl font-semibold tabular-nums",
-                      quoteChgPct != null && quoteChgPct > 0 ? "text-[#f6465d]"
-                        : quoteChgPct != null && quoteChgPct < 0 ? "text-[#0ecb81]"
-                          : "text-slate-200",
-                    )}>
-                      {fmtPrice(bar?.close ?? selQuote?.price)}
-                    </span>
-                    <span className={cn(
-                      "font-mono text-sm tabular-nums",
-                      quoteChgPct != null && quoteChgPct > 0 ? "text-[#f6465d]"
-                        : quoteChgPct != null && quoteChgPct < 0 ? "text-[#0ecb81]"
-                          : "text-slate-500",
-                    )}>
-                      {quoteChgAmt != null ? `${quoteChgAmt > 0 ? "+" : ""}${quoteChgAmt.toFixed(2)}` : "—"}
-                      <span className="ml-1.5">({fmtPct(quoteChgPct)})</span>
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <LcSeg value={resolution} options={RES_OPTS} onChange={setResolution} />
+          <div className="grid min-h-[520px] min-w-0 grid-rows-2 gap-3">
+            <AShareLcPane
+              title="分时"
+              kind="minute"
+              code={selected}
+              name={wmName}
+              bars={minute.bars}
+              prevClose={minute.meta?.prev_close}
+              loading={minute.loading}
+              err={minute.err}
+              emptyHint="先从左侧表格点一只"
+              visible={showKline}
+              extra={selected ? (
+                <div className="flex items-center gap-0.5">
                   <button
                     type="button"
-                    onClick={() => { if (selected) void loadChart(selected, resolution); }}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-slate-500 ring-1 ring-white/[0.06] hover:text-slate-200"
+                    onClick={() => setSeg("detail")}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-100"
                   >
-                    <RefreshCw className={cn("h-3.5 w-3.5", chartLoading && "animate-spin")} />
+                    <Search className="h-3 w-3" /> 详情
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSeg("feed")}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-100"
+                  >
+                    <Newspaper className="h-3 w-3" /> 公告
                   </button>
                 </div>
-              </div>
-
-              <LcWell className="h-[480px]">
-                {!selected && (
-                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-[#0b0f17]/88 px-6 text-center">
-                    <p className="text-sm text-slate-400">先选一只股票看 K 线</p>
-                    <p className="max-w-xs text-[11px] text-slate-600">
-                      从左侧自选点选，或在上方加 6 位代码。复盘榜单点代码也会落到这里。
-                    </p>
-                  </div>
-                )}
-                {chartErr && selected && (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-[#0b0f17]/88 px-4 text-sm text-destructive">
-                    <AlertCircle className="h-4 w-4 shrink-0" /> {chartErr}
-                  </div>
-                )}
-                {chartLoading && selected && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0b0f17]/40">
-                    <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
-                  </div>
-                )}
-                <LcLegend items={ashareLegend} />
-                <div ref={chartRef} className="h-full w-full" />
-              </LcWell>
-            </GlassCard>
-
-            {/* 行情：与 K 线左右并排 */}
-            <GlassCard className="flex flex-col !p-0 overflow-hidden">
-              <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
-                <p className="text-sm font-semibold">行情</p>
-                {selected && (
-                  <div className="flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setSeg("detail")}
-                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/10"
-                    >
-                      <Search className="h-3 w-3" /> 详情
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSeg("feed")}
-                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-primary hover:bg-primary/10"
-                    >
-                      <Newspaper className="h-3 w-3" /> 公告
-                    </button>
-                  </div>
-                )}
-              </div>
-              {!selected ? (
-                <div className="flex flex-col items-center gap-1.5 px-3 py-10 text-center">
-                  <p className="text-xs text-muted-foreground/65">从左侧自选点一只</p>
-                  <p className="text-[11px] text-muted-foreground/50">看实时行情与估值快照</p>
-                </div>
-              ) : (
-                <div className="flex-1 space-y-3 overflow-auto p-3">
-                  <div>
-                    <p className="truncate text-sm font-semibold">
-                      {meta?.name || selQuote?.name || "—"}
-                      <span className="ml-1.5 font-mono text-xs font-normal text-muted-foreground">{selected}</span>
-                    </p>
-                    {bar?.datetime ? (
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">{bar.datetime}</p>
-                    ) : null}
-                    <p className={cn(
-                      "mt-2 font-mono text-2xl font-bold tabular-nums",
-                      quoteChgPct != null && quoteChgPct > 0 ? "text-[#f6465d]"
-                        : quoteChgPct != null && quoteChgPct < 0 ? "text-[#0ecb81]"
-                          : "text-foreground",
-                    )}>
-                      {fmtPrice(bar?.close ?? selQuote?.price)}
-                    </p>
-                    <p className={cn(
-                      "mt-0.5 text-sm tabular-nums",
-                      quoteChgPct != null && quoteChgPct > 0 ? "text-[#f6465d]"
-                        : quoteChgPct != null && quoteChgPct < 0 ? "text-[#0ecb81]"
-                          : "text-muted-foreground",
-                    )}>
-                      {quoteChgAmt != null ? `${quoteChgAmt > 0 ? "+" : ""}${quoteChgAmt.toFixed(2)}` : "—"}
-                      <span className="ml-1.5">({fmtPct(quoteChgPct)})</span>
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {(resolution === "1D" && bar
-                      ? [
-                          { k: "开", v: fmtPrice(bar.open) },
-                          { k: "高", v: fmtPrice(bar.high) },
-                          { k: "低", v: fmtPrice(bar.low) },
-                          { k: "收", v: fmtPrice(bar.close) },
-                          { k: "量", v: fmtVol(bar.volume) },
-                          { k: "昨收", v: fmtPrice(base ?? selQuote?.prev) },
-                        ]
-                      : bar
-                        ? [
-                            { k: "价", v: fmtPrice(bar.close) },
-                            { k: "量", v: fmtVol(bar.volume) },
-                            { k: "昨收", v: fmtPrice(meta?.prev_close ?? selQuote?.prev) },
-                            { k: "现价", v: fmtPrice(selQuote?.price) },
-                          ]
-                        : [
-                            { k: "现价", v: fmtPrice(selQuote?.price) },
-                            { k: "昨收", v: fmtPrice(selQuote?.prev) },
-                            { k: "涨跌%", v: fmtPct(selQuote?.pct) },
-                          ]
-                    ).map((m) => (
-                      <div key={m.k} className="rounded-lg bg-muted/25 px-2.5 py-2">
-                        <p className="text-[10px] text-muted-foreground">{m.k}</p>
-                        <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">{m.v}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="border-t border-border/40 pt-3">
-                    <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground/70">估值快照</p>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {[
-                        { k: "PE(TTM)", v: selQuote?.pe_ttm ? fmtPrice(selQuote.pe_ttm) : "—" },
-                        { k: "PB", v: selQuote?.pb ? fmtPrice(selQuote.pb) : "—" },
-                        { k: "换手%", v: selQuote?.turnover ? fmtPrice(selQuote.turnover) : "—" },
-                        { k: "市值(亿)", v: selQuote?.mcap_yi ? fmtPrice(selQuote.mcap_yi) : "—" },
-                      ].map((m) => (
-                        <div key={m.k} className="rounded-lg bg-muted/25 px-2.5 py-2">
-                          <p className="text-[10px] text-muted-foreground">{m.k}</p>
-                          <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">{m.v}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </GlassCard>
+              ) : null}
+              onRefresh={() => { void minute.reload(); }}
+            />
+            <AShareLcPane
+              title="日K"
+              kind="daily"
+              code={selected}
+              name={wmName}
+              bars={daily.bars}
+              prevClose={daily.meta?.prev_close}
+              loading={daily.loading}
+              err={daily.err}
+              emptyHint="先从左侧表格点一只"
+              visible={showKline}
+              onRefresh={() => { void daily.reload(); }}
+            />
           </div>
         </div>
       </div>
