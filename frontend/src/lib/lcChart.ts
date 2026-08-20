@@ -1,6 +1,6 @@
 /** TradingView-style Lightweight Charts for K/minute cards. ECharts stays on non-time-series. */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   createChart,
   createOptionsChart,
@@ -199,6 +199,78 @@ export function fmtPx(v: number, codeOrUnd?: string | null): string {
   return v.toFixed(pxPrec(codeOrUnd, v).precision);
 }
 
+/** (latest - from) / from. Hover a past bar to see move since then. */
+export function sinceNowPct(from: number | null | undefined, latest: number | null | undefined): number | null {
+  if (from == null || latest == null || !Number.isFinite(from) || !Number.isFinite(latest) || from === 0) return null;
+  return ((latest - from) / from) * 100;
+}
+
+function fmtHoverPct(v: number) {
+  return `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
+
+function fmtHoverPx(v: number) {
+  return Number(v.toFixed(2)).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+}
+
+/** Right-edge crosshair tag parts. Price stays dark on white; pct is red/green vs latest. */
+export function hoverPxPct(
+  price: number | null | undefined,
+  latest: number | null | undefined,
+  formatPx: (v: number) => string = fmtHoverPx,
+): { px: string; pct: string | null; chg: number | null } | null {
+  if (price == null || !Number.isFinite(price)) return null;
+  const chg = sinceNowPct(price, latest);
+  const show = chg != null && Math.abs(chg) >= 1e-12;
+  return { px: formatPx(price), pct: show ? fmtHoverPct(chg) : null, chg: show ? chg : null };
+}
+
+/** Right-edge HTML tag Y. Native horz label stays off (dark plate is unreadable). */
+export function useLcHoverTag(
+  getSeries: () => { priceToCoordinate: (price: number) => number | null } | null,
+  price: number | null | undefined,
+  latest: number | null | undefined,
+  formatPx?: (v: number) => string,
+  paintKey?: unknown,
+): { tag: ReturnType<typeof hoverPxPct>; y: number | null } {
+  const tag = hoverPxPct(price, latest, formatPx);
+  const [y, setY] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const series = getSeries();
+    if (!series || price == null || !Number.isFinite(price)) {
+      setY(null);
+      return;
+    }
+    try {
+      const cy = series.priceToCoordinate(price);
+      setY(cy == null || !Number.isFinite(cy) ? null : cy);
+    } catch {
+      setY(null);
+    }
+  }, [price, paintKey]);
+  return { tag, y };
+}
+
+/** Magnet price from the series that still shows a last tag (skip helper stems). */
+export function hoverPxFromParam(
+  param: Pick<MouseEventParams<Time> | MouseEventParams<number>, "seriesData">,
+): number | null {
+  let v: number | null = null;
+  param.seriesData.forEach((d, s) => {
+    try {
+      const opts = s && typeof s === "object" && "options" in s
+        ? (s as { options: () => { lastValueVisible?: boolean } }).options()
+        : null;
+      if (opts?.lastValueVisible === false) return;
+    } catch { /* series already gone */ }
+    if (!d || typeof d !== "object") return;
+    const row = d as { close?: unknown; value?: unknown };
+    if (typeof row.close === "number" && Number.isFinite(row.close)) v = row.close;
+    else if (typeof row.value === "number" && Number.isFinite(row.value)) v = row.value;
+  });
+  return v;
+}
+
 export function candleOpts(_glance = false, fmt?: ReturnType<typeof priceFormatOf>) {
   return {
     upColor: UP,
@@ -324,7 +396,7 @@ export function createLcChart(el: HTMLElement, preset: LcPreset = "desk"): IChar
         color: HAIR,
         style: LineStyle.Dashed,
         width: 1,
-        labelVisible: true,
+        labelVisible: false,
         labelBackgroundColor: TAG,
       },
     },
@@ -332,6 +404,15 @@ export function createLcChart(el: HTMLElement, preset: LcPreset = "desk"): IChar
     handleScroll: { vertTouchDrag: false },
     kineticScroll: { mouse: true, touch: true },
   });
+}
+
+/** LC throws "Value is null" when wipe / resize / axis length race. Keep the pane. */
+export function guardLc(fn: () => void): void {
+  try {
+    fn();
+  } catch {
+    /* Value is null / mid-resize */
+  }
 }
 
 export function wipeLc(chart: IChartApi): void {
@@ -499,8 +580,12 @@ export function applyTimeLabels(
 }
 
 /** Session axis: open flush left. Do not pin the right edge (that parks slack on the left). */
+const sessionRaf = new WeakMap<object, number>();
+
 export function showSession(chart: IChartApi, n: number): void {
   if (n <= 0) return;
+  const prev = sessionRaf.get(chart);
+  if (prev != null) cancelAnimationFrame(prev);
   const last = Math.max(-0.5, n - 0.5);
   const apply = () => {
     try {
@@ -509,20 +594,25 @@ export function showSession(chart: IChartApi, n: number): void {
       /* chart already removed */
     }
   };
-  chart.applyOptions({
-    timeScale: {
-      rightOffset: 0,
-      rightOffsetPixels: 0,
-      minBarSpacing: 0.2,
-      barSpacing: 1,
-      fixLeftEdge: true,
-      fixRightEdge: false,
-      shiftVisibleRangeOnNewBar: false,
-      lockVisibleTimeRangeOnResize: true,
-    },
+  guardLc(() => {
+    chart.applyOptions({
+      timeScale: {
+        rightOffset: 0,
+        rightOffsetPixels: 0,
+        minBarSpacing: 0.2,
+        barSpacing: 1,
+        fixLeftEdge: true,
+        fixRightEdge: false,
+        shiftVisibleRangeOnNewBar: false,
+        lockVisibleTimeRangeOnResize: true,
+      },
+    });
   });
   apply();
-  requestAnimationFrame(apply);
+  sessionRaf.set(chart, requestAnimationFrame(() => {
+    sessionRaf.delete(chart);
+    apply();
+  }));
 }
 
 export function showLatest(chart: IChartApi, n: number, view: number): void {
@@ -579,11 +669,13 @@ export function setSeriesMarks(
   marks: SeriesMarker<Time>[],
 ): void {
   if (!series) return;
-  if (!apiRef.current) {
-    apiRef.current = createSeriesMarkers(series, marks);
-    return;
-  }
-  apiRef.current.setMarkers(marks);
+  guardLc(() => {
+    if (!apiRef.current) {
+      apiRef.current = createSeriesMarkers(series, marks);
+      return;
+    }
+    apiRef.current.setMarkers(marks);
+  });
 }
 
 function samePoint(a: unknown, b: unknown): boolean {
@@ -612,7 +704,7 @@ function paintLast<T extends CandlestickData | LineData | WhitespaceData | Histo
   prev: T[] | null | undefined,
 ): boolean {
   if (next.length === 0) {
-    setAll(next);
+    guardLc(() => setAll(next));
     return false;
   }
   if (canUpdateLast(prev, next)) {
@@ -623,7 +715,7 @@ function paintLast<T extends CandlestickData | LineData | WhitespaceData | Histo
       /* LC update rejects some whitespace / time jumps */
     }
   }
-  setAll(next);
+  guardLc(() => setAll(next));
   return false;
 }
 
@@ -745,7 +837,7 @@ export function paintUpDown(
 ): boolean {
   if (!api) return false;
   if (next.length === 0) {
-    api.setData([]);
+    guardLc(() => { api.setData([]); });
     return false;
   }
   if (canUpdateLast(prev, next)) {
@@ -756,7 +848,7 @@ export function paintUpDown(
       /* same as paintLast */
     }
   }
-  api.setData(next);
+  guardLc(() => { api.setData(next); });
   return false;
 }
 
@@ -799,7 +891,7 @@ export function createLcPriceChart(el: HTMLElement) {
     crosshair: {
       mode: CrosshairMode.Magnet,
       vertLine: { color: HAIR, style: LineStyle.Dashed, width: 1, labelVisible: true, labelBackgroundColor: TAG },
-      horzLine: { color: HAIR, style: LineStyle.Dashed, width: 1, labelVisible: true, labelBackgroundColor: TAG },
+      horzLine: { color: HAIR, style: LineStyle.Dashed, width: 1, labelVisible: false, labelBackgroundColor: TAG },
     },
     localization: { locale: "zh-CN", precision: 0 },
   });
@@ -824,12 +916,16 @@ export function resizeLcHost(chart: LcSizable, el: HTMLElement | null): void {
 export function useLcPriceChart() {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ReturnType<typeof createLcPriceChart> | null>(null);
+  const onHoverRef = useRef<(px: number | null) => void>(() => {});
   const [rev, setRev] = useState(0);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     let chart: ReturnType<typeof createLcPriceChart> | null = null;
+    const onMove = (param: MouseEventParams<number>) => {
+      onHoverRef.current(hoverPxFromParam(param));
+    };
     const boot = () => {
       if (chart) {
         resizeLcHost(chart, el);
@@ -837,6 +933,7 @@ export function useLcPriceChart() {
       }
       if (el.clientWidth < 2 || el.clientHeight < 2) return;
       chart = createLcPriceChart(el);
+      chart.subscribeCrosshairMove(onMove);
       chartRef.current = chart;
       setRev((n) => n + 1);
     };
@@ -845,12 +942,13 @@ export function useLcPriceChart() {
     ro.observe(el);
     return () => {
       ro.disconnect();
+      if (chart) chart.unsubscribeCrosshairMove(onMove);
       chart?.remove();
       chartRef.current = null;
     };
   }, []);
 
-  return { ref, chartRef, rev };
+  return { ref, chartRef, rev, onHoverRef };
 }
 
 export function resizeLc(chart: IChartApi, el: HTMLElement | null): void {

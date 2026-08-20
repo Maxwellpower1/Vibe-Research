@@ -16,7 +16,13 @@ test("lcChart 是 K/分时共用封装, 不画 TradingView logo", () => {
   assert.match(src, /BaselineSeries/);
   assert.match(src, /CandlestickSeries/);
   assert.match(src, /export function useLcChart/);
+  assert.match(src, /export function useLcHoverTag/);
+  assert.match(src, /export function hoverPxFromParam/);
+  assert.match(src, /horzLine:[\s\S]*labelVisible: false/);
   assert.match(src, /export function wipeLc/);
+  assert.match(src, /export function guardLc/);
+  assert.match(src, /guardLc\(\(\) => setAll/);
+  assert.match(src, /cancelAnimationFrame/);
   assert.match(src, /styleVolOverlay/);
   assert.match(src, /export function styleVolPane/);
   assert.match(src, /export function styleOiPane/);
@@ -70,6 +76,8 @@ test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {
     const body = readFileSync(join(root, rel), "utf8");
     assert.match(body, /useLcChart/, rel);
     assert.match(body, /LcWell/, rel);
+    assert.match(body, /LcHoverTag/, rel);
+    assert.match(body, /useLcHoverTag/, rel);
     assert.match(body, /setRefPriceLine/, rel);
     assert.match(body, /setPaneWatermark/, rel);
     assert.doesNotMatch(body, /echarts\.init/, rel);
@@ -85,7 +93,9 @@ test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {
   assert.match(pane, /ensureUpDown/);
   assert.match(pane, /volUp/);
   assert.match(pane, /barOpenForVol/);
-  assert.match(pane, /derivMinuteSlots/);
+  assert.match(pane, /concatDaySlots/);
+  assert.match(pane, /tradingDaysOf/);
+  assert.match(pane, /mdhm/);
   assert.match(pane, /showSession/);
   assert.match(pane, /paintHist/);
   assert.match(pane, /sessionMarkIdxs/);
@@ -97,6 +107,10 @@ test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {
   assert.match(pane, /b\.volume/);
   assert.match(pane, /\"额\"/);
   assert.match(pane, /\"量\"/);
+  assert.match(pane, /距今/);
+  assert.match(src, /export function sinceNowPct/);
+  assert.match(src, /export function hoverPxPct/);
+  assert.match(pane, /LcHoverTag/);
   assert.doesNotMatch(pane, /styleVolOverlay/);
   assert.match(src, /export function volUp/);
   assert.match(src, /export function barOpenForVol/);
@@ -109,6 +123,11 @@ test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {
   assert.match(pane, /wmRef\.current = null/);
   assert.match(ashare, /kind="minute"/);
   assert.match(ashare, /kind="daily"/);
+  assert.match(ashare, /两日/);
+  assert.match(ashare, /ashare\.minute\.days/);
+  assert.match(ashare, /minuteDays === 2 \? "5"/);
+  assert.match(ashare, /minuteDays === 2 \? 1000/);
+  assert.doesNotMatch(ashare, /1200/);
   assert.match(ashare, /q\?\.name \|\| c/);
   assert.match(ashare, /"买价"/);
   assert.match(ashare, /sortWatchCodes/);
@@ -234,4 +253,70 @@ test("volUp 当根收>=开为红, 腾讯假开盘改比上一分钟", () => {
   assert.equal(barOpenForVol(10.0, 10.2), 10.0);
   assert.equal(volUp(10.2, barOpenForVol(10.2, 10.2), 10.0), true);
   assert.equal(volUp(9.8, barOpenForVol(9.8, 9.8), 10.0), false);
+});
+
+function httpDetail(detail, status) {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const bits = detail.map((x) => {
+      if (typeof x === "string") return x;
+      if (x && typeof x === "object" && typeof x.msg === "string") return x.msg;
+      return "";
+    }).filter(Boolean);
+    if (bits.length) return bits.join("; ");
+  }
+  return `HTTP ${status}`;
+}
+
+function sinceNowPct(from, latest) {
+  if (from == null || latest == null || !Number.isFinite(from) || !Number.isFinite(latest) || from === 0) return null;
+  return ((latest - from) / from) * 100;
+}
+
+function hoverPxPct(price, latest) {
+  if (price == null || !Number.isFinite(price)) return null;
+  const chg = sinceNowPct(price, latest);
+  const px = Number(price.toFixed(2)).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  const show = chg != null && Math.abs(chg) >= 1e-12;
+  const pct = show ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}%` : null;
+  return { px, pct, chg: show ? chg : null };
+}
+
+function guardLc(fn) {
+  try { fn(); } catch { /* LC Value is null */ }
+}
+
+test("guardLc 吞掉 LC Value is null, 不把图打翻", () => {
+  assert.doesNotThrow(() => guardLc(() => { throw new Error("Value is null"); }));
+  let n = 0;
+  guardLc(() => { n = 1; });
+  assert.equal(n, 1);
+});
+
+test("sinceNowPct 是相对最新价, 不是当日涨跌", () => {
+  assert.equal(sinceNowPct(10, 11), 10);
+  assert.equal(sinceNowPct(10, 9), -10);
+  assert.equal(sinceNowPct(10, 10), 0);
+  assert.equal(sinceNowPct(0, 10), null);
+  assert.equal(sinceNowPct(null, 10), null);
+});
+
+test("hoverPxPct 右侧价签是 价格 (+/-%) 相对现价", () => {
+  assert.deepEqual(hoverPxPct(10, 11), { px: "10", pct: "+10.00%", chg: 10 });
+  assert.deepEqual(hoverPxPct(10, 9), { px: "10", pct: "-10.00%", chg: -10 });
+  assert.deepEqual(hoverPxPct(10, 10), { px: "10", pct: null, chg: null });
+  assert.deepEqual(hoverPxPct(10, null), { px: "10", pct: null, chg: null });
+  assert.equal(hoverPxPct(null, 10), null);
+  const frame = readFileSync(join(root, "src/components/ui/LcFrame.tsx"), "utf8");
+  assert.match(frame, /export function LcHoverTag/);
+  assert.match(frame, /text-\[#f6465d\].*text-\[#0ecb81\]/s);
+});
+
+test("httpDetail 不把 FastAPI 422 列表打成 [object Object]", () => {
+  assert.equal(httpDetail("未取到", 404), "未取到");
+  assert.equal(httpDetail([{ msg: "Input should be less than or equal to 1000" }], 422), "Input should be less than or equal to 1000");
+  assert.equal(httpDetail([{ loc: ["query", "num"] }], 422), "HTTP 422");
+  const api = readFileSync(join(root, "src/lib/api.ts"), "utf8");
+  assert.match(api, /export function httpDetail/);
+  assert.match(api, /httpDetail\(payload\?\.detail/);
 });

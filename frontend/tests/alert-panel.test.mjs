@@ -76,6 +76,7 @@ test("异动卡对齐 OpenVlab option-flow: 三类可关 + 额/量阈值", async
 
 test("异动卡 MQTT 实时 overlay: REST seed + 本机 mqtt 状态, 不另开 market 轮询", async () => {
   const hook = await readFile(new URL("../src/hooks/useDerivData.ts", import.meta.url), "utf8");
+  const poll = await readFile(new URL("../src/hooks/usePolling.ts", import.meta.url), "utf8");
   const sse = await readFile(new URL("../src/hooks/useOvlabMqtt.ts", import.meta.url), "utf8");
   const mqttLib = await readFile(new URL("../src/lib/ovlabMqtt.ts", import.meta.url), "utf8");
   const arb = await readFile(new URL("../src/hooks/useArbData.ts", import.meta.url), "utf8");
@@ -96,6 +97,8 @@ test("异动卡 MQTT 实时 overlay: REST seed + 本机 mqtt 状态, 不另开 m
   assert.ok(hook.includes("mergeMarketRows"), "ctamap 叠行情观察");
   assert.ok(hook.includes("ticksByInstr"), "dataview 按合约");
   assert.equal(hook.split("api.ovlabMarket()").length - 1, 1, "仍只有一条 market 轮询");
+  assert.ok(hook.includes("api.ovlabProductExps(), 0"), "临期日历是基础数据, 不轮询");
+  assert.ok(poll.includes("if (ms <= 0)"), "ms<=0 只拉一次, 不 setInterval");
   assert.ok(panel.includes("已连接"), "异动卡 MQTT 已连接");
   assert.ok(panel.includes("text-emerald-400"), "已连接绿色");
   assert.ok(panel.includes("MQTT未连"), "异动卡 MQTT 未连");

@@ -98,6 +98,9 @@ test("OptionChartCard 用 hoverIdxOf, 分时 Baseline 上红下绿", async () =>
   assert.ok(src.includes("export function overlayAxis"), "隐波右轴走 overlayAxis");
   assert.ok(src.includes("overlayAxis(minData?.iv"), "分时隐波不拉满");
   assert.ok(src.includes("overlayAxis(dailyIv)"), "日K隐波同一比例");
+  assert.ok(src.includes("LcHoverTag"), "十字右侧价签同 A 股");
+  assert.ok(src.includes("useLcHoverTag"), "价签涨跌相对现价");
+  assert.ok(src.includes("guardLc"), "快切分时/两日吞 LC Value is null");
 });
 
 function parseMinute(raw) {

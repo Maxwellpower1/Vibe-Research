@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { OvlabTQuoteStrike } from "@/lib/api";
-import { LcWell } from "@/components/ui/LcFrame";
+import { LcHoverTag, LcWell } from "@/components/ui/LcFrame";
 import {
-  LineSeries, LineStyle, UP, DN, createSeriesMarkers, useLcPriceChart, resizeLcHost,
+  LineSeries, LineStyle, UP, DN, createSeriesMarkers, useLcHoverTag, useLcPriceChart, resizeLcHost,
   type ISeriesMarkersPluginApi,
 } from "@/lib/lcChart";
 import { smilePoints } from "./TQuotePanel";
@@ -65,7 +65,9 @@ export function IvSmileChart({
   spot: number | null;
   atm: number | null;
 }) {
-  const { ref, chartRef, rev } = useLcPriceChart();
+  const { ref, chartRef, rev, onHoverRef } = useLcPriceChart();
+  const [hoverIv, setHoverIv] = useState<number | null>(null);
+  onHoverRef.current = setHoverIv;
   const bag = useRef<{
     rev: number;
     call: ReturnType<typeof addSmileLine> | null;
@@ -80,6 +82,17 @@ export function IvSmileChart({
   const empty = call.length === 0 && put.length === 0;
   const ivs = useMemo(() => [...call, ...put].map((p) => p.value), [call, put]);
   const stem = useMemo(() => smileSpotPts(spot, ivs), [spot, ivs]);
+  const atmIv = useMemo(() => {
+    if (atm == null) return null;
+    return call.find((p) => p.time === atm)?.value ?? put.find((p) => p.time === atm)?.value ?? null;
+  }, [atm, call, put]);
+  const { tag: hoverTag, y: tagY } = useLcHoverTag(
+    () => bag.current.call ?? bag.current.put,
+    hoverIv,
+    atmIv,
+    (v) => v.toFixed(1),
+    rev,
+  );
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -131,6 +144,7 @@ export function IvSmileChart({
         {empty && (
           <div className="absolute inset-0 z-10 flex items-center justify-center text-[11px] text-slate-500">无IV</div>
         )}
+        <LcHoverTag tag={hoverTag} y={tagY} />
         <div ref={ref} className="h-full w-full" />
       </LcWell>
     </div>

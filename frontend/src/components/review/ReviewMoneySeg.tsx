@@ -8,9 +8,10 @@ import { fmt, pctColor } from "@/components/review/format";
 import { reviewPending } from "@/components/review/reviewPending";
 import { ETF_SHARE_WATCH, type CnBondYield, type EtfFlow, type EtfShares, type LprData, type ShareholderChanges } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { LcWell } from "@/components/ui/LcFrame";
+import { LcHoverTag, LcWell } from "@/components/ui/LcFrame";
+import { lastFiniteIdx } from "@/lib/derivMinuteAxis";
 import {
-  LineSeries, applyTimeLabels, lcTime, seriesAlive, setPaneWatermark, useLcChart, wipeLc,
+  LineSeries, applyTimeLabels, lcTime, seriesAlive, setPaneWatermark, useLcChart, useLcHoverTag, wipeLc,
   type ISeriesApi, type ITextWatermarkPluginApi, type Time,
 } from "@/lib/lcChart";
 
@@ -384,6 +385,22 @@ function EtfShareChart({
     color: s.color,
     value: s.values[i] != null ? s.values[i]!.toFixed(2) : "—",
   }));
+  const hitI = i < 0 ? -1 : series.findIndex((s) => s.values[i] != null && Number.isFinite(s.values[i]));
+  const hit = hitI >= 0 ? series[hitI] : null;
+  const hoverPx = hit && i >= 0 ? hit.values[i] : null;
+  const latestPx = hit
+    ? (() => {
+        const li = lastFiniteIdx(hit.values, null);
+        return li != null ? hit.values[li] : null;
+      })()
+    : null;
+  const { tag: hoverTag, y: tagY } = useLcHoverTag(
+    () => bag.current[hitI] ?? null,
+    hoverPx,
+    latestPx,
+    (v) => v.toFixed(2),
+    hover,
+  );
 
   return (
     <div
@@ -395,6 +412,7 @@ function EtfShareChart({
       onMouseLeave={() => { setHover(null); setPos(null); }}
     >
       <LcWell className="h-full rounded-md">
+        <LcHoverTag tag={hoverTag} y={tagY} />
         <div ref={ref} className="h-full w-full" />
       </LcWell>
       {i >= 0 && pos && (

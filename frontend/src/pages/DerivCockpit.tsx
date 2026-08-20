@@ -207,7 +207,7 @@ export function DerivCockpit() {
           accent: "#2dd4bf",
           defaultW: 0.20,
           mobileH: "h-[56vh]",
-          right: <FreshTag updated={d.marketUpdated} extra={d.exps ? `${d.exps.length}品种` : undefined} />,
+          right: d.exps ? <span className="font-mono text-[10px] text-slate-500">{d.exps.length}品种</span> : undefined,
           body: <ExpiryCalPanel d={d} />,
         },
         {
@@ -224,7 +224,6 @@ export function DerivCockpit() {
         {
           id: "alert",
           title: "异动",
-          hint: "阈值可关三类",
           icon: <Zap size={14} />,
           accent: "#f59e0b",
           defaultW: 0.22,

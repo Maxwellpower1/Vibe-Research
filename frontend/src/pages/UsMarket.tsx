@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 import { AlertCircle, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
+import { LcHoverTag, LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { GlanceStrip, type GlanceMetric } from "@/components/ui/GlanceStrip";
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import {
   CandlestickSeries, HistogramSeries, applyTimeLabels, candleOpts, candleValues,
   seriesAlive, setLogScale, setPaneWatermark, setRefPriceLine, showLatest, styleLastTag,
-  styleVolOverlay, useLcChart, volOpts, volValues, wipeLc,
+  styleVolOverlay, useLcChart, useLcHoverTag, volOpts, volValues, wipeLc,
   type IPriceLine, type ISeriesApi, type ITextWatermarkPluginApi, type Time,
 } from "@/lib/lcChart";
 
@@ -288,6 +288,13 @@ export function UsMarket() {
   const chg = bar && prevBar ? bar.close - prevBar.close : null;
   const chgPct = chg != null && prevBar && prevBar.close ? (chg / prevBar.close) * 100 : null;
   const hovering = hoverIdx != null && bars[hoverIdx] != null;
+  const { tag: hoverTag, y: tagY } = useLcHoverTag(
+    () => bag.current.candle,
+    hovering ? bar?.close ?? null : null,
+    bars[bars.length - 1]?.close ?? null,
+    fmtPrice,
+    hoverIdx,
+  );
 
   const fmtVol = (v: number | null | undefined) => {
     if (v == null || !Number.isFinite(v)) return "—";
@@ -491,6 +498,7 @@ export function UsMarket() {
               </div>
             )}
             <LcLegend items={usLegend} />
+            <LcHoverTag tag={hoverTag} y={tagY} />
             <div ref={chartRef} className="h-full w-full" />
           </LcWell>
         </GlassCard>

@@ -66,6 +66,30 @@ export function LcLegend({
   );
 }
 
+/** Right-edge crosshair: white plate, dark price, red/green % vs latest. */
+export function LcHoverTag({
+  tag,
+  y,
+}: {
+  tag: { px: string; pct: string | null; chg: number | null } | null;
+  y: number | null;
+}) {
+  if (!tag || y == null) return null;
+  return (
+    <div
+      className="pointer-events-none absolute z-20 -translate-y-1/2 rounded-sm px-1 py-px font-mono text-[11px] font-medium tabular-nums text-slate-900 shadow-sm"
+      style={{ top: y, right: 0, background: "#fff" }}
+    >
+      {tag.px}
+      {tag.pct != null && tag.chg != null ? (
+        <span className={tag.chg > 0 ? "text-[#f6465d]" : "text-[#0ecb81]"}>
+          {" "}({tag.pct})
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /** Interval / mode pills, TV toolbar. */
 export function LcSeg<T extends string>({
   value,

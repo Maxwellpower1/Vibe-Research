@@ -10,11 +10,11 @@ import {
 import {
   BaselineSeries, applyTimeLabels, baselineOpts, ensureUpDown, lineValues, paintUpDown,
   seriesAlive, setPaneWatermark, setRefPriceLine, sparseLine, styleLastTag,
-  useLcChart, wipeLc,
+  useLcChart, useLcHoverTag, wipeLc,
   type IPriceLine, type ISeriesApi, type ISeriesUpDownMarkerPluginApi, type ITextWatermarkPluginApi,
   type LineData, type Time,
 } from "@/lib/lcChart";
-import { LcLegend, LcSeg, LcWell, lcTone } from "@/components/ui/LcFrame";
+import { LcHoverTag, LcLegend, LcSeg, LcWell, lcTone } from "@/components/ui/LcFrame";
 import { chgClass, signed, type ArbPick } from "./arbShared";
 import { cn } from "@/lib/utils";
 
@@ -206,6 +206,14 @@ export function SpreadChart({ pick }: { pick: ArbPick | null }) {
   const hoverIdx = frame ? lastFiniteIdx(frame.vals, hover) : null;
   const hoverVal = hoverIdx == null || !frame ? last : (frame.vals[hoverIdx] ?? last);
   const hoverT = hoverIdx == null || !frame ? "" : frame.cats[hoverIdx];
+  const hoverPx = hover != null && hoverIdx != null && frame ? (frame.vals[hoverIdx] ?? null) : null;
+  const { tag: hoverTag, y: tagY } = useLcHoverTag(
+    () => seriesRef.current,
+    hoverPx,
+    last,
+    (v) => signed(v),
+    hover,
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -246,6 +254,7 @@ export function SpreadChart({ pick }: { pick: ArbPick | null }) {
             ...(hoverT ? [{ k: "T", v: mode === "daily" ? hoverT : (hoverT.slice(11, 16) || hoverT), tone: "muted" as const }] : []),
           ] : []}
         />
+        <LcHoverTag tag={hoverTag} y={tagY} />
         <div ref={ref} className="h-full w-full" />
       </LcWell>
     </div>

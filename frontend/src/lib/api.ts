@@ -15,6 +15,20 @@ export class ApiError extends Error {
   }
 }
 
+/** FastAPI 422 detail is often an object list; String(detail) becomes [object Object]. */
+export function httpDetail(detail: unknown, status: number): string {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const bits = detail.map((x) => {
+      if (typeof x === "string") return x;
+      if (x && typeof x === "object" && "msg" in x && typeof x.msg === "string") return x.msg;
+      return "";
+    }).filter(Boolean);
+    if (bits.length) return bits.join("; ");
+  }
+  return `HTTP ${status}`;
+}
+
 // 后端访问密钥（对应后端部署时的 VR_API_KEY，公网部署防蹭用）。只存本地浏览器。
 const ACCESS_KEY = "vr-access-key";
 
@@ -64,7 +78,7 @@ async function request<T>(path: string, method: "GET" | "POST" | "PUT" | "DELETE
     if (resp.status === 401) {
       throw new ApiError("后端开启了访问鉴权（VR_API_KEY）：请在「接入 AI」页底部填写后端访问密钥", 401);
     }
-    throw new ApiError(payload?.detail || `HTTP ${resp.status}`, resp.status);
+    throw new ApiError(httpDetail(payload?.detail, resp.status), resp.status);
   }
   return (payload?.data ?? payload) as T;
 }

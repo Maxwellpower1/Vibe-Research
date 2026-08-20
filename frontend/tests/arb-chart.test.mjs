@@ -13,6 +13,8 @@ test("SpreadChart 图容器首屏就挂着, pick 空不整卡 return", () => {
   assert.doesNotMatch(src, /if\s*\(!pick\)\s*return\s*<CellEmpty/);
   assert.match(src, /ref=\{ref\}/);
   assert.match(src, /useLcChart/);
+  assert.match(src, /LcHoverTag/);
+  assert.match(src, /useLcHoverTag/);
   assert.match(src, /BaselineSeries/);
   assert.doesNotMatch(src, /echarts/);
   assert.doesNotMatch(src, /&& "hidden"/);

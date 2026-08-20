@@ -36,6 +36,8 @@ test("ETF 份额日线走 LC, 国债曲线仍 ECharts", async () => {
   assert.match(money, /alignEtfShareDays/);
   assert.match(money, /setPaneWatermark/);
   assert.match(money, /function EtfShareTip/);
+  assert.match(money, /LcHoverTag/);
+  assert.match(money, /useLcHoverTag/);
   assert.doesNotMatch(money, /LcLegend/);
   assert.match(money, /<EtfShareChart /);
   const etfBlock = money.slice(money.indexOf("function EtfShareChart"));

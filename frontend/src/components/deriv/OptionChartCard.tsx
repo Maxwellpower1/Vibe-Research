@@ -16,12 +16,12 @@ import {
   ensureUpDown, lineValues, overlayLineOpts, paintCandles, paintHist, paintLine, paintUpDown,
   priceFormatOf, seriesAlive, setPaneWatermark, setRefPriceLine, setSeriesMarks, showLatest,
   showSession, sparseLine, styleIvOverlay, styleLastTag, styleOiPane,
-  styleVolPane, useLcChart, volPaneOpts, volUp, volValues, wipeLc, IV_COLOR, OI_COLOR,
+  styleVolPane, useLcChart, useLcHoverTag, volPaneOpts, volUp, volValues, wipeLc, guardLc, IV_COLOR, OI_COLOR,
   type IPriceLine, type ISeriesApi, type ISeriesMarkersPluginApi, type ISeriesUpDownMarkerPluginApi,
   type ITextWatermarkPluginApi, type SeriesMarker, type Time,
   type CandlestickData, type HistogramData, type LineData, type WhitespaceData,
 } from "@/lib/lcChart";
-import { LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
+import { LcHoverTag, LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
 
 interface MinBar { t: string; close: number; open: number | null; vol: number; oi: number | null }
 
@@ -471,6 +471,10 @@ export function OptionChartCard({ pick, mode, tick, alerts = NO_ALERTS }: {
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    guardLc(() => paintChart(chart));
+  }, [pick, mode, dailyBars, dailyIv, minData, alerts, chartRef, labelsRef]);
+
+  const paintChart = (chart: NonNullable<typeof chartRef.current>) => {
     const emptyBag = () => ({
       kind: null as "daily" | "minute" | null,
       px: null, iv: null, vol: null, oi: null,
@@ -621,7 +625,29 @@ export function OptionChartCard({ pick, mode, tick, alerts = NO_ALERTS }: {
     ];
     setSeriesMarks(bag.current.px, marksRef, toMarks(markParts));
     if (!lastOnly) showSession(chart, cats.length);
-  }, [pick, mode, dailyBars, dailyIv, minData, alerts, chartRef, labelsRef]);
+  };
+
+  const latestPx = mode === "daily"
+    ? (dailyBars[dailyBars.length - 1]?.close ?? null)
+    : (() => {
+        const i = lastFiniteIdx(minData?.prices ?? [], null);
+        return i != null ? (minData?.prices[i] ?? null) : null;
+      })();
+  const hoverPx = hover == null ? null : (
+    mode === "daily"
+      ? (dailyBars[hover]?.close ?? null)
+      : (() => {
+          const i = lastFiniteIdx(minData?.prices ?? [], hover);
+          return i != null ? (minData?.prices[i] ?? null) : null;
+        })()
+  );
+  const { tag: hoverTag, y: tagY } = useLcHoverTag(
+    () => bag.current.px,
+    hover != null ? hoverPx : null,
+    latestPx,
+    (v) => fmtPx(v, pick?.und),
+    hover,
+  );
 
   let head: { label: string; toneCls: string } | null = null;
   const glanceLegend: LcLegendItem[] = [];
@@ -721,6 +747,7 @@ export function OptionChartCard({ pick, mode, tick, alerts = NO_ALERTS }: {
           <div className="absolute inset-0 z-10 flex items-center justify-center text-[11px] text-slate-500">未取到</div>
         )}
         <LcLegend items={glanceLegend} className="left-1 top-0.5 text-[10px]" />
+        <LcHoverTag tag={hoverTag} y={tagY} />
         <div ref={ref} className="h-full w-full" />
       </LcWell>
     </div>

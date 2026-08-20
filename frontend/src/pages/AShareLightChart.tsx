@@ -11,6 +11,7 @@ import { useQuotes, type HubQuote } from "@/lib/quoteHub";
 import { loadLightKline } from "@/lib/lightKline";
 import { createSeriesGate } from "@/lib/seriesGate";
 import { getAShareSession } from "@/lib/ashareSession";
+import { storageGet, storageSet } from "@/lib/storage";
 import { SuggestHits, useSuggestSearch } from "@/hooks/useSuggestSearch";
 import { addCodes, loadWatch, saveWatch, watchDigits } from "@/lib/watchlist";
 import { nextSort, type SortState } from "@/components/ovlab/shared";
@@ -124,7 +125,9 @@ function chgTone(v: number | null | undefined) {
   return v > 0 ? "text-[#f6465d]" : "text-[#0ecb81]";
 }
 
-function useAShareSeries(code: string, res: "1" | "1D", num: number) {
+const MINUTE_DAYS_KEY = "ashare.minute.days";
+
+function useAShareSeries(code: string, res: "1" | "5" | "1D", num: number) {
   const [bars, setBars] = useState<AShareLightBar[]>([]);
   const [meta, setMeta] = useState<{
     code: string; name?: string; adjust?: string; prev_close?: number | null;
@@ -196,6 +199,7 @@ export function AShareLightChart({
   const search = useSuggestSearch({ skipCode: true });
   const [feedKind, setFeedKind] = useState<"filings" | "news">("filings");
   const [session, setSession] = useState(() => getAShareSession());
+  const [minuteDays, setMinuteDays] = useState<1 | 2>(() => (storageGet(MINUTE_DAYS_KEY) === "2" ? 2 : 1));
   const listRef = useRef<HTMLDivElement>(null);
   const setSeg = (next: AShareChartSeg) => {
     onSegChange?.(next);
@@ -260,7 +264,7 @@ export function AShareLightChart({
   const quotes = useQuotes(codes);
   const [sort, setSort] = useState<SortState<Record<ColKey, unknown>>>({ key: null, dir: "desc" });
   const rows = useMemo(() => sortWatchCodes(codes, quotes, sort), [codes, quotes, sort]);
-  const minute = useAShareSeries(selected, "1", 240);
+  const minute = useAShareSeries(selected, minuteDays === 2 ? "5" : "1", minuteDays === 2 ? 1000 : 240);
   const daily = useAShareSeries(selected, "1D", KLINE_NUM);
   const wmName = minute.meta?.name || daily.meta?.name || (selected ? quotes[selected]?.name : "") || "";
 
@@ -447,24 +451,47 @@ export function AShareLightChart({
               err={minute.err}
               emptyHint="先从左侧表格点一只"
               visible={showKline}
-              extra={selected ? (
+              days={minuteDays}
+              extra={(
                 <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setSeg("detail")}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-100"
-                  >
-                    <Search className="h-3 w-3" /> 详情
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSeg("feed")}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-100"
-                  >
-                    <Newspaper className="h-3 w-3" /> 公告
-                  </button>
+                  <span className="flex gap-0.5 rounded bg-white/[0.03] p-0.5 ring-1 ring-white/[0.06]">
+                    {([[1, "分时"], [2, "两日"]] as const).map(([n, lab]) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => {
+                          setMinuteDays(n);
+                          storageSet(MINUTE_DAYS_KEY, String(n));
+                        }}
+                        className={cn(
+                          "rounded px-1.5 py-0.5 text-[11px]",
+                          minuteDays === n ? "bg-cyan-500/15 text-cyan-200" : "text-slate-500 hover:text-slate-300",
+                        )}
+                      >
+                        {lab}
+                      </button>
+                    ))}
+                  </span>
+                  {selected ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSeg("detail")}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-100"
+                      >
+                        <Search className="h-3 w-3" /> 详情
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSeg("feed")}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-white/[0.06] hover:text-slate-100"
+                      >
+                        <Newspaper className="h-3 w-3" /> 公告
+                      </button>
+                    </>
+                  ) : null}
                 </div>
-              ) : null}
+              )}
               onRefresh={() => { void minute.reload(); }}
             />
             <AShareLcPane

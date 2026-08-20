@@ -156,6 +156,8 @@ test("IvSmileChart 是带标题的井, 图表重建丢掉旧 series", async () =
   assert.ok(smile.includes(">IV微笑<"), "标题写在图上, 不靠 title 属性");
   assert.ok(smile.includes("h-[128px]"), "井有明确高度");
   assert.ok(smile.includes("useLcPriceChart"), "横轴行权价走 createOptionsChart");
+  assert.ok(smile.includes("LcHoverTag"), "十字价签同时间图");
+  assert.ok(smile.includes("useLcHoverTag"), "IV 涨跌相对 ATM");
   assert.ok(smile.includes("bag.current.rev !== rev"), "StrictMode / 重建后不把线画在已销毁的图上");
   assert.ok(smile.includes("resizeLcHost"), "flex 格里先踢尺寸再 fitContent");
   assert.ok(smile.includes("smileSpotPts"), "现价竖线");

@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
+import { LcHoverTag, LcLegend, LcWell, lcTone, type LcLegendItem } from "@/components/ui/LcFrame";
 import type { AShareLightBar } from "@/lib/api";
-import { derivMinuteSlots, lastFiniteIdx, padToSlots, sessionMarkIdxs } from "@/lib/derivMinuteAxis";
+import {
+  concatDaySlots, lastFiniteIdx, padToSlots, sessionMarkIdxs, tradingDayOf, tradingDaysOf,
+} from "@/lib/derivMinuteAxis";
 import { cn } from "@/lib/utils";
 import {
   BaselineSeries, CandlestickSeries, HistogramSeries, applyTimeLabels, barOpenForVol,
   baselineOpts, candleOpts, candleValues, ensureUpDown, lcTime, lineValues, paintCandles,
   paintHist, paintLine, paintUpDown, resizeLc, seriesAlive, setLogScale, setPaneWatermark,
   setRefPriceLine, setSeriesMarks, showLatest, showSession, sparseLine, styleLastTag,
-  styleVolPane, useLcChart, volPaneOpts, volUp, volValues, wipeLc,
+  sinceNowPct, styleVolPane, useLcChart, useLcHoverTag, volPaneOpts, volUp, volValues, wipeLc,
   type CandlestickData, type HistogramData, type IPriceLine, type ISeriesApi,
   type ISeriesMarkersPluginApi, type ISeriesUpDownMarkerPluginApi, type ITextWatermarkPluginApi,
   type LineData, type Time, type WhitespaceData,
@@ -35,11 +37,13 @@ function fmtVol(v: number | null | undefined) {
   return String(Math.round(v));
 }
 
-export function ashareMinuteFrame(bars: AShareLightBar[]) {
-  const day = (bars[0]?.datetime || "").slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
-  const cats = derivMinuteSlots(day, "etf");
-  return { cats, padded: padToSlots(bars, cats, (b) => b.datetime) };
+export function ashareMinuteFrame(bars: AShareLightBar[], days: 1 | 2 = 1) {
+  const tds = tradingDaysOf(bars.map((b) => b.datetime).filter(Boolean)).slice(-(days === 2 ? 2 : 1));
+  if (!tds.length) return null;
+  const want = new Set(tds);
+  const kept = bars.filter((b) => want.has(tradingDayOf(b.datetime)));
+  const { cats } = concatDaySlots(tds, "etf");
+  return { cats, padded: padToSlots(kept, cats, (b) => b.datetime), days };
 }
 
 export function AShareLcPane({
@@ -55,6 +59,7 @@ export function AShareLcPane({
   visible = true,
   extra,
   onRefresh,
+  days = 1,
 }: {
   title: string;
   kind: "minute" | "daily";
@@ -68,6 +73,7 @@ export function AShareLcPane({
   visible?: boolean;
   extra?: ReactNode;
   onRefresh: () => void;
+  days?: 1 | 2;
 }) {
   const { ref: chartRef, chartRef: lcRef, labelsRef, onHoverRef } = useLcChart();
   const bag = useRef<{
@@ -88,7 +94,10 @@ export function AShareLcPane({
 
   const isDaily = kind === "daily";
   const wmName = name.trim();
-  const minute = useMemo(() => (isDaily ? null : ashareMinuteFrame(bars)), [isDaily, bars]);
+  const minute = useMemo(
+    () => (isDaily ? null : ashareMinuteFrame(bars, days)),
+    [isDaily, bars, days],
+  );
 
   useEffect(() => {
     const chart = lcRef.current;
@@ -160,7 +169,7 @@ export function AShareLcPane({
       const padded = minute?.padded ?? bars;
       const prices = padded.map((b) => (b && Number.isFinite(b.close) ? b.close : null));
       labelsRef.current = cats;
-      applyTimeLabels(chart, labelsRef, "hm");
+      applyTimeLabels(chart, labelsRef, days === 2 ? "mdhm" : "hm");
       const bl = bag.current.main as ISeriesApi<"Baseline">;
       bl.applyOptions(baselineOpts(baseline));
       const pxPts = sparseLine(prices);
@@ -195,7 +204,7 @@ export function AShareLcPane({
     } catch {
       /* LC throws Value is null if wipe/resize races; keep the pane */
     }
-  }, [bars, prevClose, wmName, code, isDaily, loading, minute, lcRef, labelsRef]);
+  }, [bars, prevClose, wmName, code, isDaily, days, loading, minute, lcRef, labelsRef]);
 
   useEffect(() => {
     if (!visible) return;
@@ -221,8 +230,32 @@ export function AShareLcPane({
     }
   }
   const prevBar = isDaily && bar ? bars[bars.indexOf(bar) - 1] ?? null : null;
-  const base = isDaily ? (prevBar?.close ?? null) : (prevClose ?? null);
+  const barTd = bar?.datetime.slice(0, 10) ?? "";
+  const lastTd = (bars[bars.length - 1]?.datetime || "").slice(0, 10);
+  let dayPrev: number | null = null;
+  if (!isDaily && days === 2 && barTd && barTd !== lastTd) {
+    const prior = bars.filter((b) => b.datetime.slice(0, 10) < barTd);
+    const lastPrior = prior[prior.length - 1]?.close;
+    dayPrev = lastPrior != null && Number.isFinite(lastPrior) ? lastPrior : null;
+  }
+  const base = isDaily ? (prevBar?.close ?? null) : (dayPrev ?? prevClose ?? null);
   const chg = bar && base != null ? bar.close - base : null;
+  const latestPx = isDaily
+    ? (bars[bars.length - 1]?.close ?? null)
+    : (() => {
+        const px = (minute?.padded ?? bars).map((b) => (b && Number.isFinite(b.close) ? b.close : null));
+        const i = lastFiniteIdx(px, null);
+        return i != null ? px[i] : null;
+      })();
+  const since = bar ? sinceNowPct(bar.close, latestPx) : null;
+  const showSince = since != null && Math.abs(since) >= 1e-12;
+  const { tag: hoverTag, y: tagY } = useLcHoverTag(
+    () => bag.current.main,
+    hoverIdx != null ? (bar?.close ?? null) : null,
+    latestPx,
+    undefined,
+    hoverIdx,
+  );
 
   const legend: LcLegendItem[] = [];
   if (bar) {
@@ -236,13 +269,18 @@ export function AShareLcPane({
       );
     } else {
       legend.push(
-        { k: "T", v: bar.datetime.slice(11, 16) || bar.datetime, tone: "muted" },
+        { k: "T", v: days === 2 ? (bar.datetime.slice(5, 16) || bar.datetime) : (bar.datetime.slice(11, 16) || bar.datetime), tone: "muted" },
         { k: "P", v: fmtPrice(bar.close), tone: lcTone(chg) },
         { k: "额", v: fmtVol(bar.amount), tone: "muted" },
       );
     }
+    if (showSince) legend.push({ k: "距今", v: fmtPct(since), tone: lcTone(since) });
   } else if (emptySlot) {
-    legend.push({ k: "T", v: emptySlot.slice(11, 16) || emptySlot, tone: "muted" });
+    legend.push({
+      k: "T",
+      v: days === 2 ? (emptySlot.slice(5, 16) || emptySlot) : (emptySlot.slice(11, 16) || emptySlot),
+      tone: "muted",
+    });
   }
 
   return (
@@ -258,6 +296,14 @@ export function AShareLcPane({
               {fmtPrice(bar.close)}
               <span className="ml-1.5">{chg > 0 ? "+" : ""}{chg.toFixed(2)}</span>
               <span className="ml-1">({fmtPct(base ? (chg / base) * 100 : null)})</span>
+              {showSince && since != null ? (
+                <span className={cn(
+                  "ml-2",
+                  since > 0 ? "text-[#f6465d]" : since < 0 ? "text-[#0ecb81]" : "text-slate-500",
+                )}>
+                  距今 {fmtPct(since)}
+                </span>
+              ) : null}
             </p>
           ) : null}
         </div>
@@ -289,6 +335,7 @@ export function AShareLcPane({
           </div>
         )}
         <LcLegend items={legend} />
+        <LcHoverTag tag={hoverTag} y={tagY} />
         {code && bars.length > 0 && (
           <div className="pointer-events-none absolute bottom-[6%] left-2 z-10 text-[10px] text-slate-400">
             {isDaily ? "成交量" : "成交额"}

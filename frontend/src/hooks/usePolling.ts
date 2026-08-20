@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-/** Interval poller. Pauses when the document is hidden; resumes on visible. */
+/** Interval poller. ms<=0 = one shot (deps / refresh only). Hidden tab pauses the interval. */
 export function usePolling<T>(
   fn: () => Promise<T>,
   ms: number,
@@ -47,6 +47,11 @@ export function usePolling<T>(
       if (!document.hidden) run();
     };
     run();
+    if (ms <= 0) {
+      return () => {
+        cancelled = true;
+      };
+    }
     const id = window.setInterval(run, ms);
     document.addEventListener("visibilitychange", onVis);
     return () => {

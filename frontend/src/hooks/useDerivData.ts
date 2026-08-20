@@ -109,7 +109,7 @@ export function useDerivData(pinInstr: string[] = []): DerivData {
   const market = usePolling(() => api.ovlabMarket(), 60_000, [nonce]);
   const alertPoll = usePolling(() => api.ovlabFlowAlert(), 60_000, [nonce]);
   const mqttPoll = useOvlabMqtt(pinInstr);
-  const expPoll = usePolling(() => api.ovlabProductExps(), 300_000, [nonce]);
+  const expPoll = usePolling(() => api.ovlabProductExps(), 0, [nonce]);
 
   const rows = useMemo(
     () => {
