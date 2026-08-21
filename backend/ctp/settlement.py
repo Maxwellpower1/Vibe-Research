@@ -281,8 +281,12 @@ def build_settlement_analytics(series: list[dict[str, Any]]) -> dict[str, Any]:
     start_eq = perf[0]["equity"] if n else None
     end_eq = perf[-1]["equity"] if n else None
     avg_ret = (sum_ret / ret_count) if ret_count else 0.0
-    # Annualize with 242 China futures trading days approx
-    ann_ret = ((1.0 + avg_ret) ** 242 - 1.0) if ret_count else None
+    # CAGR on calendar span, 365 natural days (not 242 trading days)
+    ann_ret = None
+    if n >= 2 and nav > 0:
+        span = (_ymd_to_date(perf[-1]["trading_day"]) - _ymd_to_date(perf[0]["trading_day"])).days
+        if span > 0:
+            ann_ret = nav ** (365.0 / span) - 1.0
     # Simple vol / sharpe from daily returns (rf=0)
     if ret_count >= 2:
         mean = avg_ret
@@ -324,7 +328,7 @@ def build_settlement_analytics(series: list[dict[str, Any]]) -> dict[str, Any]:
         "method": (
             "盈亏 pnl = Δequity - 出入金; "
             "收益 income = 盈亏 - 手续费; "
-            "nav 复利; 年化按 242 交易日"
+            "nav 复利; 年化按自然日 365"
         ),
     }
 

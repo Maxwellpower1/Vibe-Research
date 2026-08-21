@@ -16,13 +16,26 @@ import { cn } from "@/lib/utils";
 import { storageGet, storageSet } from "@/lib/storage";
 import { fmt, fmtPx, pctInt, pnlColor, signed, wanInt, ymdInput, ymdSpanDays } from "@/components/portfolio/format";
 import {
-  CAL_METRICS, SETTLE_CHARTS, WEEK_LABELS, buildCalDays, ctpTh, td,
+  CAL_METRICS, SETTLE_CHARTS, WEEK_LABELS, buildCalDays, foldLiveMonthly,
+  foldLiveSummary, liveSettlePreview, ctpTh, td,
   type CalMetric, type SettleChartKey,
 } from "@/components/portfolio/ctpUtils";
 
 const SETTLE_RANGE_START_KEY = "ctp.settle.rangeStart.v2";
 const SETTLE_RANGE_END_KEY = "ctp.settle.rangeEnd.v2";
 const DEFAULT_SETTLE_START = "2026-04-08";
+
+function previewLive(data: CtpPortfolioData | null, range: CtpSettlementRangeData | null) {
+  return liveSettlePreview({
+    equity: data?.account?.market_equity ?? data?.account?.client_equity ?? data?.account?.balance,
+    tradingDay: data?.trading_day,
+    deposit: data?.account?.deposit,
+    withdraw: data?.account?.withdraw,
+    commission: data?.account?.commission,
+    perf: range?.analytics?.perf,
+    fallbackDate: ymdInput(new Date()),
+  });
+}
 
 function loadSavedYmd(key: string, fallback: string): string {
   const s = storageGet(key);
@@ -287,10 +300,10 @@ export function CtpPortfolio() {
   // Jump calendar to latest month with data when range loads
   useEffect(() => {
     if (!rangeData?.analytics) return;
-    const days = buildCalDays(rangeData);
+    const days = buildCalDays(rangeData, previewLive(data, rangeData));
     if (!days.length) return;
     setCalYm(days[days.length - 1].date.slice(0, 7));
-  }, [rangeData]);
+  }, [rangeData, data?.account?.market_equity, data?.account?.client_equity, data?.account?.balance, data?.trading_day]);
 
   // Settlement performance charts
   useEffect(() => {
@@ -311,40 +324,32 @@ export function CtpPortfolio() {
     ).map((p) => ({ date: p.date, value: p.value, live: false as boolean }));
 
     // Append today's live point when settlement bill for trading day is missing
-    // (equity / nav / cum_return / cum_income derived from live 市值权益 vs last settle)
     let liveAppended = false;
     {
-      const liveEq = data?.account?.market_equity ?? data?.account?.client_equity ?? data?.account?.balance;
-      const td = (data?.trading_day || "").replace(/-/g, "");
-      const liveDate = /^\d{8}$/.test(td)
-        ? `${td.slice(0, 4)}-${td.slice(4, 6)}-${td.slice(6, 8)}`
-        : ymdInput(new Date());
-      const hasLive = liveEq != null && Number.isFinite(Number(liveEq));
-      const hasSettleDay = raw.some((p) => p.date === liveDate);
-      const perf = rangeData?.analytics?.perf || [];
-      const last = perf.length ? perf[perf.length - 1] : null;
-      if (hasLive && !hasSettleDay && last && last.date !== liveDate) {
-        const prevEq = Number(last.equity);
-        const dw = Number(data?.account?.deposit ?? 0) - Number(data?.account?.withdraw ?? 0);
-        const comm = Number(data?.account?.commission ?? 0);
-        const dailyPnl = Number(liveEq) - prevEq - dw;
-        const dailyRet = prevEq ? dailyPnl / prevEq : 0;
-        const nav = Number(last.nav) * (1 + dailyRet);
-        const cumIncome = Number(last.cum_income ?? last.cum_pnl) + (dailyPnl - comm);
+      const live = previewLive(data, rangeData);
+      if (live) {
         const liveValue =
-          settleChart === "equity" ? Number(liveEq)
-          : settleChart === "nav" ? nav
-          : settleChart === "cum_return" ? (nav - 1) * 100
-          : settleChart === "cum_pnl_wan" ? cumIncome / 10000
+          settleChart === "equity" ? live.equity
+          : settleChart === "nav" ? live.nav
+          : settleChart === "cum_return" ? (live.nav - 1) * 100
+          : settleChart === "cum_pnl_wan" ? live.cumIncome / 10000
           : null;
         if (liveValue != null && Number.isFinite(liveValue)) {
-          raw = [...raw, { date: liveDate, value: liveValue, live: true }];
+          raw = [...raw, { date: live.date, value: liveValue, live: true }];
           liveAppended = true;
         }
-      } else if (hasLive && !hasSettleDay && settleChart === "equity" && !last) {
-        // No history yet: still show today's equity alone
-        raw = [{ date: liveDate, value: Number(liveEq), live: true }];
-        liveAppended = true;
+      } else if (settleChart === "equity") {
+        const liveEq = data?.account?.market_equity ?? data?.account?.client_equity ?? data?.account?.balance;
+        const td = (data?.trading_day || "").replace(/-/g, "");
+        const liveDate = /^\d{8}$/.test(td)
+          ? `${td.slice(0, 4)}-${td.slice(4, 6)}-${td.slice(6, 8)}`
+          : ymdInput(new Date());
+        const hasLive = liveEq != null && Number.isFinite(Number(liveEq));
+        const hasSettleDay = raw.some((p) => p.date === liveDate);
+        if (hasLive && !hasSettleDay && !(rangeData?.analytics?.perf || []).length) {
+          raw = [{ date: liveDate, value: Number(liveEq), live: true }];
+          liveAppended = true;
+        }
       }
     }
 
@@ -552,7 +557,7 @@ export function CtpPortfolio() {
       zr.off("mousemove", onMove);
       zr.off("globalout", onGlobalOut);
     };
-  }, [rangeData, settleChart, settleTab, settleOpen, data?.account?.market_equity, data?.account?.client_equity, data?.account?.balance, data?.trading_day]);
+  }, [rangeData, settleChart, settleTab, settleOpen, data?.account?.market_equity, data?.account?.client_equity, data?.account?.balance, data?.account?.deposit, data?.account?.withdraw, data?.account?.commission, data?.trading_day]);
 
   // Keep chart sized when container width changes (account cards / tab switch / async ME)
   useEffect(() => {
@@ -871,7 +876,7 @@ export function CtpPortfolio() {
             defaultOpen={false}
             summary={
               rangeData?.stats
-                ? `有效 ${rangeData.analytics?.summary.days ?? rangeData.chart.length}`
+                ? `有效 ${(rangeData.analytics?.summary.days ?? rangeData.chart.length) + (previewLive(data, rangeData) ? 1 : 0)}`
                 : undefined
             }
             className={cn(
@@ -903,7 +908,7 @@ export function CtpPortfolio() {
               </div>
               {rangeData?.stats && (
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 pb-2.5 text-[11px] text-muted-foreground">
-                  <span>有效 {rangeData.analytics?.summary.days ?? rangeData.chart.length}</span>
+                  <span>有效 {(rangeData.analytics?.summary.days ?? rangeData.chart.length) + (previewLive(data, rangeData) ? 1 : 0)}</span>
                   <span>缓存 {rangeData.stats.cached}</span>
                   {rangeData.stats.missing > 0 && <span>缺失 {rangeData.stats.missing}</span>}
                   {(rangeData.stats.deferred ?? 0) > 0 && (
@@ -976,7 +981,8 @@ export function CtpPortfolio() {
               </div>
 
               {rangeData?.analytics?.summary && rangeData.analytics.summary.days > 0 && (() => {
-                const s = rangeData.analytics!.summary;
+                const live = previewLive(data, rangeData);
+                const s = foldLiveSummary(rangeData.analytics!.summary, rangeData.analytics!.perf, live);
                 return (
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                     {[
@@ -989,7 +995,11 @@ export function CtpPortfolio() {
                       ["交易日", String(s.days), "text-foreground"],
                       ["Sharpe", s.sharpe != null ? s.sharpe.toFixed(2) : "—", "text-foreground"],
                     ].map(([k, v, c]) => (
-                      <div key={k} className="rounded-lg border border-border/40 bg-muted/10 px-2.5 py-2">
+                      <div
+                        key={k}
+                        className="rounded-lg border border-border/40 bg-muted/10 px-2.5 py-2"
+                        title={live ? "含今日实时" : undefined}
+                      >
                         <p className="text-[11px] text-muted-foreground">{k}</p>
                         <p className={cn("mt-0.5 font-mono text-sm font-semibold tabular-nums", c)}>{v}</p>
                       </div>
@@ -1023,7 +1033,8 @@ export function CtpPortfolio() {
                 settleTab !== "calendar" && "invisible pointer-events-none",
               )}>
               {rangeData?.analytics && (() => {
-                const daily = buildCalDays(rangeData);
+                const live = previewLive(data, rangeData);
+                const daily = buildCalDays(rangeData, live);
                 if (!daily.length) {
                   return (
                     <div className="flex h-full items-center justify-center rounded-lg border border-border/40 text-sm text-muted-foreground/60">
@@ -1048,7 +1059,7 @@ export function CtpPortfolio() {
                   commission: number;
                 };
                 const monthByKey = Object.fromEntries(
-                  rangeData.analytics!.monthly.map((m) => {
+                  foldLiveMonthly(rangeData.analytics!.monthly, live).map((m) => {
                     const commission = Number(m.commission || 0);
                     const pnl = Number(m.pnl || 0);
                     const income = m.income != null

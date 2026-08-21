@@ -81,3 +81,15 @@ def test_settlement_range_helpers_defined():
     year = _iter_range_days("20250101", "20261231")
     assert year[0] == "20250101"
     assert year[-1] == "20261231"
+
+
+def test_ann_return_uses_365_natural_days():
+    from ctp.settlement import build_settlement_analytics
+
+    s = build_settlement_analytics([
+        {"status": "ok", "trading_day": "20260101", "date": "2026-01-01", "equity": 100, "deposit_withdraw": 0, "commission": 0},
+        {"status": "ok", "trading_day": "20270101", "date": "2027-01-01", "equity": 110, "deposit_withdraw": 0, "commission": 0},
+    ])["summary"]
+    assert s["ann_return"] is not None
+    assert abs(s["ann_return"] - 0.1) < 1e-6
+    assert "自然日 365" in s["method"]
