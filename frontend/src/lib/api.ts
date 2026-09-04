@@ -1260,7 +1260,7 @@ export interface AShareLightBar {
   volume: number; amount?: number;
 }
 export interface AShareLightKline {
-  code: string; name?: string;
+  code: string; symbol?: string; name?: string;
   resolution: "1" | "5" | "1D" | string;
   adjust?: "qfq" | "none" | string;
   source?: string;

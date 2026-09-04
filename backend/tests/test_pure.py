@@ -195,6 +195,57 @@ def test_light_kline_cn_index_falls_back_to_eastmoney(monkeypatch):
     assert [b["close"] for b in out["bars"]] == [4001.0, 4011.0]
 
 
+def test_light_kline_jp_kr_falls_back_to_eastmoney(monkeypatch):
+    class _Resp:
+        def json(self):
+            return {
+                "data": {
+                    "preKPrice": 68000.0,
+                    "klines": [
+                        "2026-09-04 08:00,68000,68010,68020,67990,0",
+                        "2026-09-04 08:01,68010,68020,68030,68000,0",
+                    ],
+                }
+            }
+
+    monkeypatch.setattr(astock, "_tencent_json", lambda url: {"data": {}})
+    monkeypatch.setattr(astock, "em_get", lambda *_a, **_k: _Resp())
+    astock._em_kline_host[0] = 0
+    jp = astock.light_kline("jpN225", "1", num=240)
+    assert jp["symbol"] == "jpN225"
+    assert jp["code"] == "jpN225"
+    assert jp["source"] == "eastmoney 100.N225"
+    assert [b["close"] for b in jp["bars"]] == [68010.0, 68020.0]
+    kr = astock.light_kline("ksKOSPI", "1", num=240)
+    assert kr["code"] == "ksKOSPI"
+    assert kr["symbol"] == "ksKOSPI"
+    assert kr["source"] == "eastmoney 100.KS11"
+
+
+def test_light_kline_jp_daily_falls_back_to_eastmoney(monkeypatch):
+    class _Resp:
+        def json(self):
+            return {
+                "data": {
+                    "preKPrice": 68000.0,
+                    "klines": [
+                        "2026-09-02,68100,68200,68300,68000,0",
+                        "2026-09-03,68200,68100,68400,68050,0",
+                    ],
+                }
+            }
+
+    monkeypatch.setattr(astock, "_tencent_daily", lambda *_a, **_k: {})
+    monkeypatch.setattr(astock, "em_get", lambda *_a, **_k: _Resp())
+    astock._em_kline_host[0] = 0
+    out = astock.light_kline("jpN225", "1D", num=120)
+    assert out["code"] == "jpN225"
+    assert out["resolution"] == "1D"
+    assert out["source"] == "eastmoney 100.N225"
+    assert [b["datetime"] for b in out["bars"]] == ["2026-09-02", "2026-09-03"]
+    assert [b["close"] for b in out["bars"]] == [68200.0, 68100.0]
+
+
 def test_light_kline_us_falls_back_to_eastmoney(monkeypatch):
     class _Resp:
         def json(self):

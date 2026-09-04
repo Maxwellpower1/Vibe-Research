@@ -525,24 +525,28 @@ test("nicePriceTicks 走出 4660/4680 这种整数档", () => {
 });
 
 function klineCodeKey(code) {
-  return code.trim().toLowerCase().replace(/^(sh|sz|bj)/, "");
+  return code.trim().toLowerCase().replace(/^(sh|sz|bj|hk|us|jp|ks|wh)/, "");
+}
+
+function sameKlineCode(got, selected) {
+  const a = (got || "").trim();
+  const b = (selected || "").trim();
+  if (!a || !b) return false;
+  const al = a.toLowerCase();
+  const bl = b.toLowerCase();
+  if (al === bl || klineCodeKey(a) === klineCodeKey(b)) return true;
+  return bl.endsWith(al) || al.endsWith(bl);
 }
 
 function seriesNameFor(meta, selected) {
   const name = (meta?.name || "").trim();
-  const got = (meta?.code || "").trim();
-  if (!name || !got || !selected) return "";
-  return klineCodeKey(got) === klineCodeKey(selected) || got.toLowerCase() === selected.toLowerCase()
-    ? name
-    : "";
+  if (!name || !sameKlineCode(meta?.code, selected)) return "";
+  return name;
 }
 
 function barsForSelected(selected, bars, metaCode) {
   if (!bars.length || !metaCode) return bars;
-  const a = metaCode.trim();
-  const b = selected.trim();
-  const same = klineCodeKey(a) === klineCodeKey(b) || a.toLowerCase() === b.toLowerCase();
-  return same ? bars : [];
+  return sameKlineCode(metaCode, selected) ? bars : [];
 }
 
 test("seriesNameFor 换票不用上一只的名字", () => {
@@ -565,6 +569,12 @@ test("换票时上一只分时点不套到新轴上", () => {
   assert.deepEqual(barsForSelected("jpN225", leftover, "sh600519"), []);
   assert.equal(barsForSelected("jpN225", leftover, "jpN225").length, 1);
   assert.equal(barsForSelected("600519", leftover, "sh600519").length, 1);
+  // Eastmoney / Tencent short tails must still count as the catalog code.
+  assert.equal(barsForSelected("jpN225", leftover, "N225").length, 1);
+  assert.equal(barsForSelected("ksKOSPI", leftover, "KOSPI").length, 1);
+  assert.equal(barsForSelected("usIXIC", leftover, "IXIC").length, 1);
+  assert.match(chart, /data\.symbol \|\| data\.code/);
+  assert.match(chart, /hk\|us\|jp\|ks\|wh/);
 });
 
 test("formatAxisPct 分时右轴写涨跌幅", () => {

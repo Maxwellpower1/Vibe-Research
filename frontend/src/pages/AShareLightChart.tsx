@@ -161,14 +161,17 @@ function basicTd(key: ColKey, c: string, q: HubQuote | undefined) {
 const MINUTE_DAYS_KEY = "ashare.minute.days";
 
 function klineCodeKey(code: string): string {
-  return code.trim().toLowerCase().replace(/^(sh|sz|bj)/, "");
+  return code.trim().toLowerCase().replace(/^(sh|sz|bj|hk|us|jp|ks|wh)/, "");
 }
 
 function sameKlineCode(got: string | undefined, selected: string): boolean {
   const a = (got || "").trim();
   const b = (selected || "").trim();
   if (!a || !b) return false;
-  return klineCodeKey(a) === klineCodeKey(b) || a.toLowerCase() === b.toLowerCase();
+  const al = a.toLowerCase();
+  const bl = b.toLowerCase();
+  if (al === bl || klineCodeKey(a) === klineCodeKey(b)) return true;
+  return bl.endsWith(al) || al.endsWith(bl);
 }
 
 /** Ignore a leftover name from the previous ticker. */
@@ -217,7 +220,7 @@ function useAShareSeries(code: string, res: "1" | "5" | "1D", num: number, poll 
       const snap = gate.current.take(mine, {
         bars: data.bars ?? [],
         meta: {
-          code: data.code,
+          code: data.symbol || data.code,
           name: data.name,
           adjust: data.adjust,
           prev_close: data.prev_close,

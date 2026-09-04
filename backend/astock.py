@@ -865,13 +865,13 @@ _EM_KLINE_PATH = "/api/qt/stock/kline/get"
 _em_kline_host = [0]
 
 
-def _em_kline_minute(symbol: str, secid: str, name: str, n: int, source: str) -> dict:
-    """Eastmoney 1-minute K (FX / US index fallback)."""
+def _em_kline_minute(symbol: str, secid: str, name: str, n: int, source: str, klt: str = "1") -> dict:
+    """Eastmoney K (FX / US / JP / KR). klt=1 minute, klt=101 daily."""
     params = {
         "secid": secid,
         "fields1": "f1,f2,f3,f4,f5,f6",
         "fields2": "f51,f52,f53,f54,f55,f56",
-        "klt": "1",
+        "klt": klt,
         "fqt": "1",
         "beg": "0",
         "end": "20500101",
@@ -920,10 +920,10 @@ def _em_kline_minute(symbol: str, secid: str, name: str, n: int, source: str) ->
     except (TypeError, ValueError):
         prev_close = bars[0]["open"]
     return {
-        "code": secid.split(".")[-1],
+        "code": symbol,
         "symbol": symbol,
         "name": name,
-        "resolution": "1",
+        "resolution": "1" if klt == "1" else "1D",
         "adjust": "none",
         "source": source,
         "prev_close": prev_close,
@@ -937,12 +937,21 @@ def _em_fx_minute(symbol: str, n: int) -> dict:
 
 
 def _em_us_minute(symbol: str, n: int) -> dict:
-    """US index 1-minute K when Tencent usMinute is empty."""
+    """US / JP / KR index 1-minute K when Tencent usMinute is empty."""
     hit = _US_EM_MINUTE.get(symbol)
     if not hit:
         return {}
     secid, name = hit
     return _em_kline_minute(symbol, secid, name, n, f"eastmoney {secid}")
+
+
+def _em_us_daily(symbol: str, n: int) -> dict:
+    """US / JP / KR daily when Tencent fqkline is empty. Same secid map as minute."""
+    hit = _US_EM_MINUTE.get(symbol)
+    if not hit:
+        return {}
+    secid, name = hit
+    return _em_kline_minute(symbol, secid, name, n, f"eastmoney {secid}", klt="101")
 
 
 def _em_cn_index_minute(symbol: str, n: int) -> dict:
@@ -1070,6 +1079,10 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
         if em:
             return em
 
+    if not bars and res not in ("1", "5") and symbol in _US_EM_MINUTE:
+        em = _em_us_daily(symbol, n)
+        if em:
+            return em
     if not bars and res not in ("1", "5") and _baostock_eligible(symbol):
         try:
             import ext_feeds
