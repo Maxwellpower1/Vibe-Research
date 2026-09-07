@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { AskAiButton } from "@/components/ui/AskAiButton";
 import { EarningsSnapshot } from "@/components/ui/EarningsSnapshot";
 import {
-  api, ApiError, type Valuation, type Report, type NewsItem, type ValPercentile, type ValMetric,
+  api, ApiError, type Valuation, type TdxQuote, type Report, type NewsItem, type ValPercentile, type ValMetric,
   type Financials, type Announcement, type MarginRow, type BlockTradeRow, type HolderRow,
   type DividendRow, type FundFlowRow, type FundFlowMinute, type DragonTiger, type Lockup, type Blocks, type HotConcept, type QaRow,
   type ShareholderChangeRow,
@@ -19,6 +19,7 @@ import {
   type UsKline, type GlobalStockNews, type StockBasicInfo, type ThsProfile,
   fundamentalsSourceLabel,
 } from "@/lib/api";
+import { DepthBook } from "@/components/ashare/DepthBook";
 import { boardLineParts } from "@/lib/stockBoardsHub";
 import { cn } from "@/lib/utils";
 
@@ -119,6 +120,7 @@ export function StockData({
   const [qa, setQa] = useState<QaRow[] | null>(null);
   const [basic, setBasic] = useState<StockBasicInfo | null>(null);
   const [ths, setThs] = useState<ThsProfile | null>(null);
+  const [tdx, setTdx] = useState<TdxQuote | null>(null);
   const [gstock, setGStock] = useState<GlobalStock | null>(null);  // 美股 / 港股
   const [cashflow, setCashflow] = useState<HkCashflow | null>(null);  // 港股现金流量表（仅港股）
   const [gFund, setGFund] = useState<GlobalFundamentals | null>(null);
@@ -138,7 +140,7 @@ export function StockData({
     if (!c) { setErr("请输入代码"); return; }
     const rid = ++runIdRef.current;
     setLoading(true); setErr(null); setDepNote(null); setVal(null); setReports([]); setNews([]); setPctl(null); setFin(null); setAnns([]);
-    setMargin([]); setBlockT([]); setHolders([]); setShChanges([]); setDividend([]); setFundFlow([]); setFundMin(null); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa(null); setBasic(null); setThs(null);
+    setMargin([]); setBlockT([]); setHolders([]); setShChanges([]); setDividend([]); setFundFlow([]); setFundMin(null); setDt(null); setLockup(null); setBlocks(null); setHotCon([]); setQa(null); setBasic(null); setThs(null); setTdx(null);
     setGStock(null); setCashflow(null);
     setGFund(null); setGStmt(null); setGStmtTab("income"); setGSec(null); setGSecNote(null);
     setGOpt(null); setGOptTab("0dte"); setGKline(null); setGNews(null);
@@ -170,6 +172,7 @@ export function StockData({
         setGSec(null);
         if (e instanceof ApiError && (e.status === 503 || e.status === 502)) setGSecNote(e.message);
       });
+      api.tdxQuote(c).then(gOk(setTdx)).catch(() => { if (rid === runIdRef.current) setTdx(null); });
       return;
     }
 
@@ -219,6 +222,7 @@ export function StockData({
     api.investorQa(c).then(ok(setQa)).catch(() => { if (rid === runIdRef.current) setQa([]); });
     api.stockBasic(c).then(ok(setBasic)).catch(() => { if (rid === runIdRef.current) setBasic(null); });
     api.thsProfile(c).then(ok(setThs)).catch(() => { if (rid === runIdRef.current) setThs(null); });
+    api.tdxQuote(c).then(ok(setTdx)).catch(() => { if (rid === runIdRef.current) setTdx(null); });
   };
 
   // Parent-driven code (light chart) takes priority over URL deep-link
@@ -411,6 +415,7 @@ export function StockData({
                 </div>
               ))}
             </div>
+            {tdx && <DepthBook book={tdx} />}
           </GlassCard>
 
           {gKline && gKline.bars.length > 0 && (
@@ -943,6 +948,7 @@ export function StockData({
                 </div>
               ))}
             </div>
+            {tdx && <DepthBook book={tdx} />}
             {val.forecast_note && (
               <p className="mt-3 text-xs text-warning">{val.forecast_note}</p>
             )}

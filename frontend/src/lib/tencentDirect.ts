@@ -49,7 +49,7 @@ export interface DirectBoard {
 export interface DirectMinute {
   code: string;
   prec: number;
-  points: Array<{ t: string; p: number }>;
+  points: Array<{ t: string; p: number; v?: number; a?: number }>;
 }
 
 const directCooldown = new Map<string, number>();
@@ -189,7 +189,7 @@ export async function fetchDirectMinute(code: string): Promise<DirectMinute> {
     prec: num(d?.data?.prec || d?.qt?.[code]?.[4] || 0),
     points: arr.map((s) => {
       const p = s.split(" ");
-      return { t: p[0], p: num(p[1]) };
+      return { t: p[0], p: num(p[1]), v: num(p[2]), a: num(p[3]) };
     }),
   };
 }

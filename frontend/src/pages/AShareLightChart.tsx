@@ -5,7 +5,8 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { Chip, ChipGroup } from "@/components/ui/SectionHeader";
 import { PageFallback } from "@/components/ui/PageFallback";
 import { WatchlistFeed } from "@/components/WatchlistFeed";
-import { ApiError, type AShareLightBar } from "@/lib/api";
+import { ApiError, api, type AShareLightBar, type TdxQuote } from "@/lib/api";
+import { canTdxBook, DepthRail } from "@/components/ashare/DepthBook";
 import { isFuturesCode, isOffshoreCode, useQuotes, type HubQuote } from "@/lib/quoteHub";
 import { loadLightKline, overlayQuoteBar } from "@/lib/lightKline";
 import { MINUTE_POLL_MS } from "@/lib/minuteHub";
@@ -197,7 +198,7 @@ export function barsForSelected(
 function useAShareSeries(code: string, res: "1" | "5" | "1D", num: number, poll = false) {
   const [bars, setBars] = useState<AShareLightBar[]>([]);
   const [meta, setMeta] = useState<{
-    code: string; name?: string; adjust?: string; prev_close?: number | null;
+    code: string; name?: string; adjust?: string; prev_close?: number | null; source?: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -224,6 +225,7 @@ function useAShareSeries(code: string, res: "1" | "5" | "1D", num: number, poll 
           name: data.name,
           adjust: data.adjust,
           prev_close: data.prev_close,
+          source: data.source,
         },
       });
       if (!snap) return;
@@ -277,6 +279,45 @@ function useAShareSeries(code: string, res: "1" | "5" | "1D", num: number, poll 
     };
   }, [code, load, poll]);
   return { bars, meta, loading, err, reload: load };
+}
+
+function useTdxBook(code: string, enabled: boolean) {
+  const [book, setBook] = useState<TdxQuote | null>(null);
+  useEffect(() => {
+    if (!enabled || !code || !canTdxBook(code)) {
+      setBook(null);
+      return;
+    }
+    let alive = true;
+    setBook(null);
+    const pull = () => {
+      api.tdxQuote(code).then((d) => {
+        if (!alive) return;
+        const n = (d?.bids?.length ?? 0) + (d?.asks?.length ?? 0);
+        if (n > 0) setBook(d);
+      }).catch(() => {
+        /* keep last-good; empty night book must not wipe a filled rail */
+      });
+    };
+    pull();
+    let id = 0;
+    const arm = () => {
+      id = window.setTimeout(() => {
+        if (!document.hidden) pull();
+        arm();
+      }, hubPollMs(
+        isOffshoreCode(code) ? HUB_POLL_FUTURES_MS : MINUTE_POLL_MS,
+        new Date(),
+        isOffshoreCode(code),
+      ));
+    };
+    arm();
+    return () => {
+      alive = false;
+      window.clearTimeout(id);
+    };
+  }, [code, enabled]);
+  return book;
 }
 
 export type AShareChartPane = "table" | "minute" | "daily" | "charts";
@@ -387,17 +428,18 @@ export function AShareLightChart({
   const wantDay = !embedded || pane === "daily" || pane === "charts";
   const minute = useAShareSeries(wantMin ? selected : "", minuteDays === 2 ? "5" : "1", minuteDays === 2 ? 1000 : 240, true);
   const daily = useAShareSeries(wantDay ? selected : "", "1D", KLINE_NUM);
+  const book = useTdxBook(selected, wantMin);
   const liveQuote = Boolean(selected && (isOffshoreCode(selected) || session.kind === "open"));
   const qSel = selected ? quotes[selected] : undefined;
   const quoteTime = qSel && !qSel.fromStore ? qSel.time : undefined;
   const minBars = useMemo(
-    () => overlayQuoteBar(
-      barsForSelected(selected, minute.bars, minute.meta?.code),
-      qSel,
-      "minute",
-      liveQuote,
-    ),
-    [selected, minute.bars, minute.meta?.code, qSel, liveQuote],
+    () => {
+      const bars = barsForSelected(selected, minute.bars, minute.meta?.code);
+      // TDX COMEX/NYMEX path vs Sina spot last: do not splice the last bar.
+      if (minute.meta?.source === "tdx") return bars;
+      return overlayQuoteBar(bars, qSel, "minute", liveQuote);
+    },
+    [selected, minute.bars, minute.meta?.code, minute.meta?.source, qSel, liveQuote],
   );
   const dayBars = useMemo(
     () => overlayQuoteBar(
@@ -507,6 +549,7 @@ export function AShareLightChart({
             days={minuteDays}
             bare
             extra={minuteExtra}
+            side={book ? <DepthRail book={book} /> : null}
             quoteTime={quoteTime}
             onRefresh={() => { void minute.reload({ refresh: true }); }}
           />
@@ -544,6 +587,7 @@ export function AShareLightChart({
           days={minuteDays}
           bare
           extra={minuteExtra}
+          side={book ? <DepthRail book={book} /> : null}
           quoteTime={quoteTime}
           onRefresh={() => { void minute.reload({ refresh: true }); }}
         />
@@ -809,6 +853,7 @@ export function AShareLightChart({
               visible={showKline}
               days={minuteDays}
               extra={minuteExtra}
+              side={book ? <DepthRail book={book} /> : null}
               quoteTime={quoteTime}
               onRefresh={() => { void minute.reload({ refresh: true }); }}
             />

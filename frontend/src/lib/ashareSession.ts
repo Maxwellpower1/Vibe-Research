@@ -16,7 +16,7 @@ export interface AShareSession {
 export const HUB_POLL_CLOSED_MS = 60_000;
 
 /** 外盘 quotes and minutes stay at 5s while A-share is closed. */
-export const HUB_POLL_FUTURES_MS = 5_000;
+export const HUB_POLL_FUTURES_MS = 3_000;
 
 /** null = calendar not loaded; false = 休市 (weekend or holiday). */
 let _tradingDay: boolean | null = null;

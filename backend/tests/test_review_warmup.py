@@ -119,13 +119,13 @@ def test_money_jobs_match_http_keys():
     assert "jin10_flash" in live
 
 
-def test_commodity_quote_ttl_fits_five_second_hub():
+def test_commodity_quote_ttl_fits_three_second_hub():
     import api_common
 
-    assert api_common.commodity_quote_ttl(session="open") == 4
-    assert api_common.commodity_quote_ttl(session="lunch") == 4
-    assert api_common.commodity_quote_ttl(session="closed") == 4
-    assert api_common.commodity_quote_ttl() < 5
+    assert api_common.commodity_quote_ttl(session="open") == 2
+    assert api_common.commodity_quote_ttl(session="lunch") == 2
+    assert api_common.commodity_quote_ttl(session="closed") == 2
+    assert api_common.commodity_quote_ttl() < 3
 
 
 def test_watch_quotes_reads_quote_hub(monkeypatch):

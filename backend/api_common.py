@@ -171,28 +171,28 @@ def _session_kind() -> str:
 
 
 def light_kline_ttl(sym: str, res: str, session: str | None = None) -> int:
-    """Index minutes: 4s open so 行情观察 5s polls see new bars. Stocks 120s.
+    """Index minutes: 2s open so 行情观察 3s polls see new bars. Stocks 120s.
 
     Closed/lunch A-share still outlast keep-warm (960/180) and stay last-good.
-    Offshore (hk/us/jp/ks/wh) stays 4s after the A-share close.
+    Offshore (hk/us/jp/ks/wh) stays 2s after the A-share close.
     """
     if res != "1":
         return 60
     if is_offshore_symbol(sym):
-        return 4
+        return 2
     kind = session if session is not None else _session_kind()
     s = (sym or "").lower()
     index = s.startswith(("sh000", "sz399"))
     if kind == "open":
-        return 4 if index else 120
+        return 2 if index else 120
     if kind == "lunch":
         return 180
     return 960
 
 
 def commodity_quote_ttl(session: str | None = None) -> int:
-    """Commodities TTL. 4s so 外盘 5s polls see new ticks. Same key as HTTP."""
-    return 4
+    """Commodities TTL. 2s so 外盘 3s polls see new ticks. Same key as HTTP."""
+    return 2
 
 
 def put_commodities(codes: str | None = None) -> dict | list:

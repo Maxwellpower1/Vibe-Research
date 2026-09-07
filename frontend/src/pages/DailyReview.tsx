@@ -230,7 +230,7 @@ export function DailyReview() {
           mobileH: "h-[380px]",
           right: (
             <span className="text-[10px] tabular-nums text-slate-500">
-              {d.watchCodes.length}只 · 5s
+              {d.watchCodes.length}只 · 3s
             </span>
           ),
           body: (

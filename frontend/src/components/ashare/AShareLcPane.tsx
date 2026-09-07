@@ -46,6 +46,19 @@ export function minuteHasFlow(bars: AShareLightBar[]): boolean {
   return bars.some((b) => Number(b.amount) > 0 || Number(b.volume) > 0);
 }
 
+/** Prefer turnover when any bar has it; TDX commodities often have volume only. */
+export function minuteFlowKind(bars: AShareLightBar[]): "amount" | "volume" {
+  return bars.some((b) => Number(b.amount) > 0) ? "amount" : "volume";
+}
+
+export function minuteFlowOf(
+  b: AShareLightBar | null | undefined,
+  kind: "amount" | "volume",
+): number | null {
+  const v = kind === "amount" ? b?.amount : b?.volume;
+  return v != null && Number.isFinite(Number(v)) ? Number(v) : null;
+}
+
 export function ashareMinuteAxisKind(code: string): DerivAxisKind {
   if (/^hk/i.test(code)) return "hk";
   if (/^jp/i.test(code)) return "jp";
@@ -76,6 +89,7 @@ export function AShareLcPane({
   emptyHint,
   visible = true,
   extra,
+  side,
   quoteTime,
   onRefresh,
   days = 1,
@@ -93,6 +107,8 @@ export function AShareLcPane({
   emptyHint: string;
   visible?: boolean;
   extra?: ReactNode;
+  /** Right of the plot (分时五档). Daily leaves it empty. */
+  side?: ReactNode;
   quoteTime?: string;
   onRefresh: () => void;
   days?: 1 | 2;
@@ -124,6 +140,7 @@ export function AShareLcPane({
   onHoverRef.current = setHoverIdx;
 
   const isDaily = kind === "daily";
+  const flowKind = minuteFlowKind(bars);
   const showVol = isDaily || minuteHasFlow(bars);
   const wmName = name.trim();
   const minute = useMemo(
@@ -256,7 +273,7 @@ export function AShareLcPane({
           const px = b && Number.isFinite(b.close) ? b.close : null;
           const up = volUp(px, barOpenForVol(b?.open, px), prevPx);
           if (px != null) prevPx = px;
-          return { value: b?.amount ?? null, up };
+          return { value: minuteFlowOf(b, flowKind), up };
         }), false);
         if (bag.current.vol) {
           paintHist(bag.current.vol, volPts, bag.current.paintedVol);
@@ -279,7 +296,7 @@ export function AShareLcPane({
     } catch {
       /* LC throws Value is null if wipe/resize races; keep the pane */
     }
-  }, [bars, prevClose, wmName, code, isDaily, showVol, days, loading, minute, lcRef, labelsRef]);
+  }, [bars, prevClose, wmName, code, isDaily, showVol, flowKind, days, loading, minute, lcRef, labelsRef]);
 
   useEffect(() => {
     if (!visible) return;
@@ -364,7 +381,13 @@ export function AShareLcPane({
         { k: "T", v: days === 2 ? (bar.datetime.slice(5, 16) || bar.datetime) : (bar.datetime.slice(11, 16) || bar.datetime), tone: "muted" },
         { k: "P", v: fmtPrice(bar.close), tone: lcTone(chg) },
       );
-      if (showVol) legend.push({ k: "额", v: fmtVol(bar.amount), tone: "muted" });
+      if (showVol) {
+        legend.push({
+          k: flowKind === "amount" ? "额" : "量",
+          v: fmtVol(minuteFlowOf(bar, flowKind)),
+          tone: "muted",
+        });
+      }
     }
   } else if (emptySlot) {
     legend.push({
@@ -415,7 +438,7 @@ export function AShareLcPane({
     </div>
   );
   const well = (
-      <LcWell className={cn("flex-1", bare ? "min-h-0" : "min-h-[220px]")}>
+      <LcWell className={cn("min-w-0 flex-1", bare ? "min-h-0" : "min-h-[220px]")}>
         {!code && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/88 px-6 text-center">
             <p className="text-sm text-slate-400">{emptyHint}</p>
@@ -443,24 +466,30 @@ export function AShareLcPane({
         <LcHoverTag tag={hoverTag} y={tagY} />
         {code && bars.length > 0 && showVol && (
           <div className="pointer-events-none absolute bottom-[6%] left-2 z-10 text-[10px] text-slate-400">
-            {isDaily ? "成交量" : "成交额"}
+            {isDaily || flowKind === "volume" ? "成交量" : "成交额"}
           </div>
         )}
         <div ref={chartRef} className="h-full w-full" />
       </LcWell>
   );
+  const body = (
+    <div className="flex min-h-0 min-w-0 flex-1">
+      {well}
+      {side}
+    </div>
+  );
   if (bare) {
     return (
       <div className={cn("flex min-h-0 min-w-0 flex-col bg-black", className)}>
         {head}
-        {well}
+        {body}
       </div>
     );
   }
   return (
     <GlassCard className={cn("flex min-h-0 min-w-0 flex-col p-3", className)}>
       {head}
-      {well}
+      {body}
     </GlassCard>
   );
 }

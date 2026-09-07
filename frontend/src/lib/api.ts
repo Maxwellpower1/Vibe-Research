@@ -131,6 +131,27 @@ export interface Quote {
   is_stale?: boolean; stale_reason?: string;
 }
 
+export interface TdxLevel {
+  px: number;
+  vol: number;
+}
+
+export interface TdxQuote {
+  symbol: string;
+  name: string;
+  price: number;
+  prev: number;
+  bid: number;
+  ask: number;
+  bid_vol: number;
+  ask_vol: number;
+  bids: TdxLevel[];
+  asks: TdxLevel[];
+  time?: string;
+  source?: string;
+  suspended?: boolean;
+}
+
 export interface Valuation {
   name: string; code: string; price: number; mcap_yi: number;
   pe_ttm: number; pb: number;
@@ -324,7 +345,8 @@ export interface CommodityQuote {
   change: number; pct: number; high?: number; low?: number; time?: string;
 }
 export interface CommodityMinute {
-  code: string; prec: number; points: Array<{ t: string; p: number }>;
+  code: string; prec: number; source?: string;
+  points: Array<{ t: string; p: number; v?: number }>;
 }
 export interface SpotBasisRow {
   exchange: string; name: string; spot: number; contract: string;
@@ -1773,6 +1795,7 @@ export const api = {
     p.set("force", opts.force ? "true" : "false");
     return get<CtpSettlementRangeData>(`/portfolio/ctp/settlement/range?${p}`);
   },
+  tdxQuote: (code: string) => get<TdxQuote>(`/astock/tdx-quote?code=${encodeURIComponent(code)}`),
   valuation: (code: string) => get<Valuation>(`/valuation?code=${code}`),
   percentile: (code: string) => get<ValPercentile>(`/valuation/percentile?code=${code}`),
   financials: (code: string) => get<Financials>(`/financials?code=${code}`),

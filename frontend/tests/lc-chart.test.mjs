@@ -133,13 +133,15 @@ test("四张 K/分时卡走 LC, 不直接 echarts.init", () => {
   assert.match(pane, /paintHist/);
   assert.doesNotMatch(pane, /sessionMarkIdxs/);
   assert.match(pane, /export function minuteHasFlow/);
+  assert.match(pane, /export function minuteFlowKind/);
+  assert.match(pane, /export function minuteFlowOf/);
   assert.match(pane, /showVol/);
   assert.match(pane, /styleVolPane/);
   assert.match(pane, /volPaneOpts\(\), 1/);
   assert.match(pane, /成交额/);
   assert.match(pane, /showVol \? "bottom-\[24%\]"/);
   assert.match(pane, /成交量/);
-  assert.match(pane, /b\?\.amount/);
+  assert.match(pane, /minuteFlowOf\(b, flowKind\)/);
   assert.match(pane, /b\.volume/);
   assert.match(pane, /\"额\"/);
   assert.match(pane, /\"量\"/);

@@ -7,14 +7,19 @@ Objective snapshots only; no recommendation / scoring / prediction.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 import astock
+import tdx_quote
 from index_catalog import INDEX_CATALOG
+
+log = logging.getLogger("cockpit_live")
 
 UA = astock.UA
 em_get = astock.em_get
@@ -26,6 +31,8 @@ _SINA_RANK_SORT = {"changepercent", "amount", "turnoverratio"}
 WORLD_INDICES: tuple[tuple[str, str, str], ...] = INDEX_CATALOG
 
 DEFAULT_FUTURES = "hf_XAU,hf_SI,hf_CAD,hf_CL,hf_NQ,hf_BTC"
+# Mainland TDX COMEX/NYMEX ticks are often ~10 min delayed. Prefer Sina if so.
+TDX_MINUTE_MAX_LAG = 3
 
 
 def _num(v) -> float:
@@ -321,7 +328,7 @@ def _quote_item(q: dict, canon: str, *, amount: float = 0.0, turnover: float = 0
 
 
 def quotes_map(codes: list[str]) -> dict[str, dict]:
-    """Tencent equities/indices only. Max 80. Aliases 6-digit keys. Futures stay on futures_quotes."""
+    """Tencent equities/indices. A-share / HK / US miss fills easy-tdx. Max 80. Futures stay on futures_quotes."""
     wanted: list[tuple[str, str]] = []
     seen_raw: set[str] = set()
     seen_canon: set[str] = set()
@@ -380,6 +387,25 @@ def quotes_map(codes: list[str]) -> dict[str, dict]:
             item = _quote_item(q, canon)
             out[raw] = item
             out[canon] = item
+    miss_tdx = [
+        canon for _raw, canon in wanted
+        if tdx_quote.can_fill(canon) and not (out.get(canon) or {}).get("price")
+    ]
+    if miss_tdx:
+        extra = tdx_quote.quotes_for_hub(miss_tdx)
+        for raw, canon in wanted:
+            q = extra.get(canon)
+            if not q or not q.get("price"):
+                continue
+            item = _quote_item(q, canon, amount=_num(q.get("amount")))
+            out[raw] = item
+            out[canon] = item
+            if re.fullmatch(r"(?:sh|sz|bj)\d{6}", canon):
+                out[canon[2:]] = item
+            elif re.fullmatch(r"hk\d{5}", canon, re.I):
+                out[canon[2:]] = item
+            elif re.fullmatch(r"us[A-Za-z]{1,5}", canon, re.I):
+                out[canon[2:]] = item
     return out
 
 
@@ -418,7 +444,7 @@ def _refresh_stale_quotes(codes: list[str]) -> None:
 def quotes_cached(codes: list[str]) -> dict[str, dict]:
     """One in-process copy. Fresh hit, else last tick, else fetch. Tabs share it.
 
-    Catalog indices stale-refresh like the watchlist so 行情观察 5s polls move.
+    Catalog indices stale-refresh like the watchlist so 行情观察 3s polls move.
     """
     from api_common import _DC_CACHE
 
@@ -1013,10 +1039,45 @@ def futures_quotes(raw_list: str | None = None) -> dict[str, dict]:
     return out
 
 
+def _tdx_hf_minutes(codes: list[str]) -> dict[str, dict]:
+    """Mapped hf_ tick charts. Empty if easy-tdx is missing or the host is dead."""
+    return tdx_quote.minutes_for_hub(codes)
+
+
+def last_print_hm(points: list | None) -> str:
+    """Last minute stamp. Ignore trailing zero-volume pads on TDX charts."""
+    pts = [p for p in (points or []) if isinstance(p, dict) and str(p.get("t") or "")]
+    if not pts:
+        return ""
+    with_vol = [p for p in pts if _num(p.get("v")) > 0]
+    return str((with_vol or pts)[-1].get("t") or "")
+
+
+def tdx_minute_lag_min(points: list | None, now: datetime | None = None) -> int:
+    """How many minutes the last TDX print is behind local now. 24h wrap."""
+    parts = last_print_hm(points).split(":")
+    if len(parts) < 2:
+        return 10**9
+    try:
+        last_m = int(parts[0]) * 60 + int(parts[1])
+    except ValueError:
+        return 10**9
+    cur = now or datetime.now()
+    return (cur.hour * 60 + cur.minute - last_m) % (24 * 60)
+
+
+def _tdx_minutes_fresh(row: dict | None, now: datetime | None = None) -> bool:
+    pts = (row or {}).get("points") if isinstance(row, dict) else None
+    return bool(pts) and tdx_minute_lag_min(pts, now) <= TDX_MINUTE_MAX_LAG
+
+
 def future_minute(code: str) -> dict:
-    """Intraday minute series for hf_ / nf_."""
+    """Intraday minute series for hf_ / nf_. Gold/silver/oil try TDX first."""
     c = (code or "").strip()
     if c.startswith("hf_") and _HF_RE.fullmatch(c):
+        tdx = _tdx_hf_minutes([c]).get(c)
+        if _tdx_minutes_fresh(tdx):
+            return tdx
         return _hf_minute(c)
     if c.startswith("nf_") and _HF_RE.fullmatch(c):
         return _nf_minute(c)
@@ -1062,7 +1123,7 @@ def _nf_minute(code: str) -> dict:
 
 
 def future_minutes(codes: list[str]) -> dict[str, dict | None]:
-    """Batch future minutes. Parallel like marketingdashboard /api/batch-fmin."""
+    """Batch future minutes. Gold/silver/oil share one TDX client; rest stay Sina."""
     uniq: list[str] = []
     seen: set[str] = set()
     for raw in codes[:12]:
@@ -1074,16 +1135,31 @@ def future_minutes(codes: list[str]) -> dict[str, dict | None]:
     if not uniq:
         return {}
 
+    out: dict[str, dict | None] = {}
+    mapped = [c for c in uniq if tdx_quote.can_ex_minute(c)]
+    if mapped:
+        try:
+            filled = _tdx_hf_minutes(mapped)
+        except Exception:
+            log.exception("tdx future minutes skipped")
+            filled = {}
+        for c, row in filled.items():
+            if _tdx_minutes_fresh(row):
+                out[c] = row
+    need = [c for c in uniq if c not in out]
+
     def _one(c: str) -> tuple[str, dict | None]:
         try:
+            if tdx_quote.can_ex_minute(c):
+                return c, _hf_minute(c)
             return c, future_minute(c)
         except Exception:
             return c, None
 
-    out: dict[str, dict | None] = {}
-    with ThreadPoolExecutor(max_workers=min(8, len(uniq))) as pool:
-        for c, data in pool.map(_one, uniq):
-            out[c] = data
+    if need:
+        with ThreadPoolExecutor(max_workers=min(8, len(need))) as pool:
+            for c, data in pool.map(_one, need):
+                out[c] = data
     return out
 
 

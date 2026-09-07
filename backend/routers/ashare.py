@@ -392,6 +392,15 @@ def _ticker(code: str) -> str:
         raise HTTPException(400, str(e)) from e
 
 
+@router.get("/api/astock/tdx-quote")
+def astock_tdx_quote(code: str = Query(..., min_length=1, max_length=12)):
+    """通达信报价. A 股五档 / 港股 / 美股. 点开才取, 钥匙 tdx_quote, 不进预热."""
+    import tdx_quote
+
+    raw = (code or "").strip()
+    return _research("tdx_quote", raw, 2, lambda: tdx_quote.depth(raw))
+
+
 @router.get("/api/astock/chips")
 def astock_chips(
     code: str = Query(...),

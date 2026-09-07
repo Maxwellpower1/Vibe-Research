@@ -3,7 +3,7 @@ import { hubPollMs, primeTradingDay } from "@/lib/ashareSession";
 import { api } from "@/lib/api";
 
 /**
- * Cockpit quote hub: 5s when A-share is open or any 外盘 is subscribed;
+ * Cockpit quote hub: 3s when A-share is open or any 外盘 is subscribed;
  * 60s when closed/lunch/holiday and only A-share codes.
  * Equities/indices and futures are fetched in parallel so a slow Sina
  * tick cannot stall index prices.
@@ -43,7 +43,7 @@ export interface HubQuote {
   updated: number;
 }
 
-export const QUOTE_POLL_MS = 5000;
+export const QUOTE_POLL_MS = 3000;
 const CHUNK = 80;
 const STORE_KEY = "vr.quoteHub.v1";
 const STORE_MAX = 120;

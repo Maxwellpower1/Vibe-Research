@@ -513,14 +513,14 @@ def market_commodities(
 def market_commodity_minutes(
     codes: str = Query("", description="comma-separated hf_/nf_"),
 ):
-    """大宗商品分钟线. 缓存 4 秒, 外盘 5s 轮询能跟上."""
+    """大宗商品分钟线. 缓存 2 秒, 外盘 3s 轮询能跟上."""
     import cockpit_live
     raw = (codes or "").strip() or cockpit_live.DEFAULT_FUTURES
     try:
         data = _cached(
             "commodity_minutes",
             raw,
-            4,
+            2,
             lambda: cockpit_live.future_minutes([c.strip() for c in raw.split(",") if c.strip()]),
             valid=cockpit_live.future_minutes_filled,
         )

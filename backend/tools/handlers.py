@@ -618,6 +618,12 @@ def _13f(args: dict) -> dict:
     return out
 
 
+def _tdx_quote(args: dict) -> dict:
+    import tdx_quote
+
+    return tdx_quote.depth(str(args["code"])) or {"error": "无五档"}
+
+
 def _chips(args: dict) -> dict:
     import astock_research as ar
 
@@ -658,6 +664,7 @@ def _sw_industry(args: dict) -> dict:
 # name -> 执行函数。绝大多数是「调后端函数 + 裁剪」，复杂的抽成上面的私有函数。
 _HANDLERS = {
     "query_quote": lambda a: astock.tencent_quote([str(c) for c in a.get("codes", [])]),
+    "query_tdx_quote": _tdx_quote,
     "query_valuation": lambda a: astock.full_valuation(str(a["code"])),
     "query_valuation_percentile": lambda a: astock.valuation_percentile(str(a["code"])),
     "query_kline": _kline,

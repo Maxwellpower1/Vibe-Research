@@ -59,6 +59,10 @@ test("K-line page and watchlist feed subscribe to the quote hub", () => {
 test("chart last bar overlays quote hub and minutes keep polling", async () => {
   const klineSrc = await readFile(new URL("../src/lib/lightKline.ts", import.meta.url), "utf8");
   assert.match(klineSrc, /export function overlayQuoteBar/);
+  assert.match(klineSrc, /export function deltaMinuteFlow/);
+  assert.match(klineSrc, /deltaMinuteFlow\(kl\.bars\)/);
+  assert.match(klineSrc, /amount: Number\(p\.a\) > 0 \? Number\(p\.a\) : 0/);
+  assert.match(directSrc, /v: num\(p\[2\]\), a: num\(p\[3\]\)/);
   assert.match(klineSrc, /newHm > lastHm/);
   assert.match(klineSrc, /hmOf\(last\.datetime\)/);
   assert.match(klineSrc, /nowMs: number = Date\.now\(\)/);
@@ -70,7 +74,8 @@ test("chart last bar overlays quote hub and minutes keep polling", async () => {
   assert.match(chartSrc, /reload\(\{ refresh: true \}\)/);
   assert.match(chartSrc, /if \(!opts\?\.refresh\) return;/);
   assert.match(klineSrc, /if \(inflight\) return inflight;/);
-  assert.match(klineSrc, /FUTURE_TTL_MS = 4_000/);
+  assert.match(klineSrc, /FUTURE_TTL_MS = 2_000/);
+  assert.match(quoteSrc, /QUOTE_POLL_MS = 3000/);
   assert.doesNotMatch(klineSrc, /quoteStamp\(q\.updated/);
   assert.match(chartSrc, /barsForSelected\(selected, minute\.bars/);
   assert.match(chartSrc, /barsForSelected\(selected, daily\.bars/);
@@ -117,7 +122,7 @@ test("browser-direct Tencent is not used when the server is still in flight", ()
 
 test("quote and minute hubs stretch the interval when A-share is not open", () => {
   assert.match(sessionSrc, /export const HUB_POLL_CLOSED_MS = 60_000/);
-  assert.match(sessionSrc, /export const HUB_POLL_FUTURES_MS = 5_000/);
+  assert.match(sessionSrc, /export const HUB_POLL_FUTURES_MS = 3_000/);
   assert.match(sessionSrc, /offshore \? HUB_POLL_FUTURES_MS/);
   assert.match(sessionSrc, /export function hubPollMs/);
   assert.match(sessionSrc, /primeTradingDay/);

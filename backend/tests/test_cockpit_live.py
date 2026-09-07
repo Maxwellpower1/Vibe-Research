@@ -198,10 +198,73 @@ def test_future_minutes_runs_all_codes(monkeypatch):
         seen.append(code)
         return {"code": code, "prec": 1, "points": []}
 
+    monkeypatch.setattr(cl, "_tdx_hf_minutes", lambda _c: {})
     monkeypatch.setattr(cl, "future_minute", fake)
+    monkeypatch.setattr(cl, "_hf_minute", fake)
     out = cl.future_minutes(["hf_GC", "nf_AU0", "hf_CL", "hf_GC"])
     assert set(out) == {"hf_GC", "nf_AU0", "hf_CL"}
     assert sorted(seen) == ["hf_CL", "hf_GC", "nf_AU0"]
+
+
+def test_future_minutes_prefers_tdx_for_mapped(monkeypatch):
+    from datetime import datetime
+
+    sina: list[str] = []
+    hm = datetime.now().strftime("%H:%M")
+    monkeypatch.setattr(cl, "_tdx_hf_minutes", lambda codes: {
+        "hf_CL": {"code": "hf_CL", "prec": 70.0, "points": [{"t": hm, "p": 71.0, "v": 12}], "source": "tdx"},
+    } if "hf_CL" in codes else {})
+
+    def fake(code: str):
+        sina.append(code)
+        return {"code": code, "prec": 1, "points": [{"t": "06:01", "p": 2.0}]}
+
+    monkeypatch.setattr(cl, "future_minute", fake)
+    out = cl.future_minutes(["hf_CL", "hf_BTC"])
+    assert out["hf_CL"]["source"] == "tdx"
+    assert out["hf_CL"]["points"][0]["v"] == 12
+    assert sina == ["hf_BTC"]
+
+
+def test_last_print_hm_skips_zero_vol_pad():
+    pts = [
+        {"t": "10:00", "p": 1.0, "v": 12},
+        {"t": "10:01", "p": 1.0, "v": 0},
+        {"t": "10:02", "p": 1.0},
+    ]
+    assert cl.last_print_hm(pts) == "10:00"
+    assert cl.last_print_hm([{"t": "06:01", "p": 1.0}]) == "06:01"
+    assert cl.last_print_hm([]) == ""
+
+
+def test_tdx_minute_lag_min_wraps_midnight():
+    from datetime import datetime
+
+    now = datetime(2026, 9, 7, 10, 12)
+    assert cl.tdx_minute_lag_min([{"t": "10:01", "p": 1.0, "v": 8}], now) == 11
+    assert cl.tdx_minute_lag_min([{"t": "10:12", "p": 1.0, "v": 8}], now) == 0
+    assert cl.tdx_minute_lag_min([{"t": "23:50", "p": 1.0, "v": 8}], datetime(2026, 9, 8, 0, 5)) == 15
+
+
+def test_future_minutes_tdx_stale_falls_back_sina(monkeypatch):
+    sina: list[str] = []
+    monkeypatch.setattr(cl, "_tdx_hf_minutes", lambda codes: {
+        "hf_XAU": {
+            "code": "hf_XAU", "prec": 4400.0, "source": "tdx",
+            "points": [{"t": "10:00", "p": 4455.0, "v": 10}, {"t": "10:01", "p": 4455.0, "v": 0}],
+        },
+    } if "hf_XAU" in codes else {})
+
+    def fake_hf(code: str):
+        sina.append(code)
+        return {"code": code, "source": "sina", "prec": 4430.0, "points": [{"t": "10:10", "p": 4404.0}]}
+
+    monkeypatch.setattr(cl, "_hf_minute", fake_hf)
+    monkeypatch.setattr(cl, "tdx_minute_lag_min", lambda pts, now=None: 11)
+    out = cl.future_minutes(["hf_XAU", "hf_BTC"])
+    assert out["hf_XAU"]["source"] == "sina"
+    assert out["hf_XAU"]["points"][-1]["p"] == 4404.0
+    assert "hf_XAU" in sina
 
 
 def test_board_flow_ranks_skip_kline(monkeypatch):
@@ -365,6 +428,7 @@ def test_quotes_map_skips_empty_price(monkeypatch):
     monkeypatch.setattr(cl, "_tencent_quotes", lambda codes: {
         "sz000001": {"symbol": "sz000001", "name": "平安银行", "price": 0, "pct": 0},
     })
+    monkeypatch.setattr(cl.tdx_quote, "quotes_for_hub", lambda _c: {})
     assert cl.quotes_map(["000001"]) == {}
 
 
@@ -421,6 +485,7 @@ def test_quotes_map_fills_em_index(monkeypatch):
 
 def test_quotes_map_vix_falls_back_to_sina(monkeypatch):
     monkeypatch.setattr(cl, "_tencent_quotes", lambda codes: {})
+    monkeypatch.setattr(cl.tdx_quote, "quotes_for_hub", lambda _c: {})
     monkeypatch.setattr(cl, "_vix_from_sina", lambda: {
         "name": "恐慌指数", "price": 16.2, "pct": 1.1, "change": 0.2, "prev": 16.0,
     })

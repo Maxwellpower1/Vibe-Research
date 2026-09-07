@@ -74,7 +74,32 @@ function futureName(code: string): string | undefined {
   return COMMODITIES.find((c) => c.code.toLowerCase() === key)?.label;
 }
 
-function minuteToKline(code: string, prec: number, points: Array<{ t: string; p: number }>): AShareLightKline | null {
+/** Tencent minute vol/amount are session cumulative. Same as astock._delta_session_totals. */
+export function deltaMinuteFlow(bars: AShareLightBar[]): void {
+  let prevV = 0;
+  let prevA = 0;
+  let prevDay = "";
+  for (const b of bars) {
+    const day = String(b.datetime || "").slice(0, 10);
+    if (day !== prevDay) {
+      prevV = 0;
+      prevA = 0;
+      prevDay = day;
+    }
+    const cumV = Number(b.volume) || 0;
+    const cumA = Number(b.amount) || 0;
+    b.volume = Math.max(0, cumV - prevV);
+    b.amount = Math.max(0, cumA - prevA);
+    prevV = cumV;
+    prevA = cumA;
+  }
+}
+
+function minuteToKline(
+  code: string,
+  prec: number,
+  points: Array<{ t: string; p: number; v?: number; a?: number }>,
+): AShareLightKline | null {
   const valid = points.filter((p) => p.p > 0 && p.t && hmOf(p.t));
   if (valid.length < 2) return null;
   const d = new Date();
@@ -86,7 +111,9 @@ function minuteToKline(code: string, prec: number, points: Array<{ t: string; p:
     prev_close: prec || null,
     bars: valid.map((p) => ({
       datetime: `${day} ${hmOf(p.t)}`,
-      open: p.p, high: p.p, low: p.p, close: p.p, volume: 0,
+      open: p.p, high: p.p, low: p.p, close: p.p,
+      volume: Number(p.v) > 0 ? Number(p.v) : 0,
+      amount: Number(p.a) > 0 ? Number(p.a) : 0,
     })),
   };
 }
@@ -108,7 +135,7 @@ function futureDailyToKline(code: string, d: FutureDaily): AShareLightKline {
 }
 
 function pickFutureMinute(
-  map: Record<string, { prec: number; points: Array<{ t: string; p: number }> } | null> | null | undefined,
+  map: Record<string, { prec: number; source?: string; points: Array<{ t: string; p: number; v?: number }> } | null> | null | undefined,
   code: string,
 ) {
   if (!map) return null;
@@ -117,7 +144,7 @@ function pickFutureMinute(
   return key ? map[key] : null;
 }
 
-/** Same commodity_minutes key as 宏观观察 / warmup. Sina 1d only. */
+/** Same commodity_minutes key as 宏观观察 / warmup. Gold/silver/oil may be tdx. */
 async function loadFutureKline(
   code: string,
   resolution: string,
@@ -133,7 +160,7 @@ async function loadFutureKline(
   const row = pickFutureMinute(map, code);
   const kl = row ? minuteToKline(code, row.prec, row.points || []) : null;
   if (!kl) throw new Error("future minute empty");
-  kl.source = "sina";
+  kl.source = row?.source || "sina";
   return kl;
 }
 
@@ -142,11 +169,12 @@ async function directKline(code: string): Promise<AShareLightKline> {
   const m = await fetchDirectMinute(sym);
   const kl = minuteToKline(code, m.prec, m.points);
   if (!kl) throw new Error("direct minute empty");
+  deltaMinuteFlow(kl.bars);
   return kl;
 }
 
 const TTL_MS = 55_000;
-const FUTURE_TTL_MS = 4_000;
+const FUTURE_TTL_MS = 2_000;
 const MAX_INFLIGHT = 4;
 
 const cache = new Map<string, { at: number; data: AShareLightKline }>();
@@ -173,7 +201,7 @@ function release(): void {
   if (next) next();
 }
 
-/** Shared 55s cache + concurrency 4. Futures minutes 4s so 外盘 5s polls see new bars. */
+/** Shared 55s cache + concurrency 4. Futures minutes 2s so 外盘 3s polls see new bars. */
 export function loadLightKline(
   code: string,
   resolution = "1",

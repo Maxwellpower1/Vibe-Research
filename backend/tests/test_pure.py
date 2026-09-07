@@ -118,6 +118,32 @@ def test_tencent_minute_url():
     assert "usMinute" in astock.tencent_minute_url("usDJI")
     assert "/minute/query" in astock.tencent_minute_url("sh000001")
     assert "usMinute" not in astock.tencent_minute_url("hkHSI")
+    assert "web.ifzq" not in astock.tencent_minute_url("sz000001")
+
+
+def test_tencent_minute_falls_back_host(monkeypatch):
+    calls: list[str] = []
+
+    def fake(url: str):
+        calls.append(url)
+        if "web.ifzq" in url or ("ifzq.gtimg.cn" in url and "proxy" not in url):
+            raise OSError("501")
+        return {
+            "data": {
+                "sz000001": {
+                    "data": {
+                        "date": "20260904",
+                        "data": ["0930 11.86 5094 6041484.00", "0931 11.87 6000 7000000.00"],
+                    }
+                }
+            }
+        }
+
+    monkeypatch.setattr(astock, "_tencent_json", fake)
+    out = astock.light_kline("sz000001", "1", 240)
+    assert [b["volume"] for b in out["bars"]] == [5094, 906]
+    assert [b["amount"] for b in out["bars"]] == [6041484.0, 958516.0]
+    assert any("proxy.finance.qq.com" in u for u in calls)
 
 
 def test_tencent_daily_falls_back_host(monkeypatch):
@@ -426,7 +452,7 @@ def test_parse_gtimg_bad_line_ignored():
 
 
 def test_quote_ttl_closed_outlasts_refresh():
-    assert astock.quote_ttl("open") == 5.0
+    assert astock.quote_ttl("open") == 2.0
     assert astock.quote_ttl("lunch") == 30.0
     assert astock.quote_ttl("closed") == 90.0
 

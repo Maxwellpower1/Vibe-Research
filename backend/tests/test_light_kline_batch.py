@@ -43,18 +43,18 @@ def test_light_kline_map_accepts_fx():
 
 
 def test_light_kline_ttl_outlasts_keep_warm():
-    assert api_common.light_kline_ttl("sh000001", "1", session="open") == 4
-    assert api_common.light_kline_ttl("usIXIC", "1", session="open") == 4
-    assert api_common.light_kline_ttl("jpN225", "1", session="open") == 4
-    assert api_common.light_kline_ttl("ksKOSPI", "1", session="open") == 4
-    assert api_common.light_kline_ttl("whUSDCNY", "1", session="open") == 4
+    assert api_common.light_kline_ttl("sh000001", "1", session="open") == 2
+    assert api_common.light_kline_ttl("usIXIC", "1", session="open") == 2
+    assert api_common.light_kline_ttl("jpN225", "1", session="open") == 2
+    assert api_common.light_kline_ttl("ksKOSPI", "1", session="open") == 2
+    assert api_common.light_kline_ttl("whUSDCNY", "1", session="open") == 2
     assert api_common.light_kline_ttl("sh600519", "1", session="open") == 120
     assert api_common.light_kline_ttl("sh000001", "1", session="lunch") == 180
     assert api_common.light_kline_ttl("sh000001", "1", session="closed") == 960
     assert api_common.light_kline_ttl("sh000001", "1D") == 60
-    assert api_common.light_kline_ttl("hkHSI", "1", session="closed") == 4
-    assert api_common.light_kline_ttl("hkHSTECH", "1", session="lunch") == 4
-    assert api_common.light_kline_ttl("usIXIC", "1", session="closed") == 4
+    assert api_common.light_kline_ttl("hkHSI", "1", session="closed") == 2
+    assert api_common.light_kline_ttl("hkHSTECH", "1", session="lunch") == 2
+    assert api_common.light_kline_ttl("usIXIC", "1", session="closed") == 2
 
 
 def test_hk_minute_refetches_after_ashare_close(monkeypatch):

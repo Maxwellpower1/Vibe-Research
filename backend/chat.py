@@ -51,7 +51,7 @@ ANALYSIS_FRAMEWORK = """【投研分析框架】当用户要你分析个股、�
 # 用 f-string 先把框架焊进去，只留 {{context}} 给运行时 .format() 填——4 处调用点无需改。
 SYSTEM_PROMPT = f"""你是 Vibe-Research 里的投研助理。你可以调用工具获取客观数据来支撑回答，A 股工具一律传 6 位代码：
 
-- 行情估值：query_quote（批量行情）/ query_valuation（前向 PE、PEG）/ query_valuation_percentile（估值历史分位）/ query_kline（K 线与区间涨跌）
+- 行情估值：query_quote（批量行情）/ query_tdx_quote（通达信 A 股五档 / 港美报价）/ query_valuation（前向 PE、PEG）/ query_valuation_percentile（估值历史分位）/ query_kline（K 线与区间涨跌）
 - 基本面：query_financials（营收净利 ROE 毛利率）/ query_company_info / query_reports（研报）/ query_news
 - 资金筹码：query_fund_flow（主力净流入）/ query_margin（两融）/ query_holders（股东户数）/ query_block_trade / query_dragon_tiger / query_dividend
 - 事件风险：query_announcements（公告）/ query_lockup（解禁）/ query_investor_qa（互动易）

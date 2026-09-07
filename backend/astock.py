@@ -235,11 +235,42 @@ def resolve_symbol(code: str) -> str:
     return ""
 
 
+# web.ifzq often 501; daily already walks this list. Minute must too.
+_IFZQ_MINUTE = (
+    "https://ifzq.gtimg.cn/appstock/app/minute/query",
+    "https://web.ifzq.gtimg.cn/appstock/app/minute/query",
+    "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/minute/query",
+)
+_IFZQ_US_MINUTE = (
+    "https://web.ifzq.gtimg.cn/appstock/app/usMinute/query",
+    "https://ifzq.gtimg.cn/appstock/app/usMinute/query",
+    "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/usMinute/query",
+)
+_IFZQ_DAY = (
+    "https://ifzq.gtimg.cn/appstock/app/day/query",
+    "https://web.ifzq.gtimg.cn/appstock/app/day/query",
+    "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/day/query",
+)
+
+
 def tencent_minute_url(symbol: str) -> str:
     """Tencent minute endpoint. us* must use usMinute (minute/query returns 1 point)."""
-    if symbol.startswith("us"):
-        return f"https://web.ifzq.gtimg.cn/appstock/app/usMinute/query?code={symbol}"
-    return f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={symbol}"
+    if (symbol or "").lower().startswith("us"):
+        return f"{_IFZQ_US_MINUTE[0]}?code={symbol}"
+    return f"{_IFZQ_MINUTE[0]}?code={symbol}"
+
+
+def _tencent_first_json(urls: tuple[str, ...], symbol: str) -> dict:
+    """Try ifzq hosts until one returns this symbol. web.ifzq 501 is common."""
+    d: dict = {}
+    for base in urls:
+        try:
+            d = _tencent_json(f"{base}?code={symbol}")
+        except Exception:
+            d = {}
+        if isinstance(d, dict) and (d.get("data") or {}).get(symbol):
+            return d
+    return d if isinstance(d, dict) else {}
 
 
 class DependencyMissing(RuntimeError):
@@ -403,7 +434,7 @@ def quote_ttl(session: str | None = None) -> float:
         except Exception:
             kind = "closed"
     if kind == "open":
-        return 5.0
+        return 2.0
     if kind == "lunch":
         return 30.0
     return 90.0
@@ -441,7 +472,7 @@ def _put_quote_aliases(out: dict[str, dict], requested: str, q: dict) -> None:
 
 
 def gtimg_quotes(prefixed_codes: list[str]) -> dict[str, dict]:
-    """Batch Tencent quotes with a shared 5s cache.
+    """Batch Tencent quotes with a shared per-code cache (2s open).
 
     Keys include the requested symbol and, for A-share stocks only, the 6-digit
     alias. Indices like sh000001 are never stored as bare 000001.
@@ -507,7 +538,7 @@ def _quote_last_get(symbol: str) -> dict | None:
 def tencent_quote(codes: list[str]) -> dict[str, dict]:
     """批量个股实时行情：现价 / 涨跌 / PE / PB / 市值 / 换手 / 涨跌停。
 
-    Per-code TTL 5s, shared with /api/market/quotes. Misses get a 2s negative cache.
+    Per-code TTL 2s open, shared with /api/market/quotes. Misses get a 2s negative cache.
     """
     uniq: list[str] = []
     seen: set[str] = set()
@@ -1011,7 +1042,8 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
     try:
         if res == "1":
             # Today minute timeline. US indices need usMinute, not minute/query.
-            d = _tencent_json(tencent_minute_url(symbol))
+            urls = _IFZQ_US_MINUTE if symbol.lower().startswith("us") else _IFZQ_MINUTE
+            d = _tencent_first_json(urls, symbol)
             block = ((d.get("data") or {}).get(symbol) or {})
             # shape: data.data.data = ["0930 price vol amount", ...]
             inner = (block.get("data") or {})
@@ -1038,7 +1070,7 @@ def light_kline(code: str, resolution: str = "1D", num: int = 365) -> dict:
 
         elif res == "5":
             # Last 5 sessions minute series
-            d = _tencent_json(f"https://web.ifzq.gtimg.cn/appstock/app/day/query?code={symbol}")
+            d = _tencent_first_json(_IFZQ_DAY, symbol)
             block = ((d.get("data") or {}).get(symbol) or {})
             days = block.get("data") or []
             # API returns newest-first; reverse to chronological
