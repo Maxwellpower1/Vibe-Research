@@ -587,7 +587,7 @@ def market_ctfi_img():
 
 @router.get("/api/market/macro-board")
 def market_macro_board():
-    """银行间利率 + 月度宏观 + 美债10Y/美元指数. 钥匙 macro_board, 不进报价中心."""
+    """银行间利率 + 月度宏观(含央行购金) + 美债10Y/美元指数. 钥匙 macro_board, 不进报价中心."""
     import macro_board
 
     try:

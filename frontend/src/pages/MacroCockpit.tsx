@@ -50,7 +50,7 @@ function packItems(title: string, items: { name: string; value: number | null; p
     return lines;
   }
   for (const it of rows) {
-    const unit = it.unit === "亿" ? "亿" : it.unit === "%" ? "%" : "";
+    const unit = it.unit === "%" ? "%" : it.unit ? it.unit : "";
     const when = it.period || it.date || "";
     const extra = it.label ? ` ${it.label}` : "";
     lines.push(`${when} ${it.name} ${it.value}${unit}${extra}`.trim());
@@ -326,7 +326,7 @@ export function MacroCockpit() {
         {
           id: "month",
           title: "月度宏观",
-          hint: "CPI / PPI / PMI / 社融 / M2",
+          hint: "CPI / PPI / PMI / 社融 / M2 / 央行购金",
           icon: <Percent size={14} />,
           accent: "#fb7185",
           defaultW: 0.28,
@@ -411,7 +411,7 @@ export function MacroCockpit() {
         suggestions={[
           "今天 LPR、DR007、SHIBOR 怎么读?",
           "国债和政策性金融债曲线差在哪?",
-          "月度 CPI/PPI/PMI/社融/M2 和美债10Y、美元指数怎么放在一起看?",
+          "月度 CPI/PPI/PMI/社融/M2/央行购金 和美债10Y、美元指数怎么放在一起看?",
           "人行社融分项和统计局 PMI 荣枯怎么读?",
           "今天 CTFI 综合和中东/西非航线怎么读?",
         ]}

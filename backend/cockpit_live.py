@@ -161,20 +161,28 @@ def parse_sina_hf(text: str) -> dict[str, dict]:
 
 
 def parse_sina_nf(text: str) -> dict[str, dict]:
-    """Domestic futures hq_str_nf_XX."""
+    """Domestic futures hq_str_nf_XX.
+
+    Sina nf_ layout: f[5] prev close (night often 0), f[6]/f[7] bid/ask,
+    f[8] last, f[10] prev settle. Using f[5] as last made AU pct stuck at 0.
+    """
     out: dict[str, dict] = {}
     for m in re.finditer(r'hq_str_(nf_\w+)="([^"]*)"', text or ""):
         f = m.group(2).split(",")
         if len(f) < 17 or not f[0]:
             continue
-        prev = _num(f[8])
-        price = _num(f[5])
+        price = _num(f[8])
+        prev = _num(f[10]) if len(f) > 10 else 0.0
+        if not prev:
+            prev = _num(f[5])
         if not price:
             bid, ask = _num(f[6]), _num(f[7])
             if bid and ask:
                 price = round((bid + ask) / 2, 2)
             else:
                 price = bid or ask or prev
+        if not prev:
+            prev = price
         out[m.group(1)] = {
             "symbol": m.group(1),
             "name": f[0] or m.group(1),

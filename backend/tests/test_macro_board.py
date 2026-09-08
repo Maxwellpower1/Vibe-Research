@@ -61,6 +61,11 @@ FRED = "DATE,DGS10\n2026-08-26,4.66\n2026-08-27,4.67\n2026-08-28,.\n"
 EM_DIFF = [
     {"f2": 99.54, "f3": -0.14, "f4": -0.14, "f12": "UDI", "f14": "美元指数", "f18": 99.68},
 ]
+SINA_GOLD_JSONP = (
+    'CB(({config:{all:[[0,"统计时间"],[1,"黄金储备","万盎司"]]},'
+    'count:"419",data:[["2026.8","7673.00","34383.25"],'
+    '["2026.7","7608.00","34187.76"]]}));'
+)
 
 
 def test_parse_money_and_month():
@@ -88,6 +93,15 @@ def test_parse_money_and_month():
     assert sfin["value"] == 6245
     assert sfin["period"] == "2026-04"
     assert sfin["loan"] == -4006
+
+    gold_rows = macro_board.parse_sina_gold_jsonp(SINA_GOLD_JSONP)
+    gold = macro_board.parse_cb_gold(gold_rows)
+    assert gold["value"] == 65
+    assert gold["stock"] == 7673
+    assert gold["period"] == "2026-08"
+    assert gold["unit"] == "万盎司"
+    assert gold["key"] == "cb_gold"
+    assert macro_board.parse_cb_gold([])["value"] is None
 
 
 def test_parse_us_and_board_ok():
@@ -121,5 +135,8 @@ def test_http_shares_macro_board_key_not_warmup():
     assert "macro_board" not in money
     src = inspect.getsource(macro_board)
     assert "whUSDCNY" in src
+    assert "cb_gold" in src
+    assert "fininfo" in src
     assert "INDEX_CATALOG" not in src
     assert "quotes_map" not in src
+    assert "RPT_ECONOMY_GOLD_CURRENCY" not in src

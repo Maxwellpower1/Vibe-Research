@@ -76,7 +76,7 @@ def test_parse_tencent_forex():
 
 def test_parse_sina_hf_and_nf():
     hf = 'hq_str_hf_GC="2345.6,0,0,0,2350,2330,10:01,2300.0,2310,0,0,0,2026-08-15,纽约黄金,0";'
-    nf = 'hq_str_nf_AU0="沪金,0,780,790,770,785,784,786,780,0,0,0,0,0,0,0,2026-08-15";'
+    nf = 'hq_str_nf_AU0="沪金,0,950,980,940,0,969,971,970.28,0,949.26,0,0,0,0,0,2026-08-15";'
     h = cl.parse_sina_hf(hf)
     n = cl.parse_sina_nf(nf)
     assert h["hf_GC"]["price"] == 2345.6
@@ -84,7 +84,10 @@ def test_parse_sina_hf_and_nf():
     assert h["hf_GC"]["pct"] == cl._pct(2345.6, 2300.0)
     assert h["hf_GC"]["time"] == "2026-08-15 10:01"
     assert n["nf_AU0"]["name"] == "沪金"
-    assert n["nf_AU0"]["price"] == 785
+    assert n["nf_AU0"]["price"] == 970.28
+    assert n["nf_AU0"]["prev"] == 949.26
+    assert n["nf_AU0"]["pct"] == cl._pct(970.28, 949.26)
+    assert n["nf_AU0"]["pct"] != 0
 
 
 def test_normalize_board_code():

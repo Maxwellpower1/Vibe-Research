@@ -5,6 +5,10 @@ function fmtCell(it: MacroBoardItem): string {
   if (it.unit === "亿") {
     return `${it.value.toLocaleString("zh-CN", { maximumFractionDigits: 0 })} 亿`;
   }
+  if (it.unit === "万盎司") {
+    const sign = it.value > 0 ? "+" : "";
+    return `${sign}${it.value.toLocaleString("zh-CN", { maximumFractionDigits: 0 })} 万盎司`;
+  }
   if (it.unit === "%") {
     const sign = it.kind === "yoy" && it.value > 0 ? "+" : "";
     return `${sign}${it.value.toFixed(1)}%`;
@@ -35,12 +39,15 @@ export function MonthPanel({ data, err }: { data: MacroBoard | null; err: string
             <tr key={it.key} className="border-t border-slate-800/80">
               <td className="py-1.5 text-slate-300">{it.name}</td>
               <td className="py-1.5 text-slate-500">{it.period || it.date || "—"}</td>
-              <td className="py-1.5 text-right font-mono tabular-nums text-slate-200">{fmtCell(it)}</td>
+              <td className="py-1.5 text-right font-mono tabular-nums text-slate-200">
+                {fmtCell(it)}
+                {it.label ? <div className="text-[10px] font-normal text-slate-600">{it.label}</div> : null}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-[10px] text-slate-600">CPI/PPI/PMI/M2 东财 · 社融商务部 · 同比或当月增量 · 只呈现</p>
+      <p className="mt-2 text-[10px] text-slate-600">CPI/PPI/PMI/M2 东财 · 社融商务部 · 央行购金新浪万盎司存量差 · 只呈现</p>
     </div>
   );
 }

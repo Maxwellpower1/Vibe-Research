@@ -36,6 +36,11 @@ test("macro page hangs CTFI, not quote hub", () => {
   assert.match(page, /id: "policy-bond"/);
   assert.match(page, /id: "money"/);
   assert.match(page, /id: "month"/);
+  assert.match(page, /央行购金/);
+  const month = readFileSync(join(root, "src/components/macro/MonthPanel.tsx"), "utf8");
+  assert.match(month, /万盎司/);
+  assert.match(month, /央行购金/);
+  assert.doesNotMatch(month, /useQuotes|quoteHub/);
   assert.match(page, /id: "pboc"/);
   assert.match(page, /id: "nbs-pmi"/);
   assert.match(page, /id: "fx"/);

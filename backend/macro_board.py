@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Any
@@ -23,6 +25,8 @@ CM_FRR = "https://www.chinamoney.com.cn/ags/ms/cm-u-bk-currency/FrrHis"
 MOFCOM_SFIN = "https://data.mofcom.gov.cn/datamofcom/front/gnmy/shrzgmQuery"
 FRED_DGS10 = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10"
 EM_ULIST = "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
+SINA_GOLD = "https://quotes.sina.cn/mac/api/jsonp_v3.php/CB/MacPage_Service.get_pagedata"
+_SINA_GOLD_DATA = re.compile(r'count:"\d+",data:(\[\[[\s\S]*?\]\])')
 
 
 def _num(v: Any) -> float | None:
@@ -172,6 +176,62 @@ def parse_m2(row: dict[str, Any]) -> dict[str, Any]:
         kind="yoy",
         stock=_num(row.get("BASIC_CURRENCY")),
         source="eastmoney",
+    )
+
+
+def _ym(v: Any) -> str:
+    s = str(v or "").strip()
+    m = re.match(r"^(\d{4})[.\-](\d{1,2})", s)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}"
+    d = _date10(v)
+    return d[:7] if len(d) >= 7 else ""
+
+
+def parse_sina_gold_jsonp(text: str) -> list[Any]:
+    """Sina mac fininfo-5 JSONP -> [[period, gold_wan_oz, forex], ...]."""
+    m = _SINA_GOLD_DATA.search(text or "")
+    if not m:
+        return []
+    try:
+        rows = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return []
+    return rows if isinstance(rows, list) else []
+
+
+def parse_cb_gold(rows: list[Any]) -> dict[str, Any]:
+    """PBOC gold stock in wan oz. value = month buy (delta). Not EM USD value."""
+    dated: list[tuple[str, float]] = []
+    for r in rows:
+        period = ""
+        stock: float | None = None
+        if isinstance(r, (list, tuple)) and len(r) >= 2:
+            period = _ym(r[0])
+            stock = _num(r[1])
+        elif isinstance(r, dict):
+            period = _ym(r.get("period") or r.get("TIME") or r.get("date"))
+            stock = _num(r.get("gold") or r.get("value"))
+        if period and stock is not None:
+            dated.append((period, stock))
+    dated.sort(key=lambda x: x[0], reverse=True)
+    empty = _item("cb_gold", "央行购金", None, unit="万盎司", kind="flow", source="sina")
+    if not dated:
+        return empty
+    period, stock = dated[0]
+    prev = dated[1][1] if len(dated) > 1 else None
+    delta = round(stock - prev, 2) if prev is not None else None
+    return _item(
+        "cb_gold",
+        "央行购金",
+        delta,
+        period=period,
+        date=period,
+        unit="万盎司",
+        kind="flow",
+        stock=stock,
+        source="sina",
+        label=f"储备 {stock:g}万盎司",
     )
 
 
@@ -328,6 +388,20 @@ def _fetch_sfin() -> dict[str, Any]:
     return parse_sfin(rows)
 
 
+def _fetch_cb_gold() -> dict[str, Any]:
+    import requests
+
+    r = requests.get(
+        SINA_GOLD,
+        params={"cate": "fininfo", "event": "5", "from": "0", "num": "8", "condition": ""},
+        headers={"User-Agent": UA, "Referer": "https://finance.sina.com.cn/mac/"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    r.encoding = "gbk"
+    return parse_cb_gold(parse_sina_gold_jsonp(r.text))
+
+
 def _fetch_us10() -> dict[str, Any]:
     import requests
 
@@ -381,17 +455,21 @@ def board() -> dict[str, Any]:
         f_pmi = pool.submit(_safe, "pmi", lambda: _fetch_month_row("RPT_ECONOMY_PMI", parse_pmi))
         f_m2 = pool.submit(_safe, "m2", lambda: _fetch_month_row("RPT_ECONOMY_CURRENCY_SUPPLY", parse_m2))
         f_sfin = pool.submit(_safe, "sfin", _fetch_sfin)
+        f_gold = pool.submit(_safe, "cb_gold", _fetch_cb_gold)
         f_us10 = pool.submit(_safe, "us10", _fetch_us10)
         f_dxy = pool.submit(_safe, "dxy", _fetch_dxy)
         shibor = f_shibor.result()
         frr = f_frr.result()
-        month_items = [f_cpi.result(), f_ppi.result(), f_pmi.result(), f_sfin.result(), f_m2.result()]
+        month_items = [
+            f_cpi.result(), f_ppi.result(), f_pmi.result(),
+            f_sfin.result(), f_m2.result(), f_gold.result(),
+        ]
         us_items = [f_us10.result(), f_dxy.result()]
 
     return {
         "money": _merge_money(shibor if isinstance(shibor, dict) else None, frr if isinstance(frr, dict) else None),
         "month": {
-            "source": "eastmoney / mofcom",
+            "source": "eastmoney / mofcom / sina",
             "items": [it for it in month_items if isinstance(it, dict)],
         },
         "us": {
