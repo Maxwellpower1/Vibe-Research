@@ -43,6 +43,7 @@ python3 -m venv .venv
 | `GET /api/fin/board` · `/forecast` · `/company` · `/suggest` | 财报窗口：盈利榜+日历 / 业绩预告 / F10+主营+现金流 / 代码联想。宏观包与 F10 并行拉东财 | 东财 datacenter |
 | `GET /api/stock-basic?code=` | 个股基本资料（行业/地域/概念/股本/上市日） | requests |
 | `POST /api/chat` | 系统 AI 对话（function calling，AI 自己调数据工具） | requests |
+| `POST /api/llm-probe` | 设置页连通性探测（无工具、无页面上下文，不走 /api/chat） | requests |
 | `GET /api/portfolio/ctp/status` | CTP 配置/依赖/登录状态（不主动连前置） | — |
 | `GET /api/portfolio/ctp/logs` | CTP 操作日志（`?since=` 增量轮询） | — |
 | `POST /api/portfolio/ctp/login` | **点击登录**（连前置并保持会话，不下单） | openctp-ctp |

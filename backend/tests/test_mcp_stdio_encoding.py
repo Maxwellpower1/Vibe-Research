@@ -54,3 +54,20 @@ def test_force_utf8_survives_streams_without_reconfigure(monkeypatch):
     monkeypatch.setattr(mcp_server.sys, "stdin", Dumb())
 
     mcp_server._force_utf8_stdio()   # 不该抛
+
+
+def test_mcp_rejects_non_object_arguments(monkeypatch):
+    sent = []
+    called = []
+    monkeypatch.setattr(mcp_server, "_send", lambda obj: sent.append(obj))
+    monkeypatch.setattr(mcp_server.chat, "_exec_tool", lambda n, a: called.append((n, a)) or {"ok": 1})
+    mcp_server._handle({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "query_quote", "arguments": ["600519"]},
+    })
+    assert called == []
+    text = sent[0]["result"]["content"][0]["text"]
+    assert sent[0]["result"]["isError"] is True
+    assert "invalid_arguments" in text

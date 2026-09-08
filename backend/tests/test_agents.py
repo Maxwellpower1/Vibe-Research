@@ -31,6 +31,15 @@ def test_chat_reexports_tools():
     assert chat._exec_tool is tools.exec_tool
 
 
+def test_mcp_tool_names_match_registry():
+    import mcp_server
+
+    mcp_names = [t["name"] for t in mcp_server.MCP_TOOLS]
+    assert mcp_names
+    assert mcp_names == tools.TOOL_NAMES
+    assert set(mcp_names) == set(tools._HANDLERS)
+
+
 def test_pick_trims_and_tolerates():
     rows = [{"a": 1, "b": 2}, {"a": 3, "b": 4}, "脏数据", {"a": 5}]
     assert tools._pick(rows, ("a",), 2) == [{"a": 1}, {"a": 3}]
@@ -40,8 +49,10 @@ def test_pick_trims_and_tolerates():
 
 def test_exec_tool_never_raises():
     assert "error" in tools.exec_tool("不存在的工具", {})
-    # 缺必填参数：应返回 error 字段而不是抛异常（错误要能回喂给模型）
+    # 缺必填参数: 应返回 error 字段而不是抛异常 (错误要能回喂给模型)
     assert "error" in tools.exec_tool("query_valuation", {})
+    bad = tools.exec_tool("query_quote", ["600519"])
+    assert bad.get("error") == "invalid_arguments"
 
 
 def test_exec_tool_wraps_handler_exception(monkeypatch):

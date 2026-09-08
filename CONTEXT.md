@@ -125,7 +125,10 @@ _Avoid_: 第二份 TTL、market._CACHE 再包一层、过期就打上游、旁�
 
 **问 AI**:
 使用者把自己的模型接到复盘页。复盘上下文和数据工具走现有入口。
-_Avoid_: chat widget, LLM service
+设置页「测试并保存」走 `POST /api/llm-probe`，不借用 `/api/chat`。
+工具参数解析失败回喂 `invalid_arguments`；超长结果给结构化截断说明，不硬截 JSON。
+打包复盘时单格异常标未取到，不整次 500。
+_Avoid_: chat widget, LLM service, 第二条对话口当探针
 
 **交易日历**:
 A 股这一天开不开市。复盘邮件、预热、网页报价中心/分时中心的休市间隔只问这个，不各自判 weekday。
@@ -166,6 +169,7 @@ K/分时（A 股轻量图、美股日K、期权日K/分时、套利价差）和�
 - 前端：`cd frontend && npm test` 且 `npx tsc -b`
 - 指数目录：`backend/tests/test_index_catalog.py` + `frontend/tests/review-context.test.mjs`
 - 复盘对照昨日档：`backend/tests/test_review_archive_diff.py`（`need_two_runs` 的 changes 是 null，空列表只属于 `unchanged`；不进预热）+ `frontend/tests/review-context.test.mjs`（复盘页挂 `ReviewArchiveDiffBar`，不另开 snapshot）
+- 问 AI 探针：`backend/tests/test_api.py`（`/api/llm-probe` 不借用 `/api/chat`）+ `frontend/tests/llm-probe.test.mjs`（设置页测试并保存走 `probeLlm`）
 - 衍生目录 / 期权驾驶舱导航：`backend/tests/test_deriv_catalog.py` + `frontend/tests/page-nav.test.mjs`（`/derivatives` 紧挨 `/a-share`，前后端同序同码）+ `frontend/tests/option-chart.test.mjs`
 - 套利目录 / 套利驾驶舱：`backend/tests/test_arb_catalog.py`（前后端同序同码；`sh000016` 不进指数目录）+ `test_ovlab.py` arb-board（复用 future-ts，不打 market）+ `frontend/tests/page-nav.test.mjs`（`/arb` 紧挨 `/derivatives`，无 CTP）+ `frontend/tests/arb-chart.test.mjs` + `frontend/tests/lc-chart.test.mjs`
 - 资讯：`backend/tests/test_event_cal.py`（一把 `event_cal` 钥匙、不进预热钟）+ `backend/tests/test_event_rank.py`（一把 `event_rank` 钥匙、四源解析、不进预热钟）+ `frontend/tests/page-nav.test.mjs`（`/event` 紧挨 `/arb`）+ `frontend/tests/event-page.test.mjs`（快讯走 telegraphHub，日历走 `api.eventCalendar`，热榜走 `api.eventRanks`）+ `frontend/tests/ai-watch-page.test.mjs`（`/ai-watch` 挂同一把 `event_rank/aihot`，`part=aihot`）

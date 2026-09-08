@@ -363,11 +363,17 @@ def _lhb(lhb: Any) -> str | None:
     head = ""
     if lhb.get("date"):
         head = f"{lhb.get('date')} 共{lhb.get('total_records')}条"
-    body = "；".join(
-        f"{s.get('name')} {fmt_signed_pct(s.get('change_pct'))} "
-        f"净买{float(s.get('net_buy_wan') or 0):.0f}万 {s.get('reason') or ''}".strip()
-        for s in rows if isinstance(s, dict)
-    )
+    bits = []
+    for s in rows:
+        if not isinstance(s, dict):
+            continue
+        n = _num(s.get("net_buy_wan"))
+        buy = f"{n:.0f}万" if n is not None else "—"
+        bits.append(
+            f"{s.get('name')} {fmt_signed_pct(s.get('change_pct'))} "
+            f"净买{buy} {s.get('reason') or ''}".strip()
+        )
+    body = "；".join(bits)
     return "\n".join(p for p in (head, body) if p)
 
 
@@ -444,31 +450,49 @@ def _rates(data: dict) -> str | None:
     return "\n".join(bits) if bits else None
 
 
+def _safe_section(title: str, fn) -> str | None:
+    """One bad panel must not drop the rest of the snapshot."""
+    try:
+        return _section(title, fn())
+    except Exception:
+        log.warning("review pack %s failed", title, exc_info=True)
+        return None
+
+
 def pack_review_context(data: dict[str, Any]) -> str:
     """Turn collected review dicts into the AI snapshot string."""
-    body = _join([
-        _section("全球指数", _world(data)),
-        _section("涨跌分布", _sentiment(data)),
-        _section("涨跌停", _emotion(data.get("emotion"))),
-        _section("板块热点", _sectors(data)),
-        _section("板块资金", _flow(data.get("board_flow"))),
-        _section("主力净流入", _money(data.get("money_rows"))),
-        _section("个股榜单", _rank(data)),
-        _section("宏观观察", _macro(data)),
-        _section("实时热点", _news(data.get("news"))),
-        _section("自选", _watch(data.get("watch"))),
-        _section("龙虎榜", _lhb(data.get("lhb"))),
-        _section("资金利率", _rates(data)),
-    ])
-    miss = missing_panels(body)
-    footer = f"\n【未取到】{'、'.join(miss)}。这些格子没有数据, 不要编造数字。" if miss else ""
-    text = (body or "（复盘看板数据尚未加载）") + footer
-    vs = format_vs_prior(text)
-    if vs:
-        text = f"{text}\n{vs}"
-    if len(text) <= REVIEW_CONTEXT_MAX_CHARS:
-        return text
-    return text[:REVIEW_CONTEXT_MAX_CHARS] + "\n…(快照已截断)"
+    try:
+        body = _join([
+            _safe_section("全球指数", lambda: _world(data)),
+            _safe_section("涨跌分布", lambda: _sentiment(data)),
+            _safe_section("涨跌停", lambda: _emotion(data.get("emotion"))),
+            _safe_section("板块热点", lambda: _sectors(data)),
+            _safe_section("板块资金", lambda: _flow(data.get("board_flow"))),
+            _safe_section("主力净流入", lambda: _money(data.get("money_rows"))),
+            _safe_section("个股榜单", lambda: _rank(data)),
+            _safe_section("宏观观察", lambda: _macro(data)),
+            _safe_section("实时热点", lambda: _news(data.get("news"))),
+            _safe_section("自选", lambda: _watch(data.get("watch"))),
+            _safe_section("龙虎榜", lambda: _lhb(data.get("lhb"))),
+            _safe_section("资金利率", lambda: _rates(data)),
+        ])
+        miss = missing_panels(body)
+        footer = f"\n【未取到】{'、'.join(miss)}。这些格子没有数据, 不要编造数字。" if miss else ""
+        text = (body or "（复盘看板数据尚未加载）") + footer
+        try:
+            vs = format_vs_prior(text)
+        except Exception:
+            log.warning("review pack vs-prior failed", exc_info=True)
+            vs = None
+        if vs:
+            text = f"{text}\n{vs}"
+        if len(text) <= REVIEW_CONTEXT_MAX_CHARS:
+            return text
+        return text[:REVIEW_CONTEXT_MAX_CHARS] + "\n…(快照已截断)"
+    except Exception:
+        log.warning("review pack failed", exc_info=True)
+        miss = "、".join(EXPECTED)
+        return f"（复盘看板数据尚未加载）\n【未取到】{miss}。这些格子没有数据, 不要编造数字。"
 
 
 def _archive_enabled() -> bool:

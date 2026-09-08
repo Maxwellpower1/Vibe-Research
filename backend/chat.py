@@ -12,6 +12,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import socket
 from urllib.parse import urlparse
 
@@ -27,8 +28,14 @@ import tools
 TOOLS = tools.TOOLS
 _exec_tool = tools.exec_tool
 
-MAX_ROUNDS = 6  # 工具调用最大轮数，防死循环
-_TOOL_RESULT_CAP = 6000  # 单次工具结果注入上限（控 token）
+MAX_ROUNDS = 6  # 工具调用最大轮数, 防死循环
+_TOOL_RESULT_CAP = 6000  # 单次工具结果注入上限 (控 token)
+_SECRET_RE = re.compile(r"(?i)(?:sk-[A-Za-z0-9_-]{8,}|Bearer\s+\S+)")
+PROBE_SYSTEM = (
+    "You are a connectivity probe. Reply with exactly the word pong. "
+    "No tools, no extra text."
+)
+PROBE_USER = "pong"
 
 # 投研分析框架：用户要「分析个股 / 给判断 / 下结论」时，AI 一律按这五维组织，
 # 让弱模型也能输出结构化、覆盖全、不漏项的专业解读。焊进 SYSTEM_PROMPT，不做成 UI 选项——
@@ -115,16 +122,97 @@ def _check_base_url(url: str) -> None:
                 raise RuntimeError("Base URL 解析到了不允许的内网地址")
 
 
-def _call_llm(cfg: dict, messages: list, use_tools: bool) -> dict:
+def _redact_secrets(text: str, extra: str = "") -> str:
+    """Strip known API keys from errors that may hit logs or the UI."""
+    s = str(text or "")
+    extra = str(extra or "")
+    if extra and len(extra) >= 6:
+        s = s.replace(extra, "***")
+    return _SECRET_RE.sub("***", s)
+
+
+def _http_error(cfg: dict, status: int, body: str) -> RuntimeError:
+    return RuntimeError(
+        f"model HTTP {status}: {_redact_secrets(body[:300], str(cfg.get('apiKey') or ''))}"
+    )
+
+
+def _parse_tool_args(raw: object) -> tuple[dict | None, dict | None]:
+    """Parse tool arguments. On failure return (None, error payload), never {}."""
+    if raw is None or raw == "":
+        return {}, None
+    if isinstance(raw, dict):
+        return raw, None
+    if not isinstance(raw, str):
+        return None, {
+            "error": "invalid_arguments",
+            "hint": "arguments must be a JSON object",
+        }
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return None, {
+            "error": "invalid_arguments",
+            "hint": f"arguments is not valid JSON: {e}",
+            "raw_preview": raw[:200],
+        }
+    if not isinstance(parsed, dict):
+        return None, {
+            "error": "invalid_arguments",
+            "hint": "arguments must be a JSON object, not a list or scalar",
+        }
+    return parsed, None
+
+
+def _tool_result_text(result: object) -> str:
+    """Serialize a tool result. Oversized payloads stay valid JSON."""
+    raw = json.dumps(result, ensure_ascii=False)
+    if len(raw) <= _TOOL_RESULT_CAP:
+        return raw
+    return json.dumps(
+        {
+            "truncated": True,
+            "total_chars": len(raw),
+            "preview": raw[:_TOOL_RESULT_CAP],
+            "hint": "result too large; narrow the query (fewer codes or a shorter window) and call again",
+        },
+        ensure_ascii=False,
+    )
+
+
+def _invoke_tool(name: str, raw_args: object) -> tuple[dict, dict]:
+    """Run one tool. Bad arguments are fed back; the handler is not called."""
+    args, err = _parse_tool_args(raw_args)
+    if err is not None or args is None:
+        return err or {
+            "error": "invalid_arguments",
+            "hint": "arguments must be a JSON object",
+        }, {"tool": name, "args": {}, "error": "invalid_arguments"}
+    result = _exec_tool(name, args)
+    return result if isinstance(result, dict) else {"value": result}, {
+        "tool": name,
+        "args": args,
+    }
+
+
+def _call_llm(
+    cfg: dict,
+    messages: list,
+    use_tools: bool,
+    response_format: dict | None = None,
+) -> dict:
     _check_base_url(cfg.get("baseURL", ""))
     base = cfg["baseURL"].rstrip("/")
     if not base.endswith(("/v1", "/v3", "/v4", "/api/v3")):
-        # 多数 OpenAI 兼容端点需要 /v1；已带版本段则不动（智谱等用 /v4，#22）。
+        # 多数 OpenAI 兼容端点需要 /v1; 已带版本段则不动 (智谱等用 /v4, #22).
         base = base + "/v1"
     payload = {"model": cfg["model"], "messages": messages, "temperature": 0.3}
+    # tools + response_format together makes some gateways skip tool calls.
     if use_tools:
         payload["tools"] = TOOLS
         payload["tool_choice"] = "auto"
+    elif response_format:
+        payload["response_format"] = response_format
     r = requests.post(
         f"{base}/chat/completions",
         headers={"Authorization": f"Bearer {cfg['apiKey']}", "Content-Type": "application/json"},
@@ -132,7 +220,7 @@ def _call_llm(cfg: dict, messages: list, use_tools: bool) -> dict:
         timeout=90,
     )
     if r.status_code != 200:
-        raise RuntimeError(f"模型接口 HTTP {r.status_code}: {r.text[:300]}")
+        raise _http_error(cfg, r.status_code, r.text)
     return r.json()
 
 
@@ -157,17 +245,12 @@ def run_chat(cfg: dict, user_messages: list, context: str = "") -> dict:
 
         for tc in tool_calls:
             fn = tc["function"]
-            name = fn["name"]
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            result = _exec_tool(name, args)
-            trace.append({"tool": name, "args": args})
+            result, item = _invoke_tool(fn["name"], fn.get("arguments"))
+            trace.append(item)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.get("id", ""),
-                "content": json.dumps(result, ensure_ascii=False)[:_TOOL_RESULT_CAP],
+                "content": _tool_result_text(result),
             })
 
     # 超过最大轮数，最后再要一次不带工具的收尾回答
@@ -212,7 +295,7 @@ def _call_llm_stream(cfg: dict, messages: list, use_tools: bool):
         json=payload, timeout=120, stream=True,
     )
     if r.status_code != 200:
-        raise RuntimeError(f"模型接口 HTTP {r.status_code}: {r.text[:300]}")
+        raise _http_error(cfg, r.status_code, r.text)
     return r
 
 
@@ -291,16 +374,12 @@ def run_chat_stream(cfg: dict, user_messages: list, context: str = ""):
         })
         for i in sorted(tool_acc):
             a = tool_acc[i]
-            try:
-                args = json.loads(a["arguments"] or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            yield {"type": "tool", "tool": a["name"], "args": args}
-            result = _exec_tool(a["name"], args)
-            trace.append({"tool": a["name"], "args": args})
+            result, item = _invoke_tool(a["name"], a["arguments"])
+            yield {"type": "tool", "tool": a["name"], "args": item.get("args") or {}}
+            trace.append(item)
             messages.append({
                 "role": "tool", "tool_call_id": a["id"],
-                "content": json.dumps(result, ensure_ascii=False)[:_TOOL_RESULT_CAP],
+                "content": _tool_result_text(result),
             })
 
     # 超过最大轮数：不带工具收尾（非流式一次拿完再吐）
@@ -318,3 +397,23 @@ def run_chat_cli_stream(cfg: dict, user_messages: list, context: str = ""):
     for chunk in cli_runtime.run_cli_stream(kind, system, user):
         yield {"type": "delta", "text": chunk}
     yield {"type": "done", "trace": [], "rounds": 1}
+
+
+def run_probe(cfg: dict) -> dict:
+    """One-shot connectivity check. No tools, no page context, no chat thread."""
+    provider = str(cfg.get("provider") or "")
+    if provider.startswith("cli-"):
+        kind = provider[4:]
+        content = cli_runtime.run_cli(kind, PROBE_SYSTEM, PROBE_USER)
+        return {"ok": True, "reply": (content or "").strip()[:200]}
+    data = _call_llm(
+        cfg,
+        [
+            {"role": "system", "content": PROBE_SYSTEM},
+            {"role": "user", "content": PROBE_USER},
+        ],
+        use_tools=False,
+    )
+    choice = ((data.get("choices") or [{}])[0].get("message") or {})
+    reply = choice.get("content") or ""
+    return {"ok": True, "reply": str(reply).strip()[:200]}

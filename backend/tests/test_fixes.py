@@ -200,6 +200,110 @@ def test_stream_tool_calls_without_index(monkeypatch):
     assert events[-1]["type"] == "done"
 
 
+def test_redact_secrets_strips_key_and_bearer():
+    raw = "model HTTP 401: Bearer sk-abcdefghijklmnop leaked"
+    out = chat._redact_secrets(raw, "sk-abcdefghijklmnop")
+    assert "sk-abcdefghijklmnop" not in out
+    assert "Bearer" not in out or "***" in out
+
+
+def test_parse_tool_args_rejects_bad_json():
+    args, err = chat._parse_tool_args("{not json")
+    assert args is None
+    assert err["error"] == "invalid_arguments"
+    args, err = chat._parse_tool_args("[1, 2]")
+    assert args is None
+    assert err["error"] == "invalid_arguments"
+    args, err = chat._parse_tool_args('{"codes": ["600519"]}')
+    assert args == {"codes": ["600519"]}
+    assert err is None
+
+
+def test_invoke_tool_bad_json_does_not_exec(monkeypatch):
+    called = []
+    monkeypatch.setattr(chat, "_exec_tool", lambda n, a: called.append((n, a)) or {"ok": 1})
+    result, item = chat._invoke_tool("query_quote", "{not json")
+    assert result["error"] == "invalid_arguments"
+    assert item["error"] == "invalid_arguments"
+    assert called == []
+
+
+def test_tool_result_text_keeps_valid_json():
+    import json
+
+    big = {"rows": ["x" * 80] * 120}
+    text = chat._tool_result_text(big)
+    obj = json.loads(text)
+    assert obj["truncated"] is True
+    assert obj["total_chars"] > chat._TOOL_RESULT_CAP
+    assert isinstance(obj["preview"], str)
+
+
+def test_call_llm_strips_response_format_when_tools(monkeypatch):
+    seen = {}
+
+    class R:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"choices": [{"message": {"content": "hi"}}]}
+
+    def fake_post(url, headers=None, json=None, timeout=None, stream=False):
+        seen["json"] = json
+        return R()
+
+    monkeypatch.setattr(chat.requests, "post", fake_post)
+    chat._call_llm(
+        {"baseURL": "https://api.example.com/v1", "apiKey": "sk-SECRETKEY99", "model": "m"},
+        [{"role": "user", "content": "hi"}],
+        use_tools=True,
+        response_format={"type": "json_object"},
+    )
+    assert "tools" in seen["json"]
+    assert "response_format" not in seen["json"]
+
+
+def test_call_llm_redacts_http_error(monkeypatch):
+    class R:
+        status_code = 401
+        text = "invalid api key sk-SECRETKEY99"
+
+    monkeypatch.setattr(chat.requests, "post", lambda *a, **k: R())
+    try:
+        chat._call_llm(
+            {"baseURL": "https://api.example.com/v1", "apiKey": "sk-SECRETKEY99", "model": "m"},
+            [{"role": "user", "content": "hi"}],
+            use_tools=False,
+        )
+    except RuntimeError as e:
+        assert "sk-SECRETKEY99" not in str(e)
+    else:
+        raise AssertionError("expected HTTP error")
+
+
+def test_run_probe_no_tools(monkeypatch):
+    seen = {}
+
+    class R:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"choices": [{"message": {"content": "pong"}}]}
+
+    def fake_post(url, headers=None, json=None, timeout=None, stream=False):
+        seen["json"] = json
+        return R()
+
+    monkeypatch.setattr(chat.requests, "post", fake_post)
+    out = chat.run_probe({"baseURL": "https://api.example.com/v1", "apiKey": "k", "model": "m"})
+    assert out["ok"] is True
+    assert out["reply"] == "pong"
+    assert "tools" not in seen["json"]
+    assert seen["json"]["messages"][0]["content"] == chat.PROBE_SYSTEM
+
+
 # ── CLI 流式：子进程挂起时超时真正生效（不再无限期阻塞） ────────────
 
 def test_run_cli_stream_timeout(monkeypatch):

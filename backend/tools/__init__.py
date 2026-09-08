@@ -6,12 +6,14 @@ from tools.handlers import _HANDLERS
 from tools.schema import TOOL_NAMES, TOOLS, _pick, _t
 
 def exec_tool(name: str, args: dict):
-    """执行工具，返回可序列化结果（失败返回 error 字段，不抛）。"""
+    """执行工具, 返回可序列化结果 (失败返回 error 字段, 不抛)."""
+    if not isinstance(args, dict):
+        return {"error": "invalid_arguments", "hint": "arguments must be a JSON object"}
     fn = _HANDLERS.get(name)
     if fn is None:
         return {"error": f"未知工具 {name}"}
     try:
-        return fn(args or {})
+        return fn(args)
     except astock.DependencyMissing as e:
         return {"error": str(e)}
     except KeyError as e:

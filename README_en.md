@@ -135,7 +135,7 @@ Uses your existing subscription instead of paying per API call. Supported: **Cla
 
 ### 2. API mode (bring your own key)
 
-Pick a model and the base URL is filled in for you — just paste the key. Built-in presets for **DeepSeek / Doubao / MiniMax / OpenAI / OpenRouter / Groq / Together / MiMo / any OpenAI-compatible endpoint**. This mode supports function calling, so the AI fetches quotes, valuation, reports and news on its own. Your key stays in your browser's local storage and is sent only to your own backend.
+Pick a model and the base URL is filled in for you — just paste the key. **Test and save** hits `POST /api/llm-probe` (not the Ask-AI chat, no data tools). Use **Save only** to store locally without a probe. Built-in presets for **DeepSeek / Doubao / MiniMax / OpenAI / OpenRouter / Groq / Together / MiMo / any OpenAI-compatible endpoint**. This mode supports function calling, so the AI fetches quotes, valuation, reports and news on its own. Your key stays in your browser's local storage and is sent only to your own backend.
 
 ### 3. MCP (for Claude Code and other agents)
 

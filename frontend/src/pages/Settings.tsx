@@ -3,7 +3,7 @@ import { KeyRound, Sparkles, ShieldCheck, Check, Trash2, Terminal, Mail, Loader2
 import { PageHeader } from "@/components/ui/PageHeader";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { toast } from "sonner";
-import { loadLlm, saveLlm, clearLlm } from "@/lib/llm";
+import { loadLlm, saveLlm, clearLlm, probeLlm } from "@/lib/llm";
 import { api, loadAccessKey, saveAccessKey, type ReviewMailStatus } from "@/lib/api";
 import { subscriptionModels, apiModels, PROVIDER_BASE, isCliProvider, aiModels, type ProviderId } from "@/lib/ai-models";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ export function Settings() {
   const [accessKey, setAccessKey] = useState(loadAccessKey());
   const [apiErrors, setApiErrors] = useState<Record<string, string>>({});
   const [cliError, setCliError] = useState("");
+  const [probing, setProbing] = useState(false);
 
   const providerOf = (id: string): ProviderId => aiModels.find((m) => m.id === id)?.provider ?? "openai-compatible";
 
@@ -42,10 +43,39 @@ export function Settings() {
     setApiErrors(next);
     if (Object.keys(next).length) {
       toast.error("请补全标红的字段");
-      return;
+      return false;
     }
     saveLlm({ provider: providerOf(apiId), baseURL: baseURL.trim(), apiKey: apiKey.trim(), model: modelName.trim() });
     toast.success("已保存到本地，全站「问 AI / 复盘」现在可用");
+    return true;
+  };
+
+  const testAndSaveApi = async () => {
+    const next: Record<string, string> = {};
+    if (!baseURL.trim()) next.baseURL = "请填写 Base URL";
+    if (!modelName.trim()) next.modelName = "请填写 Model";
+    if (!apiKey.trim()) next.apiKey = "请填写 API Key";
+    setApiErrors(next);
+    if (Object.keys(next).length) {
+      toast.error("请补全标红的字段");
+      return;
+    }
+    const cfg = {
+      provider: providerOf(apiId),
+      baseURL: baseURL.trim(),
+      apiKey: apiKey.trim(),
+      model: modelName.trim(),
+    };
+    setProbing(true);
+    try {
+      const reply = await probeLlm(cfg);
+      saveLlm(cfg);
+      toast.success(reply ? `已连通，回复 ${reply}` : "已连通并保存");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "测试失败");
+    } finally {
+      setProbing(false);
+    }
   };
 
   const saveSubscription = () => {
@@ -53,11 +83,33 @@ export function Settings() {
     if (!m || m.comingSoon) {
       setCliError("请选择一个可用的订阅（暂不支持标「即将支持」的）");
       toast.error("请选择一个可用的订阅");
-      return;
+      return false;
     }
     setCliError("");
     saveLlm({ provider: m.provider, baseURL: "", apiKey: "", model: m.id });
     toast.success(`已选「${m.name}」订阅，全站「问 AI / 复盘」将调用本机 ${m.name}`);
+    return true;
+  };
+
+  const testAndSaveSubscription = async () => {
+    const m = subscriptionModels.find((x) => x.id === cliId);
+    if (!m || m.comingSoon) {
+      setCliError("请选择一个可用的订阅（暂不支持标「即将支持」的）");
+      toast.error("请选择一个可用的订阅");
+      return;
+    }
+    setCliError("");
+    const cfg = { provider: m.provider, baseURL: "", apiKey: "", model: m.id };
+    setProbing(true);
+    try {
+      const reply = await probeLlm(cfg);
+      saveLlm(cfg);
+      toast.success(reply ? `已连通 ${m.name}，回复 ${reply}` : `已连通并保存「${m.name}」`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "测试失败");
+    } finally {
+      setProbing(false);
+    }
   };
 
   const forget = () => {
@@ -167,10 +219,20 @@ export function Settings() {
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
-                onClick={saveSubscription}
-                className="btn-press inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25"
+                onClick={testAndSaveSubscription}
+                disabled={probing}
+                className="btn-press inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25 disabled:opacity-50"
               >
-                保存
+                {probing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {probing ? "测试中…" : "测试并保存"}
+              </button>
+              <button
+                type="button"
+                onClick={saveSubscription}
+                disabled={probing}
+                className="btn-press inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted-foreground ring-1 ring-border hover:bg-muted/40 disabled:opacity-50"
+              >
+                仅保存
               </button>
               {existing && (
                 <button
@@ -256,10 +318,20 @@ export function Settings() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={saveApi}
-                className="btn-press inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25"
+                onClick={testAndSaveApi}
+                disabled={probing}
+                className="btn-press inline-flex items-center gap-1.5 rounded-lg bg-primary/15 px-4 py-2 text-sm font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/25 disabled:opacity-50"
               >
-                保存（存本地）
+                {probing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {probing ? "测试中…" : "测试并保存"}
+              </button>
+              <button
+                type="button"
+                onClick={saveApi}
+                disabled={probing}
+                className="btn-press inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted-foreground ring-1 ring-border hover:bg-muted/40 disabled:opacity-50"
+              >
+                仅保存
               </button>
               {existing && (
                 <button

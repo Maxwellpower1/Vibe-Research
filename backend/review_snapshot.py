@@ -129,5 +129,9 @@ def collect_review_bundle(
         bucket["money_rows"] = money.get("rows")
     elif isinstance(money, list):
         bucket["money_rows"] = money
-    bucket["watch"] = review_jobs.watch_quotes(watch_codes)
+    try:
+        bucket["watch"] = review_jobs.watch_quotes(watch_codes)
+    except Exception as e:
+        bucket["watch"] = []
+        errors.append(f"watch: {e}"[:160])
     return bucket, errors

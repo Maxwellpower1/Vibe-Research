@@ -173,6 +173,32 @@ def test_collect_bundle_uses_shared_jobs(monkeypatch):
     assert errors == []
 
 
+def test_collect_bundle_watch_error_is_not_fatal(monkeypatch):
+    monkeypatch.setattr(
+        rs,
+        "build_review_snapshot",
+        lambda **kw: {
+            "indices": [{"name": "上证"}],
+            "overview": None,
+            "emotion": None,
+            "industry": None,
+            "lhb": None,
+            "hsgt": None,
+            "errors": [],
+        },
+    )
+    monkeypatch.setattr("review_jobs.live_jobs", lambda **kw: [])
+
+    def boom(codes):
+        raise RuntimeError("quote down")
+
+    monkeypatch.setattr("review_jobs.watch_quotes", boom)
+    data, errors = rs.collect_review_bundle(watch_codes=["600519"])
+    assert data["watch"] == []
+    assert data["indices"][0]["name"] == "上证"
+    assert any("watch" in e for e in errors)
+
+
 def test_review_context_route(monkeypatch):
     monkeypatch.setattr(
         rs,

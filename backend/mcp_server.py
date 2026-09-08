@@ -96,8 +96,16 @@ def _handle(msg: dict) -> None:
     if method == "tools/call":
         params = msg.get("params") or {}
         name = params.get("name", "")
-        args = params.get("arguments") or {}
-        data = chat._exec_tool(name, args)
+        raw = params.get("arguments")
+        if raw is None:
+            raw = {}
+        if not isinstance(raw, dict):
+            data = {
+                "error": "invalid_arguments",
+                "hint": "arguments must be a JSON object",
+            }
+        else:
+            data = chat._exec_tool(name, raw)
         is_error = isinstance(data, dict) and "error" in data
         _result(rid, {
             "content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}],

@@ -61,6 +61,35 @@ def test_pack_includes_watch():
     assert "自选" not in rc.missing_panels(text)
 
 
+def test_pack_survives_broken_panel(monkeypatch):
+    def boom(_data):
+        raise TypeError("bad panel")
+
+    monkeypatch.setattr(rc, "_lhb", boom)
+    text = rc.pack_review_context({
+        "world": [{"name": "上证指数", "price": 3200, "change_pct": 0.85}],
+        "lhb": {"stocks": [{"name": "x"}]},
+    })
+    assert "【全球指数】" in text
+    assert "龙虎榜" in rc.missing_panels(text)
+
+
+def test_pack_skips_bad_lhb_amount():
+    text = rc.pack_review_context({
+        "lhb": {
+            "date": "2026-09-01",
+            "total_records": 2,
+            "stocks": [
+                {"name": "坏行", "change_pct": 1, "net_buy_wan": "x"},
+                {"name": "好行", "change_pct": 2, "net_buy_wan": 100},
+            ],
+        },
+    })
+    assert "【龙虎榜】" in text
+    assert "好行" in text
+    assert "坏行" in text
+
+
 def test_pack_lists_missing_and_keeps_sections():
     text = rc.pack_review_context({
         "world": [{"name": "上证指数", "price": 3200, "change_pct": 0.85}],

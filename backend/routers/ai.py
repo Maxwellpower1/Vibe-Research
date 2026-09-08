@@ -25,6 +25,42 @@ class ChatReq(BaseModel):
     llm: LLMConfig
 
 
+class ProbeReq(BaseModel):
+    llm: LLMConfig
+
+
+def _require_llm(llm: LLMConfig) -> bool:
+    """Validate config. Return True if this is a CLI subscription."""
+    if not llm.model:
+        raise HTTPException(400, "缺少模型配置，请先在「接入 AI」里选择")
+    is_cli = llm.provider.startswith("cli-")
+    if is_cli:
+        kind = llm.provider[4:]
+        if not cli_runtime.detect_cli(kind):
+            raise HTTPException(
+                400,
+                f"未检测到「{kind}」对应的本机命令。请先安装并登录该 CLI，或改用「API 接入」。",
+            )
+        return True
+    if not llm.apiKey or not llm.baseURL:
+        raise HTTPException(400, "缺少 Base URL 或 API Key，请先在「接入 AI」里填写")
+    return False
+
+
+@router.post("/api/llm-probe")
+def llm_probe(req: ProbeReq):
+    """One-shot model check. No tools, no page context, not /api/chat."""
+    _require_llm(req.llm)
+    cfg = req.llm.model_dump()
+    try:
+        return {"data": chat_layer.run_probe(cfg)}
+    except Exception as e:
+        raise HTTPException(
+            502,
+            chat_layer._redact_secrets(str(e), cfg.get("apiKey") or ""),
+        ) from e
+
+
 @router.post("/api/chat")
 def chat(req: ChatReq):
     """系统 AI 对话，**流式** NDJSON（每行一个事件 {type: tool|delta|done|error}）。
@@ -35,19 +71,7 @@ def chat(req: ChatReq):
     """
     if not req.messages:
         raise HTTPException(400, "messages 不能为空")
-    if not req.llm.model:
-        raise HTTPException(400, "缺少模型配置，请先在「接入 AI」里选择")
-
-    is_cli = req.llm.provider.startswith("cli-")
-    if is_cli:
-        kind = req.llm.provider[4:]
-        if not cli_runtime.detect_cli(kind):
-            raise HTTPException(
-                400,
-                f"未检测到「{kind}」对应的本机命令。请先安装并登录该 CLI，或改用「API 接入」。",
-            )
-    elif not req.llm.apiKey or not req.llm.baseURL:
-        raise HTTPException(400, "缺少 Base URL 或 API Key，请先在「接入 AI」里填写")
+    is_cli = _require_llm(req.llm)
 
     cfg = req.llm.model_dump()
 
@@ -59,9 +83,11 @@ def chat(req: ChatReq):
             for ev in events:
                 yield json.dumps(ev, ensure_ascii=False) + "\n"
         except Exception as e:
+            msg = chat_layer._redact_secrets(str(e), cfg.get("apiKey") or "")
             yield (
                 json.dumps(
-                    {"type": "error", "message": f"对话失败：{e}"}, ensure_ascii=False
+                    {"type": "error", "message": f"对话失败：{msg}"},
+                    ensure_ascii=False,
                 )
                 + "\n"
             )

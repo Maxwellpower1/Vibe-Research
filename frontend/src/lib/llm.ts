@@ -50,6 +50,36 @@ export function hasLlm(): boolean {
   return loadLlm() !== null;
 }
 
+export async function probeLlm(cfg: LlmConfig): Promise<string> {
+  let resp: Response;
+  try {
+    resp = await fetch("/api/llm-probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ llm: cfg }),
+    });
+  } catch {
+    throw new ApiError("连接不到后端，请先启动 backend（uvicorn app:app --port 8900）", 0);
+  }
+  let body: any = null;
+  try {
+    body = await resp.json();
+  } catch {
+    /* ignore */
+  }
+  if (!resp.ok) {
+    if (resp.status === 401) {
+      throw new ApiError("后端开启了访问鉴权（VR_API_KEY）：请在「接入 AI」页底部填写后端访问密钥", 401);
+    }
+    throw new ApiError(body?.detail || `HTTP ${resp.status}`, resp.status);
+  }
+  const data = body?.data ?? body;
+  if (data && data.ok === false && data.error) {
+    throw new ApiError(String(data.error), 502);
+  }
+  return String(data?.reply || "ok");
+}
+
 export interface ChatHandlers {
   onDelta?: (text: string) => void;             // 答案逐块吐字
   onTool?: (tool: string, args: Record<string, unknown>) => void; // AI 调了某数据工具

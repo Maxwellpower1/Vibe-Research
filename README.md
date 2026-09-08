@@ -209,7 +209,7 @@ cd frontend && npm install && npm run dev
 
 ### 2. API 接入（填自己的 key）
 
-「接入 AI 页 → API 接入」选一个模型，**baseURL 自动填好**，只需粘 key。内置 **DeepSeek / 豆包 / MiniMax / OpenAI / OpenRouter / Groq / Together / MiMo / 任意 OpenAI 兼容端点**。这条支持 function-calling——AI 会自己调数据工具（行情/估值/研报/新闻）再作答。key 只存你本地浏览器、随请求发给你自己的后端、不上传、不进仓库。
+「接入 AI 页 → API 接入」选一个模型，**baseURL 自动填好**，只需粘 key。点 **测试并保存** 会打一次 `POST /api/llm-probe`（不走问 AI 对话、不调数据工具）；只想落本地用「仅保存」。内置 **DeepSeek / 豆包 / MiniMax / OpenAI / OpenRouter / Groq / Together / MiMo / 任意 OpenAI 兼容端点**。这条支持 function-calling——AI 会自己调数据工具（行情/估值/研报/新闻）再作答。key 只存你本地浏览器、随请求发给你自己的后端、不上传、不进仓库。
 
 ### 3. MCP（给 Claude Code / 高手 agent）
 

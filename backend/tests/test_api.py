@@ -64,6 +64,37 @@ def test_chat_api_missing_key_400():
     assert r.status_code == 400
 
 
+def test_llm_probe_missing_key_400():
+    r = client.post("/api/llm-probe", json={
+        "llm": {"provider": "deepseek", "model": "deepseek-v4-flash", "baseURL": "", "apiKey": ""},
+    })
+    assert r.status_code == 400
+
+
+def test_llm_probe_ok(monkeypatch):
+    monkeypatch.setattr(
+        "routers.ai.chat_layer.run_probe",
+        lambda cfg: {"ok": True, "reply": "pong"},
+    )
+    r = client.post("/api/llm-probe", json={
+        "llm": {"provider": "deepseek", "model": "m", "baseURL": "https://api.deepseek.com", "apiKey": "sk-test"},
+    })
+    assert r.status_code == 200
+    assert r.json()["data"]["reply"] == "pong"
+
+
+def test_llm_probe_redacts_key(monkeypatch):
+    def boom(cfg):
+        raise RuntimeError(f"model HTTP 401: invalid key {cfg['apiKey']}")
+
+    monkeypatch.setattr("routers.ai.chat_layer.run_probe", boom)
+    r = client.post("/api/llm-probe", json={
+        "llm": {"provider": "deepseek", "model": "m", "baseURL": "https://api.deepseek.com", "apiKey": "sk-SECRETKEY99"},
+    })
+    assert r.status_code == 502
+    assert "sk-SECRETKEY99" not in r.text
+
+
 def test_chat_cli_not_installed_400():
     # 订阅接入选一个本机没装的 CLI → 400 明确提示（不静默失败）
     r = client.post("/api/chat", json={
