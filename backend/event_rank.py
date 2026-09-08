@@ -54,6 +54,11 @@ _STATUS = re.compile(
 )
 _EYE = re.compile(r"lucide-eye.*?</svg>\s*([^<]+)", re.S)
 _HEART = re.compile(r"lucide-heart.*?</svg>\s*([^<]+)", re.S)
+# Tweet media / video poster. Skip profile avatars.
+_THUMB = re.compile(
+    r'src="(https://pbs\.twimg\.com/(?:media|amplify_video_thumb|'
+    r'ext_tw_video_thumb|tweet_video_thumb|card_img|semantic_core_img)/[^"]+)"',
+)
 _RB_TITLE = re.compile(r'<h3 class="platform-title">([^<]+)</h3>')
 _RB_TIME = re.compile(r'<p class="platform-time">([^<]*)</p>')
 _RB_FILTER = re.compile(r'data-filter="([^"]+)"')
@@ -74,6 +79,12 @@ _AH_TOPIC = re.compile(
 
 def _plain(raw: str) -> str:
     return html_lib.unescape(_TAG.sub("", raw or "")).strip()
+
+
+def _sopilot_thumb(chunk: str) -> str:
+    """First tweet image in a card. Profile photos are not thumbs."""
+    m = _THUMB.search(chunk or "")
+    return m.group(1) if m else ""
 
 
 def _get(url: str) -> str:
@@ -151,13 +162,34 @@ def parse_sopilot_list(html: str) -> list[dict[str, Any]]:
             "metric": metric,
             "views": views,
             "likes": likes,
+            "thumb": _sopilot_thumb(chunk),
             "extra": extra,
         })
     return out
 
 
+def merge_sopilot_items(
+    rising: list[dict[str, Any]] | None,
+    hot: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Rising first, then unique hot. Same tweet url/title kept once."""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for it in list(rising or []) + list(hot or []):
+        if not isinstance(it, dict):
+            continue
+        key = str(it.get("url") or "").strip() or str(it.get("title") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        row = dict(it)
+        row["rank"] = len(out) + 1
+        out.append(row)
+    return out
+
+
 def parse_sopilot(html: str) -> dict[str, Any]:
-    """Split 飙升 / 最热. Same page as sopilot.net/zh/rank/tweets."""
+    """飙升 + 最热去重成一列. Same page as sopilot.net/zh/rank/tweets."""
     text = html or ""
     cut = text.find("最热曝光榜")
     rising_html = text[:cut] if cut >= 0 else text
@@ -167,16 +199,22 @@ def parse_sopilot(html: str) -> dict[str, Any]:
         rising_html = rising_html[start:]
     return {
         "src": SRC_SOPILOT,
-        "rising": parse_sopilot_list(rising_html),
-        "hot": parse_sopilot_list(hot_html),
+        "items": merge_sopilot_items(
+            parse_sopilot_list(rising_html),
+            parse_sopilot_list(hot_html),
+        ),
     }
 
 
 def sopilot_ok(data: Any) -> bool:
+    if not isinstance(data, dict):
+        return False
+    items = data.get("items")
+    if isinstance(items, list) and items:
+        return True
     return (
-        isinstance(data, dict)
-        and (isinstance(data.get("rising"), list) and bool(data["rising"])
-             or isinstance(data.get("hot"), list) and bool(data["hot"]))
+        isinstance(data.get("rising"), list) and bool(data["rising"])
+        or isinstance(data.get("hot"), list) and bool(data["hot"])
     )
 
 

@@ -410,6 +410,7 @@ export interface EventRankItem {
   metric?: string;
   views?: string;
   likes?: string;
+  thumb?: string;
 }
 export interface EventRankTab {
   id: string;
@@ -420,6 +421,7 @@ export interface EventRankTab {
 }
 export interface EventRankPart {
   src?: string;
+  items?: EventRankItem[];
   rising?: EventRankItem[];
   hot?: EventRankItem[];
   tabs?: EventRankTab[];

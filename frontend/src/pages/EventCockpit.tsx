@@ -6,7 +6,7 @@ import { CockpitLayout, type CockpitRow } from "@/components/cockpit/CockpitLayo
 import { NewsAutoBar, NewsTriple } from "@/components/cockpit/NewsCockpitPanel";
 import { FreshTag } from "@/components/deriv/derivShared";
 import { EventCalPanel } from "@/components/event/EventCalPanel";
-import { mergeHotTabs, RankBoard, RankList, RankTabs, useRankTab } from "@/components/event/EventRankPanel";
+import { mergeHotTabs, RankBoard, RankList, RankTabs, sopilotItems, useRankTab } from "@/components/event/EventRankPanel";
 import { usePolling } from "@/hooks/usePolling";
 import { api, type EventCalBoard, type EventRankBoard, type EventRankItem } from "@/lib/api";
 import { FEED_SOURCES, peekTelegraphItems } from "@/lib/telegraphHub";
@@ -44,7 +44,6 @@ function packEventContext(
   ranks: EventRankBoard | null,
   hotItems: EventRankItem[],
   ahItems: EventRankItem[],
-  soKind: "rising" | "hot",
 ): string {
   const lines = ["# 资讯页快照"];
   const names = { cls: "财联社", lives: "新浪/见闻", jin10: "金十" } as const;
@@ -60,7 +59,7 @@ function packEventContext(
   }
   lines.push("", "## 财经日历");
   lines.push(...packCal(cal));
-  lines.push(...packItems(`X起爆 · ${soKind === "hot" ? "最热" : "飙升"}`, ranks?.sopilot?.[soKind] ?? []));
+  lines.push(...packItems("X起爆", sopilotItems(ranks?.sopilot)));
   lines.push(...packItems("热榜", hotItems));
   lines.push(...packItems("AIHOT", ahItems));
   return lines.join("\n");
@@ -69,7 +68,6 @@ function packEventContext(
 export function EventCockpit() {
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [newsAuto, setNewsAuto] = useState(true);
-  const [soKind, setSoKind] = useState<"rising" | "hot">("rising");
   const [tick, setTick] = useState(0);
 
   useLayoutEffect(() => {
@@ -85,7 +83,7 @@ export function EventCockpit() {
   );
   const hot = useRankTab(hotTabs, HOT_PREFER);
   const ah = useRankTab(ranks?.aihot?.tabs, AH_PREFER);
-  const soItems = (soKind === "hot" ? ranks?.sopilot?.hot : ranks?.sopilot?.rising) ?? [];
+  const soItems = sopilotItems(ranks?.sopilot);
 
   const rows: CockpitRow[] = useMemo(() => [
     {
@@ -134,16 +132,6 @@ export function EventCockpit() {
           accent: "#1d9bf0",
           defaultW: 0.30,
           mobileH: "h-[52vh]",
-          right: (
-            <RankTabs
-              tabs={[
-                { id: "rising", name: "飙升", count: ranks?.sopilot?.rising?.length },
-                { id: "hot", name: "最热", count: ranks?.sopilot?.hot?.length },
-              ]}
-              value={soKind}
-              onChange={(id) => setSoKind(id === "hot" ? "hot" : "rising")}
-            />
-          ),
           bodyClassName: "overflow-hidden",
           body: (
             <RankList
@@ -202,7 +190,7 @@ export function EventCockpit() {
     },
   ], [
     newsAuto, calPoll.data, calPoll.error, calPoll.updated,
-    ranks, rankPoll.error, soKind, soItems, hotTabs, hot.id, hot.items,
+    ranks, rankPoll.error, soItems, hotTabs, hot.id, hot.items,
     ah.id, ah.items,
   ]);
 
@@ -221,7 +209,7 @@ export function EventCockpit() {
       </button>
       <AskAiButton
         context=""
-        getContext={() => packEventContext(calPoll.data, ranks, hot.items, ah.items, soKind)}
+        getContext={() => packEventContext(calPoll.data, ranks, hot.items, ah.items)}
         label="问 AI"
         scopeKey="event"
         suggestions={[

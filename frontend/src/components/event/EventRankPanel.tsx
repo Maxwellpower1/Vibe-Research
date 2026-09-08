@@ -1,5 +1,7 @@
-import { useMemo, useState } from "react";
-import type { EventRankItem, EventRankTab } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { ExternalLink } from "lucide-react";
+import type { EventRankItem, EventRankPart, EventRankTab } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const RANK_TONE = ["#ff2d2d", "#ff8a3d", "#ffcc00"] as const;
@@ -49,38 +51,105 @@ export function RankTabs({
   );
 }
 
-function RankRow({ it, tweet }: { it: EventRankItem; tweet?: boolean }) {
-  const inner = (
+function JumpLink({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      title="打开原文"
+      className="-mr-0.5 shrink-0 rounded-sm p-0.5 text-slate-500 hover:bg-white/[0.06] hover:text-primary"
+    >
+      <ExternalLink className="h-3.5 w-3.5" />
+    </a>
+  );
+}
+
+function RankThumb({ url }: { url: string }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  return (
     <>
+      <button
+        type="button"
+        title="查看图片"
+        className="mt-0.5 shrink-0"
+        onClick={() => setOpen(true)}
+      >
+        <img
+          src={url}
+          alt=""
+          referrerPolicy="no-referrer"
+          className="h-12 w-12 rounded-md bg-[#2a2a2a] object-cover"
+          onError={(e) => {
+            const node = e.currentTarget.parentElement;
+            if (node) node.style.display = "none";
+          }}
+        />
+      </button>
+      {open
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 p-6"
+              onClick={() => setOpen(false)}
+            >
+              <img
+                src={url}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="max-h-[90vh] max-w-[90vw] rounded-md object-contain"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
+function RankRow({ it, tweet }: { it: EventRankItem; tweet?: boolean }) {
+  const jump = it.url ? <JumpLink url={it.url} /> : null;
+  return (
+    <div className="flex items-start gap-1.5 border-t border-[#2a2a2a] px-2 py-1.5 first:border-t-0">
       <span
         className="w-6 shrink-0 pt-px text-right font-mono text-[12px] font-semibold tabular-nums"
         style={{ color: rankColor(it.rank) }}
       >
         {it.rank}
       </span>
-      <span className="min-w-0 flex-1">
-        {tweet && (it.handle || it.metric) ? (
-          <span className="mb-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[11px] text-slate-400">
+      <span className="min-w-0 flex-1 select-text">
+        {tweet && (it.handle || it.age || it.metric || jump) ? (
+          <span className="mb-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-slate-400">
             {it.handle ? <span className="text-slate-300">@{it.handle}</span> : null}
             {it.age ? <span>{it.age}</span> : null}
-            {it.metric ? <span className="text-primary/90">{it.metric}</span> : null}
+            {it.metric ? (
+              <span className="inline-flex items-center gap-0.5 text-primary/90">
+                {it.metric}
+                {jump}
+              </span>
+            ) : (
+              jump
+            )}
           </span>
         ) : it.extra ? (
           <span className="mb-0.5 block truncate text-[11px] text-slate-400">{it.extra}</span>
         ) : null}
         <span className="block text-[13px] leading-snug text-slate-100">{it.title}</span>
       </span>
-    </>
+      {it.thumb ? <RankThumb url={it.thumb} /> : null}
+      {!tweet ? jump : null}
+    </div>
   );
-  const cls = "flex items-start gap-1.5 border-t border-[#2a2a2a] px-2 py-1.5 first:border-t-0";
-  if (it.url) {
-    return (
-      <a href={it.url} target="_blank" rel="noreferrer" className={cn(cls, "hover:bg-white/[0.04]")}>
-        {inner}
-      </a>
-    );
-  }
-  return <div className={cls}>{inner}</div>;
 }
 
 export function RankList({
@@ -149,6 +218,27 @@ const HOT_DROP = new Set(["雪球"]);
 
 export function hotTabKey(name: string): string {
   return HOT_ALIAS[name] ?? name;
+}
+
+/** Rising first, then unique hot. Last-good cache may still split 飙升/最热. */
+export function mergeSopilot(
+  rising?: EventRankItem[],
+  hot?: EventRankItem[],
+): EventRankItem[] {
+  const out: EventRankItem[] = [];
+  const seen = new Set<string>();
+  for (const it of [...(rising ?? []), ...(hot ?? [])]) {
+    const key = (it.url || it.title || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...it, rank: out.length + 1 });
+  }
+  return out;
+}
+
+export function sopilotItems(part?: EventRankPart | null): EventRankItem[] {
+  if (part?.items?.length) return part.items;
+  return mergeSopilot(part?.rising, part?.hot);
 }
 
 /** NewsNow first, then REBANG uniques. Drop empty and same-name dupes (微博/知乎/金十). */

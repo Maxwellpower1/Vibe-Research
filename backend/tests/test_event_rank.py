@@ -14,6 +14,8 @@ SOPILOT = """
 <span class="mt-0.5 block text-[11px] text-slate-400">6 小时前</span>
 <span class="shrink-0 text-sm font-black text-indigo-600">2.5万 曝光/小时</span>
 <a href="https://x.com/sunyuchentron/status/2094959751604163017">鉴于全网对我身高的争议已持续多日</a>
+<img src="https://pbs.twimg.com/profile_images/1/a_normal.jpg" alt="" />
+<img src="https://pbs.twimg.com/media/HRqHZ6ObIAEq1Bg.jpg" alt="图 1" />
 <svg class="lucide lucide-eye"></svg>2.5万
 <svg class="lucide lucide-heart"></svg>153
 <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-black">2</span>
@@ -114,16 +116,20 @@ AH = {
 }
 
 
-def test_parse_sopilot_splits_rising_and_hot():
+def test_parse_sopilot_merges_rising_and_hot():
     out = event_rank.parse_sopilot(SOPILOT)
     assert event_rank.sopilot_ok(out)
     assert out["src"] == event_rank.SRC_SOPILOT
-    assert out["rising"][0]["handle"] == "sunyuchentron"
-    assert "身高" in out["rising"][0]["title"]
-    assert out["rising"][0]["metric"].endswith("/时")
-    assert out["rising"][1]["handle"] == "_FORAB"
-    assert out["hot"][0]["title"] == "丁林葳被判 12 个月"
-    assert out["hot"][0]["url"].endswith("/111")
+    items = out["items"]
+    assert [it["handle"] for it in items] == ["sunyuchentron", "_FORAB"]
+    assert "身高" in items[0]["title"]
+    assert items[0]["metric"].endswith("/时")
+    assert items[0]["thumb"].endswith("HRqHZ6ObIAEq1Bg.jpg")
+    assert items[1]["title"] == "丁林葳被判 12 个月"
+    assert items[1]["url"].endswith("/111")
+    assert items[1]["thumb"] == ""
+    assert items[1]["rank"] == 2
+    assert "rising" not in out and "hot" not in out
 
 
 def test_parse_newsnow_skips_empty_and_keeps_order():
